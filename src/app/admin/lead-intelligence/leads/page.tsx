@@ -1,0 +1,209 @@
+import Link from "next/link";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { queryLeads } from "@/lib/lead-intelligence/query";
+import { filtersFromSearchParams } from "@/lib/lead-intelligence/filters";
+import {
+  LEAD_STATUSES,
+  LEAD_STATUS_LABELS,
+  LEAD_PRIORITIES,
+  LEAD_PRIORITY_LABELS,
+} from "@/lib/lead-intelligence/types";
+import AiSearchBox from "./AiSearchBox";
+import LeadsTableClient from "./LeadsTableClient";
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const filters = filtersFromSearchParams(params);
+
+  const supabase = createAdminClient();
+  const { leads, total, page, totalPages } = await queryLeads(supabase, filters);
+
+  const val = (key: string) => {
+    const v = params[key];
+    return typeof v === "string" ? v : "";
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold text-zinc-900">Baza leadov</h1>
+          <p className="mt-2 text-base text-zinc-500">
+            {total.toLocaleString("sl-SI")} leadov v bazi
+          </p>
+        </div>
+        <Link
+          href="/admin/lead-intelligence/import"
+          className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
+        >
+          Uvozi leade
+        </Link>
+      </div>
+
+      <div className="mt-6">
+        <AiSearchBox />
+      </div>
+
+      <form
+        method="get"
+        className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:grid-cols-4 lg:grid-cols-6"
+      >
+        <input
+          name="q"
+          defaultValue={val("q")}
+          placeholder="Iskanje po besedilu …"
+          className="col-span-2 rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none sm:col-span-2"
+        />
+        <input
+          name="industry"
+          defaultValue={val("industry")}
+          placeholder="Panoga"
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        />
+        <input
+          name="city"
+          defaultValue={val("city")}
+          placeholder="Mesto"
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        />
+        <input
+          name="region"
+          defaultValue={val("region")}
+          placeholder="Regija"
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        />
+        <input
+          name="country"
+          defaultValue={val("country")}
+          placeholder="Država"
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        />
+        <input
+          name="tag"
+          defaultValue={val("tag")}
+          placeholder="Oznaka"
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        />
+        <select
+          name="status"
+          defaultValue={val("status")}
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        >
+          <option value="">Vsi statusi</option>
+          {LEAD_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {LEAD_STATUS_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <select
+          name="priority"
+          defaultValue={val("priority")}
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        >
+          <option value="">Vse prioritete</option>
+          {LEAD_PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {LEAD_PRIORITY_LABELS[p]}
+            </option>
+          ))}
+        </select>
+        <select
+          name="hasWebsite"
+          defaultValue={val("hasWebsite")}
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        >
+          <option value="">Website — vsi</option>
+          <option value="true">Ima website</option>
+          <option value="false">Brez websita</option>
+        </select>
+        <select
+          name="hasEmail"
+          defaultValue={val("hasEmail")}
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        >
+          <option value="">Email — vsi</option>
+          <option value="true">Ima email</option>
+          <option value="false">Brez emaila</option>
+        </select>
+        <select
+          name="hasPhone"
+          defaultValue={val("hasPhone")}
+          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+        >
+          <option value="">Telefon — vsi</option>
+          <option value="true">Ima telefon</option>
+          <option value="false">Brez telefona</option>
+        </select>
+
+        <div className="col-span-2 flex items-center gap-3 sm:col-span-4 lg:col-span-6">
+          <button
+            type="submit"
+            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-semibold text-zinc-900 transition hover:bg-zinc-50"
+          >
+            Filtriraj
+          </button>
+          <Link
+            href="/admin/lead-intelligence/leads"
+            className="text-sm text-zinc-500 hover:text-zinc-900"
+          >
+            Počisti filtre
+          </Link>
+        </div>
+      </form>
+
+      <div className="mt-6">
+        <LeadsTableClient leads={leads} />
+      </div>
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-4">
+          {(() => {
+            const pageHref = (p: number) => {
+              const sp = new URLSearchParams(
+                Object.entries(params).flatMap(([k, v]) =>
+                  typeof v === "string" && k !== "page" ? [[k, v]] : []
+                )
+              );
+              sp.set("page", String(p));
+              return `/admin/lead-intelligence/leads?${sp.toString()}`;
+            };
+            return (
+              <>
+                {page > 1 ? (
+                  <Link
+                    href={pageHref(page - 1)}
+                    className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+                  >
+                    Prejšnja
+                  </Link>
+                ) : (
+                  <span className="px-4 py-2 text-sm text-zinc-300">Prejšnja</span>
+                )}
+                <span className="text-sm text-zinc-500">
+                  Stran {page} od {totalPages}
+                </span>
+                {page < totalPages ? (
+                  <Link
+                    href={pageHref(page + 1)}
+                    className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+                  >
+                    Naslednja
+                  </Link>
+                ) : (
+                  <span className="px-4 py-2 text-sm text-zinc-300">Naslednja</span>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
