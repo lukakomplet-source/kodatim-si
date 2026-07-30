@@ -49,8 +49,13 @@ export default function ProjectChat() {
   const [contactError, setContactError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, loading, recommendationLoading]);
 
