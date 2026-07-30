@@ -7,11 +7,14 @@ import {
   LEAD_STATUS_LABELS,
   LEAD_PRIORITIES,
   LEAD_PRIORITY_LABELS,
+  type LeadStatus,
 } from "@/lib/lead-intelligence/types";
 import AiSearchBox from "./AiSearchBox";
 import LeadsTableClient from "./LeadsTableClient";
+import DateRangeFilter from "./DateRangeFilter";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type StatusBreakdown = Partial<Record<LeadStatus, number>>;
 
 export default async function LeadsPage({
   searchParams,
@@ -22,12 +25,31 @@ export default async function LeadsPage({
   const filters = filtersFromSearchParams(params);
 
   const supabase = createAdminClient();
-  const { leads, total, page, totalPages } = await queryLeads(supabase, filters);
+  const [{ leads, total, page, totalPages }, { data: stats }] = await Promise.all([
+    queryLeads(supabase, filters),
+    supabase.rpc("intel_leads_dashboard_stats"),
+  ]);
+  const statusBreakdown = (stats?.status_breakdown ?? {}) as StatusBreakdown;
+  const totalAllStatuses = Object.values(statusBreakdown).reduce(
+    (sum, n) => sum + (n ?? 0),
+    0
+  );
 
   const val = (key: string) => {
     const v = params[key];
     return typeof v === "string" ? v : "";
   };
+
+  function statusTabHref(status: string) {
+    const sp = new URLSearchParams(
+      Object.entries(params).flatMap(([k, v]) =>
+        typeof v === "string" && k !== "status" && k !== "page" ? [[k, v]] : []
+      )
+    );
+    if (status) sp.set("status", status);
+    const qs = sp.toString();
+    return `/admin/lead-intelligence/leads${qs ? `?${qs}` : ""}`;
+  }
 
   return (
     <div>
@@ -50,10 +72,51 @@ export default async function LeadsPage({
         <AiSearchBox />
       </div>
 
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          href={statusTabHref("")}
+          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
+            !val("status")
+              ? "bg-zinc-900 text-white"
+              : "border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+          }`}
+        >
+          Vsi
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              !val("status") ? "bg-white/20" : "bg-zinc-100 text-zinc-500"
+            }`}
+          >
+            {totalAllStatuses}
+          </span>
+        </Link>
+        {LEAD_STATUSES.map((s) => (
+          <Link
+            key={s}
+            href={statusTabHref(s)}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
+              val("status") === s
+                ? "bg-zinc-900 text-white"
+                : "border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
+            }`}
+          >
+            {LEAD_STATUS_LABELS[s]}
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${
+                val("status") === s ? "bg-white/20" : "bg-zinc-100 text-zinc-500"
+              }`}
+            >
+              {statusBreakdown[s] ?? 0}
+            </span>
+          </Link>
+        ))}
+      </div>
+
       <form
         method="get"
         className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:grid-cols-4 lg:grid-cols-6"
       >
+        <input type="hidden" name="status" value={val("status")} />
         <input
           name="q"
           defaultValue={val("q")}
@@ -90,18 +153,6 @@ export default async function LeadsPage({
           placeholder="Oznaka"
           className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
         />
-        <select
-          name="status"
-          defaultValue={val("status")}
-          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
-        >
-          <option value="">Vsi statusi</option>
-          {LEAD_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {LEAD_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
         <select
           name="priority"
           defaultValue={val("priority")}
@@ -141,6 +192,8 @@ export default async function LeadsPage({
           <option value="true">Ima telefon</option>
           <option value="false">Brez telefona</option>
         </select>
+
+        <DateRangeFilter defaultFrom={val("createdFrom")} defaultTo={val("createdTo")} />
 
         <div className="col-span-2 flex items-center gap-3 sm:col-span-4 lg:col-span-6">
           <button

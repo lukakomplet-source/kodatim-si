@@ -12,6 +12,7 @@ import {
   Pencil,
   Download,
   Tag as TagIcon,
+  Trash2,
 } from "lucide-react";
 import type { IntelLead, LeadStatus } from "@/lib/lead-intelligence/types";
 import {
@@ -25,8 +26,11 @@ import {
   addNote,
   assignTags,
   updateStatus,
+  updateLead,
   bulkAssignTags,
   bulkUpdateStatus,
+  deleteLead,
+  bulkDeleteLeads,
 } from "../actions";
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
@@ -65,6 +69,17 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
   const [tagsDraft, setTagsDraft] = useState("");
   const [bulkTags, setBulkTags] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [coreFields, setCoreFields] = useState({
+    company_name: "",
+    email: "",
+    phone: "",
+    website: "",
+    revenue_year: "",
+    revenue_amount: "",
+    skd_code: "",
+    skd_name: "",
+  });
+  const [savingCore, setSavingCore] = useState(false);
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -85,6 +100,39 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
     setExpandedId(lead.id);
     setNoteDraft("");
     setTagsDraft((lead.tags ?? []).join(", "));
+    setCoreFields({
+      company_name: lead.company_name ?? "",
+      email: lead.email ?? "",
+      phone: lead.phone ?? "",
+      website: lead.website ?? "",
+      revenue_year: lead.custom_fields?.revenue_year ?? "",
+      revenue_amount: lead.custom_fields?.revenue_amount ?? "",
+      skd_code: lead.custom_fields?.skd_code ?? "",
+      skd_name: lead.custom_fields?.skd_name ?? "",
+    });
+  }
+
+  async function saveCoreFields(lead: IntelLead) {
+    setSavingCore(true);
+    const result = await updateLead(lead.id, {
+      company_name: coreFields.company_name,
+      email: coreFields.email || null,
+      phone: coreFields.phone || null,
+      website: coreFields.website || null,
+      custom_fields: {
+        ...lead.custom_fields,
+        ...(coreFields.revenue_year ? { revenue_year: coreFields.revenue_year } : {}),
+        ...(coreFields.revenue_amount ? { revenue_amount: coreFields.revenue_amount } : {}),
+        ...(coreFields.skd_code ? { skd_code: coreFields.skd_code } : {}),
+        ...(coreFields.skd_name ? { skd_name: coreFields.skd_name } : {}),
+      },
+    });
+    setSavingCore(false);
+    if (result.error) {
+      alert(result.error);
+    } else {
+      router.refresh();
+    }
   }
 
   function run(action: () => Promise<{ error?: string }>) {
@@ -175,6 +223,20 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
           >
             <Download className="h-3.5 w-3.5" />
             Izvozi izbrane
+          </button>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              if (!confirm(`Izbrisati ${selected.size} izbranih leadov? Tega ni mogoče razveljaviti.`)) return;
+              const ids = Array.from(selected);
+              run(() => bulkDeleteLeads(ids));
+              setSelected(new Set());
+            }}
+            className="flex items-center gap-1.5 rounded-full border border-red-200 px-4 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Izbriši izbrane
           </button>
           <button
             type="button"
@@ -321,13 +383,96 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
+                      <button
+                        type="button"
+                        title="Izbriši lead"
+                        disabled={isPending}
+                        onClick={() => {
+                          if (!confirm(`Izbrisati "${lead.company_name}"? Tega ni mogoče razveljaviti.`)) return;
+                          run(() => deleteLead(lead.id));
+                        }}
+                        className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </td>
                 </tr>
                 {expandedId === lead.id && (
                   <tr className="bg-zinc-50">
                     <td colSpan={8} className="px-6 py-4">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                          Osnovni podatki
+                        </p>
+                        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                          <input
+                            value={coreFields.company_name}
+                            onChange={(e) =>
+                              setCoreFields((f) => ({ ...f, company_name: e.target.value }))
+                            }
+                            placeholder="Ime podjetja"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none sm:col-span-2"
+                          />
+                          <input
+                            type="email"
+                            value={coreFields.email}
+                            onChange={(e) => setCoreFields((f) => ({ ...f, email: e.target.value }))}
+                            placeholder="Email"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.phone}
+                            onChange={(e) => setCoreFields((f) => ({ ...f, phone: e.target.value }))}
+                            placeholder="Telefon"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.website}
+                            onChange={(e) => setCoreFields((f) => ({ ...f, website: e.target.value }))}
+                            placeholder="Website"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.revenue_amount}
+                            onChange={(e) =>
+                              setCoreFields((f) => ({ ...f, revenue_amount: e.target.value }))
+                            }
+                            placeholder="Letni prihodki (€)"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.revenue_year}
+                            onChange={(e) =>
+                              setCoreFields((f) => ({ ...f, revenue_year: e.target.value }))
+                            }
+                            placeholder="Leto prihodkov"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.skd_code}
+                            onChange={(e) => setCoreFields((f) => ({ ...f, skd_code: e.target.value }))}
+                            placeholder="SKD koda"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none"
+                          />
+                          <input
+                            value={coreFields.skd_name}
+                            onChange={(e) => setCoreFields((f) => ({ ...f, skd_name: e.target.value }))}
+                            placeholder="SKD naziv dejavnosti"
+                            className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-accent/50 focus:outline-none sm:col-span-2"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          disabled={savingCore || !coreFields.company_name.trim()}
+                          onClick={() => saveCoreFields(lead)}
+                          className="mt-2 rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                        >
+                          {savingCore ? "Shranjujem …" : "Shrani vse"}
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                             Dodaj opombo

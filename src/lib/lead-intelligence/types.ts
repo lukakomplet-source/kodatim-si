@@ -88,6 +88,8 @@ export type LeadFilters = {
   hasEmail?: boolean;
   hasPhone?: boolean;
   reminderBefore?: string;
+  createdFrom?: string;
+  createdTo?: string;
   page?: number;
 };
 

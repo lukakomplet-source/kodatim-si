@@ -67,6 +67,16 @@ export function sanitizeFilters(raw: Record<string, unknown>): LeadFilters {
     filters.reminderBefore = reminderBefore;
   }
 
+  const createdFrom = str(raw.createdFrom);
+  if (createdFrom && /^\d{4}-\d{2}-\d{2}$/.test(createdFrom)) {
+    filters.createdFrom = createdFrom;
+  }
+
+  const createdTo = str(raw.createdTo);
+  if (createdTo && /^\d{4}-\d{2}-\d{2}$/.test(createdTo)) {
+    filters.createdTo = createdTo;
+  }
+
   const page = Number(raw.page);
   if (Number.isFinite(page) && page > 0) filters.page = Math.floor(page);
 

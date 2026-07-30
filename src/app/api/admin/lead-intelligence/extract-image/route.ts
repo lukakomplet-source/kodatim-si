@@ -16,11 +16,12 @@ Prejel boš eno ali več slik hkrati. Tvoja naloga:
 Preberi VSO vidno besedilo na vsaki sliki, tudi manjše besedilo in stranske stolpce/tabele — ne le najbolj vidnega naslova.
 
 Vrni IZKLJUČNO JSON objekt oblike {"leads": [ {...}, {...} ]}. Vsak element naj ima polja (vsa nizi, string):
-company_name, industry, website, email, phone, address_street, address_city, address_region, address_country, vat_id, contact_person, notes, revenue_year, revenue_amount.
+company_name, industry, website, email, phone, address_street, address_city, address_region, address_country, vat_id, contact_person, notes, revenue_year, revenue_amount, skd_code, skd_name.
 
 Kako mapirati pogosta polja iz registrskih strani:
 - "vat_id": davčna številka / DŠ (npr. "SI97304999").
-- "industry": glavna dejavnost / SKD opis (samo besedilni opis, brez šifre), če je viden.
+- "industry": glavna dejavnost / SKD opis v prosti obliki (če ni ločenega SKD polja).
+- "skd_code" in "skd_name": če je na sliki viden uradni SKD zapis (standardna klasifikacija dejavnosti, npr. "52.260 - Druge spremljajoče prevozne dejavnosti"), razdeli ga na kodo ("52.260") in naziv ("Druge spremljajoče prevozne dejavnosti") — to je pogosto na registrskih straneh (CompanyWall, Bizi, AJPES) v razdelku "Osnovni podatki" ali podobno.
 - "contact_person": če so na sliki navedeni direktorji, zastopniki, odgovorne osebe ali lastniki (npr. vrstice "Direktor", "Zastopnik", "Lastniki"), navedi VSA njihova imena, ločena z vejico (npr. "Komplet Jaka, Komplet Luka"). To polje je pogosto prezrto — bodi posebej pozoren nanj.
 - "email": poišči kakršenkoli viden e-poštni naslov, tudi če je v majhni pisavi v tabeli kontaktov.
 - "revenue_year" in "revenue_amount": če je na sliki viden letni prihodek/promet podjetja (npr. v razdelku "Finančni podatki"), navedi leto (npr. "2024") in znesek samo kot število brez valute/pik/vejic (npr. "185000"). Če je prikazanih več let, uporabi najnovejše.
@@ -32,7 +33,7 @@ Splošna pravila:
 - Telefonske številke in email prepiši natančno tako, kot so zapisani.
 - Če slika ne vsebuje uporabnega leada, jo preprosto ne upoštevaj (ne vrni praznega vnosa zanjo).
 
-Primer odgovora za dve slike istega podjetja + eno drugo podjetje: {"leads": [{"company_name": "Primer d.o.o.", "vat_id": "SI12345678", "contact_person": "Janez Novak", "email": "info@primer.si", "revenue_year": "2024", "revenue_amount": "185000"}, {"company_name": "Drugo podjetje d.o.o.", "phone": "+386 40 123 456"}]}`;
+Primer odgovora za dve slike istega podjetja + eno drugo podjetje: {"leads": [{"company_name": "Primer d.o.o.", "vat_id": "SI12345678", "contact_person": "Janez Novak", "email": "info@primer.si", "revenue_year": "2024", "revenue_amount": "185000", "skd_code": "62.010", "skd_name": "Računalniško programiranje"}, {"company_name": "Drugo podjetje d.o.o.", "phone": "+386 40 123 456"}]}`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -83,6 +84,8 @@ export async function POST(request: NextRequest) {
     type RawLead = Partial<Record<ImportField, string>> & {
       revenue_year?: string;
       revenue_amount?: string;
+      skd_code?: string;
+      skd_name?: string;
     };
 
     const parsed = await chatJSONWithImages<{ leads?: RawLead[] }>(
@@ -98,6 +101,8 @@ export async function POST(request: NextRequest) {
         const fields: Partial<Record<ImportField, string>> & {
           revenue_year?: string;
           revenue_amount?: string;
+          skd_code?: string;
+          skd_name?: string;
         } = {};
         for (const field of IMPORT_FIELDS) {
           const value = raw[field];
@@ -110,6 +115,12 @@ export async function POST(request: NextRequest) {
         }
         if (typeof raw.revenue_amount === "string" && raw.revenue_amount.trim()) {
           fields.revenue_amount = raw.revenue_amount.replace(/[^\d.]/g, "").slice(0, 20);
+        }
+        if (typeof raw.skd_code === "string" && raw.skd_code.trim()) {
+          fields.skd_code = raw.skd_code.trim().slice(0, 20);
+        }
+        if (typeof raw.skd_name === "string" && raw.skd_name.trim()) {
+          fields.skd_name = raw.skd_name.trim().slice(0, 200);
         }
         return fields;
       })

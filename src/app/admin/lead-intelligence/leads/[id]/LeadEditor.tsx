@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, Trash2, Wand2 } from "lucide-react";
 import type { IntelLead, LeadStatus, LeadPriority } from "@/lib/lead-intelligence/types";
 import {
   LEAD_STATUSES,
@@ -19,8 +19,10 @@ import {
   moveToCustomer,
   addNote,
   assignTags,
+  deleteLead,
   type UpdateLeadFields,
 } from "../../actions";
+import ContactPersonsField from "../../import/ContactPersonsField";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -33,25 +35,78 @@ const FIELD_LABELS: Record<string, string> = {
   address_region: "Regija",
   address_country: "Država",
   vat_id: "ID za DDV",
-  contact_person: "Kontaktna oseba",
 };
 
 const TEXT_FIELDS = Object.keys(FIELD_LABELS) as (keyof UpdateLeadFields)[];
+const CUSTOM_FIELD_KEYS = ["revenue_year", "revenue_amount", "skd_code", "skd_name"];
 
 export default function LeadEditor({ lead }: { lead: IntelLead }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const contactsRef = useRef<HTMLDivElement>(null);
   const [fields, setFields] = useState<Record<string, string>>(() =>
     Object.fromEntries(TEXT_FIELDS.map((f) => [f, (lead[f as keyof IntelLead] as string) ?? ""]))
   );
   const [notes, setNotes] = useState(lead.notes ?? "");
   const [tagsText, setTagsText] = useState((lead.tags ?? []).join(", "));
+  const [revenueYear, setRevenueYear] = useState(lead.custom_fields?.revenue_year ?? "");
+  const [revenueAmount, setRevenueAmount] = useState(lead.custom_fields?.revenue_amount ?? "");
+  const [skdCode, setSkdCode] = useState(lead.custom_fields?.skd_code ?? "");
+  const [skdName, setSkdName] = useState(lead.custom_fields?.skd_name ?? "");
   const [customFields, setCustomFields] = useState<[string, string][]>(
-    Object.entries(lead.custom_fields ?? {})
+    Object.entries(lead.custom_fields ?? {}).filter(([k]) => !CUSTOM_FIELD_KEYS.includes(k))
   );
   const [reminder, setReminder] = useState(lead.reminder_date ?? "");
   const [noteDraft, setNoteDraft] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [completeLoading, setCompleteLoading] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+  const [completeSource, setCompleteSource] = useState<string | null>(null);
+
+  async function runAiComplete() {
+    const companyName = fields.company_name?.trim();
+    if (!companyName) {
+      setCompleteError("Vnesite ime podjetja.");
+      return;
+    }
+    setCompleteLoading(true);
+    setCompleteError(null);
+    setCompleteSource(null);
+    try {
+      const res = await fetch("/api/admin/lead-intelligence/ai-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, city: fields.address_city }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCompleteError(json?.error ?? "Dopolnjevanje ni uspelo.");
+        return;
+      }
+      setFields((prev) => {
+        const next = { ...prev };
+        if (!next.website?.trim() && json.website) next.website = json.website;
+        const aiFields = (json.fields ?? {}) as Record<string, string>;
+        for (const [key, value] of Object.entries(aiFields)) {
+          if (!next[key]?.trim() && value) next[key] = value;
+        }
+        return next;
+      });
+      if (json.description) {
+        setNotes((prev) => {
+          const existing = prev.trim();
+          const aiLine = `AI opis: ${json.description}`;
+          if (existing.includes(aiLine)) return prev;
+          return existing ? `${existing}\n${aiLine}` : aiLine;
+        });
+      }
+      setCompleteSource(json.source ?? json.website ?? null);
+    } catch {
+      setCompleteError("Prišlo je do napake. Poskusite znova.");
+    } finally {
+      setCompleteLoading(false);
+    }
+  }
 
   function run(action: () => Promise<{ error?: string }>) {
     startTransition(async () => {
@@ -66,13 +121,38 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
   }
 
   function handleSaveProfile() {
+    const contactPersons = Array.from(
+      contactsRef.current?.querySelectorAll<HTMLInputElement>('input[name="contact_person"]') ?? []
+    )
+      .map((el) => el.value.trim())
+      .filter(Boolean);
+
     const payload: UpdateLeadFields = {
       ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, fields[f] || null])),
+      contact_person: contactPersons.length ? contactPersons.join(", ") : null,
       notes: notes || null,
-      custom_fields: Object.fromEntries(customFields.filter(([k]) => k.trim())),
+      custom_fields: {
+        ...Object.fromEntries(customFields.filter(([k]) => k.trim())),
+        ...(revenueYear ? { revenue_year: revenueYear } : {}),
+        ...(revenueAmount ? { revenue_amount: revenueAmount } : {}),
+        ...(skdCode ? { skd_code: skdCode } : {}),
+        ...(skdName ? { skd_name: skdName } : {}),
+      },
     };
     run(() => updateLead(lead.id, payload));
     run(() => assignTags(lead.id, tagsText.split(",").map((t) => t.trim())));
+  }
+
+  function handleDelete() {
+    if (!confirm(`Izbrisati "${lead.company_name}"? Tega ni mogoče razveljaviti.`)) return;
+    startTransition(async () => {
+      const result = await deleteLead(lead.id);
+      if (result.error) {
+        alert(result.error);
+      } else {
+        router.push("/admin/lead-intelligence/leads");
+      }
+    });
   }
 
   return (
@@ -110,10 +190,41 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
             >
               Premakni med stranke
             </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={handleDelete}
+              className="flex items-center gap-1.5 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Izbriši
+            </button>
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent/[0.04] px-4 py-3">
+          <p className="text-xs text-zinc-600">
+            AI poišče po spletu in dopolni prazna polja (website, email,
+            telefon, naslov, panoga) na podlagi imena podjetja in mesta.
+          </p>
+          <button
+            type="button"
+            onClick={runAiComplete}
+            disabled={completeLoading}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            {completeLoading ? "Iščem po spletu …" : "AI dopolni vse"}
+          </button>
+        </div>
+        {completeError && <p className="mt-2 text-xs text-red-500">{completeError}</p>}
+        {completeSource && (
+          <p className="mt-2 text-xs text-emerald-600">
+            Dopolnjeno na podlagi: {completeSource}. Preverite podatke pred shranjevanjem.
+          </p>
+        )}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {TEXT_FIELDS.map((f) => (
             <div key={f}>
               <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -126,6 +237,54 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
               />
             </div>
           ))}
+          <div>
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              SKD koda
+            </label>
+            <input
+              value={skdCode}
+              onChange={(e) => setSkdCode(e.target.value)}
+              placeholder="npr. 62.010"
+              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              SKD naziv dejavnosti
+            </label>
+            <input
+              value={skdName}
+              onChange={(e) => setSkdName(e.target.value)}
+              placeholder="npr. Računalniško programiranje"
+              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Leto prihodkov
+            </label>
+            <input
+              value={revenueYear}
+              onChange={(e) => setRevenueYear(e.target.value)}
+              placeholder="npr. 2026"
+              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Letni prihodki (€)
+            </label>
+            <input
+              value={revenueAmount}
+              onChange={(e) => setRevenueAmount(e.target.value)}
+              placeholder="npr. 120000"
+              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div ref={contactsRef} className="mt-4">
+          <ContactPersonsField defaultValue={lead.contact_person ?? undefined} />
         </div>
 
         <div className="mt-4">

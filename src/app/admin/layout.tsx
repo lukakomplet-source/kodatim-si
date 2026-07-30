@@ -6,6 +6,7 @@ import {
   Users,
   Inbox,
   Radar,
+  Target,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -23,6 +24,11 @@ const NAV_ITEMS = [
     href: "/admin/lead-intelligence",
     label: "Lead Intelligence",
     icon: <Radar className={ICON_CLASS} />,
+  },
+  {
+    href: "/admin/promocije",
+    label: "Promocije",
+    icon: <Target className={ICON_CLASS} />,
   },
   {
     href: "/admin/partnerji",

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import ScrapeCompanyForm from "./ScrapeCompanyForm";
+import AiCompanySearchForm from "./AiCompanySearchForm";
 
 export default async function AdminCompaniesPage({
   searchParams,
@@ -31,6 +32,10 @@ export default async function AdminCompaniesPage({
 
       <div className="mt-8 rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
         <ScrapeCompanyForm />
+      </div>
+
+      <div className="mt-4">
+        <AiCompanySearchForm />
       </div>
 
       <form className="mt-10 flex flex-wrap items-center gap-3" method="get">

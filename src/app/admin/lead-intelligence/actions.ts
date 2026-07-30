@@ -255,9 +255,13 @@ export async function createLead(
 
   const revenueYear = field("revenue_year");
   const revenueAmount = field("revenue_amount");
+  const skdCode = field("skd_code");
+  const skdName = field("skd_name");
   const customFields: Record<string, string> = {};
   if (revenueYear) customFields.revenue_year = revenueYear;
   if (revenueAmount) customFields.revenue_amount = revenueAmount;
+  if (skdCode) customFields.skd_code = skdCode;
+  if (skdName) customFields.skd_name = skdName;
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -355,5 +359,41 @@ export async function bulkUpdateStatus(
   if (error) return { error: "Statusa ni bilo mogoče spremeniti." };
 
   revalidatePath("/admin/lead-intelligence/leads");
+  return { success: true };
+}
+
+export async function deleteLead(leadId: string): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("intel_leads").delete().eq("id", leadId);
+
+  if (error) return { error: "Leada ni bilo mogoče izbrisati." };
+
+  revalidatePath("/admin/lead-intelligence/leads");
+  revalidatePath("/admin/lead-intelligence");
+  return { success: true };
+}
+
+export async function bulkDeleteLeads(leadIds: string[]): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  if (leadIds.length === 0) return { error: "Ni izbranih leadov." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("intel_leads").delete().in("id", leadIds);
+
+  if (error) return { error: "Leadov ni bilo mogoče izbrisati." };
+
+  revalidatePath("/admin/lead-intelligence/leads");
+  revalidatePath("/admin/lead-intelligence");
   return { success: true };
 }

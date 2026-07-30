@@ -65,6 +65,66 @@ export async function scrapeUrl(
   };
 }
 
+export type FirecrawlSearchResult = {
+  url: string;
+  title: string;
+  description: string | null;
+  markdown: string | null;
+};
+
+/**
+ * Real web search (not an LLM guess) via Firecrawl's /v2/search — used to
+ * find a company's official website/contact info from just its name, so we
+ * have real scraped content to extract from instead of hallucinating.
+ */
+export async function searchWeb(
+  query: string,
+  options?: { limit?: number; country?: string; scrapeMarkdown?: boolean }
+): Promise<FirecrawlSearchResult[]> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) {
+    throw new Error("FIRECRAWL_API_KEY ni nastavljen v .env.local.");
+  }
+
+  const response = await fetch("https://api.firecrawl.dev/v2/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      limit: options?.limit ?? 5,
+      country: options?.country ?? "SI",
+      sources: [{ type: "web" }],
+      ...(options?.scrapeMarkdown
+        ? { scrapeOptions: { formats: [{ type: "markdown" }] } }
+        : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Firecrawl napaka (${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  const json = await response.json();
+  if (!json.success) {
+    throw new Error("Firecrawl iskanje ni uspelo.");
+  }
+
+  const web = json.data?.web ?? [];
+  return web.map((r: Record<string, unknown>) => ({
+    url: String(r.url ?? ""),
+    title: String(r.title ?? ""),
+    description:
+      (r.description as string | undefined) ??
+      ((r.metadata as Record<string, unknown> | undefined)?.description as string | undefined) ??
+      null,
+    markdown: (r.markdown as string | undefined) ?? null,
+  }));
+}
+
 export type CompanyExtraction = {
   name: string;
   industry: string;

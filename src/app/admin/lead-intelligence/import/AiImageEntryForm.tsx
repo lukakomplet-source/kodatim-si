@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2 } from "lucide-react";
+import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2 } from "lucide-react";
 import { createLead } from "../actions";
 import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportField } from "@/lib/lead-intelligence/types";
 import ContactPersonsField from "./ContactPersonsField";
@@ -14,6 +14,8 @@ type UploadedImage = { id: string; dataUrl: string };
 type LeadFields = Partial<Record<ImportField, string>> & {
   revenue_year?: string;
   revenue_amount?: string;
+  skd_code?: string;
+  skd_name?: string;
 };
 type CardStatus = "idle" | "saving" | "saved" | "error";
 
@@ -44,6 +46,9 @@ export default function AiImageEntryForm() {
   const [cardErrors, setCardErrors] = useState<(string | null)[]>([]);
   const [lookupLoading, setLookupLoading] = useState<boolean[]>([]);
   const [lookupErrors, setLookupErrors] = useState<(string | null)[]>([]);
+  const [completeLoading, setCompleteLoading] = useState<boolean[]>([]);
+  const [completeErrors, setCompleteErrors] = useState<(string | null)[]>([]);
+  const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRefs = useRef<Record<number, HTMLFormElement | null>>({});
 
@@ -91,6 +96,9 @@ export default function AiImageEntryForm() {
       setCardErrors(detected.map(() => null));
       setLookupLoading(detected.map(() => false));
       setLookupErrors(detected.map(() => null));
+      setCompleteLoading(detected.map(() => false));
+      setCompleteErrors(detected.map(() => null));
+      setCompleteSources(detected.map(() => null));
     } catch {
       setExtractError("Prišlo je do napake. Poskusite znova.");
     } finally {
@@ -105,6 +113,9 @@ export default function AiImageEntryForm() {
     setCardErrors([]);
     setLookupLoading([]);
     setLookupErrors([]);
+    setCompleteLoading([]);
+    setCompleteErrors([]);
+    setCompleteSources([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -172,6 +183,57 @@ export default function AiImageEntryForm() {
       setLookupErrors((prev) => prev.map((e, i) => (i === index ? "Prišlo je do napake. Poskusite znova." : e)));
     } finally {
       setLookupLoading((prev) => prev.map((v, i) => (i === index ? false : v)));
+    }
+  }
+
+  async function runAiComplete(index: number) {
+    const form = formRefs.current[index];
+    const nameInput = form?.elements.namedItem("company_name") as HTMLInputElement | null;
+    const companyName = nameInput?.value.trim();
+    if (!companyName) {
+      setCompleteErrors((prev) => prev.map((e, i) => (i === index ? "Vnesite ime podjetja." : e)));
+      return;
+    }
+    const cityInput = form?.elements.namedItem("address_city") as HTMLInputElement | null;
+
+    setCompleteLoading((prev) => prev.map((v, i) => (i === index ? true : v)));
+    setCompleteErrors((prev) => prev.map((e, i) => (i === index ? null : e)));
+    setCompleteSources((prev) => prev.map((s, i) => (i === index ? null : s)));
+
+    try {
+      const res = await fetch("/api/admin/lead-intelligence/ai-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, city: cityInput?.value.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCompleteErrors((prev) => prev.map((e, i) => (i === index ? json?.error ?? "Dopolnjevanje ni uspelo." : e)));
+        return;
+      }
+
+      const websiteInput = form?.elements.namedItem("website") as HTMLInputElement | null;
+      if (websiteInput && !websiteInput.value.trim() && json.website) {
+        websiteInput.value = json.website;
+      }
+      const fieldsToFill = (json.fields ?? {}) as Record<string, string>;
+      for (const [key, value] of Object.entries(fieldsToFill)) {
+        const input = form?.elements.namedItem(key) as HTMLInputElement | null;
+        if (input && !input.value.trim() && value) input.value = value;
+      }
+      const notesInput = form?.elements.namedItem("notes") as HTMLTextAreaElement | null;
+      if (notesInput && json.description) {
+        const existing = notesInput.value.trim();
+        const aiLine = `AI opis: ${json.description}`;
+        if (!existing.includes(aiLine)) {
+          notesInput.value = existing ? `${existing}\n${aiLine}` : aiLine;
+        }
+      }
+      setCompleteSources((prev) => prev.map((s, i) => (i === index ? json.source ?? json.website ?? null : s)));
+    } catch {
+      setCompleteErrors((prev) => prev.map((e, i) => (i === index ? "Prišlo je do napake. Poskusite znova." : e)));
+    } finally {
+      setCompleteLoading((prev) => prev.map((v, i) => (i === index ? false : v)));
     }
   }
 
@@ -308,17 +370,35 @@ export default function AiImageEntryForm() {
                 onSubmit={(e) => handleSaveCard(index, e)}
                 className="rounded-2xl border border-zinc-200 p-5"
               >
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
                     Podjetje {index + 1} od {leads.length}
                   </p>
-                  {saved && (
+                  {saved ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       Shranjeno
                     </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => runAiComplete(index)}
+                      disabled={completeLoading[index]}
+                      className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                      {completeLoading[index] ? "Iščem po spletu …" : "AI dopolni vse"}
+                    </button>
                   )}
                 </div>
+                {completeErrors[index] && (
+                  <p className="mt-1 text-xs text-red-500">{completeErrors[index]}</p>
+                )}
+                {completeSources[index] && (
+                  <p className="mt-1 text-xs text-emerald-600">
+                    Dopolnjeno na podlagi: {completeSources[index]}. Preverite podatke pred shranjevanjem.
+                  </p>
+                )}
 
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {IMPORT_FIELDS.map((field) => {
@@ -385,6 +465,29 @@ export default function AiImageEntryForm() {
 
                   <div className="sm:col-span-2">
                     <ContactPersonsField defaultValue={fields.contact_person} disabled={saved} />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      SKD koda
+                    </label>
+                    <input
+                      name="skd_code"
+                      defaultValue={fields.skd_code ?? ""}
+                      disabled={saved}
+                      className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      SKD naziv dejavnosti
+                    </label>
+                    <input
+                      name="skd_name"
+                      defaultValue={fields.skd_name ?? ""}
+                      disabled={saved}
+                      className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
+                    />
                   </div>
 
                   <div>

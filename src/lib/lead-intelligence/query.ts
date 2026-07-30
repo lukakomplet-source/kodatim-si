@@ -29,6 +29,8 @@ export async function queryLeads(supabase: AdminClient, filters: LeadFilters) {
   if (filters.hasPhone === true) query = query.not("phone", "is", null);
   if (filters.hasPhone === false) query = query.is("phone", null);
   if (filters.reminderBefore) query = query.lte("reminder_date", filters.reminderBefore);
+  if (filters.createdFrom) query = query.gte("created_at", `${filters.createdFrom}T00:00:00`);
+  if (filters.createdTo) query = query.lte("created_at", `${filters.createdTo}T23:59:59`);
   if (filters.q) {
     const words = filters.q
       .trim()
