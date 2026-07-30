@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Percent,
   Users,
+  UserCog,
   Inbox,
   Radar,
   Target,
@@ -44,6 +45,11 @@ const NAV_ITEMS = [
     href: "/admin/podjetja",
     label: "Podjetja",
     icon: <Building2 className={ICON_CLASS} />,
+  },
+  {
+    href: "/admin/uporabniki",
+    label: "Uporabniki",
+    icon: <UserCog className={ICON_CLASS} />,
   },
 ];
 

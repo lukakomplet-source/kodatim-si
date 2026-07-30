@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 function LoginForm() {
@@ -17,32 +18,38 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(urlError);
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [resetSent, setResetSent] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { data, error: signInError } =
-      await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createClient();
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password });
 
-    if (signInError || !data.user) {
-      setError("Napačen email ali geslo.");
+      if (signInError || !data.user) {
+        setError("Napačen email ali geslo.");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      const destination =
+        redirectTo ?? (profile?.role === "admin" ? "/admin" : "/partner");
+      router.push(destination);
+      router.refresh();
+    } catch {
+      setError("Napaka pri povezavi. Preverite internetno povezavo in poskusite znova.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", data.user.id)
-      .single();
-
-    const destination =
-      redirectTo ?? (profile?.role === "admin" ? "/admin" : "/partner");
-    router.push(destination);
-    router.refresh();
   }
 
   async function handleReset(event: React.FormEvent) {
@@ -102,13 +109,27 @@ function LoginForm() {
                 <label className="text-sm font-medium text-zinc-700">
                   Geslo
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3 text-[15px] text-zinc-900 focus:border-accent/50 focus:outline-none"
-                />
+                <div className="relative mt-2">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 px-4 py-3 pr-11 text-[15px] text-zinc-900 focus:border-accent/50 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? "Skrij geslo" : "Prikaži geslo"}
+                    className="absolute inset-y-0 right-0 flex items-center px-3.5 text-zinc-400 hover:text-zinc-700"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {error && <p className="text-sm text-red-500">{error}</p>}
