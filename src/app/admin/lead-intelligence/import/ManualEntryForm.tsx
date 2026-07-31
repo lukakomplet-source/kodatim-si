@@ -57,6 +57,12 @@ export default function ManualEntryForm() {
   const [completeLoading, setCompleteLoading] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
   const [completeSource, setCompleteSource] = useState<string | null>(null);
+  const [noWebsite, setNoWebsite] = useState(false);
+
+  function toggleNoWebsite(checked: boolean) {
+    setNoWebsite(checked);
+    if (checked && websiteRef.current) websiteRef.current.value = "";
+  }
 
   async function runWebsiteLookup() {
     const website = websiteRef.current?.value.trim();
@@ -93,6 +99,7 @@ export default function ManualEntryForm() {
           notesRef.current.value = existing ? `${existing}\n${aiLine}` : aiLine;
         }
       }
+      setNoWebsite(false);
     } catch {
       setLookupError("Prišlo je do napake. Poskusite znova.");
     } finally {
@@ -118,12 +125,14 @@ export default function ManualEntryForm() {
       const json = await res.json();
       if (!res.ok) {
         setCompleteError(json?.error ?? "Dopolnjevanje ni uspelo.");
+        if (res.status === 422) setNoWebsite(true);
         return;
       }
 
       if (websiteRef.current && !websiteRef.current.value.trim() && json.website) {
         websiteRef.current.value = json.website;
       }
+      if (json.website) setNoWebsite(false);
       const fields = (json.fields ?? {}) as Record<string, string>;
       for (const [key, ref] of Object.entries(fieldRefs)) {
         const value = fields[key];
@@ -186,12 +195,13 @@ export default function ManualEntryForm() {
                   ref={websiteRef}
                   name={field}
                   placeholder="npr. podjetje.si"
-                  className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+                  disabled={noWebsite}
+                  className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
                 />
                 <button
                   type="button"
                   onClick={runWebsiteLookup}
-                  disabled={lookupLoading}
+                  disabled={lookupLoading || noWebsite}
                   className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs font-semibold text-accent transition hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
@@ -199,6 +209,15 @@ export default function ManualEntryForm() {
                 </button>
               </div>
               {lookupError && <p className="mt-1 text-xs text-red-500">{lookupError}</p>}
+              <label className="mt-1.5 flex items-center gap-2 text-xs text-zinc-500">
+                <input
+                  type="checkbox"
+                  checked={noWebsite}
+                  onChange={(e) => toggleNoWebsite(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 accent-accent"
+                />
+                Podjetje nima spletne strani
+              </label>
             </div>
           );
         }
