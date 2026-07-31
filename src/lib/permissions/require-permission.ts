@@ -22,6 +22,31 @@ export const getCurrentUserPermissions = cache(
     } = await supabase.auth.getUser();
     if (!user) return null;
 
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    // Legacy admins (profiles.role = 'admin') bypass the new permission
+    // system entirely, the same way Super Admin's bypass_all does. This
+    // keeps every existing admin fully working even before
+    // supabase/migration_rbac.sql has been applied, or before their profile
+    // has been migrated into user_roles — without it, any page/action using
+    // requirePermission()/requirePagePermission() would incorrectly deny a
+    // legacy admin even though the top-level admin/layout.tsx gate let them
+    // in and still shows them the nav item.
+    if (profile?.role === "admin") {
+      return {
+        userId: user.id,
+        roleId: null,
+        roleKey: null,
+        roleName: "Admin (legacy)",
+        bypassAll: true,
+        granted: new Set(),
+      };
+    }
+
     const { data: roleRow } = await supabase
       .from("user_roles")
       .select("role_id, roles(key, name, bypass_all)")
