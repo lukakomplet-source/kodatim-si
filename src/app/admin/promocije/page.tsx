@@ -12,9 +12,14 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCampaigns, getDashboardStats } from "@/lib/promocije/queries";
+import { requirePagePermission } from "@/lib/permissions/require-permission";
+import AccessDenied from "@/components/AccessDenied";
 import CampaignsGrid from "./CampaignsGrid";
 
 export default async function PromocijePage() {
+  const { allowed } = await requirePagePermission("promotion.view");
+  if (!allowed) return <AccessDenied />;
+
   const admin = createAdminClient();
 
   let stats;

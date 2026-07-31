@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { LEAD_STATUS_LABELS, type LeadStatus } from "@/lib/lead-intelligence/types";
+import { requirePagePermission } from "@/lib/permissions/require-permission";
+import AccessDenied from "@/components/AccessDenied";
 import InsightsPanel from "./InsightsPanel";
 
 type DashboardStats = {
@@ -29,6 +31,9 @@ type DashboardStats = {
 };
 
 export default async function LeadIntelligencePage() {
+  const { allowed } = await requirePagePermission("lead_intelligence.view");
+  if (!allowed) return <AccessDenied />;
+
   const supabase = createAdminClient();
   const { data, error } = await supabase.rpc("intel_leads_dashboard_stats");
 
