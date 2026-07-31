@@ -2,7 +2,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getDashboardStats } from "@/lib/promocije/queries";
-import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS } from "@/lib/promocije/types";
+import {
+  PIPELINE_STAGES,
+  PIPELINE_STAGE_LABELS,
+  LOST_STAGE,
+  WON_STAGES,
+  type PipelineStage,
+} from "@/lib/promocije/types";
 
 export default async function PromocijeReportsPage() {
   const admin = createAdminClient();
@@ -32,14 +38,16 @@ export default async function PromocijeReportsPage() {
 
   const revenueByCampaign = new Map<string, number>();
   const revenueByIndustry = new Map<string, number>();
-  const funnel: Record<string, number> = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, 0]));
+  const funnel: Record<PipelineStage, number> = Object.fromEntries(
+    [...PIPELINE_STAGES, LOST_STAGE].map((s) => [s, 0])
+  ) as Record<PipelineStage, number>;
   let callsWithOutcome = 0;
 
   for (const t of targets ?? []) {
-    funnel[t.pipeline_stage] = (funnel[t.pipeline_stage] ?? 0) + 1;
+    funnel[t.pipeline_stage as PipelineStage] = (funnel[t.pipeline_stage as PipelineStage] ?? 0) + 1;
     if (t.call_status !== "not_called") callsWithOutcome += 1;
 
-    if (t.pipeline_stage === "won" && t.deal_value) {
+    if (WON_STAGES.includes(t.pipeline_stage as PipelineStage) && t.deal_value) {
       const campaign = campaignById.get(t.campaign_id);
       revenueByCampaign.set(
         t.campaign_id,
@@ -107,6 +115,10 @@ export default async function PromocijeReportsPage() {
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-dashed border-zinc-200 pt-3 text-sm">
+              <span className="text-red-600">{PIPELINE_STAGE_LABELS[LOST_STAGE]}</span>
+              <span className="font-semibold text-red-600">{funnel[LOST_STAGE]}</span>
             </div>
           </div>
 

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { IntelLead, LeadActivity } from "@/lib/lead-intelligence/types";
-import { LEAD_ACTIVITY_LABELS } from "@/lib/lead-intelligence/types";
+import type { IntelLead } from "@/lib/lead-intelligence/types";
+import { getLeadActivity } from "@/lib/activity/queries";
+import Timeline from "@/components/ui/Timeline";
 import LeadEditor from "./LeadEditor";
 
 export default async function LeadDetailPage({
@@ -14,13 +15,9 @@ export default async function LeadDetailPage({
   const { id } = await params;
   const supabase = createAdminClient();
 
-  const [{ data: lead }, { data: activity }] = await Promise.all([
+  const [{ data: lead }, activity] = await Promise.all([
     supabase.from("intel_leads").select("*").eq("id", id).single(),
-    supabase
-      .from("intel_lead_activity")
-      .select("*")
-      .eq("lead_id", id)
-      .order("created_at", { ascending: false }),
+    getLeadActivity(supabase, id),
   ]);
 
   if (!lead) notFound();
@@ -45,26 +42,8 @@ export default async function LeadDetailPage({
             <h2 className="text-lg font-semibold text-zinc-900">
               Zgodovina kontaktov
             </h2>
-            <div className="mt-4 space-y-4">
-              {(!activity || activity.length === 0) && (
-                <p className="text-sm text-zinc-400">Ni še aktivnosti.</p>
-              )}
-              {(activity as LeadActivity[] | null)?.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="border-l-2 border-zinc-200 pl-3 text-sm"
-                >
-                  <p className="font-medium text-zinc-800">
-                    {LEAD_ACTIVITY_LABELS[entry.type]}
-                  </p>
-                  {entry.content && (
-                    <p className="mt-0.5 text-zinc-600">{entry.content}</p>
-                  )}
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    {new Date(entry.created_at).toLocaleString("sl-SI")}
-                  </p>
-                </div>
-              ))}
+            <div className="mt-4">
+              <Timeline activity={activity} />
             </div>
           </div>
 

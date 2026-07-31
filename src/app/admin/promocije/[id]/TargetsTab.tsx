@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, Trash2, UserX } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, ChevronRight, Search, Trash2, UserX } from "lucide-react";
 import type { IntelLead, LeadFilters } from "@/lib/lead-intelligence/types";
 import type { PromoCampaign } from "@/lib/promocije/types";
 import { PIPELINE_STAGE_LABELS, CALL_STATUS_LABELS } from "@/lib/promocije/types";
 import type { TargetWithLead } from "@/lib/promocije/queries";
 import { searchAvailableLeads, addTargetsToCampaign, removeTarget } from "../actions";
-import TargetDetailPanel from "./TargetDetailPanel";
 
 const TRI_STATE_OPTIONS = [
   { value: "", label: "Vsi" },
@@ -45,7 +45,6 @@ export default function TargetsTab({
   const [searchDone, setSearchDone] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function runSearch() {
     setSearching(true);
@@ -246,51 +245,41 @@ export default function TargetsTab({
         ) : (
           <div className="divide-y divide-zinc-100">
             {targets.map((t) => (
-              <div key={t.id}>
-                <div className="flex items-center gap-3 px-6 py-3.5">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}
-                    className="flex flex-1 items-center justify-between gap-3 text-left"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-zinc-900">{t.lead.company_name}</p>
-                      <p className="text-xs text-zinc-500">
-                        {[t.lead.industry, t.lead.address_city].filter(Boolean).join(" · ") || "—"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
-                        {PIPELINE_STAGE_LABELS[t.pipeline_stage]}
-                      </span>
-                      <span className="hidden text-[11px] text-zinc-400 sm:inline">
-                        {CALL_STATUS_LABELS[t.call_status]}
-                      </span>
-                      <ChevronDown
-                        className={`h-4 w-4 text-zinc-400 transition-transform ${
-                          expandedId === t.id ? "rotate-180" : ""
-                        }`}
-                      />
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    title="Odstrani iz kampanje"
-                    onClick={() => {
-                      if (!confirm(`Odstraniti "${t.lead.company_name}" iz kampanje?`)) return;
-                      removeTarget(campaign.id, t.id).then((res) => {
-                        if (res.error) alert(res.error);
-                        else router.refresh();
-                      });
-                    }}
-                    className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                {expandedId === t.id && (
-                  <TargetDetailPanel campaignId={campaign.id} target={t} />
-                )}
+              <div key={t.id} className="flex items-center gap-3 px-6 py-3.5">
+                <Link
+                  href={`/admin/promocije/${campaign.id}/targets/${t.id}`}
+                  className="flex flex-1 items-center justify-between gap-3 hover:bg-zinc-50"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900">{t.lead.company_name}</p>
+                    <p className="text-xs text-zinc-500">
+                      {[t.lead.industry, t.lead.address_city].filter(Boolean).join(" · ") || "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
+                      {PIPELINE_STAGE_LABELS[t.pipeline_stage]}
+                    </span>
+                    <span className="hidden text-[11px] text-zinc-400 sm:inline">
+                      {CALL_STATUS_LABELS[t.call_status]}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-zinc-400" />
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  title="Odstrani iz kampanje"
+                  onClick={() => {
+                    if (!confirm(`Odstraniti "${t.lead.company_name}" iz kampanje?`)) return;
+                    removeTarget(campaign.id, t.id).then((res) => {
+                      if (res.error) alert(res.error);
+                      else router.refresh();
+                    });
+                  }}
+                  className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             ))}
           </div>

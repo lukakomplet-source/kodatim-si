@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeUrl } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
+import { logActivity } from "@/lib/activity/log";
 import type { CompanyAnalysis } from "@/lib/promocije/types";
 
 const SYSTEM_PROMPT = `Si prodajni analitik za digitalno agencijo. Na podlagi dejanske vsebine spletne strani podjetja (spodaj) pripravi kratko prodajno analizo za prodajno ekipo, ki bo to podjetje kontaktirala.
@@ -24,8 +25,9 @@ Pravila:
 - Vse v slovenščini, jedrnato in konkretno za to podjetje — ne generično.`;
 
 export async function POST(request: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Napaka." },
@@ -45,7 +47,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: target, error: targetError } = await admin
     .from("promo_campaign_targets")
-    .select("id, campaign_id, lead:intel_leads(company_name, website, industry, notes)")
+    .select("id, campaign_id, lead_id, lead:intel_leads(company_name, website, industry, notes)")
     .eq("id", targetId)
     .single();
 
@@ -95,6 +97,13 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       return NextResponse.json({ error: "Poročila ni bilo mogoče shraniti." }, { status: 500 });
     }
+
+    await logActivity(
+      target.lead_id,
+      "ai_company_analysis",
+      `AI analiza podjetja generirana — ocenjen proračun: ${analysis.estimated_budget || "?"}, verjetnost sklenitve: ${analysis.estimated_closing_probability}`,
+      user.id
+    );
 
     return NextResponse.json({ analysis });
   } catch (err) {

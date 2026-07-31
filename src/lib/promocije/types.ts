@@ -7,28 +7,62 @@ export const CAMPAIGN_STATUS_LABELS: Record<CampaignStatus, string> = {
   archived: "Arhivirana",
 };
 
+// Main linear 12-step funnel. "lost" is deliberately excluded from this
+// list — it's a 13th, out-of-flow terminal branch (see LOST_STAGE below),
+// same pattern as Pipedrive/HubSpot always showing Won/Lost as two branches
+// rather than folding Lost into the linear stage sequence.
 export const PIPELINE_STAGES = [
   "new",
-  "qualified",
-  "contacted",
+  "ai_analyzed",
+  "prospect_ready",
+  "email_sent",
+  "replied",
+  "called",
   "meeting",
   "offer",
   "negotiation",
   "won",
-  "lost",
+  "delivery",
+  "completed",
 ] as const;
-export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+export const LOST_STAGE = "lost" as const;
+export const ALL_PIPELINE_STAGES = [...PIPELINE_STAGES, LOST_STAGE] as const;
+export type PipelineStage = (typeof ALL_PIPELINE_STAGES)[number];
 
 export const PIPELINE_STAGE_LABELS: Record<PipelineStage, string> = {
-  new: "Nov lead",
-  qualified: "Kvalificiran",
-  contacted: "Kontaktiran",
+  new: "Novo",
+  ai_analyzed: "AI analizirano",
+  prospect_ready: "Prospekt pripravljen",
+  email_sent: "Email poslan",
+  replied: "Odgovorili",
+  called: "Klic",
   meeting: "Sestanek",
   offer: "Ponudba",
   negotiation: "Pogajanja",
-  won: "Pridobljen",
-  lost: "Izgubljen",
+  won: "Prodano",
+  delivery: "Izvedba",
+  completed: "Zaključeno",
+  lost: "Izgubljeno",
 };
+
+export const PIPELINE_STAGE_COLORS: Record<PipelineStage, string> = {
+  new: "border-zinc-300",
+  ai_analyzed: "border-violet-300",
+  prospect_ready: "border-indigo-300",
+  email_sent: "border-blue-300",
+  replied: "border-cyan-300",
+  called: "border-teal-300",
+  meeting: "border-amber-300",
+  offer: "border-orange-300",
+  negotiation: "border-pink-300",
+  won: "border-emerald-400",
+  delivery: "border-emerald-500",
+  completed: "border-emerald-600",
+  lost: "border-red-400",
+};
+
+/** Stages counted as "deal sold" for revenue/sales aggregation — mirrors the SQL predicate in migration_pipeline_v2.sql. */
+export const WON_STAGES: readonly PipelineStage[] = ["won", "delivery", "completed"];
 
 export const CALL_STATUSES = [
   "not_called",
@@ -107,6 +141,23 @@ export const SOCIAL_ACTION_LABELS: Record<SocialAction, string> = {
   messaged: "Sporočilo poslano",
   commented: "Komentiral",
   connected: "Povezan",
+};
+
+export const FIELD_VISIT_KEYS = [
+  "field_visit_brochure",
+  "field_visit_card",
+  "field_visit_office",
+  "field_visit_presentation",
+  "field_visit_meeting",
+] as const;
+export type FieldVisitKey = (typeof FIELD_VISIT_KEYS)[number];
+
+export const FIELD_VISIT_LABELS: Record<FieldVisitKey, string> = {
+  field_visit_brochure: "Pustil brošuro",
+  field_visit_card: "Pustil vizitko",
+  field_visit_office: "Obiskal pisarno",
+  field_visit_presentation: "Predstavil ponudbo",
+  field_visit_meeting: "Dogovoril sestanek",
 };
 
 export type SocialOutreach = Partial<

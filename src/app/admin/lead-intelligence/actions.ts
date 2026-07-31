@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
+import { logActivity } from "@/lib/activity/log";
 import {
   LEAD_PRIORITIES,
   LEAD_STATUSES,
@@ -14,28 +15,6 @@ function revalidateLead(id: string) {
   revalidatePath("/admin/lead-intelligence/leads");
   revalidatePath(`/admin/lead-intelligence/leads/${id}`);
   revalidatePath("/admin/lead-intelligence");
-}
-
-async function logActivity(
-  leadId: string,
-  type:
-    | "note"
-    | "status_change"
-    | "contacted"
-    | "email_sent"
-    | "call"
-    | "import"
-    | "enrichment",
-  content: string | null,
-  userId: string
-) {
-  const admin = createAdminClient();
-  await admin.from("intel_lead_activity").insert({
-    lead_id: leadId,
-    type,
-    content,
-    created_by: userId,
-  });
 }
 
 export type ActionResult = { error?: string; success?: boolean };

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chatJSON } from "@/lib/openai";
+import { logActivity } from "@/lib/activity/log";
 import type { Proposal, CompanyAnalysis, IndustryAnalysis } from "@/lib/promocije/types";
 
 const SYSTEM_PROMPT = `Si prodajni svetovalec digitalne agencije KodaTim.si (spletne strani, aplikacije, AI asistenti, poslovna orodja). Na podlagi analize podjetja (in po možnosti panožne analize) pripravi kratek, profesionalen prodajni predlog.
@@ -21,8 +22,9 @@ Odgovori IZKLJUČNO z veljavnim JSON objektom:
 Vse v slovenščini. Ne izmišljuj si natančnih trditev o podjetju, ki jih ne podpira podana analiza — opiraj se na dejansko podane podatke.`;
 
 export async function POST(request: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Napaka." },
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: target, error: targetError } = await admin
     .from("promo_campaign_targets")
-    .select("id, campaign_id, ai_company_report, lead:intel_leads(company_name, industry, notes)")
+    .select("id, campaign_id, lead_id, ai_company_report, lead:intel_leads(company_name, industry, notes)")
     .eq("id", targetId)
     .single();
 
@@ -109,6 +111,13 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       return NextResponse.json({ error: "Predloga ni bilo mogoče shraniti." }, { status: 500 });
     }
+
+    await logActivity(
+      target.lead_id,
+      "ai_proposal_generated",
+      `AI predlog ponudbe pripravljen — ${proposal.recommended_solution || "?"} (${proposal.estimated_price || "?"})`,
+      user.id
+    );
 
     return NextResponse.json({ proposal });
   } catch (err) {

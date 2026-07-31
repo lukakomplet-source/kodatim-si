@@ -4,12 +4,18 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
 import { sendEmail } from "@/lib/resend";
+import { logActivity } from "@/lib/activity/log";
 import type { LeadFilters } from "@/lib/lead-intelligence/types";
 import { queryAvailableLeads } from "@/lib/promocije/queries";
 import {
-  PIPELINE_STAGES,
+  ALL_PIPELINE_STAGES,
+  PIPELINE_STAGE_LABELS,
   TASK_TYPES,
   PRIORITIES,
+  CALL_STATUS_LABELS,
+  FIELD_VISIT_LABELS,
+  SOCIAL_PLATFORM_LABELS,
+  SOCIAL_ACTION_LABELS,
   type PipelineStage,
   type CallStatus,
   type TaskType,
@@ -31,10 +37,11 @@ export async function searchAvailableLeads(
   return queryAvailableLeads(admin, campaignId, filters);
 }
 
-function revalidateCampaign(id: string) {
+function revalidateCampaign(id: string, targetId?: string) {
   revalidatePath("/admin/promocije");
   revalidatePath(`/admin/promocije/${id}`);
   revalidatePath("/admin/promocije/reports");
+  if (targetId) revalidatePath(`/admin/promocije/${id}/targets/${targetId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,16 +250,23 @@ export async function updatePipelineStage(
   stage: PipelineStage,
   dealValue?: number | null
 ): Promise<ActionResult> {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
-  if (!(PIPELINE_STAGES as readonly string[]).includes(stage)) {
+  if (!(ALL_PIPELINE_STAGES as readonly string[]).includes(stage)) {
     return { error: "Neveljavna faza." };
   }
 
   const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("promo_campaign_targets")
+    .select("pipeline_stage, lead_id")
+    .eq("id", targetId)
+    .single();
+
   const update: Record<string, unknown> = { pipeline_stage: stage };
   if (dealValue !== undefined) update.deal_value = dealValue;
 
@@ -262,7 +276,17 @@ export async function updatePipelineStage(
     .eq("id", targetId);
 
   if (error) return { error: "Faze ni bilo mogoče spremeniti." };
-  revalidateCampaign(campaignId);
+
+  if (current?.lead_id) {
+    const oldLabel = current.pipeline_stage
+      ? PIPELINE_STAGE_LABELS[current.pipeline_stage as PipelineStage]
+      : "?";
+    let content = `Faza spremenjena: ${oldLabel} → ${PIPELINE_STAGE_LABELS[stage]}`;
+    if (dealValue) content += ` (${dealValue.toLocaleString("sl-SI")} €)`;
+    await logActivity(current.lead_id, "stage_changed", content, user.id);
+  }
+
+  revalidateCampaign(campaignId, targetId);
   return { success: true };
 }
 
@@ -276,13 +300,20 @@ export async function updateCallInfo(
     next_call_date: string | null;
   }
 ): Promise<ActionResult> {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
   const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("promo_campaign_targets")
+    .select("lead_id")
+    .eq("id", targetId)
+    .single();
+
   const { error } = await admin
     .from("promo_campaign_targets")
     .update({
@@ -294,7 +325,14 @@ export async function updateCallInfo(
     .eq("id", targetId);
 
   if (error) return { error: "Podatkov o klicu ni bilo mogoče shraniti." };
-  revalidateCampaign(campaignId);
+
+  if (current?.lead_id) {
+    let content = `Klic: ${CALL_STATUS_LABELS[fields.call_status]}`;
+    if (fields.call_notes.trim()) content += ` — ${fields.call_notes.trim()}`;
+    await logActivity(current.lead_id, "call", content, user.id);
+  }
+
+  revalidateCampaign(campaignId, targetId);
   return { success: true };
 }
 
@@ -310,20 +348,36 @@ export async function updateFieldVisit(
     field_visit_notes: string;
   }
 ): Promise<ActionResult> {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
   const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("promo_campaign_targets")
+    .select("lead_id")
+    .eq("id", targetId)
+    .single();
+
   const { error } = await admin
     .from("promo_campaign_targets")
     .update({ ...fields, field_visit_notes: fields.field_visit_notes || null })
     .eq("id", targetId);
 
   if (error) return { error: "Podatkov o obisku ni bilo mogoče shraniti." };
-  revalidateCampaign(campaignId);
+
+  if (current?.lead_id) {
+    const checked = (Object.keys(FIELD_VISIT_LABELS) as (keyof typeof FIELD_VISIT_LABELS)[])
+      .filter((key) => fields[key])
+      .map((key) => FIELD_VISIT_LABELS[key]);
+    const content = `Terenski obisk zabeležen: ${checked.length ? checked.join(", ") : "brez izbranih postavk"}`;
+    await logActivity(current.lead_id, "field_visit", content, user.id);
+  }
+
+  revalidateCampaign(campaignId, targetId);
   return { success: true };
 }
 
@@ -334,8 +388,9 @@ export async function toggleSocialOutreach(
   action: SocialAction,
   value: boolean
 ): Promise<ActionResult> {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
@@ -343,7 +398,7 @@ export async function toggleSocialOutreach(
   const admin = createAdminClient();
   const { data: current, error: fetchError } = await admin
     .from("promo_campaign_targets")
-    .select("social_outreach")
+    .select("social_outreach, lead_id")
     .eq("id", targetId)
     .single();
 
@@ -360,7 +415,13 @@ export async function toggleSocialOutreach(
     .eq("id", targetId);
 
   if (error) return { error: "Ni bilo mogoče shraniti." };
-  revalidateCampaign(campaignId);
+
+  if (current.lead_id) {
+    const content = `${SOCIAL_PLATFORM_LABELS[platform]}: ${SOCIAL_ACTION_LABELS[action]} = ${value ? "da" : "ne"}`;
+    await logActivity(current.lead_id, "social_outreach", content, user.id);
+  }
+
+  revalidateCampaign(campaignId, targetId);
   return { success: true };
 }
 
@@ -518,8 +579,9 @@ export async function sendEmailStepNow(
   campaignId: string,
   stepId: string
 ): Promise<ActionResult & { sent?: number; failed?: number }> {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
@@ -538,7 +600,7 @@ export async function sendEmailStepNow(
 
   const { data: targets, error: targetsError } = await admin
     .from("promo_campaign_targets")
-    .select("id, lead:intel_leads(email)")
+    .select("id, lead_id, lead:intel_leads(email)")
     .eq("campaign_id", campaignId)
     .limit(MAX_SEND_BATCH);
 
@@ -546,7 +608,7 @@ export async function sendEmailStepNow(
 
   const recipients = (targets ?? []).filter(
     (t) => (t as unknown as { lead: { email: string | null } }).lead?.email
-  ) as unknown as { id: string; lead: { email: string } }[];
+  ) as unknown as { id: string; lead_id: string; lead: { email: string } }[];
 
   if (recipients.length === 0) {
     return { error: "Nobeden od ciljev kampanje nima vnesenega emaila." };
@@ -576,6 +638,12 @@ export async function sendEmailStepNow(
         .update({ status: "sent", provider_message_id: result.id, sent_at: new Date().toISOString(), error: null })
         .eq("id", sendRow?.id ?? "");
       sent += 1;
+      await logActivity(
+        target.lead_id,
+        "email_sent",
+        `Email poslan: "${step.name}" (${step.subject})`,
+        user.id
+      );
     } catch (err) {
       await admin
         .from("promo_email_sends")

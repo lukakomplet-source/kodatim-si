@@ -55,24 +55,12 @@ export type IntelLead = {
   updated_at: string;
 };
 
-export type LeadActivity = {
-  id: string;
-  lead_id: string;
-  type: "note" | "status_change" | "contacted" | "email_sent" | "call" | "import" | "enrichment";
-  content: string | null;
-  created_by: string | null;
-  created_at: string;
-};
-
-export const LEAD_ACTIVITY_LABELS: Record<LeadActivity["type"], string> = {
-  note: "Opomba",
-  status_change: "Sprememba statusa",
-  contacted: "Kontaktiran",
-  email_sent: "Poslan e-mail",
-  call: "Klic",
-  import: "Uvoz",
-  enrichment: "AI obogatitev",
-};
+// Re-exported from the shared cross-module timeline (src/lib/activity) —
+// Promocije now writes to the same intel_lead_activity table, so the type
+// lives in a neutral location. Kept under these names here so no existing
+// import in this module needs to change.
+export type { Activity as LeadActivity, ActivityWithAuthor as LeadActivityWithAuthor } from "@/lib/activity/types";
+export { ACTIVITY_TYPE_LABELS as LEAD_ACTIVITY_LABELS } from "@/lib/activity/types";
 
 /** Whitelisted filter shape — the only fields the AI-search route is allowed to fill in. */
 export type LeadFilters = {
