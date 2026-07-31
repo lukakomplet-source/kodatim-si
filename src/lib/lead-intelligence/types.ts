@@ -53,6 +53,12 @@ export type IntelLead = {
   last_contact_at: string | null;
   created_at: string;
   updated_at: string;
+  enrichment_status: import("@/lib/enrichment/types").EnrichmentStatus;
+  enrichment_meta: import("@/lib/enrichment/types").EnrichmentMeta;
+  ai_analysis: import("@/lib/enrichment/types").LeadAiAnalysis | null;
+  enrichment_started_at: string | null;
+  enrichment_completed_at: string | null;
+  enrichment_error: string | null;
 };
 
 // Re-exported from the shared cross-module timeline (src/lib/activity) —

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Sparkles, CheckCircle2 } from "lucide-react";
+import { Upload, ArrowRight, CheckCircle2 } from "lucide-react";
 import {
   IMPORT_FIELDS,
   IMPORT_FIELD_LABELS,
@@ -30,9 +30,7 @@ export default function ImportWizard() {
   const [parseError, setParseError] = useState<string | null>(null);
 
   const [progress, setProgress] = useState({ sent: 0, inserted: 0, skipped: 0 });
-  const [importDone, setImportDone] = useState(false);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState({ processed: 0 });
+  const [importId, setImportId] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File) {
@@ -82,7 +80,7 @@ export default function ImportWizard() {
       return obj;
     });
 
-    let importId: string | undefined;
+    let currentImportId: string | undefined;
     let inserted = 0;
     let skipped = 0;
 
@@ -95,7 +93,7 @@ export default function ImportWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          importId,
+          importId: currentImportId,
           filename,
           source: sourceFromFilename(filename),
           rows: chunk,
@@ -111,29 +109,14 @@ export default function ImportWizard() {
       }
 
       const json = await res.json();
-      importId = json.importId;
+      currentImportId = json.importId;
       inserted += json.inserted ?? 0;
       skipped += json.skipped ?? 0;
       setProgress({ sent: Math.min(i + CHUNK_SIZE, rowsAsObjects.length), inserted, skipped });
     }
 
-    setImportDone(true);
+    setImportId(currentImportId);
     setStep("done");
-  }
-
-  async function runEnrichment() {
-    setEnriching(true);
-    let remaining = 1;
-    let processedTotal = 0;
-    while (remaining > 0) {
-      const res = await fetch("/api/admin/lead-intelligence/enrich", { method: "POST" });
-      if (!res.ok) break;
-      const json = await res.json();
-      processedTotal += json.processed ?? 0;
-      remaining = json.remaining ?? 0;
-      setEnrichProgress({ processed: processedTotal });
-    }
-    setEnriching(false);
   }
 
   if (step === "upload") {
@@ -277,19 +260,13 @@ export default function ImportWizard() {
       </p>
 
       <div className="mt-8 flex flex-col items-center gap-3">
-        {importDone && (
-          <button
-            type="button"
-            disabled={enriching}
-            onClick={runEnrichment}
-            className="flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-          >
-            <Sparkles className="h-4 w-4" />
-            {enriching
-              ? `Obogatujem z AI … (${enrichProgress.processed})`
-              : "Obogati z AI (panoge, oznake, duplikati)"}
-          </button>
-        )}
+        <Link
+          href={`/admin/lead-intelligence/discovery${importId ? `?importId=${importId}` : ""}`}
+          className="flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Nadaljuj v AI Discovery vrsto
+          <ArrowRight className="h-4 w-4" />
+        </Link>
         <Link
           href="/admin/lead-intelligence/leads"
           className="text-sm font-medium text-zinc-600 hover:text-zinc-900"

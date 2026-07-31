@@ -10,6 +10,7 @@ import {
   LEAD_PRIORITIES,
   LEAD_PRIORITY_LABELS,
 } from "@/lib/lead-intelligence/types";
+import type { EnrichmentFieldMeta } from "@/lib/enrichment/types";
 import {
   updateLead,
   updateStatus,
@@ -23,6 +24,8 @@ import {
   type UpdateLeadFields,
 } from "../../actions";
 import ContactPersonsField from "../../import/ContactPersonsField";
+import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
+import FieldProvenance from "./FieldProvenance";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -59,52 +62,33 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
   const [reminder, setReminder] = useState(lead.reminder_date ?? "");
   const [noteDraft, setNoteDraft] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [completeLoading, setCompleteLoading] = useState(false);
-  const [completeError, setCompleteError] = useState<string | null>(null);
-  const [completeSource, setCompleteSource] = useState<string | null>(null);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const fieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  async function runAiComplete() {
-    const companyName = fields.company_name?.trim();
-    if (!companyName) {
-      setCompleteError("Vnesite ime podjetja.");
-      return;
-    }
-    setCompleteLoading(true);
-    setCompleteError(null);
-    setCompleteSource(null);
+  function fieldMeta(field: string): EnrichmentFieldMeta | undefined {
+    return (lead.enrichment_meta as Record<string, EnrichmentFieldMeta> | undefined)?.[field];
+  }
+
+  async function runEnrichment() {
+    setEnrichLoading(true);
+    setEnrichError(null);
     try {
-      const res = await fetch("/api/admin/lead-intelligence/ai-complete", {
+      const res = await fetch("/api/admin/lead-intelligence/enrichment/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, city: fields.address_city }),
+        body: JSON.stringify({ leadId: lead.id }),
       });
       const json = await res.json();
-      if (!res.ok) {
-        setCompleteError(json?.error ?? "Dopolnjevanje ni uspelo.");
+      if (!res.ok || json.status === "error") {
+        setEnrichError("AI obogatitev ni uspela.");
         return;
       }
-      setFields((prev) => {
-        const next = { ...prev };
-        if (!next.website?.trim() && json.website) next.website = json.website;
-        const aiFields = (json.fields ?? {}) as Record<string, string>;
-        for (const [key, value] of Object.entries(aiFields)) {
-          if (!next[key]?.trim() && value) next[key] = value;
-        }
-        return next;
-      });
-      if (json.description) {
-        setNotes((prev) => {
-          const existing = prev.trim();
-          const aiLine = `AI opis: ${json.description}`;
-          if (existing.includes(aiLine)) return prev;
-          return existing ? `${existing}\n${aiLine}` : aiLine;
-        });
-      }
-      setCompleteSource(json.source ?? json.website ?? null);
+      router.refresh();
     } catch {
-      setCompleteError("Prišlo je do napake. Poskusite znova.");
+      setEnrichError("Prišlo je do napake. Poskusite znova.");
     } finally {
-      setCompleteLoading(false);
+      setEnrichLoading(false);
     }
   }
 
@@ -159,9 +143,12 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
     <div className="space-y-6">
       <div className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-zinc-900">
-            {lead.company_name}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-zinc-900">
+              {lead.company_name}
+            </h1>
+            <EnrichmentStatusBadge status={lead.enrichment_status} />
+          </div>
           <div className="flex items-center gap-2">
             {lead.website && (
               <a
@@ -204,25 +191,21 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent/[0.04] px-4 py-3">
           <p className="text-xs text-zinc-600">
-            AI poišče po spletu in dopolni prazna polja (website, email,
-            telefon, naslov, panoga) na podlagi imena podjetja in mesta.
+            AI Discovery poišče spletno stran, prebere vsebino in dopolni prazna polja
+            (website, email, telefon, naslov, panoga) — vsaka najdena vrednost dobi viden
+            vir in zanesljivost spodaj.
           </p>
           <button
             type="button"
-            onClick={runAiComplete}
-            disabled={completeLoading}
+            onClick={runEnrichment}
+            disabled={enrichLoading}
             className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Wand2 className="h-3.5 w-3.5" />
-            {completeLoading ? "Iščem po spletu …" : "AI dopolni vse"}
+            {enrichLoading ? "Obogatujem …" : "Osveži AI obogatitev"}
           </button>
         </div>
-        {completeError && <p className="mt-2 text-xs text-red-500">{completeError}</p>}
-        {completeSource && (
-          <p className="mt-2 text-xs text-emerald-600">
-            Dopolnjeno na podlagi: {completeSource}. Preverite podatke pred shranjevanjem.
-          </p>
-        )}
+        {enrichError && <p className="mt-2 text-xs text-red-500">{enrichError}</p>}
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {TEXT_FIELDS.map((f) => (
@@ -231,9 +214,16 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
                 {FIELD_LABELS[f]}
               </label>
               <input
+                ref={(el) => {
+                  fieldRefs.current[f] = el;
+                }}
                 value={fields[f]}
                 onChange={(e) => setFields((prev) => ({ ...prev, [f]: e.target.value }))}
                 className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+              />
+              <FieldProvenance
+                meta={fieldMeta(f)}
+                onFocusField={() => fieldRefs.current[f]?.focus()}
               />
             </div>
           ))}

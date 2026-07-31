@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     if (toInsert.length > 0) {
       const { error } = await admin.from("intel_leads").insert(
-        toInsert.map((r) => ({ ...r, import_id: importId }))
+        toInsert.map((r) => ({ ...r, import_id: importId, enrichment_status: "queued" }))
       );
       if (error) {
         return NextResponse.json({ error: "Vrstic ni bilo mogoče shraniti." }, { status: 500 });

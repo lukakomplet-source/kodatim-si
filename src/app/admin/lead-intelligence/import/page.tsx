@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Sparkles } from "lucide-react";
 import ImportWizard from "./ImportWizard";
 import ManualEntryForm from "./ManualEntryForm";
 import AiImageEntryForm from "./AiImageEntryForm";
@@ -11,11 +12,24 @@ export default function ImportPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-semibold text-zinc-900">Uvoz leadov</h1>
-      <p className="mt-2 text-base text-zinc-500">
-        Uvozite CSV/Excel datoteko z mapiranjem stolpcev, dodajte lead ročno
-        ali naložite sliko in pustite, da podatke prepozna AI.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold text-zinc-900">AI Discovery</h1>
+          <p className="mt-2 max-w-2xl text-base text-zinc-500">
+            Uvozite CSV/Excel datoteko z mapiranjem stolpcev, dodajte lead ročno
+            ali naložite sliko in pustite, da podatke prepozna AI. Po vnosu
+            vsak lead samodejno gre skozi AI Discovery vrsto — iskanje spletne
+            strani, pregled vsebine in poslovno AI analizo.
+          </p>
+        </div>
+        <Link
+          href="/admin/lead-intelligence/discovery"
+          className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+        >
+          Odpri Discovery vrsto
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
         <button

@@ -258,6 +258,7 @@ export async function createLead(
       vat_id: field("vat_id"),
       contact_person: contactPersons.length ? contactPersons.join(", ") : null,
       notes: field("notes"),
+      enrichment_status: "queued",
       ...(Object.keys(customFields).length ? { custom_fields: customFields } : {}),
     })
     .select("id")
@@ -375,4 +376,68 @@ export async function bulkDeleteLeads(leadIds: string[]): Promise<ActionResult> 
   revalidatePath("/admin/lead-intelligence/leads");
   revalidatePath("/admin/lead-intelligence");
   return { success: true };
+}
+
+/** Resets a stuck/failed lead back to 'queued' so the Discovery queue picks it up again. */
+export async function requeueEnrichment(leadId: string): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("intel_leads")
+    .update({ enrichment_status: "queued", enrichment_error: null })
+    .eq("id", leadId)
+    .in("enrichment_status", ["searching", "scraping", "analyzing", "error"]);
+
+  if (error) return { error: "Leada ni bilo mogoče ponovno uvrstiti v vrsto." };
+
+  revalidatePath("/admin/lead-intelligence/discovery");
+  return { success: true };
+}
+
+/** Moved out of the old batch AI-enrich route: fuzzy duplicate detection against the whole table. */
+export async function detectDuplicates(
+  leadIds: string[]
+): Promise<ActionResult & { flagged?: number }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  if (leadIds.length === 0) return { error: "Ni leadov za preverjanje." };
+
+  const admin = createAdminClient();
+  const { data: candidates, error } = await admin.rpc("intel_find_duplicate_candidates", {
+    p_lead_ids: leadIds,
+    p_threshold: 0.55,
+  });
+
+  if (error) return { error: "Zaznavanje duplikatov ni uspelo." };
+
+  const seen = new Set<string>();
+  let flagged = 0;
+  for (const c of (candidates ?? []) as { lead_id: string; candidate_id: string; similarity: number }[]) {
+    if (seen.has(c.lead_id)) continue;
+    seen.add(c.lead_id);
+    flagged += 1;
+    await admin
+      .from("intel_leads")
+      .update({ lead_status: "duplicate", duplicate_of: c.candidate_id })
+      .eq("id", c.lead_id);
+    await logActivity(
+      c.lead_id,
+      "enrichment",
+      `AI je zaznal možen duplikat (podobnost ${(c.similarity * 100).toFixed(0)}%).`,
+      null
+    );
+  }
+
+  revalidatePath("/admin/lead-intelligence/discovery");
+  revalidatePath("/admin/lead-intelligence/leads");
+  return { success: true, flagged };
 }

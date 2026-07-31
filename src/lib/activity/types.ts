@@ -20,6 +20,11 @@ export const ACTIVITY_TYPES = [
   "email_opened",
   "email_clicked",
   "email_replied",
+  // AI Discovery enrichment pipeline (added this phase)
+  "enrichment_started",
+  "enrichment_step",
+  "enrichment_completed",
+  "enrichment_failed",
 ] as const;
 
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
@@ -53,4 +58,8 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   email_opened: "E-mail odprt",
   email_clicked: "Klik na e-mail",
   email_replied: "Odgovor na e-mail",
+  enrichment_started: "Obogatitev začeta",
+  enrichment_step: "Korak obogatitve",
+  enrichment_completed: "Obogatitev končana",
+  enrichment_failed: "Obogatitev neuspešna",
 };

@@ -6,6 +6,7 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { getLeadActivity } from "@/lib/activity/queries";
 import Timeline from "@/components/ui/Timeline";
 import LeadEditor from "./LeadEditor";
+import AiAnalysisCard from "./AiAnalysisCard";
 
 export default async function LeadDetailPage({
   params,
@@ -34,7 +35,7 @@ export default async function LeadDetailPage({
 
       <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <LeadEditor lead={lead as IntelLead} />
+          <LeadEditor key={lead.updated_at} lead={lead as IntelLead} />
         </div>
 
         <div>
@@ -47,26 +48,7 @@ export default async function LeadDetailPage({
             </div>
           </div>
 
-          {lead.ai_summary && (
-            <div className="mt-6 rounded-2xl border border-accent/20 bg-accent/5 p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-accent">
-                AI povzetek
-              </h2>
-              <p className="mt-2 text-sm text-zinc-700">{lead.ai_summary}</p>
-              {lead.ai_suggested_tags?.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {lead.ai_suggested_tags.map((t: string) => (
-                    <span
-                      key={t}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs text-accent"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <AiAnalysisCard lead={lead as IntelLead} />
         </div>
       </div>
     </div>
