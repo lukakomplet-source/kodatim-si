@@ -49,6 +49,7 @@ export default function AiImageEntryForm() {
   const [completeLoading, setCompleteLoading] = useState<boolean[]>([]);
   const [completeErrors, setCompleteErrors] = useState<(string | null)[]>([]);
   const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
+  const [completingAll, setCompletingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRefs = useRef<Record<number, HTMLFormElement | null>>({});
 
@@ -237,6 +238,16 @@ export default function AiImageEntryForm() {
     }
   }
 
+  async function runAiCompleteAll() {
+    if (!leads) return;
+    setCompletingAll(true);
+    for (let index = 0; index < leads.length; index++) {
+      if (statuses[index] === "saved") continue;
+      await runAiComplete(index);
+    }
+    setCompletingAll(false);
+  }
+
   const savedCount = statuses.filter((s) => s === "saved").length;
   const allSaved = leads !== null && leads.length > 0 && savedCount === leads.length;
 
@@ -336,20 +347,33 @@ export default function AiImageEntryForm() {
         </div>
       ) : (
         <div className="mt-6 space-y-6">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
               <Sparkles className="h-3.5 w-3.5" />
               AI je iz {images.length} {images.length === 1 ? "slike" : "slik"} zaznal{" "}
               {leads.length} {leads.length === 1 ? "podjetje" : "podjetij"}.
             </p>
-            <button
-              type="button"
-              onClick={reset}
-              className="flex flex-shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-900"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Začni znova
-            </button>
+            <div className="flex flex-shrink-0 items-center gap-3">
+              {!allSaved && (
+                <button
+                  type="button"
+                  onClick={runAiCompleteAll}
+                  disabled={completingAll}
+                  className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  {completingAll ? "Dopolnjujem vse …" : "AI dopolni vse tabele"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={reset}
+                className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Začni znova
+              </button>
+            </div>
           </div>
 
           {allSaved && (
