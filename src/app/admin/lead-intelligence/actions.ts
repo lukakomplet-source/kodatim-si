@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
 import { logActivity } from "@/lib/activity/log";
+import { mergeContactPersonName } from "@/lib/enrichment/contactMerge";
 import {
   LEAD_PRIORITIES,
   LEAD_STATUSES,
@@ -467,10 +468,9 @@ export async function importSuggestedContact(contactId: string): Promise<ActionR
     .eq("id", contact.lead_id)
     .single();
 
-  const names = (lead?.contact_person ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
-  if (!names.some((n: string) => n.toLowerCase() === contact.full_name.toLowerCase())) {
-    names.push(contact.full_name);
-    await admin.from("intel_leads").update({ contact_person: names.join(", ") }).eq("id", contact.lead_id);
+  const merged = mergeContactPersonName(lead?.contact_person ?? null, contact.full_name);
+  if (merged) {
+    await admin.from("intel_leads").update({ contact_person: merged }).eq("id", contact.lead_id);
   }
 
   const { error } = await admin

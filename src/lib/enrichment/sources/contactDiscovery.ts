@@ -21,6 +21,8 @@ Pravila:
 - Vključi osebo SAMO, če je njeno ime dejansko navedeno v podani vsebini — nikoli si ne
   izmišljuj imen, nazivov, e-poštnih naslovov ali telefonskih številk.
 - Vsak ključ osebe izpolni SAMO, če je podatek dejansko naveden. Če ga ni, ključ izpusti.
+- Če je v vsebini navedenih več oseb, daj prednost tistim z naslednjimi vlogami: direktor, lastnik,
+  CEO, vodja prodaje, vodja marketinga, IT vodja, nabava, operativa.
 - Če v vsebini ni nobene kontaktne osebe, vrni prazen seznam "contacts": [].`;
 
 const SEARCH_SNIPPET_PROMPT = `Iz podanih naslovov in opisov spletnih iskalnih zadetkov izlušči osebe, ki so
@@ -29,6 +31,8 @@ verjetno lastniki, direktorji ali drugi odločevalci podjetja. Odgovori IZKLJUČ
 
 Pravila:
 - Vključi osebo SAMO, če je njeno ime dejansko navedeno v enem od zadetkov — nikoli si ne izmišljuj.
+- Če je zadetkov več, daj prednost osebam z naslednjimi vlogami: direktor, lastnik, CEO, vodja prodaje,
+  vodja marketinga, IT vodja, nabava, operativa.
 - "source_index" je zaporedna številka zadetka (1, 2, 3 …), iz katerega si razbral to osebo — obvezno.
 - Če iz zadetkov ni mogoče razbrati nobene osebe, vrni prazen seznam "contacts": [].`;
 
@@ -186,7 +190,7 @@ export const contactDiscoverySource: EnrichmentSource = {
     // themselves (e.g. a linkedin.com URL) are never fetched/scraped.
     try {
       const results = await searchWeb(
-        `${lead.company_name} direktor OR CEO OR lastnik OR ustanovitelj OR uprava`,
+        `${lead.company_name} direktor OR CEO OR lastnik OR ustanovitelj OR uprava OR "vodja prodaje" OR "vodja marketinga" OR "IT vodja" OR nabava OR operativa`,
         { limit: 5, country: "SI" }
       );
       if (results.length > 0) {

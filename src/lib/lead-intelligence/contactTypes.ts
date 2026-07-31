@@ -9,6 +9,15 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
   dismissed: "Zavrnjen",
 };
 
+export type OutreachSequence = {
+  cold_email: { subject: string; body: string };
+  linkedin_message: string;
+  phone_script: string;
+  follow_up_1: string;
+  follow_up_2: string;
+  generated_at: string;
+};
+
 export type IntelLeadContact = {
   id: string;
   lead_id: string;
@@ -25,6 +34,9 @@ export type IntelLeadContact = {
   confidence: number;
   priority_rank: number;
   status: ContactStatus;
+  is_best_contact: boolean;
+  best_contact_reason: string | null;
+  outreach_sequence: OutreachSequence | null;
   created_at: string;
   updated_at: string;
   imported_at: string | null;
@@ -42,4 +54,17 @@ export function describeContactSource(contact: Pick<IntelLeadContact, "source" |
   if (DIRECTORY_HOSTS.some((d) => host.includes(d))) return "Poslovni imenik (iz iskanja)";
   if (host) return `Splet — ${contact.source_detail} (iz iskanja)`;
   return "Splošno spletno iskanje";
+}
+
+export type ContactStatusBadge = { emoji: string; label: string };
+
+/** Drives the colored status indicator from the real source/source_detail — never from confidence, since two contacts with the same fixed confidence band can have different real provenance. */
+export function contactStatusBadge(contact: Pick<IntelLeadContact, "source" | "source_detail">): ContactStatusBadge {
+  if (contact.source === "manual") return { emoji: "⚪", label: "Ročno dodano" };
+  if (contact.source === "official_website") return { emoji: "🟢", label: "Potrjeno na spletni strani" };
+
+  const host = contact.source_detail?.toLowerCase() ?? "";
+  if (host.includes("linkedin.com")) return { emoji: "🟡", label: "Najdeno na LinkedInu" };
+  if (DIRECTORY_HOSTS.some((d) => host.includes(d))) return { emoji: "🔵", label: "Najdeno v registru" };
+  return { emoji: "🔴", label: "AI predlog" };
 }

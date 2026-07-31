@@ -41,3 +41,10 @@ export function planContactUpsert(
 
   return { toInsert, toUpdate };
 }
+
+/** Appends a name into the legacy comma-joined contact_person text column, case-insensitive deduped. Returns null if already present (nothing to change). */
+export function mergeContactPersonName(existing: string | null, fullName: string): string | null {
+  const names = (existing ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (names.some((n) => n.toLowerCase() === fullName.toLowerCase())) return null;
+  return [...names, fullName].join(", ");
+}

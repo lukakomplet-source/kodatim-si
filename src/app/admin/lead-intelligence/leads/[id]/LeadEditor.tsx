@@ -27,7 +27,7 @@ import {
 import ContactPersonsField from "../../import/ContactPersonsField";
 import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
 import FieldProvenance from "./FieldProvenance";
-import SuggestedContactsPanel from "./SuggestedContactsPanel";
+import ContactsSection from "./ContactsSection";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -285,7 +285,7 @@ export default function LeadEditor({
           <ContactPersonsField defaultValue={lead.contact_person ?? undefined} />
         </div>
 
-        <SuggestedContactsPanel contacts={contacts} />
+        <ContactsSection leadId={lead.id} contacts={contacts} />
 
         <div className="mt-4">
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">

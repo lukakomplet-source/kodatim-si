@@ -7,7 +7,7 @@ import { getLeadActivity } from "@/lib/activity/queries";
 import { getLeadContacts } from "@/lib/lead-intelligence/contacts";
 import Timeline from "@/components/ui/Timeline";
 import LeadEditor from "./LeadEditor";
-import AiAnalysisCard from "./AiAnalysisCard";
+import SalesSummaryCard from "./SalesSummaryCard";
 
 export default async function LeadDetailPage({
   params,
@@ -24,6 +24,8 @@ export default async function LeadDetailPage({
   ]);
 
   if (!lead) notFound();
+
+  const bestContact = contacts.find((c) => c.is_best_contact) ?? null;
 
   return (
     <div>
@@ -50,7 +52,7 @@ export default async function LeadDetailPage({
             </div>
           </div>
 
-          <AiAnalysisCard lead={lead as IntelLead} />
+          <SalesSummaryCard lead={lead as IntelLead} bestContact={bestContact} />
         </div>
       </div>
     </div>
