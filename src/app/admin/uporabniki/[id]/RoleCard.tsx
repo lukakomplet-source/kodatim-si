@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateUserRole } from "../actions";
-import type { RoleOption } from "../query";
+import type { RoleOption } from "../types";
 
 export default function RoleCard({
   userId,

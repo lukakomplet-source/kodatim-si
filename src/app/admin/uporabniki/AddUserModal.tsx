@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Plus } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import { createUser, type CreateUserState } from "./actions";
-import type { RoleOption, UserStatus } from "./query";
+import type { RoleOption, UserStatus } from "./types";
 
 function SubmitButton() {
   const { pending } = useFormStatus();

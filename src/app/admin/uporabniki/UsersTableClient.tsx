@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Pencil, Trash2, UserCog } from "lucide-react";
 import { deleteUser, updateUserStatus } from "./actions";
-import { USER_STATUS_LABELS, type UserRow, type UserStatus } from "./query";
+import { USER_STATUS_LABELS, type UserRow, type UserStatus } from "./types";
 
 const STATUS_STYLES: Record<UserStatus, string> = {
   active: "bg-emerald-50 text-emerald-700",

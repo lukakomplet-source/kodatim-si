@@ -1,14 +1,9 @@
 import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_KEYS, type RoleKey, type PermissionKey } from "@/lib/permissions/registry";
+import { USER_STATUSES, type UserStatus, type UserRow, type RoleOption } from "./types";
 
-export type UserStatus = "active" | "inactive" | "suspended";
-export const USER_STATUSES: UserStatus[] = ["active", "inactive", "suspended"];
-export const USER_STATUS_LABELS: Record<UserStatus, string> = {
-  active: "Aktiven",
-  inactive: "Neaktiven",
-  suspended: "Suspendiran",
-};
+export * from "./types";
 
 const USERS_PER_PAGE = 20;
 
@@ -45,21 +40,6 @@ export function filtersFromSearchParams(
     page: pageRaw ? Math.max(1, parseInt(pageRaw, 10) || 1) : 1,
   };
 }
-
-export type UserRow = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  full_name: string | null;
-  email: string;
-  phone: string | null;
-  company: string | null;
-  status: UserStatus;
-  created_at: string;
-  roleKey: RoleKey | null;
-  roleName: string | null;
-  lastSignInAt: string | null;
-};
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -151,8 +131,6 @@ export async function queryUsers(admin: AdminClient, filters: UserFilters) {
     totalPages: Math.max(1, Math.ceil((count ?? 0) / USERS_PER_PAGE)),
   };
 }
-
-export type RoleOption = { id: string; key: RoleKey; name: string; description: string | null };
 
 export async function getAllRoles(admin: AdminClient): Promise<RoleOption[]> {
   const { data } = await admin

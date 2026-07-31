@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/permissions/require-permission";
 import { writeAuditLog } from "@/lib/permissions/audit";
 import type { PermissionKey } from "@/lib/permissions/registry";
-import type { UserStatus } from "./query";
+import type { UserStatus } from "./types";
 
 export type CreateUserState = { error?: string; success?: boolean };
 
