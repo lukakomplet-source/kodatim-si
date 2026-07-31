@@ -362,7 +362,18 @@ export default function AiImageEntryForm() {
           )}
         </div>
       ) : (
-        <div className="mt-6 space-y-6">
+        <div className="relative mt-6 space-y-6">
+          {(completingAll || savingAll) && (
+            <div className="sticky top-4 z-10 -mb-2 flex flex-col items-center justify-center gap-3 rounded-2xl border border-accent/20 bg-white/90 py-8 shadow-lg backdrop-blur-sm">
+              <div className="relative h-12 w-12">
+                <div className="absolute inset-0 animate-spin rounded-full border-4 border-accent/15 border-t-accent" />
+              </div>
+              <p className="text-sm font-medium text-zinc-700">
+                {completingAll ? "AI dopolnjuje vse tabele …" : "Shranjujem vse leade …"}
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
               <Sparkles className="h-3.5 w-3.5" />
