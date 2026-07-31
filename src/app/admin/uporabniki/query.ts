@@ -68,9 +68,13 @@ function unwrap<T>(value: T | T[] | null): T | null {
 }
 
 export async function queryUsers(admin: AdminClient, filters: UserFilters) {
+  // user_roles has two FKs to profiles (user_id and assigned_by), so the
+  // relationship must be disambiguated with an explicit "!user_id" hint —
+  // PostgREST can't infer which one to embed on otherwise ("more than one
+  // relationship was found for 'profiles' and 'user_roles'").
   const embed = filters.role
-    ? "user_roles!inner(role_id, roles!inner(key,name))"
-    : "user_roles(role_id, roles(key,name))";
+    ? "user_roles!user_id!inner(role_id, roles!inner(key,name))"
+    : "user_roles!user_id(role_id, roles(key,name))";
 
   let query = admin
     .from("profiles")
