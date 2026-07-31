@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2, Save } from "lucide-react";
+import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2, Save, ExternalLink } from "lucide-react";
 import { createLead } from "../actions";
 import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportField } from "@/lib/lead-intelligence/types";
 import ContactPersonsField from "./ContactPersonsField";
@@ -453,6 +453,28 @@ export default function AiImageEntryForm() {
                     </button>
                   )}
                 </div>
+                {fields.company_name && (
+                  <div className="mt-1 flex items-center gap-3 text-xs text-zinc-400">
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent(`site:bizi.si ${fields.company_name}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 hover:text-accent hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Bizi
+                    </a>
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent(`site:companywall.si ${fields.company_name}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 hover:text-accent hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      CompanyWall
+                    </a>
+                  </div>
+                )}
                 {completeErrors[index] && (
                   <p className="mt-1 text-xs text-red-500">{completeErrors[index]}</p>
                 )}
