@@ -45,8 +45,17 @@ function LoginForm() {
         redirectTo ?? (profile?.role === "admin" ? "/admin" : "/partner");
       router.push(destination);
       router.refresh();
-    } catch {
-      setError("Napaka pri povezavi. Preverite internetno povezavo in poskusite znova.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (/supabaseUrl|supabaseKey|NEXT_PUBLIC_SUPABASE/i.test(message)) {
+        setError(
+          "Stran ni pravilno nastavljena (manjka povezava na bazo). Kontaktirajte skrbnika."
+        );
+      } else {
+        setError(
+          "Napaka pri povezavi. Preverite internetno povezavo in poskusite znova."
+        );
+      }
     } finally {
       setLoading(false);
     }
