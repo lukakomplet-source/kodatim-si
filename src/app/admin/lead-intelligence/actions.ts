@@ -244,6 +244,31 @@ export async function createLead(
   if (skdName) customFields.skd_name = skdName;
 
   const admin = createAdminClient();
+
+  const email = field("email");
+  const website = field("website");
+  const vatId = field("vat_id");
+  if (email || website || vatId) {
+    const escape = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
+    const orParts: string[] = [];
+    if (email) orParts.push(`email.ilike.${escape(email)}`);
+    if (website) orParts.push(`website.ilike.${escape(website)}`);
+    if (vatId) orParts.push(`vat_id.ilike.${escape(vatId)}`);
+
+    const { data: duplicate } = await admin
+      .from("intel_leads")
+      .select("id, company_name")
+      .or(orParts.join(","))
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicate) {
+      return {
+        error: `Podjetje že obstaja v bazi ("${duplicate.company_name}") — lead ni bil podvojen.`,
+      };
+    }
+  }
+
   const { data, error } = await admin
     .from("intel_leads")
     .insert({
