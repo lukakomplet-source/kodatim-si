@@ -4,7 +4,7 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { CONFIDENCE, type EnrichmentSource, type SourceRunResult } from "../types";
 
 const SYSTEM_PROMPT = `Iz vsebine spletne strani podjetja izlušči kontaktne podatke in odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
-"industry" (panoga/dejavnost v nekaj besedah), "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id" (davčna/ID za DDV, npr. "SI12345678"), "contact_person" (ime kontaktne osebe, če je navedeno).
+"industry" (panoga/dejavnost v nekaj besedah), "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id" (davčna/ID za DDV, npr. "SI12345678").
 
 Pravila:
 - Vsak ključ izpolni SAMO, če je podatek dejansko naveden na strani. Če ga ni, ključ izpusti — ne izmišljuj.
@@ -20,7 +20,6 @@ type Extracted = {
   address_region?: string;
   address_country?: string;
   vat_id?: string;
-  contact_person?: string;
 };
 
 function toUrl(website: string): string {
@@ -58,7 +57,6 @@ export const websiteScrapeSource: EnrichmentSource = {
       "address_region",
       "address_country",
       "vat_id",
-      "contact_person",
     ] as const) {
       const value = ai[key];
       if (typeof value === "string" && value.trim()) {

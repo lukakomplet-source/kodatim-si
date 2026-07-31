@@ -11,6 +11,7 @@ import {
   LEAD_PRIORITY_LABELS,
 } from "@/lib/lead-intelligence/types";
 import type { EnrichmentFieldMeta } from "@/lib/enrichment/types";
+import type { IntelLeadContact } from "@/lib/lead-intelligence/contactTypes";
 import {
   updateLead,
   updateStatus,
@@ -26,6 +27,7 @@ import {
 import ContactPersonsField from "../../import/ContactPersonsField";
 import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
 import FieldProvenance from "./FieldProvenance";
+import SuggestedContactsPanel from "./SuggestedContactsPanel";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -43,7 +45,13 @@ const FIELD_LABELS: Record<string, string> = {
 const TEXT_FIELDS = Object.keys(FIELD_LABELS) as (keyof UpdateLeadFields)[];
 const CUSTOM_FIELD_KEYS = ["revenue_year", "revenue_amount", "skd_code", "skd_name"];
 
-export default function LeadEditor({ lead }: { lead: IntelLead }) {
+export default function LeadEditor({
+  lead,
+  contacts,
+}: {
+  lead: IntelLead;
+  contacts: IntelLeadContact[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const contactsRef = useRef<HTMLDivElement>(null);
@@ -276,6 +284,8 @@ export default function LeadEditor({ lead }: { lead: IntelLead }) {
         <div ref={contactsRef} className="mt-4">
           <ContactPersonsField defaultValue={lead.contact_person ?? undefined} />
         </div>
+
+        <SuggestedContactsPanel contacts={contacts} />
 
         <div className="mt-4">
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">

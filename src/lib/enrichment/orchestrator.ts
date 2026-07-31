@@ -3,8 +3,10 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/activity/log";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { applyFieldResult, markNotFound } from "./merge";
+import { planContactUpsert, type ExistingContactRow } from "./contactMerge";
 import { websiteDiscoverySource } from "./sources/websiteDiscovery";
 import { websiteScrapeSource } from "./sources/websiteScrape";
+import { contactDiscoverySource } from "./sources/contactDiscovery";
 import { aiBusinessAnalysisSource } from "./sources/aiBusinessAnalysis";
 import {
   ENRICHABLE_FIELDS,
@@ -15,15 +17,15 @@ import {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-const SOURCES: EnrichmentSource[] = [websiteDiscoverySource, websiteScrapeSource];
+const SOURCES: EnrichmentSource[] = [websiteDiscoverySource, websiteScrapeSource, contactDiscoverySource];
 
 export type RunEnrichmentResult = { status: EnrichmentStatus | "skipped" };
 
 /**
  * Runs the full enrichment pipeline for one lead: website discovery →
- * website scrape → AI business analysis. Never throws — every failure
- * degrades to a logged step and the pipeline moves on, matching
- * logActivity's own "never throws" contract.
+ * website scrape → contact discovery → AI business analysis. Never throws —
+ * every failure degrades to a logged step and the pipeline moves on,
+ * matching logActivity's own "never throws" contract.
  */
 export async function runLeadEnrichment(
   leadId: string,
@@ -83,6 +85,53 @@ export async function runLeadEnrichment(
             lead = { ...lead, ...columnUpdate };
           }
         }
+
+        if (result.contacts && result.contacts.length > 0) {
+          const { data: existingRows } = await admin
+            .from("intel_lead_contacts")
+            .select("id, full_name, status, confidence")
+            .eq("lead_id", leadId);
+
+          const { toInsert, toUpdate } = planContactUpsert(
+            (existingRows ?? []) as ExistingContactRow[],
+            result.contacts
+          );
+
+          let insertedRows: { id: string; full_name: string; confidence: number }[] = [];
+          if (toInsert.length > 0) {
+            const { data } = await admin
+              .from("intel_lead_contacts")
+              .insert(toInsert.map((c) => ({ ...c, lead_id: leadId })))
+              .select("id, full_name, confidence");
+            insertedRows = data ?? [];
+          }
+          for (const u of toUpdate) {
+            await admin.from("intel_lead_contacts").update(u.patch).eq("id", u.id);
+          }
+
+          // Auto-fill: only when exactly one NEW contact was found this run, at >90% confidence.
+          if (insertedRows.length === 1 && insertedRows[0].confidence > 90) {
+            const only = insertedRows[0];
+            await admin
+              .from("intel_lead_contacts")
+              .update({ status: "imported", imported_at: checkedAt })
+              .eq("id", only.id);
+
+            const names = (lead.contact_person ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+            if (!names.some((n) => n.toLowerCase() === only.full_name.toLowerCase())) {
+              const joined = [...names, only.full_name].join(", ");
+              await admin.from("intel_leads").update({ contact_person: joined }).eq("id", leadId);
+              lead = { ...lead, contact_person: joined };
+            }
+            await logActivity(
+              leadId,
+              "enrichment",
+              `Samodejno uvožen kontakt: ${only.full_name} (${only.confidence}%).`,
+              userId
+            );
+          }
+        }
+
         if (result.markdown) markdown = result.markdown;
 
         await admin.from("intel_leads").update({ enrichment_meta: meta }).eq("id", leadId);

@@ -441,3 +441,73 @@ export async function detectDuplicates(
   revalidatePath("/admin/lead-intelligence/leads");
   return { success: true, flagged };
 }
+
+/** Imports an AI-suggested contact: marks it imported and appends its name to the legacy contact_person text field. */
+export async function importSuggestedContact(contactId: string): Promise<ActionResult> {
+  let user;
+  try {
+    user = await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  const admin = createAdminClient();
+  const { data: contact } = await admin
+    .from("intel_lead_contacts")
+    .select("id, lead_id, full_name, status")
+    .eq("id", contactId)
+    .single();
+
+  if (!contact) return { error: "Kontakt ne obstaja." };
+  if (contact.status !== "suggested") return { error: "Kontakt ni več na voljo za uvoz." };
+
+  const { data: lead } = await admin
+    .from("intel_leads")
+    .select("contact_person")
+    .eq("id", contact.lead_id)
+    .single();
+
+  const names = (lead?.contact_person ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
+  if (!names.some((n: string) => n.toLowerCase() === contact.full_name.toLowerCase())) {
+    names.push(contact.full_name);
+    await admin.from("intel_leads").update({ contact_person: names.join(", ") }).eq("id", contact.lead_id);
+  }
+
+  const { error } = await admin
+    .from("intel_lead_contacts")
+    .update({ status: "imported", imported_at: new Date().toISOString() })
+    .eq("id", contactId);
+
+  if (error) return { error: "Kontakta ni bilo mogoče uvoziti." };
+
+  await logActivity(contact.lead_id, "enrichment", `Kontakt uvožen: ${contact.full_name}`, user.id);
+  revalidateLead(contact.lead_id);
+  return { success: true };
+}
+
+/** Dismisses an AI-suggested contact so it's never re-suggested for this lead. */
+export async function dismissSuggestedContact(contactId: string): Promise<ActionResult> {
+  let user;
+  try {
+    user = await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  const admin = createAdminClient();
+  const { data: contact } = await admin
+    .from("intel_lead_contacts")
+    .select("id, lead_id, full_name")
+    .eq("id", contactId)
+    .single();
+
+  if (!contact) return { error: "Kontakt ne obstaja." };
+
+  const { error } = await admin.from("intel_lead_contacts").update({ status: "dismissed" }).eq("id", contactId);
+
+  if (error) return { error: "Kontakta ni bilo mogoče zavrniti." };
+
+  await logActivity(contact.lead_id, "enrichment", `Kontakt zavrnjen: ${contact.full_name}`, user.id);
+  revalidateLead(contact.lead_id);
+  return { success: true };
+}

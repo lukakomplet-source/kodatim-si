@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { getLeadActivity } from "@/lib/activity/queries";
+import { getLeadContacts } from "@/lib/lead-intelligence/contacts";
 import Timeline from "@/components/ui/Timeline";
 import LeadEditor from "./LeadEditor";
 import AiAnalysisCard from "./AiAnalysisCard";
@@ -16,9 +17,10 @@ export default async function LeadDetailPage({
   const { id } = await params;
   const supabase = createAdminClient();
 
-  const [{ data: lead }, activity] = await Promise.all([
+  const [{ data: lead }, activity, contacts] = await Promise.all([
     supabase.from("intel_leads").select("*").eq("id", id).single(),
     getLeadActivity(supabase, id),
+    getLeadContacts(supabase, id),
   ]);
 
   if (!lead) notFound();
@@ -35,7 +37,7 @@ export default async function LeadDetailPage({
 
       <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <LeadEditor key={lead.updated_at} lead={lead as IntelLead} />
+          <LeadEditor key={lead.updated_at} lead={lead as IntelLead} contacts={contacts} />
         </div>
 
         <div>

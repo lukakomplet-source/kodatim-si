@@ -21,9 +21,10 @@ type DiscoveryLead = Pick<
 
 const CONCURRENCY = 3;
 const STUCK_AFTER_MS = 10 * 60 * 1000;
+const PROCESSING_STATUSES: EnrichmentStatus[] = ["searching", "scraping", "finding_contacts", "analyzing"];
 
 function isStuck(lead: DiscoveryLead): boolean {
-  if (!["searching", "scraping", "analyzing"].includes(lead.enrichment_status)) return false;
+  if (!PROCESSING_STATUSES.includes(lead.enrichment_status)) return false;
   if (!lead.enrichment_started_at) return false;
   return Date.now() - new Date(lead.enrichment_started_at).getTime() > STUCK_AFTER_MS;
 }
@@ -58,7 +59,7 @@ export default function DiscoveryQueueClient({
     const c: Record<string, number> = { queued: 0, processing: 0, done: 0, error: 0 };
     for (const l of leads) {
       if (l.enrichment_status === "queued") c.queued += 1;
-      else if (["searching", "scraping", "analyzing"].includes(l.enrichment_status)) c.processing += 1;
+      else if (PROCESSING_STATUSES.includes(l.enrichment_status)) c.processing += 1;
       else if (l.enrichment_status === "done") c.done += 1;
       else if (l.enrichment_status === "error") c.error += 1;
     }

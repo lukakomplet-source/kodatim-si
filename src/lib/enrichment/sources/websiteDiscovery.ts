@@ -1,16 +1,7 @@
 import { searchWeb } from "@/lib/firecrawl";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { CONFIDENCE, type EnrichmentSource, type SourceRunResult } from "../types";
-
-const BLOCKED_DOMAINS = [
-  "facebook.com",
-  "instagram.com",
-  "linkedin.com",
-  "tiktok.com",
-  "youtube.com",
-  "x.com",
-  "twitter.com",
-];
+import { BLOCKED_DOMAINS } from "../blockedDomains";
 
 export const websiteDiscoverySource: EnrichmentSource = {
   id: "website_discovery",

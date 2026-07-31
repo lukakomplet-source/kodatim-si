@@ -5,6 +5,7 @@ const STYLES: Record<EnrichmentStatus, string> = {
   queued: "bg-zinc-100 text-zinc-600",
   searching: "bg-blue-50 text-blue-600",
   scraping: "bg-blue-50 text-blue-600",
+  finding_contacts: "bg-blue-50 text-blue-600",
   analyzing: "bg-accent/10 text-accent",
   done: "bg-emerald-50 text-emerald-600",
   error: "bg-red-50 text-red-600",
