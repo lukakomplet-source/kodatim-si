@@ -49,24 +49,36 @@ export default function DashboardShell({
         </p>
 
         <nav className="mt-8 flex flex-1 flex-col gap-1.5">
-          {navItems.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-medium transition ${
-                  active
-                    ? "bg-accent/10 text-accent"
-                    : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            );
-          })}
+          {(() => {
+            // Pick the single longest (most specific) matching href as
+            // active — a plain prefix check would keep e.g. "/admin"
+            // lit up on every nested route, since "/admin/" prefixes
+            // all of them.
+            const activeHref = navItems
+              .map((item) => item.href)
+              .filter(
+                (href) => pathname === href || pathname.startsWith(`${href}/`)
+              )
+              .sort((a, b) => b.length - a.length)[0];
+
+            return navItems.map((item) => {
+              const active = item.href === activeHref;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-medium transition ${
+                    active
+                      ? "bg-accent/10 text-accent"
+                      : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </Link>
+              );
+            });
+          })()}
         </nav>
 
         <div className="mt-auto border-t border-zinc-200 pt-5">
