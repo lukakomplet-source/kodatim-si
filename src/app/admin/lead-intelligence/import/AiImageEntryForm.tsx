@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2 } from "lucide-react";
+import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2, Save } from "lucide-react";
 import { createLead } from "../actions";
 import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportField } from "@/lib/lead-intelligence/types";
 import ContactPersonsField from "./ContactPersonsField";
@@ -50,6 +50,7 @@ export default function AiImageEntryForm() {
   const [completeErrors, setCompleteErrors] = useState<(string | null)[]>([]);
   const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
   const [completingAll, setCompletingAll] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRefs = useRef<Record<number, HTMLFormElement | null>>({});
 
@@ -120,9 +121,7 @@ export default function AiImageEntryForm() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  async function handleSaveCard(index: number, event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+  async function saveCard(index: number, formData: FormData) {
     setStatuses((prev) => prev.map((s, i) => (i === index ? "saving" : s)));
     setCardErrors((prev) => prev.map((e, i) => (i === index ? null : e)));
 
@@ -134,6 +133,23 @@ export default function AiImageEntryForm() {
     } else {
       setStatuses((prev) => prev.map((s, i) => (i === index ? "saved" : s)));
     }
+  }
+
+  async function handleSaveCard(index: number, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCard(index, new FormData(event.currentTarget));
+  }
+
+  async function saveAll() {
+    if (!leads) return;
+    setSavingAll(true);
+    for (let index = 0; index < leads.length; index++) {
+      if (statuses[index] === "saved") continue;
+      const form = formRefs.current[index];
+      if (!form) continue;
+      await saveCard(index, new FormData(form));
+    }
+    setSavingAll(false);
   }
 
   async function runWebsiteLookup(index: number) {
@@ -363,6 +379,17 @@ export default function AiImageEntryForm() {
                 >
                   <Wand2 className="h-3.5 w-3.5" />
                   {completingAll ? "Dopolnjujem vse …" : "AI dopolni vse tabele"}
+                </button>
+              )}
+              {!allSaved && (
+                <button
+                  type="button"
+                  onClick={saveAll}
+                  disabled={savingAll}
+                  className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {savingAll ? "Shranjujem vse …" : "Shrani vse leade"}
                 </button>
               )}
               <button
