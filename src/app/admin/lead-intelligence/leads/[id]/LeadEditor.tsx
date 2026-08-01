@@ -12,6 +12,7 @@ import {
 } from "@/lib/lead-intelligence/types";
 import type { EnrichmentFieldMeta } from "@/lib/enrichment/types";
 import type { IntelLeadContact } from "@/lib/lead-intelligence/contactTypes";
+import { REGISTRY_FIELDS, REGISTRY_FIELD_LABELS } from "@/lib/publicEnrichment/types";
 import {
   updateLead,
   updateStatus,
@@ -28,6 +29,7 @@ import ContactPersonsField from "../../import/ContactPersonsField";
 import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
 import FieldProvenance from "./FieldProvenance";
 import ContactsSection from "./ContactsSection";
+import PublicEnrichmentBadges from "./PublicEnrichmentBadges";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -72,10 +74,19 @@ export default function LeadEditor({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [registryValues, setRegistryValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(REGISTRY_FIELDS.map((f) => [f, lead.custom_fields?.[f] ?? ""]))
+  );
   const fieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   function fieldMeta(field: string): EnrichmentFieldMeta | undefined {
     return (lead.enrichment_meta as Record<string, EnrichmentFieldMeta> | undefined)?.[field];
+  }
+
+  function fieldMetaWithUrl(field: string): { meta: EnrichmentFieldMeta | undefined; sourceUrl: string | null } {
+    const meta = fieldMeta(field);
+    const sourceUrl = (meta as unknown as { source_url?: string | null } | undefined)?.source_url ?? null;
+    return { meta, sourceUrl };
   }
 
   async function runEnrichment() {
@@ -129,6 +140,7 @@ export default function LeadEditor({
         ...(revenueAmount ? { revenue_amount: revenueAmount } : {}),
         ...(skdCode ? { skd_code: skdCode } : {}),
         ...(skdName ? { skd_name: skdName } : {}),
+        ...Object.fromEntries(Object.entries(registryValues).filter(([, v]) => v.trim())),
       },
     };
     run(() => updateLead(lead.id, payload));
@@ -215,26 +227,32 @@ export default function LeadEditor({
         </div>
         {enrichError && <p className="mt-2 text-xs text-red-500">{enrichError}</p>}
 
+        <PublicEnrichmentBadges enrichmentMeta={lead.enrichment_meta as Record<string, { source?: string | null }>} />
+
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {TEXT_FIELDS.map((f) => (
-            <div key={f}>
-              <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                {FIELD_LABELS[f]}
-              </label>
-              <input
-                ref={(el) => {
-                  fieldRefs.current[f] = el;
-                }}
-                value={fields[f]}
-                onChange={(e) => setFields((prev) => ({ ...prev, [f]: e.target.value }))}
-                className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
-              />
-              <FieldProvenance
-                meta={fieldMeta(f)}
-                onFocusField={() => fieldRefs.current[f]?.focus()}
-              />
-            </div>
-          ))}
+          {TEXT_FIELDS.map((f) => {
+            const { meta, sourceUrl } = fieldMetaWithUrl(f);
+            return (
+              <div key={f}>
+                <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  {FIELD_LABELS[f]}
+                </label>
+                <input
+                  ref={(el) => {
+                    fieldRefs.current[f] = el;
+                  }}
+                  value={fields[f]}
+                  onChange={(e) => setFields((prev) => ({ ...prev, [f]: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+                />
+                <FieldProvenance
+                  meta={meta}
+                  sourceUrl={sourceUrl}
+                  onFocusField={() => fieldRefs.current[f]?.focus()}
+                />
+              </div>
+            );
+          })}
           <div>
             <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               SKD koda
@@ -452,6 +470,32 @@ export default function LeadEditor({
               Dodaj
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
+        <h2 className="text-lg font-semibold text-zinc-900">Javni registri</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Podatki, ki jih je AI Discovery samodejno poiskal iz javno dostopnih virov (CompanyWall, Bizi.si,
+          Google in drugi).
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {REGISTRY_FIELDS.map((f) => {
+            const { meta, sourceUrl } = fieldMetaWithUrl(f);
+            return (
+              <div key={f}>
+                <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  {REGISTRY_FIELD_LABELS[f]}
+                </label>
+                <input
+                  value={registryValues[f] ?? ""}
+                  onChange={(e) => setRegistryValues((prev) => ({ ...prev, [f]: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
+                />
+                <FieldProvenance meta={meta} sourceUrl={sourceUrl} />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

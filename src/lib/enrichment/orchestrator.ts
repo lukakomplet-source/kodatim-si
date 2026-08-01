@@ -10,6 +10,7 @@ import { websiteDiscoverySource } from "./sources/websiteDiscovery";
 import { websiteScrapeSource } from "./sources/websiteScrape";
 import { contactDiscoverySource } from "./sources/contactDiscovery";
 import { aiBusinessAnalysisSource } from "./sources/aiBusinessAnalysis";
+import { runPublicEnrichment } from "@/lib/publicEnrichment/orchestrator";
 import {
   ENRICHABLE_FIELDS,
   type EnrichmentMeta,
@@ -152,6 +153,16 @@ export async function runLeadEnrichment(
       .update({ enrichment_status: "done", enrichment_completed_at: nowIso(), enriched_at: nowIso() })
       .eq("id", leadId);
     await logActivity(leadId, "enrichment_completed", null, userId);
+
+    // New, fully separate public-registry enrichment layer (Website/Google/
+    // CompanyWall/Bizi/Maps/social) — runs after the pipeline above is
+    // fully done, only fills still-empty fields, and can never affect the
+    // status returned here.
+    try {
+      await runPublicEnrichment(leadId, admin, userId);
+    } catch {
+      // never blocks or alters the primary pipeline's outcome
+    }
 
     return { status: "done" };
   } catch (err) {

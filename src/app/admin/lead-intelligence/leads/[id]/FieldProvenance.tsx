@@ -1,21 +1,48 @@
 "use client";
 
-import { ENRICHMENT_SOURCE_LABELS, type EnrichmentFieldMeta } from "@/lib/enrichment/types";
+import { ENRICHMENT_SOURCE_LABELS } from "@/lib/enrichment/types";
+import { PUBLIC_ENRICHMENT_SOURCE_LABELS } from "@/lib/publicEnrichment/types";
+
+type ProvenanceMeta = {
+  value: string | null;
+  source: string | null;
+  confidence: number;
+  checked_at: string;
+};
+
+function sourceLabel(source: string | null): string {
+  if (!source) return "?";
+  return (
+    (ENRICHMENT_SOURCE_LABELS as Record<string, string>)[source] ??
+    (PUBLIC_ENRICHMENT_SOURCE_LABELS as Record<string, string>)[source] ??
+    source
+  );
+}
 
 export default function FieldProvenance({
   meta,
+  sourceUrl,
   onFocusField,
 }: {
-  meta?: EnrichmentFieldMeta;
+  meta?: ProvenanceMeta;
+  sourceUrl?: string | null;
   onFocusField?: () => void;
 }) {
   if (!meta) return null;
 
   if (meta.value) {
+    const label = sourceLabel(meta.source);
     return (
       <p className="mt-1 text-[11px] text-zinc-400">
-        Vir: {meta.source ? ENRICHMENT_SOURCE_LABELS[meta.source] : "?"} · {meta.confidence}% ·{" "}
-        {new Date(meta.checked_at).toLocaleDateString("sl-SI")}
+        Vir:{" "}
+        {sourceUrl ? (
+          <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+            {label}
+          </a>
+        ) : (
+          label
+        )}{" "}
+        · {meta.confidence}% · {new Date(meta.checked_at).toLocaleDateString("sl-SI")}
       </p>
     );
   }
