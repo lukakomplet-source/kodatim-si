@@ -47,6 +47,7 @@ export function createSnippetProvider(config: {
     id,
     label,
     priority,
+    possibleFields: allowedFields,
 
     shouldRun() {
       return true;

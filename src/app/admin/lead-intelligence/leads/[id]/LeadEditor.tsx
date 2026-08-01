@@ -12,7 +12,12 @@ import {
 } from "@/lib/lead-intelligence/types";
 import type { EnrichmentFieldMeta } from "@/lib/enrichment/types";
 import type { IntelLeadContact } from "@/lib/lead-intelligence/contactTypes";
-import { REGISTRY_FIELDS, REGISTRY_FIELD_LABELS } from "@/lib/publicEnrichment/types";
+import {
+  REGISTRY_FIELDS,
+  REGISTRY_FIELD_LABELS,
+  computeCompletionPercent,
+  type PublicEnrichmentDebug,
+} from "@/lib/publicEnrichment/types";
 import {
   updateLead,
   updateStatus,
@@ -30,6 +35,7 @@ import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
 import FieldProvenance from "./FieldProvenance";
 import ContactsSection from "./ContactsSection";
 import PublicEnrichmentBadges from "./PublicEnrichmentBadges";
+import EnrichmentDebugPanel from "./EnrichmentDebugPanel";
 
 const FIELD_LABELS: Record<string, string> = {
   company_name: "Ime podjetja",
@@ -227,7 +233,10 @@ export default function LeadEditor({
         </div>
         {enrichError && <p className="mt-2 text-xs text-red-500">{enrichError}</p>}
 
-        <PublicEnrichmentBadges enrichmentMeta={lead.enrichment_meta as Record<string, { source?: string | null }>} />
+        <PublicEnrichmentBadges
+          enrichmentMeta={lead.enrichment_meta as Record<string, { source?: string | null }>}
+          completionPercent={computeCompletionPercent(lead as unknown as Record<string, unknown>, lead.custom_fields)}
+        />
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {TEXT_FIELDS.map((f) => {
@@ -497,6 +506,14 @@ export default function LeadEditor({
             );
           })}
         </div>
+
+        <EnrichmentDebugPanel
+          debug={
+            (lead.enrichment_meta as Record<string, unknown> | null | undefined)?.__public_enrichment_debug as
+              | PublicEnrichmentDebug
+              | undefined
+          }
+        />
       </div>
     </div>
   );

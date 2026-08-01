@@ -4,9 +4,10 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const EXTRACTION_PROMPT = `Iz podane javno dostopne vsebine strani Bizi.si izlušči SAMO javno vidne podatke o podjetju in odgovori
-IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "employees_count", "founded_date",
-"registration_number", "vat_id", "phone", "email", "bank_account", "industry", "skd_code", "skd_name",
-"company_status", "revenue_amount", "revenue_year", "profit", "description".
+IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "authorized_representatives",
+"employees_count", "founded_date", "legal_form", "registration_number", "vat_id", "phone", "email", "bank_account",
+"industry", "skd_code", "skd_name", "company_status", "revenue_amount", "revenue_year", "profit", "ebit", "ebitda",
+"credit_rating", "description".
 
 Pravila:
 - Uporabi SAMO podatke, ki so v vsebini dejansko izpisani in javno vidni — nikoli si ne izmišljuj.
@@ -15,10 +16,18 @@ Pravila:
 - Vsak ključ izpolni SAMO, če je dejansko naveden. Če ga ni, ključ izpusti.
 - Vse v slovenščini.`;
 
+export const BIZI_POSSIBLE_FIELDS = [
+  "director", "owners", "founders", "authorized_representatives", "employees_count", "founded_date",
+  "legal_form", "registration_number", "vat_id", "phone", "email", "bank_account", "industry", "skd_code",
+  "skd_name", "company_status", "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating",
+  "description",
+];
+
 type Extracted = Partial<Record<
-  | "director" | "owners" | "founders" | "employees_count" | "founded_date" | "registration_number" | "vat_id"
-  | "phone" | "email" | "bank_account" | "industry" | "skd_code" | "skd_name" | "company_status"
-  | "revenue_amount" | "revenue_year" | "profit" | "description",
+  | "director" | "owners" | "founders" | "authorized_representatives" | "employees_count" | "founded_date"
+  | "legal_form" | "registration_number" | "vat_id" | "phone" | "email" | "bank_account" | "industry"
+  | "skd_code" | "skd_name" | "company_status" | "revenue_amount" | "revenue_year" | "profit" | "ebit"
+  | "ebitda" | "credit_rating" | "description",
   string
 >>;
 
@@ -32,10 +41,20 @@ function toFields(extracted: Extracted, sourceUrl: string): Record<string, Field
   return fields;
 }
 
+async function extract(companyName: string, url: string, markdown: string, sliceLen: number, temperature: number) {
+  const ai = await chatJSON<Extracted>(
+    EXTRACTION_PROMPT,
+    `Podjetje: ${companyName}\n\nVsebina strani (${url}):\n\n${markdown.slice(0, sliceLen)}`,
+    { temperature }
+  );
+  return toFields(ai, url);
+}
+
 export const biziProvider: PublicEnrichmentProvider = {
   id: "bizi",
   label: "Bizi.si",
   priority: 4,
+  possibleFields: BIZI_POSSIBLE_FIELDS,
 
   shouldRun() {
     return true;
@@ -57,12 +76,12 @@ export const biziProvider: PublicEnrichmentProvider = {
 
     try {
       const scraped = await scrapeUrl(url, { onlyMainContent: false });
-      const ai = await chatJSON<Extracted>(
-        EXTRACTION_PROMPT,
-        `Podjetje: ${lead.company_name}\n\nVsebina strani (${url}):\n\n${scraped.markdown.slice(0, 8000)}`,
-        { temperature: 0.1 }
-      );
-      const fields = toFields(ai, url);
+      let fields = await extract(lead.company_name, url, scraped.markdown, 8000, 0.1);
+
+      if (Object.keys(fields).length < 3) {
+        fields = await extract(lead.company_name, url, scraped.markdown, 16000, 0);
+      }
+
       const count = Object.keys(fields).length;
       return {
         fields,

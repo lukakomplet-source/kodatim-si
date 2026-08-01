@@ -18,10 +18,16 @@ Pravila:
 type ExtractedField = { value?: string; source_index?: number };
 type Extracted = Record<string, ExtractedField>;
 
+export const GOOGLE_SEARCH_POSSIBLE_FIELDS = [
+  "industry", "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id",
+  "director", "owners", "employees_count", "founded_date", "registration_number",
+];
+
 export const googleSearchProvider: PublicEnrichmentProvider = {
   id: "google_search",
   label: "Google iskanje",
   priority: 2,
+  possibleFields: GOOGLE_SEARCH_POSSIBLE_FIELDS,
 
   shouldRun() {
     return true;

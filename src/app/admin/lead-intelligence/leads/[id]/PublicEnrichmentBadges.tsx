@@ -8,8 +8,10 @@ type MinimalMeta = { source?: string | null } | undefined;
 
 export default function PublicEnrichmentBadges({
   enrichmentMeta,
+  completionPercent,
 }: {
   enrichmentMeta: Record<string, MinimalMeta> | null | undefined;
+  completionPercent?: number;
 }) {
   if (!enrichmentMeta) return null;
 
@@ -33,6 +35,11 @@ export default function PublicEnrichmentBadges({
           ✓ {PUBLIC_ENRICHMENT_SOURCE_LABELS[id]}
         </span>
       ))}
+      {typeof completionPercent === "number" && (
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+          Zapolnjenost: {completionPercent}%
+        </span>
+      )}
     </div>
   );
 }

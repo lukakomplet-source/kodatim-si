@@ -18,6 +18,11 @@ type Extracted = Partial<Record<
   string
 >>;
 
+export const WEBSITE_POSSIBLE_FIELDS = [
+  "industry", "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id",
+  "director", "owners", "employees_count", "founded_date", "registration_number",
+];
+
 function toUrl(website: string): string {
   return website.startsWith("http") ? website : `https://${website}`;
 }
@@ -48,6 +53,7 @@ export const websiteProvider: PublicEnrichmentProvider = {
   id: "public_website",
   label: "Spletna stran (poglobljeno)",
   priority: 1,
+  possibleFields: WEBSITE_POSSIBLE_FIELDS,
 
   shouldRun(lead: IntelLead) {
     return Boolean(lead.website);

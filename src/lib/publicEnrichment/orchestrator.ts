@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/activity/log";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { discoverUrls } from "./discovery";
 import { applyIfEmpty } from "./merge";
+import { detectConflicts, type CollectedCandidate } from "./validation";
 import { websiteProvider } from "./providers/website";
 import { googleSearchProvider } from "./providers/googleSearch";
 import { companyWallProvider } from "./providers/companywall";
@@ -13,9 +14,14 @@ import { googleMapsProvider, linkedinProvider, facebookProvider, instagramProvid
 import {
   CORE_FIELDS,
   PUBLIC_ENRICHMENT_SOURCE_IDS,
+  type ProviderDebugEntry,
+  type PublicEnrichmentDebug,
   type PublicEnrichmentProvider,
   type PublicFieldMeta,
 } from "./types";
+
+const CONFIRMATION_BONUS = 5;
+const MAX_CONFIDENCE = 99;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -52,7 +58,8 @@ export async function runPublicEnrichment(
   if (!data) return;
   const lead = data as unknown as IntelLead;
 
-  const meta = ((lead.enrichment_meta as unknown as Record<string, PublicFieldMeta>) ?? {});
+  const rawMeta = ((lead.enrichment_meta as unknown as Record<string, PublicFieldMeta>) ?? {});
+  const meta = Object.fromEntries(Object.entries(rawMeta).filter(([k]) => k !== "__public_enrichment_debug"));
   const alreadyRan = Object.values(meta).some(
     (m) => m?.source && (PUBLIC_ENRICHMENT_SOURCE_IDS as readonly string[]).includes(m.source)
   );
@@ -68,15 +75,40 @@ export async function runPublicEnrichment(
   );
   const liveCustom: Record<string, string | null> = { ...(lead.custom_fields as Record<string, string>) };
 
-  for (const provider of PROVIDERS) {
-    if (!provider.shouldRun(lead, discovered)) continue;
+  // Every candidate any provider returned for a field, whether or not it won the
+  // "first empty slot" race — feeds cross-provider agreement/conflict detection below.
+  const fieldCandidates: Record<string, CollectedCandidate[]> = {};
+  const debugEntries: ProviderDebugEntry[] = [];
 
+  for (const provider of PROVIDERS) {
+    const willRun = provider.shouldRun(lead, discovered);
+    if (!willRun) {
+      debugEntries.push({
+        id: provider.id,
+        label: provider.label,
+        executed: false,
+        url: null,
+        fieldsFound: [],
+        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: "vir ni bil poizvedovan (pogoj za zagon ni izpolnjen)" })),
+        durationMs: 0,
+        error: null,
+      });
+      continue;
+    }
+
+    const startedAt = Date.now();
     try {
       const result = await provider.run(lead, discovered);
       const checkedAt = new Date().toISOString();
+      const resultFields = result.fields ?? {};
+      let debugUrl: string | null = null;
 
-      for (const [field, candidate] of Object.entries(result.fields ?? {})) {
+      for (const [field, candidate] of Object.entries(resultFields)) {
         if (!candidate?.value) continue;
+        if (!debugUrl) debugUrl = candidate.source_url;
+
+        (fieldCandidates[field] ??= []).push({ source: provider.id, value: candidate.value });
+
         const isCore = CORE_FIELD_SET.has(field);
         const currentValue = isCore ? liveCore[field] : liveCustom[field];
 
@@ -93,14 +125,48 @@ export async function runPublicEnrichment(
         }
       }
 
+      const fieldsFound = Object.keys(resultFields).filter((f) => resultFields[f]?.value);
+      const missingReason = result.skippedReason ?? "vir ni vseboval tega podatka";
+      debugEntries.push({
+        id: provider.id,
+        label: provider.label,
+        executed: true,
+        url: debugUrl,
+        fieldsFound,
+        fieldsMissing: provider.possibleFields
+          .filter((f) => !fieldsFound.includes(f))
+          .map((field) => ({ field, reason: missingReason })),
+        durationMs: Date.now() - startedAt,
+        error: null,
+      });
+
       await logActivity(leadId, "enrichment_step", result.note, userId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
+      debugEntries.push({
+        id: provider.id,
+        label: provider.label,
+        executed: true,
+        url: null,
+        fieldsFound: [],
+        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: `napaka: ${message}` })),
+        durationMs: Date.now() - startedAt,
+        error: message,
+      });
       await logActivity(leadId, "enrichment_step", `${provider.label}: napaka — ${message}`, userId);
     }
   }
 
-  const updates: Record<string, unknown> = { enrichment_meta: workingMeta };
+  const { conflicts, confirmedFields } = detectConflicts(fieldCandidates);
+  for (const field of confirmedFields) {
+    const entry = workingMeta[field];
+    if (entry) entry.confidence = Math.min(MAX_CONFIDENCE, entry.confidence + CONFIRMATION_BONUS);
+  }
+
+  const debug: PublicEnrichmentDebug = { ranAt: new Date().toISOString(), providers: debugEntries, conflicts };
+  const enrichmentMetaOut: Record<string, unknown> = { ...workingMeta, __public_enrichment_debug: debug };
+
+  const updates: Record<string, unknown> = { enrichment_meta: enrichmentMetaOut };
   if (Object.keys(coreColumnUpdates).length > 0) Object.assign(updates, coreColumnUpdates);
   if (Object.keys(customFieldUpdates).length > 0) {
     updates.custom_fields = { ...(lead.custom_fields as Record<string, string>), ...customFieldUpdates };
