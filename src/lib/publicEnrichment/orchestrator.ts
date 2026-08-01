@@ -8,6 +8,7 @@ import { websiteProvider } from "./providers/website";
 import { googleSearchProvider } from "./providers/googleSearch";
 import { companyWallProvider } from "./providers/companywall";
 import { biziProvider } from "./providers/bizi";
+import { ajpesProvider } from "./providers/ajpes";
 import { googleMapsProvider, linkedinProvider, facebookProvider, instagramProvider } from "./providers/snippetProviders";
 import {
   CORE_FIELDS,
@@ -25,6 +26,7 @@ const PROVIDERS: PublicEnrichmentProvider[] = [
   googleSearchProvider,
   companyWallProvider,
   biziProvider,
+  ajpesProvider,
   googleMapsProvider,
   linkedinProvider,
   facebookProvider,

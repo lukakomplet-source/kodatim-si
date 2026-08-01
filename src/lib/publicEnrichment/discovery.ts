@@ -22,6 +22,7 @@ export async function discoverUrls(lead: IntelLead): Promise<DiscoveredUrls> {
     `${name} Slovenija`,
     `${name} CompanyWall`,
     `${name} Bizi`,
+    `${name} AJPES`,
     `${name} LinkedIn`,
     `${name} Facebook`,
     `${name} Instagram`,
@@ -43,6 +44,7 @@ export async function discoverUrls(lead: IntelLead): Promise<DiscoveredUrls> {
       const lower = url.toLowerCase();
       if (!discovered.companywall && lower.includes("companywall.si")) discovered.companywall = url;
       else if (!discovered.bizi && lower.includes("bizi.si")) discovered.bizi = url;
+      else if (!discovered.ajpes && lower.includes("ajpes.si")) discovered.ajpes = url;
       else if (!discovered.linkedin && lower.includes("linkedin.com")) discovered.linkedin = url;
       else if (!discovered.facebook && lower.includes("facebook.com")) discovered.facebook = url;
       else if (!discovered.instagram && lower.includes("instagram.com")) discovered.instagram = url;

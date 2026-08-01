@@ -4,8 +4,9 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const EXTRACTION_PROMPT = `Iz podane javno dostopne vsebine strani Bizi.si izlušči SAMO javno vidne podatke o podjetju in odgovori
-IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "employees_count", "founded_date",
-"registration_number", "vat_id", "phone", "email", "bank_account", "industry", "skd_code", "skd_name".
+IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "employees_count", "founded_date",
+"registration_number", "vat_id", "phone", "email", "bank_account", "industry", "skd_code", "skd_name",
+"company_status", "revenue_amount", "revenue_year", "profit", "description".
 
 Pravila:
 - Uporabi SAMO podatke, ki so v vsebini dejansko izpisani in javno vidni — nikoli si ne izmišljuj.
@@ -15,7 +16,9 @@ Pravila:
 - Vse v slovenščini.`;
 
 type Extracted = Partial<Record<
-  "director" | "owners" | "employees_count" | "founded_date" | "registration_number" | "vat_id" | "phone" | "email" | "bank_account" | "industry" | "skd_code" | "skd_name",
+  | "director" | "owners" | "founders" | "employees_count" | "founded_date" | "registration_number" | "vat_id"
+  | "phone" | "email" | "bank_account" | "industry" | "skd_code" | "skd_name" | "company_status"
+  | "revenue_amount" | "revenue_year" | "profit" | "description",
   string
 >>;
 

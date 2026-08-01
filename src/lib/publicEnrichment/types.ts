@@ -12,6 +12,7 @@ export const PUBLIC_ENRICHMENT_SOURCE_IDS = [
   "google_search",
   "companywall",
   "bizi",
+  "ajpes",
   "google_maps",
   "linkedin_snippet",
   "facebook_snippet",
@@ -24,6 +25,7 @@ export const PUBLIC_ENRICHMENT_SOURCE_LABELS: Record<PublicEnrichmentSourceId, s
   google_search: "Google iskanje",
   companywall: "CompanyWall",
   bizi: "Bizi.si",
+  ajpes: "AJPES",
   google_maps: "Google Maps",
   linkedin_snippet: "LinkedIn",
   facebook_snippet: "Facebook",
@@ -33,18 +35,24 @@ export const PUBLIC_ENRICHMENT_SOURCE_LABELS: Record<PublicEnrichmentSourceId, s
 export const REGISTRY_FIELDS = [
   "director",
   "owners",
+  "founders",
   "employees_count",
   "founded_date",
   "registration_number",
+  "profit",
+  "company_status",
 ] as const;
 export type RegistryField = (typeof REGISTRY_FIELDS)[number];
 
 export const REGISTRY_FIELD_LABELS: Record<RegistryField, string> = {
   director: "Direktor / zastopnik",
   owners: "Lastniki",
+  founders: "Ustanovitelji",
   employees_count: "Št. zaposlenih",
   founded_date: "Datum ustanovitve",
   registration_number: "Matična številka",
+  profit: "Dobiček",
+  company_status: "Status podjetja",
 };
 
 export const CORE_FIELDS = [
@@ -63,6 +71,7 @@ export type CoreField = (typeof CORE_FIELDS)[number];
 /** Fixed confidence bands by extraction method — never a self-reported LLM score, matching the existing pipeline's convention. */
 export const CONFIDENCE = {
   WEBSITE_DEEP: 90,
+  AJPES_SCRAPE: 95, // official government registry — the primary source CompanyWall/Bizi themselves derive from
   COMPANYWALL_SCRAPE: 88,
   BIZI_SCRAPE: 86,
   GOOGLE_SEARCH_SNIPPET: 60,
@@ -91,6 +100,7 @@ export type DiscoverySnippet = { url: string; title: string; description: string
 export type DiscoveredUrls = {
   companywall?: string;
   bizi?: string;
+  ajpes?: string;
   googleMaps?: string;
   linkedin?: string;
   facebook?: string;
