@@ -248,9 +248,9 @@ export async function createLead(
   const email = field("email");
   const website = field("website");
   const vatId = field("vat_id");
-  if (email || website || vatId) {
+  {
     const escape = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
-    const orParts: string[] = [];
+    const orParts: string[] = [`company_name.ilike.${escape(companyName)}`];
     if (email) orParts.push(`email.ilike.${escape(email)}`);
     if (website) orParts.push(`website.ilike.${escape(website)}`);
     if (vatId) orParts.push(`vat_id.ilike.${escape(vatId)}`);

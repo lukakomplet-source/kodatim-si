@@ -72,38 +72,51 @@ export async function POST(request: NextRequest) {
   let skipped = 0;
 
   if (rows.length > 0) {
+    const names = rows.map((r) => r.company_name?.toLowerCase()).filter(Boolean) as string[];
     const emails = rows.map((r) => r.email?.toLowerCase()).filter(Boolean) as string[];
     const websites = rows.map((r) => r.website?.toLowerCase()).filter(Boolean) as string[];
     const vatIds = rows.map((r) => r.vat_id?.toLowerCase()).filter(Boolean) as string[];
 
     const existing = new Set<string>();
-    if (emails.length || websites.length || vatIds.length) {
+    if (names.length || emails.length || websites.length || vatIds.length) {
       const orParts: string[] = [];
+      if (names.length) orParts.push(`company_name.in.(${names.map((n) => `"${n}"`).join(",")})`);
       if (emails.length) orParts.push(`email.in.(${emails.map((e) => `"${e}"`).join(",")})`);
       if (websites.length) orParts.push(`website.in.(${websites.map((w) => `"${w}"`).join(",")})`);
       if (vatIds.length) orParts.push(`vat_id.in.(${vatIds.map((v) => `"${v}"`).join(",")})`);
 
       const { data: matches } = await admin
         .from("intel_leads")
-        .select("email, website, vat_id")
+        .select("company_name, email, website, vat_id")
         .or(orParts.join(","));
 
       for (const m of matches ?? []) {
+        if (m.company_name) existing.add(`name:${String(m.company_name).toLowerCase()}`);
         if (m.email) existing.add(`email:${String(m.email).toLowerCase()}`);
         if (m.website) existing.add(`website:${String(m.website).toLowerCase()}`);
         if (m.vat_id) existing.add(`vat:${String(m.vat_id).toLowerCase()}`);
       }
     }
 
+    // Within-batch duplicates (e.g. the same company listed twice in one
+    // import file) also need catching — not just ones already in the DB.
+    const seenInBatch = new Set<string>();
+
     const toInsert = rows.filter((r) => {
+      const nameKey = r.company_name && `name:${r.company_name.toLowerCase()}`;
       const keys = [
+        nameKey,
         r.email && `email:${r.email.toLowerCase()}`,
         r.website && `website:${r.website.toLowerCase()}`,
         r.vat_id && `vat:${r.vat_id.toLowerCase()}`,
       ].filter(Boolean) as string[];
-      const isDuplicate = keys.some((k) => existing.has(k));
-      if (isDuplicate) skipped += 1;
-      return !isDuplicate;
+      const isDuplicate = keys.some((k) => existing.has(k)) || Boolean(nameKey && seenInBatch.has(nameKey));
+      if (isDuplicate) {
+        skipped += 1;
+        return false;
+      }
+      if (nameKey) seenInBatch.add(nameKey);
+      return true;
     });
 
     if (toInsert.length > 0) {
