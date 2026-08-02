@@ -1,6 +1,7 @@
 import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
+import { verifyNumericFields } from "../verifyNumericFields";
 import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const EXTRACTION_PROMPT = `Iz podane javno dostopne vsebine strani Bizi.si izlušči SAMO javno vidne podatke o podjetju in odgovori
@@ -62,17 +63,25 @@ export const biziProvider: PublicEnrichmentProvider = {
 
   async run(lead: IntelLead, discovered: DiscoveredUrls): Promise<PublicProviderResult> {
     let url = discovered.bizi;
+    let searchError: string | null = null;
 
+    // See companyWallProvider: identifier-based search was tried and
+    // reverted after real testing showed it's less reliable than name search.
     if (!url) {
       try {
         const results = await searchWeb(`site:bizi.si "${lead.company_name}"`, { limit: 3, country: "SI" });
         url = results.find((r) => r.url.toLowerCase().includes("bizi.si"))?.url;
-      } catch {
-        // discovery search failed — no url to try
+      } catch (err) {
+        searchError = err instanceof Error ? err.message : "neznana napaka";
       }
     }
 
-    if (!url) return { note: "Bizi.si: ni bilo mogoče najti javne strani podjetja." };
+    if (!url) {
+      const note = searchError
+        ? `Bizi.si: FAILED — napaka pri iskanju: ${searchError}`
+        : "Bizi.si: ni bilo mogoče najti javne strani podjetja.";
+      return { note, skippedReason: note };
+    }
 
     try {
       const scraped = await scrapeUrl(url, { onlyMainContent: false });
@@ -82,6 +91,7 @@ export const biziProvider: PublicEnrichmentProvider = {
         fields = await extract(lead.company_name, url, scraped.markdown, 16000, 0);
       }
 
+      fields = verifyNumericFields(fields, scraped.markdown);
       const count = Object.keys(fields).length;
       return {
         fields,

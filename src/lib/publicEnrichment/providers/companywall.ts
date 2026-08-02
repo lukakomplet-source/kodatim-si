@@ -1,6 +1,7 @@
 import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
+import { verifyNumericFields } from "../verifyNumericFields";
 import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const EXTRACTION_PROMPT = `Iz podane javno dostopne vsebine strani CompanyWall.si izlušči SAMO javno vidne podatke o podjetju in odgovori
@@ -59,17 +60,34 @@ export const companyWallProvider: PublicEnrichmentProvider = {
 
   async run(lead: IntelLead, discovered: DiscoveredUrls): Promise<PublicProviderResult> {
     let url = discovered.companywall;
+    let searchError: string | null = null;
 
+    // NOTE: searching by AJPES's resolved registration number instead of the
+    // company name was tried and reverted — real-world testing showed
+    // Firecrawl's search index matches company names far more reliably than
+    // bare numeric IDs as quoted phrases (name search found real pages;
+    // identifier search found nothing for the same companies). Left as name
+    // search; a registration-number cross-check against the scraped page
+    // content (rather than as the query itself) would be a safer way to
+    // exploit the resolved identifier, if revisited later.
     if (!url) {
       try {
         const results = await searchWeb(`site:companywall.si "${lead.company_name}"`, { limit: 3, country: "SI" });
         url = results.find((r) => r.url.toLowerCase().includes("companywall.si"))?.url;
-      } catch {
-        // discovery search failed — no url to try
+      } catch (err) {
+        // A real Firecrawl error (rate limit, insufficient credits, etc.) must
+        // never look identical to "genuinely searched and found nothing" —
+        // that's exactly the failure mode that silently corrupted earlier runs.
+        searchError = err instanceof Error ? err.message : "neznana napaka";
       }
     }
 
-    if (!url) return { note: "CompanyWall: ni bilo mogoče najti javne strani podjetja." };
+    if (!url) {
+      const note = searchError
+        ? `CompanyWall: FAILED — napaka pri iskanju: ${searchError}`
+        : "CompanyWall: ni bilo mogoče najti javne strani podjetja.";
+      return { note, skippedReason: note };
+    }
 
     try {
       const scraped = await scrapeUrl(url, { onlyMainContent: false });
@@ -81,6 +99,7 @@ export const companyWallProvider: PublicEnrichmentProvider = {
         fields = await extract(lead.company_name, url, scraped.markdown, 16000, 0);
       }
 
+      fields = verifyNumericFields(fields, scraped.markdown);
       const count = Object.keys(fields).length;
       return {
         fields,

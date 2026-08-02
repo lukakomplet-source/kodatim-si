@@ -2,6 +2,7 @@ import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { BLOCKED_DOMAINS } from "@/lib/enrichment/blockedDomains";
+import { verifyNumericFields } from "../verifyNumericFields";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const EXTRACTION_PROMPT = `Iz vsebine spletne strani podjetja izlušči podatke in odgovori IZKLJUČNO z veljavnim JSON objektom
@@ -88,7 +89,7 @@ export const websiteProvider: PublicEnrichmentProvider = {
         `Podjetje: ${lead.company_name}\n\nVsebina strani (${targetUrl}):\n\n${scraped.markdown.slice(0, 8000)}`,
         { temperature: 0.1 }
       );
-      const fields = toFields(ai, CONFIDENCE.WEBSITE_DEEP, targetUrl);
+      const fields = verifyNumericFields(toFields(ai, CONFIDENCE.WEBSITE_DEEP, targetUrl), scraped.markdown);
       const count = Object.keys(fields).length;
       return {
         fields,

@@ -25,14 +25,20 @@ const MAX_CONFIDENCE = 99;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-// Priority order = literal run order (websiteProvider first, most reliable).
+// Priority order = literal run order. Company IDENTITY (director, matična,
+// davčna, SKD, status, pravna oblika, ustanovitev) must only ever come from
+// an authoritative registry — AJPES first, then CompanyWall, then Bizi — so
+// those three run before anything web-search-based gets a chance to claim
+// those fields via applyIfEmpty's "first empty slot wins" merge. Website/AI
+// extraction and Google run only after identity is resolved (or confirmed
+// unresolved), and social snippets are the last, lowest-trust resort.
 // Adding a new source later means adding one entry here — nothing else changes.
 const PROVIDERS: PublicEnrichmentProvider[] = [
-  websiteProvider,
-  googleSearchProvider,
+  ajpesProvider,
   companyWallProvider,
   biziProvider,
-  ajpesProvider,
+  websiteProvider,
+  googleSearchProvider,
   googleMapsProvider,
   linkedinProvider,
   facebookProvider,
@@ -81,7 +87,11 @@ export async function runPublicEnrichment(
   const debugEntries: ProviderDebugEntry[] = [];
 
   for (const provider of PROVIDERS) {
-    const willRun = provider.shouldRun(lead, discovered);
+    // Rebuilt every iteration so a later provider (e.g. CompanyWall/Bizi) can
+    // see identity fields an earlier provider (AJPES) already resolved in
+    // THIS run — the original static `lead` snapshot never reflects that.
+    const liveLead: IntelLead = { ...lead, ...liveCore, custom_fields: { ...liveCustom } } as IntelLead;
+    const willRun = provider.shouldRun(liveLead, discovered);
     if (!willRun) {
       debugEntries.push({
         id: provider.id,
@@ -98,7 +108,7 @@ export async function runPublicEnrichment(
 
     const startedAt = Date.now();
     try {
-      const result = await provider.run(lead, discovered);
+      const result = await provider.run(liveLead, discovered);
       const checkedAt = new Date().toISOString();
       const resultFields = result.fields ?? {};
       let debugUrl: string | null = null;

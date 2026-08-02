@@ -26,6 +26,20 @@ function toUrl(website: string): string {
   return website.startsWith("http") ? website : `https://${website}`;
 }
 
+// Same guardrail as publicEnrichment/verifyNumericFields.ts: the extraction
+// prompt already says "never invent", but a name-collision page (a different
+// real entity that happens to share the company name) can still produce a
+// plausible-looking fabricated VAT ID/phone. Digit-only substring check is
+// unaffected by spacing/punctuation formatting differences.
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function isVerifiableNumber(value: string, sourceDigits: string): boolean {
+  const valueDigits = digitsOnly(value);
+  return valueDigits.length >= 6 && sourceDigits.includes(valueDigits);
+}
+
 export const websiteScrapeSource: EnrichmentSource = {
   id: "website_scrape",
   stage: "scraping",
@@ -47,6 +61,8 @@ export const websiteScrapeSource: EnrichmentSource = {
       { temperature: 0.1 }
     );
 
+    const sourceDigits = digitsOnly(scraped.markdown);
+    const NUMERIC_FIELDS = new Set(["phone", "vat_id"]);
     const fields: SourceRunResult["fields"] = {};
     for (const key of [
       "industry",
@@ -60,6 +76,7 @@ export const websiteScrapeSource: EnrichmentSource = {
     ] as const) {
       const value = ai[key];
       if (typeof value === "string" && value.trim()) {
+        if (NUMERIC_FIELDS.has(key) && !isVerifiableNumber(value, sourceDigits)) continue;
         fields[key] = { value: value.trim().slice(0, 300), confidence: CONFIDENCE.SITE_SCRAPE };
       }
     }

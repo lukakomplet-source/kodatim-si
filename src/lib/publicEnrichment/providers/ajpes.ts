@@ -2,6 +2,7 @@ import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { fetchAjpesAuthed } from "../ajpesSession";
 import { stripHtmlToText } from "../htmlText";
+import { verifyNumericFields } from "../verifyNumericFields";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const BASE = "https://www.ajpes.si/prs";
@@ -39,9 +40,44 @@ function toFields(extracted: Extracted, sourceUrl: string): Record<string, Field
   return fields;
 }
 
-function findDetailLink(html: string): string | null {
-  const match = html.match(/href="(podjetje\.asp\?[^"]+)"/i);
-  return match ? `${BASE}/${match[1].replace(/&amp;/g, "&")}` : null;
+/**
+ * The results page also contains an unrelated "recently viewed / featured
+ * companies" widget earlier in the HTML, with the SAME podjetje.asp links
+ * regardless of the search query — grabbing the first such link on the whole
+ * page (as this used to do) silently returns the wrong company every time.
+ * The real results live inside <table id="tableRezultati">. AJPES only
+ * returns the first page (10 rows, unranked) for a substring query like "ARS"
+ * — the intended company can be past page 1. Rather than guess and attach a
+ * confident-looking but wrong company's registry data, only auto-resolve when
+ * a row's name exactly matches (or it's the only candidate); otherwise treat
+ * it as genuinely not found so a wrong match is never silently merged.
+ */
+type DetailLinkResult =
+  | { status: "found"; url: string }
+  | { status: "not_found" }
+  | { status: "ambiguous"; candidateCount: number };
+
+function findDetailLink(html: string, companyName: string): DetailLinkResult {
+  const tableStart = html.indexOf('id="tableRezultati"');
+  if (tableStart === -1) return { status: "not_found" };
+  const tableEnd = html.indexOf("</table>", tableStart);
+  const tableHtml = tableEnd === -1 ? html.slice(tableStart) : html.slice(tableStart, tableEnd);
+
+  const rowPattern = /<a href="(podjetje\.asp\?[^"]+)">([^<]*)<\/a><\/td>\s*<td>([^<]*)<\/td>/gi;
+  const rows: { href: string; firma: string; skrajsana: string }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = rowPattern.exec(tableHtml)) !== null) {
+    rows.push({ href: match[1], firma: match[2].trim(), skrajsana: match[3].trim() });
+  }
+  if (rows.length === 0) return { status: "not_found" };
+
+  const normalized = companyName.trim().toLowerCase();
+  const exact = rows.find(
+    (r) => r.skrajsana.toLowerCase() === normalized || r.firma.toLowerCase() === normalized
+  );
+  if (exact) return { status: "found", url: `${BASE}/${exact.href.replace(/&amp;/g, "&")}` };
+  if (rows.length === 1) return { status: "found", url: `${BASE}/${rows[0].href.replace(/&amp;/g, "&")}` };
+  return { status: "ambiguous", candidateCount: rows.length };
 }
 
 export const ajpesProvider: PublicEnrichmentProvider = {
@@ -62,15 +98,30 @@ export const ajpesProvider: PublicEnrichmentProvider = {
       };
     }
 
+    let searchResult: Awaited<ReturnType<typeof fetchAjpesAuthed>>;
     try {
       const searchUrl = `${BASE}/rezultati.asp?naziv=${encodeURIComponent(lead.company_name)}&status=1`;
-      const searchResult = await fetchAjpesAuthed(searchUrl, null);
+      searchResult = await fetchAjpesAuthed(searchUrl, null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "neznana napaka";
+      // Distinct from "not found" — the search itself never ran because
+      // authentication failed, so nothing downstream can be trusted.
+      const note = `AJPES: PRIJAVA NI USPELA — ${message}`;
+      return { note, skippedReason: note };
+    }
 
-      const detailUrl = findDetailLink(searchResult.html);
-      if (!detailUrl) {
-        return { note: "AJPES: ni bilo mogoče najti podjetja v registru." };
-      }
+    const detail = findDetailLink(searchResult.html, lead.company_name);
+    if (detail.status === "not_found") {
+      const note = "AJPES: ni bilo mogoče najti podjetja v registru.";
+      return { note, skippedReason: note };
+    }
+    if (detail.status === "ambiguous") {
+      const note = `AJPES: AMBIGUOUS MATCH — ${detail.candidateCount} zadetkov za "${lead.company_name}", brez natančnega ujemanja imena; podatkov ni bilo mogoče zanesljivo pripisati.`;
+      return { note, skippedReason: note };
+    }
+    const detailUrl = detail.url;
 
+    try {
       const detailResult = await fetchAjpesAuthed(detailUrl, searchResult.session);
       const text = stripHtmlToText(detailResult.html).slice(0, 8000);
 
@@ -79,7 +130,7 @@ export const ajpesProvider: PublicEnrichmentProvider = {
         `Podjetje: ${lead.company_name}\n\nVsebina strani (${detailUrl}):\n\n${text}`,
         { temperature: 0.1 }
       );
-      const fields = toFields(ai, detailUrl);
+      const fields = verifyNumericFields(toFields(ai, detailUrl), text);
       const count = Object.keys(fields).length;
       return {
         fields,
