@@ -121,7 +121,9 @@ export const companyWallProvider: PublicEnrichmentProvider = {
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       const note = `CompanyWall: napaka pri iskanju — ${message}`;
-      return { note, skippedReason: note };
+      // The site itself misbehaved (HTTP error / rate limit) — a real failure,
+      // unlike "company simply isn't listed here" below.
+      return { note, skippedReason: note, failed: true };
     }
 
     const match = pickSearchResult(searchHtml, lead.company_name);
@@ -152,7 +154,7 @@ export const companyWallProvider: PublicEnrichmentProvider = {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `CompanyWall: napaka — ${message}` };
+      return { note: `CompanyWall: napaka — ${message}`, failed: true };
     }
   },
 };

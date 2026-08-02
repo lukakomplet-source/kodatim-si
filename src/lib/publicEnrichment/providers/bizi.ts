@@ -136,7 +136,9 @@ export const biziProvider: PublicEnrichmentProvider = {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `Bizi.si: napaka — ${message}` };
+      // Network/HTTP failure — a real malfunction. (A 404 redirect, i.e. the
+      // company genuinely isn't on Bizi, is handled above as a plain skip.)
+      return { note: `Bizi.si: napaka — ${message}`, failed: true };
     }
   },
 };

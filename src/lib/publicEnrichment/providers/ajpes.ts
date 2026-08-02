@@ -107,7 +107,10 @@ export const ajpesProvider: PublicEnrichmentProvider = {
       // Distinct from "not found" — the search itself never ran because
       // authentication failed, so nothing downstream can be trusted.
       const note = `AJPES: PRIJAVA NI USPELA — ${message}`;
-      return { note, skippedReason: note };
+      // A rejected login / unreachable AJPES is a genuine malfunction (nothing
+      // can ever come through until it's fixed) — unlike "company not in the
+      // register", which is a legitimate empty result.
+      return { note, skippedReason: note, failed: true };
     }
 
     const detail = findDetailLink(searchResult.html, lead.company_name);
@@ -141,7 +144,7 @@ export const ajpesProvider: PublicEnrichmentProvider = {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `AJPES: napaka — ${message}` };
+      return { note: `AJPES: napaka — ${message}`, failed: true };
     }
   },
 };

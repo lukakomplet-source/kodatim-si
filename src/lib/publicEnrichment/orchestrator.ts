@@ -12,6 +12,7 @@ import { ajpesProvider } from "./providers/ajpes";
 import {
   CORE_FIELDS,
   PUBLIC_ENRICHMENT_SOURCE_IDS,
+  isPrimaryProvider,
   type ProviderDebugEntry,
   type PublicEnrichmentDebug,
   type PublicEnrichmentProvider,
@@ -95,6 +96,8 @@ export async function runPublicEnrichment(
         fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: "vir ni bil poizvedovan (pogoj za zagon ni izpolnjen)" })),
         durationMs: 0,
         error: null,
+        note: "Vir ni bil potreben (pogoj za zagon ni izpolnjen).",
+        outcome: "skipped",
       });
       continue;
     }
@@ -140,12 +143,30 @@ export async function runPublicEnrichment(
           .filter((f) => !fieldsFound.includes(f))
           .map((field) => ({ field, reason: missingReason })),
         durationMs: Date.now() - startedAt,
-        error: null,
+        error: result.failed && isPrimaryProvider(provider.id) ? result.note : null,
+        note: result.note,
+        // A provider that ran and contributed nothing is normally just
+        // "skipped" (AJPES AMBIGUOUS MATCH, company not listed on
+        // CompanyWall/Bizi, Firecrawl unavailable). It only becomes a red
+        // error when the source itself malfunctioned (result.failed) AND
+        // it's a required provider — an optional one is never red.
+        outcome:
+          fieldsFound.length > 0
+            ? "ok"
+            : result.failed && isPrimaryProvider(provider.id)
+              ? "error"
+              : "skipped",
       });
 
       await logActivity(leadId, "enrichment_step", result.note, userId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
+      // Only a REQUIRED provider (AJPES/CompanyWall/Bizi) failing is a real
+      // error. The optional enhancement layer (website/AI extraction via
+      // Firecrawl, Google) throwing — 402 out of credits, timeout, network
+      // error — is a neutral skip: the lead is still complete and successful
+      // from the registries. The message stays in `note` for the debug log.
+      const isPrimary = isPrimaryProvider(provider.id);
       debugEntries.push({
         id: provider.id,
         label: provider.label,
@@ -154,7 +175,11 @@ export async function runPublicEnrichment(
         fieldsFound: [],
         fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: `napaka: ${message}` })),
         durationMs: Date.now() - startedAt,
-        error: message,
+        error: isPrimary ? message : null,
+        note: isPrimary
+          ? `${provider.label}: napaka — ${message}`
+          : `${provider.label}: neobvezni korak preskočen — ${message}`,
+        outcome: isPrimary ? "error" : "skipped",
       });
       await logActivity(leadId, "enrichment_step", `${provider.label}: napaka — ${message}`, userId);
     }

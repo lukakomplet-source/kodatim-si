@@ -2,11 +2,34 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { PublicEnrichmentDebug } from "@/lib/publicEnrichment/types";
-import { PUBLIC_ENRICHMENT_SOURCE_LABELS, type PublicEnrichmentSourceId } from "@/lib/publicEnrichment/types";
+import type { ProviderDebugEntry, ProviderOutcome, PublicEnrichmentDebug } from "@/lib/publicEnrichment/types";
+import {
+  PUBLIC_ENRICHMENT_SOURCE_LABELS,
+  isPrimaryProvider,
+  type PublicEnrichmentSourceId,
+} from "@/lib/publicEnrichment/types";
 
 function sourceLabel(id: string): string {
   return PUBLIC_ENRICHMENT_SOURCE_LABELS[id as PublicEnrichmentSourceId] ?? id;
+}
+
+const OUTCOME_STYLES: Record<ProviderOutcome, { icon: string; label: string; className: string }> = {
+  ok: { icon: "✅", label: "Uspešno", className: "text-emerald-600" },
+  skipped: { icon: "⚪", label: "Preskočeno", className: "text-zinc-500" },
+  error: { icon: "❌", label: "Napaka", className: "text-red-600" },
+};
+
+/**
+ * Derives the three-state outcome, falling back for debug entries written
+ * before `outcome` existed. Only a REQUIRED provider (AJPES/CompanyWall/
+ * Bizi) can ever be an error — the optional layer (website/AI via Firecrawl,
+ * Google) is at worst "skipped", never red.
+ */
+function outcomeOf(p: ProviderDebugEntry): ProviderOutcome {
+  if (p.outcome) return p.outcome;
+  if (!p.executed) return "skipped";
+  if (p.error) return isPrimaryProvider(p.id) ? "error" : "skipped";
+  return p.fieldsFound.length > 0 ? "ok" : "skipped";
 }
 
 export default function EnrichmentDebugPanel({ debug }: { debug: PublicEnrichmentDebug | null | undefined }) {
@@ -31,7 +54,8 @@ export default function EnrichmentDebugPanel({ debug }: { debug: PublicEnrichmen
               <thead>
                 <tr className="text-left text-zinc-400">
                   <th className="pb-1.5 pr-3 font-medium">Vir</th>
-                  <th className="pb-1.5 pr-3 font-medium">Izvedeno</th>
+                  <th className="pb-1.5 pr-3 font-medium">Status</th>
+                  <th className="pb-1.5 pr-3 font-medium">Pojasnilo</th>
                   <th className="pb-1.5 pr-3 font-medium">URL</th>
                   <th className="pb-1.5 pr-3 font-medium">Najdena polja</th>
                   <th className="pb-1.5 pr-3 font-medium">Manjkajoča polja</th>
@@ -39,10 +63,15 @@ export default function EnrichmentDebugPanel({ debug }: { debug: PublicEnrichmen
                 </tr>
               </thead>
               <tbody>
-                {debug.providers.map((p) => (
+                {debug.providers.map((p) => {
+                  const outcome = OUTCOME_STYLES[outcomeOf(p)];
+                  return (
                   <tr key={p.id} className="border-t border-zinc-100 align-top">
                     <td className="py-1.5 pr-3 font-medium text-zinc-700">{p.label}</td>
-                    <td className="py-1.5 pr-3">{p.executed ? (p.error ? "❌" : "✅") : "—"}</td>
+                    <td className={`whitespace-nowrap py-1.5 pr-3 font-medium ${outcome.className}`}>
+                      {outcome.icon} {outcome.label}
+                    </td>
+                    <td className="max-w-[220px] py-1.5 pr-3 text-zinc-500">{p.note ?? "—"}</td>
                     <td className="max-w-[180px] truncate py-1.5 pr-3">
                       {p.url ? (
                         <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
@@ -62,7 +91,8 @@ export default function EnrichmentDebugPanel({ debug }: { debug: PublicEnrichmen
                     </td>
                     <td className="py-1.5 pr-3 text-zinc-500">{p.durationMs > 0 ? `${p.durationMs} ms` : "—"}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

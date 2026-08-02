@@ -106,6 +106,16 @@ export type PublicProviderResult = {
   note: string; // Slovenian, always present — becomes an "enrichment_step" activity entry
   /** Set when the provider deliberately didn't attempt anything (e.g. missing credentials) — used for debug "missing field" reasons instead of the generic "vir ni vseboval tega podatka". */
   skippedReason?: string;
+  /**
+   * True = the source itself malfunctioned (login rejected, HTTP error, rate
+   * limited) — something is broken and needs attention. False/absent = the
+   * source worked fine and the data legitimately isn't there (company not in
+   * the register, ambiguous name match). Only the former becomes a red error
+   * for a primary provider; the latter is always a neutral skip. Providers
+   * declare this explicitly rather than the orchestrator guessing from
+   * message text.
+   */
+  failed?: boolean;
 };
 
 export interface PublicEnrichmentProvider {
@@ -118,6 +128,23 @@ export interface PublicEnrichmentProvider {
   run(lead: IntelLead): Promise<PublicProviderResult>;
 }
 
+/**
+ * Which providers are REQUIRED for a lead to count as successfully enriched.
+ * Everything else (website/AI extraction, Google) is an optional enhancement
+ * layer — its failure must never surface to the user as an error, only as a
+ * neutral "skipped". Firecrawl in particular can be entirely unavailable
+ * (402 out of credits, rate limit, network error) and the lead is still a
+ * complete, successful lead built from the registries below.
+ */
+export const PRIMARY_PROVIDER_IDS: readonly PublicEnrichmentSourceId[] = ["ajpes", "companywall", "bizi"];
+
+export function isPrimaryProvider(id: string): boolean {
+  return (PRIMARY_PROVIDER_IDS as readonly string[]).includes(id);
+}
+
+/** ok = contributed data; skipped = ran but had nothing to give (or an optional dependency was unavailable); error = a genuine failure of a REQUIRED provider. */
+export type ProviderOutcome = "ok" | "skipped" | "error";
+
 export type ProviderDebugEntry = {
   id: PublicEnrichmentSourceId;
   label: string;
@@ -127,6 +154,9 @@ export type ProviderDebugEntry = {
   fieldsMissing: { field: string; reason: string }[];
   durationMs: number;
   error: string | null;
+  /** The provider's own Slovenian explanation ("why") — previously computed and thrown away, now surfaced in the UI. */
+  note?: string;
+  outcome?: ProviderOutcome;
 };
 
 export type FieldConflict = {
