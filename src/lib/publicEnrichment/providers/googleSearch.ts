@@ -1,19 +1,29 @@
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
-const MAX_SNIPPETS = 8;
+// Last resort — only runs when Website found nothing (no known website at
+// all). No Firecrawl per spec: a direct fetch() against Google's results
+// page. Real testing found Google serves a degraded, effectively-unparseable
+// "having trouble accessing search" response to non-browser requests (not a
+// hard block/CAPTCHA, just no real result markup) — so this will honestly
+// fail most of the time. That's an accepted, disclosed limitation: Google is
+// explicitly the lowest-priority, optional provider, and a failed attempt
+// here degrades cleanly (never blocks the pipeline, never guesses).
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept-Language": "sl-SI,sl;q=0.9",
+};
 
-// Google is a last-resort, unauthenticated web-search provider — it must
-// never be able to establish or override company IDENTITY (director, matična
-// številka, davčna, SKD, status, pravna oblika, ustanovitev). Those may only
-// ever come from AJPES/CompanyWall/Bizi. Google is only trusted for contact
-// details, which is why its allowed field set below is deliberately narrow —
-// this is enforced structurally (the AI literally cannot return a key
-// outside this list into a field this provider claims), not just by prompt.
-const EXTRACTION_PROMPT = `Iz podanih naslovov in opisov splošnih spletnih iskalnih zadetkov izlušči SAMO kontaktne podatke o podjetju.
+// Google is never allowed to establish or override company IDENTITY
+// (director, matična, davčna, SKD, status, pravna oblika, ustanovitev) — only
+// contact info and a candidate website. Enforced structurally below (the
+// extraction prompt can't ask for anything outside this list, and even if
+// the model returned an out-of-list key, the allowlist filter drops it).
+const EXTRACTION_PROMPT = `Iz podanih naslovov in opisov splošnih spletnih iskalnih zadetkov izlušči navedene KONTAKTNE podatke o podjetju.
 Odgovori IZKLJUČNO z veljavnim JSON objektom, kjer je vsak ključ eden od: "email", "phone",
-"address_street", "address_city", "address_region", "address_country" — vsak v obliki { "value": "...", "source_index": <št.> }.
+"address_street", "address_city", "address_region", "address_country", "website" — vsak v obliki
+{ "value": "...", "source_index": <št.> }.
 
 Pravila:
 - Vključi ključ SAMO, če je vrednost dobesedno navedena v naslovu ali opisu enega od zadetkov — nikoli si ne
@@ -26,30 +36,55 @@ Pravila:
 type ExtractedField = { value?: string; source_index?: number };
 type Extracted = Record<string, ExtractedField>;
 
-// Also acts as the allowlist filter below — any other key the model might
-// still emit despite the prompt is dropped, never merged into the lead.
-export const GOOGLE_SEARCH_POSSIBLE_FIELDS = [
-  "email", "phone", "address_street", "address_city", "address_region", "address_country",
-];
+export const GOOGLE_SEARCH_POSSIBLE_FIELDS = ["email", "phone", "address_street", "address_city", "address_region", "address_country", "website"];
+
+type Snippet = { url: string; title: string; description: string };
+
+function parseGoogleResults(html: string): Snippet[] {
+  // Best-effort: modern Google's server-rendered HTML for non-browser
+  // requests rarely contains clean <a href> result links (confirmed live) —
+  // this only succeeds on whatever degraded markup Google happens to return.
+  const blocks = [...html.matchAll(/<a href="(https?:\/\/(?!www\.google)[^"&]+)"[^>]*>[\s\S]{0,20}?<h3[^>]*>([\s\S]*?)<\/h3>/gi)];
+  return blocks.slice(0, 8).map((m) => ({
+    url: m[1],
+    title: m[2].replace(/<[^>]+>/g, " ").trim(),
+    description: "",
+  }));
+}
 
 export const googleSearchProvider: PublicEnrichmentProvider = {
   id: "google_search",
   label: "Google iskanje",
-  priority: 2,
+  priority: 5,
   possibleFields: GOOGLE_SEARCH_POSSIBLE_FIELDS,
 
-  shouldRun() {
-    return true;
+  // Google only runs once AJPES/CompanyWall/Bizi/Website have all had their
+  // chance and no website is known yet — never before.
+  shouldRun(lead: IntelLead) {
+    return !lead.website;
   },
 
-  async run(lead: IntelLead, discovered: DiscoveredUrls): Promise<PublicProviderResult> {
-    const snippets = discovered.snippets.slice(0, MAX_SNIPPETS);
+  async run(lead: IntelLead): Promise<PublicProviderResult> {
+    let html: string;
+    try {
+      const query = `${lead.company_name} kontakt uradna stran`;
+      const res = await fetch(`https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`, { headers: HEADERS });
+      if (!res.ok) throw new Error(`Google iskanje napaka (${res.status})`);
+      html = await res.text();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "neznana napaka";
+      const note = `Google iskanje: napaka pri iskanju — ${message}`;
+      return { note, skippedReason: note };
+    }
+
+    const snippets = parseGoogleResults(html);
     if (snippets.length === 0) {
-      return { note: "Google iskanje: ni razpoložljivih zadetkov." };
+      const note = "Google iskanje: ni bilo mogoče pridobiti razčlenljivih rezultatov (Google pogosto zavrne neposredne poizvedbe brez brskalnika).";
+      return { note, skippedReason: note };
     }
 
     try {
-      const block = snippets.map((s, i) => `${i + 1}. ${s.title}\n${s.description ?? ""}\n(${s.url})`).join("\n\n");
+      const block = snippets.map((s, i) => `${i + 1}. ${s.title}\n(${s.url})`).join("\n\n");
       const ai = await chatJSON<Extracted>(
         EXTRACTION_PROMPT,
         `Podjetje: ${lead.company_name}\n\nSpletni zadetki:\n\n${block}`,

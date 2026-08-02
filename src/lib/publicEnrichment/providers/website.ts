@@ -1,10 +1,15 @@
-import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
+import { scrapeUrl } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { BLOCKED_DOMAINS } from "@/lib/enrichment/blockedDomains";
 import { verifyNumericFields } from "../verifyNumericFields";
+import { readCache, writeCache, CACHE_TTL } from "../cache";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
+// Runs only after AJPES/CompanyWall/Bizi (see orchestrator.ts's PROVIDERS
+// order) — website is read from lead.website (set manually, or by
+// CompanyWall/Bizi if either happened to list it), never discovered here.
+// Discovery of an unknown website is Google's job now (last resort, only
+// when this provider finds nothing to work with).
 const EXTRACTION_PROMPT = `Iz vsebine spletne strani podjetja izlušči podatke in odgovori IZKLJUČNO z veljavnim JSON objektom
 s ključi: "industry", "email", "phone", "address_street", "address_city", "address_region", "address_country",
 "vat_id", "director", "owners", "employees_count", "founded_date", "registration_number".
@@ -24,20 +29,19 @@ export const WEBSITE_POSSIBLE_FIELDS = [
   "director", "owners", "employees_count", "founded_date", "registration_number",
 ];
 
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
+
+// Confirmed live: feeding an LLM ~50 characters of real content ("Telegram
+// Web" — a JS-shell page where both plain fetch() AND Firecrawl were
+// unavailable) still produced 8 fabricated fields despite the prompt's
+// explicit "never invent" instruction. A prompt is not enforcement — refuse
+// to even attempt extraction when there's nowhere near enough real content
+// to plausibly contain real business data, rather than relying on the model
+// to decline on its own.
+const MIN_CONTENT_LENGTH = 300;
+
 function toUrl(website: string): string {
   return website.startsWith("http") ? website : `https://${website}`;
-}
-
-function hostnameOf(url: string): string | null {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return null;
-  }
-}
-
-function isBlocked(url: string): boolean {
-  return BLOCKED_DOMAINS.some((d) => url.toLowerCase().includes(d));
 }
 
 function toFields(extracted: Extracted, confidence: number, sourceUrl: string): Record<string, FieldCandidate> {
@@ -50,10 +54,47 @@ function toFields(extracted: Extracted, confidence: number, sourceUrl: string): 
   return fields;
 }
 
+/** A JS-only SPA shell renders almost no real text server-side — heuristic, not exact. */
+function looksLikeJsShell(html: string): boolean {
+  const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return text.length < 200;
+}
+
+type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" | "skipped"; firecrawlSkipReason?: string };
+
+/**
+ * Firecrawl here is an optional enhancement, never a requirement — the whole
+ * discovery layer (AJPES, CompanyWall, Bizi) works with zero Firecrawl
+ * dependency, and this is the one narrow, deliberate exception (only for a
+ * page plain fetch() clearly couldn't render). If Firecrawl itself is
+ * unavailable (out of credits, rate limited, network error, anything), that
+ * must never fail the website step outright — fall back to whatever plain
+ * fetch() got (even if thin) and clearly mark Firecrawl as skipped, rather
+ * than losing the step entirely.
+ */
+async function fetchHtml(url: string): Promise<FetchOutcome> {
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(`Stran ni dosegljiva (${res.status})`);
+  const html = await res.text();
+  const plainMarkdown = html.replace(/<[^>]+>/g, " ");
+
+  if (!looksLikeJsShell(html)) {
+    return { markdown: plainMarkdown, firecrawlStatus: "not_needed" };
+  }
+
+  try {
+    const scraped = await scrapeUrl(url, { onlyMainContent: false });
+    return { markdown: scraped.markdown, firecrawlStatus: "used" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "neznana napaka";
+    return { markdown: plainMarkdown, firecrawlStatus: "skipped", firecrawlSkipReason: message };
+  }
+}
+
 export const websiteProvider: PublicEnrichmentProvider = {
   id: "public_website",
   label: "Spletna stran (poglobljeno)",
-  priority: 1,
+  priority: 4,
   possibleFields: WEBSITE_POSSIBLE_FIELDS,
 
   shouldRun(lead: IntelLead) {
@@ -62,41 +103,43 @@ export const websiteProvider: PublicEnrichmentProvider = {
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
     if (!lead.website) return { note: "Spletna stran: ni znanega naslova." };
+    const targetUrl = toUrl(lead.website);
 
-    const homeUrl = toUrl(lead.website);
-    const domain = hostnameOf(homeUrl);
-    let targetUrl = homeUrl;
-
-    if (domain) {
-      try {
-        const results = await searchWeb(`site:${domain} kontakt OR o nas OR contact OR about OR podjetje`, {
-          limit: 5,
-          country: "SI",
-        });
-        const subpage = results.find(
-          (r) => hostnameOf(r.url) === domain && r.url !== homeUrl && !isBlocked(r.url)
-        );
-        if (subpage) targetUrl = subpage.url;
-      } catch {
-        // subpage search failed — fall back to the homepage
-      }
+    const cached = await readCache("website", targetUrl, CACHE_TTL.WEBSITE_MS);
+    if (cached) {
+      const fields = toFields(cached.parsedFields as Extracted, CONFIDENCE.WEBSITE_DEEP, targetUrl);
+      return { fields, note: `Spletna stran (poglobljeno): ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
     }
 
     try {
-      const scraped = await scrapeUrl(targetUrl, { onlyMainContent: false });
+      const { markdown, firecrawlStatus, firecrawlSkipReason } = await fetchHtml(targetUrl);
+      const firecrawlNote =
+        firecrawlStatus === "skipped"
+          ? ` (Firecrawl AI povzetek preskočen — ${firecrawlSkipReason}; osnovni podatki iz navadnega fetch())`
+          : "";
+
+      if (markdown.trim().length < MIN_CONTENT_LENGTH) {
+        return {
+          note: `Spletna stran (poglobljeno): stran ${targetUrl} ni vsebovala dovolj besedila za zanesljivo izluščanje (verjetno JS stran brez vsebine na strežniku).${firecrawlNote}`,
+        };
+      }
+
       const ai = await chatJSON<Extracted>(
         EXTRACTION_PROMPT,
-        `Podjetje: ${lead.company_name}\n\nVsebina strani (${targetUrl}):\n\n${scraped.markdown.slice(0, 8000)}`,
+        `Podjetje: ${lead.company_name}\n\nVsebina strani (${targetUrl}):\n\n${markdown.slice(0, 8000)}`,
         { temperature: 0.1 }
       );
-      const fields = verifyNumericFields(toFields(ai, CONFIDENCE.WEBSITE_DEEP, targetUrl), scraped.markdown);
+      const fields = verifyNumericFields(toFields(ai, CONFIDENCE.WEBSITE_DEEP, targetUrl), markdown);
       const count = Object.keys(fields).length;
+
+      await writeCache("website", targetUrl, null, ai, targetUrl);
+
       return {
         fields,
         note:
           count > 0
-            ? `Spletna stran (poglobljeno): najdenih ${count} podatkov na ${targetUrl}.`
-            : `Spletna stran (poglobljeno): stran ${targetUrl} prebrana, dodatnih podatkov ni bilo mogoče izluščiti.`,
+            ? `Spletna stran (poglobljeno): najdenih ${count} podatkov na ${targetUrl}.${firecrawlNote}`
+            : `Spletna stran (poglobljeno): stran ${targetUrl} prebrana, dodatnih podatkov ni bilo mogoče izluščiti.${firecrawlNote}`,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";

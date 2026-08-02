@@ -128,7 +128,7 @@ export const contactDiscoverySource: EnrichmentSource = {
     const found: ContactCandidate[] = [];
     const notes: string[] = [];
 
-    // Pass A — homepage content already scraped by websiteScrapeSource, no extra Firecrawl call.
+    // Pass A — reuses homepage content already scraped elsewhere in this run, if any (no extra Firecrawl call).
     if (ctx.markdown?.trim()) {
       try {
         const ai = await chatJSON<{ contacts?: ExtractedContact[] }>(

@@ -1,37 +1,28 @@
-import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
-import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
+import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
-import { CONFIDENCE, type DiscoveredUrls, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { readCache, writeCache, CACHE_TTL } from "../cache";
+import { politeFetch } from "../politeFetch";
+import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
-const EXTRACTION_PROMPT = `Iz podane javno dostopne vsebine strani CompanyWall.si izlušči SAMO javno vidne podatke o podjetju in odgovori
-IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "authorized_representatives",
-"employees_count", "founded_date", "legal_form", "registration_number", "vat_id", "industry", "skd_code", "skd_name",
-"company_status", "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating", "description".
-
-Pravila:
-- Uporabi SAMO podatke, ki so v vsebini dejansko izpisani in javno vidni — nikoli si ne izmišljuj.
-- Če je podatek zaklenjen, za plačilnim zidom, označen "na voljo v CompanyWall Plus" ali kako drugače
-  nedostopen/skrit, ta ključ IZPUSTI — nikoli ne ugibaj, ne opisuj omejitve in je ne poskušaj zaobiti.
-- Vsak ključ izpolni SAMO, če je dejansko naveden. Če ga ni, ključ izpusti.
-- Vse v slovenščini.`;
+// Deterministic HTML parsing — no Firecrawl, no AI. CompanyWall's own search
+// (https://www.companywall.si/iskanje?q=...) is a plain unauthenticated GET
+// that returns real server-rendered HTML (confirmed live: no JS rendering
+// needed), so this needs nothing more than fetch() + regex, the same pattern
+// already proven for AJPES.
 
 export const COMPANYWALL_POSSIBLE_FIELDS = [
-  "director", "owners", "founders", "authorized_representatives", "employees_count", "founded_date",
-  "legal_form", "registration_number", "vat_id", "industry", "skd_code", "skd_name", "company_status",
-  "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating", "description",
+  "director", "founded_date", "legal_form", "registration_number", "vat_id",
+  "skd_code", "skd_name", "employees_count", "phone", "email", "address_street",
+  "address_city", "description",
 ];
 
-type Extracted = Partial<Record<
-  | "director" | "owners" | "founders" | "authorized_representatives" | "employees_count" | "founded_date"
-  | "legal_form" | "registration_number" | "vat_id" | "industry" | "skd_code" | "skd_name" | "company_status"
-  | "revenue_amount" | "revenue_year" | "profit" | "ebit" | "ebitda" | "credit_rating" | "description",
-  string
->>;
+const BASE = "https://www.companywall.si";
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
-function toFields(extracted: Extracted, sourceUrl: string): Record<string, FieldCandidate> {
+function toFields(values: Record<string, string | null | undefined>, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
-  for (const [key, value] of Object.entries(extracted)) {
+  for (const [key, value] of Object.entries(values)) {
     if (typeof value === "string" && value.trim()) {
       fields[key] = { value: value.trim().slice(0, 300), confidence: CONFIDENCE.COMPANYWALL_SCRAPE, source_url: sourceUrl };
     }
@@ -39,68 +30,119 @@ function toFields(extracted: Extracted, sourceUrl: string): Record<string, Field
   return fields;
 }
 
-async function extract(companyName: string, url: string, markdown: string, sliceLen: number, temperature: number) {
-  const ai = await chatJSON<Extracted>(
-    EXTRACTION_PROMPT,
-    `Podjetje: ${companyName}\n\nVsebina strani (${url}):\n\n${markdown.slice(0, sliceLen)}`,
-    { temperature }
+type SearchResult = { href: string; name: string } | null;
+
+/**
+ * Same precedent as AJPES: a bare name search can match several unrelated
+ * companies (see the search results table — substring matching, not
+ * relevance-ranked). Only auto-pick an exact (case-insensitive) name match,
+ * or the single candidate if there's just one — otherwise report not found
+ * rather than guessing.
+ */
+function pickSearchResult(html: string, companyName: string): SearchResult {
+  const rows = [...html.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">([^<]+)<\/a>/gi)].map((m) => ({
+    href: m[1],
+    name: stripHtmlToText(m[2]).trim(),
+  }));
+  if (rows.length === 0) return null;
+
+  const normalized = companyName.trim().toLowerCase();
+  const exact = rows.find((r) => r.name.toLowerCase() === normalized);
+  return exact ?? (rows.length === 1 ? rows[0] : null);
+}
+
+// Address/phone/founded_date/email/director are all packed into one
+// auto-generated "Opis podjetja" sentence, e.g.:
+// "Družba z omejeno odgovornostjo ARHIV PNM d.o.o. registrirana je na naslovu
+//  Trg Leona Štuklja 5, 2000, Maribor, Slovenija in deluje od leta 18.06.2012..
+//  Kontaktni telefon je 041533663 in email arhiv.pnm@triera.net. Trenutni
+//  direktor podjetja je RICHTER MARTIN- direktor."
+// Confirmed live against a real detail page — far more reliable than
+// scattered <dt>/<dd> pairs, which break under nested markup.
+function parseDetailPage(text: string): Record<string, string | null> {
+  // The whole auto-generated "Opis podjetja" sentence, captured once so it
+  // can double as both the description field and the source for the
+  // individual pieces below — one match instead of three overlapping ones.
+  const descriptionMatch = text.match(
+    /([A-ZŠČŽ][^.]*?registrirana je na naslovu[^.]*?\.\.?\s*Kontaktni telefon je[^.]*?\.\s*Trenutni direktor podjetja je[^.]*?direktor\.)/
   );
-  return toFields(ai, url);
+  const description = descriptionMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null;
+
+  const addressMatch = text.match(/registrirana je na naslovu\s+([^.]+?)\s+in deluje od leta\s+(\d{1,2}\.\s?\d{1,2}\.\s?\d{4})/i);
+  const contactMatch = text.match(/Kontaktni telefon je\s+([^\s]+)\s+in email\s+([^\s.,]+@[^\s.,]+\.[^\s.,]+)/i);
+  const directorMatch = text.match(/Trenutni direktor podjetja je\s+([^\n.]+?)\s*-\s*direktor/i);
+
+  const address = addressMatch?.[1]?.trim() ?? null;
+  // "Street N, ZIP, City, Country" — split defensively, city is usually the third comma-part.
+  const addressParts = address ? address.split(",").map((p) => p.trim()) : [];
+
+  const skdRaw = firstNonEmptyLineAfter(text, "SKD");
+  const skdMatch = skdRaw?.match(/^([\d.]+)\s*-?\s*(.*)$/);
+
+  return {
+    director: directorMatch?.[1]?.trim() ?? firstNonEmptyLineAfter(text, "Direktor"),
+    founded_date: addressMatch?.[2]?.trim() ?? firstNonEmptyLineAfter(text, "Datum vpisa v register"),
+    phone: contactMatch?.[1]?.trim() ?? null,
+    email: contactMatch?.[2]?.trim() ?? null,
+    address_street: addressParts[0] ?? null,
+    address_city: addressParts[2] ?? null,
+    vat_id: firstNonEmptyLineAfter(text, "DŠ"),
+    registration_number: firstNonEmptyLineAfter(text, "MŠ"),
+    skd_code: skdMatch?.[1] ?? null,
+    skd_name: skdMatch?.[2]?.trim() || null,
+    employees_count: firstNonEmptyLineAfter(text, "Velikost podjetja"),
+    description,
+  };
 }
 
 export const companyWallProvider: PublicEnrichmentProvider = {
   id: "companywall",
   label: "CompanyWall",
-  priority: 3,
+  priority: 2,
   possibleFields: COMPANYWALL_POSSIBLE_FIELDS,
 
   shouldRun() {
     return true;
   },
 
-  async run(lead: IntelLead, discovered: DiscoveredUrls): Promise<PublicProviderResult> {
-    let url = discovered.companywall;
-    let searchError: string | null = null;
-
-    // NOTE: searching by AJPES's resolved registration number instead of the
-    // company name was tried and reverted — real-world testing showed
-    // Firecrawl's search index matches company names far more reliably than
-    // bare numeric IDs as quoted phrases (name search found real pages;
-    // identifier search found nothing for the same companies). Left as name
-    // search; a registration-number cross-check against the scraped page
-    // content (rather than as the query itself) would be a safer way to
-    // exploit the resolved identifier, if revisited later.
-    if (!url) {
-      try {
-        const results = await searchWeb(`site:companywall.si "${lead.company_name}"`, { limit: 3, country: "SI" });
-        url = results.find((r) => r.url.toLowerCase().includes("companywall.si"))?.url;
-      } catch (err) {
-        // A real Firecrawl error (rate limit, insufficient credits, etc.) must
-        // never look identical to "genuinely searched and found nothing" —
-        // that's exactly the failure mode that silently corrupted earlier runs.
-        searchError = err instanceof Error ? err.message : "neznana napaka";
-      }
+  async run(lead: IntelLead): Promise<PublicProviderResult> {
+    const cached = await readCache("companywall", lead.company_name, CACHE_TTL.REGISTRY_MS);
+    if (cached) {
+      const fields = toFields(cached.parsedFields as Record<string, string>, cached.sourceUrl ?? BASE);
+      return { fields, note: `CompanyWall: ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
     }
 
-    if (!url) {
-      const note = searchError
-        ? `CompanyWall: FAILED — napaka pri iskanju: ${searchError}`
-        : "CompanyWall: ni bilo mogoče najti javne strani podjetja.";
+    let searchHtml: string;
+    try {
+      const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(lead.company_name)}`;
+      const res = await politeFetch(searchUrl, { headers: HEADERS });
+      if (!res.ok) throw new Error(`CompanyWall iskanje napaka (${res.status})`);
+      searchHtml = await res.text();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "neznana napaka";
+      const note = `CompanyWall: napaka pri iskanju — ${message}`;
       return { note, skippedReason: note };
     }
 
+    const match = pickSearchResult(searchHtml, lead.company_name);
+    if (!match) {
+      const note = "CompanyWall: ni bilo mogoče najti javne strani podjetja.";
+      return { note, skippedReason: note };
+    }
+
+    const detailUrl = `${BASE}${match.href}`;
     try {
-      const scraped = await scrapeUrl(url, { onlyMainContent: false });
-      let fields = await extract(lead.company_name, url, scraped.markdown, 8000, 0.1);
+      const res = await politeFetch(detailUrl, { headers: HEADERS });
+      if (!res.ok) throw new Error(`CompanyWall stran ni dosegljiva (${res.status})`);
+      const html = await res.text();
+      const text = stripHtmlToText(html);
 
-      // Retry with a larger, lower-temperature pass if the first attempt was too thin —
-      // a real reliability improvement (guards against truncation/noise), not cosmetic.
-      if (Object.keys(fields).length < 3) {
-        fields = await extract(lead.company_name, url, scraped.markdown, 16000, 0);
-      }
-
-      fields = verifyNumericFields(fields, scraped.markdown);
+      const parsed = parseDetailPage(text);
+      const fields = verifyNumericFields(toFields(parsed, detailUrl), text);
       const count = Object.keys(fields).length;
+
+      await writeCache("companywall", lead.company_name, html, parsed, detailUrl);
+
       return {
         fields,
         note:

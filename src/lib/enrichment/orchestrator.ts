@@ -6,8 +6,6 @@ import { applyFieldResult, markNotFound } from "./merge";
 import { mergeContactPersonName } from "./contactMerge";
 import { applyContactDiscoveryResult } from "./contactPipeline";
 import { pickBestContact } from "./bestContactPick";
-import { websiteDiscoverySource } from "./sources/websiteDiscovery";
-import { websiteScrapeSource } from "./sources/websiteScrape";
 import { contactDiscoverySource } from "./sources/contactDiscovery";
 import { aiBusinessAnalysisSource } from "./sources/aiBusinessAnalysis";
 import { runPublicEnrichment } from "@/lib/publicEnrichment/orchestrator";
@@ -20,7 +18,10 @@ import {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-const SOURCES: EnrichmentSource[] = [websiteDiscoverySource, websiteScrapeSource, contactDiscoverySource];
+// Website discovery/scrape moved to the public enrichment engine's own
+// PROVIDERS chain (runs after AJPES/CompanyWall/Bizi resolve identity,
+// instead of before) — see src/lib/publicEnrichment/orchestrator.ts.
+const SOURCES: EnrichmentSource[] = [contactDiscoverySource];
 
 export type RunEnrichmentResult = { status: EnrichmentStatus | "skipped" };
 
@@ -154,14 +155,38 @@ export async function runLeadEnrichment(
       .eq("id", leadId);
     await logActivity(leadId, "enrichment_completed", null, userId);
 
-    // New, fully separate public-registry enrichment layer (Website/Google/
-    // CompanyWall/Bizi/Maps/social) — runs after the pipeline above is
+    // New, fully separate public-registry enrichment layer (AJPES/
+    // CompanyWall/Bizi/Website/Google) — runs after the pipeline above is
     // fully done, only fills still-empty fields, and can never affect the
     // status returned here.
     try {
       await runPublicEnrichment(leadId, admin, userId);
     } catch {
       // never blocks or alters the primary pipeline's outcome
+    }
+
+    // contactDiscoverySource ran above with no website yet (website
+    // resolution now happens inside public enrichment, after AJPES/
+    // CompanyWall/Bizi establish identity) — if one turned up, give contact
+    // discovery a second, real chance now that there's a site to read.
+    try {
+      const { data: freshLead } = await admin.from("intel_leads").select("*").eq("id", leadId).maybeSingle();
+      if (freshLead?.website && !lead.website) {
+        const result = await contactDiscoverySource.run(freshLead as unknown as IntelLead, { markdown: undefined });
+        if (result.contacts && result.contacts.length > 0) {
+          await applyContactDiscoveryResult({
+            admin,
+            leadId,
+            candidates: result.contacts,
+            existingContactPerson: freshLead.contact_person,
+            userId,
+          });
+        }
+        await logActivity(leadId, "enrichment_step", result.note, userId);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "neznana napaka";
+      await logActivity(leadId, "enrichment_step", `Iskanje kontaktov (po najdeni strani): napaka — ${message}`, userId);
     }
 
     return { status: "done" };

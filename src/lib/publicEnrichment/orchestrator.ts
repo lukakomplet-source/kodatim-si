@@ -2,7 +2,6 @@ import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/activity/log";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { discoverUrls } from "./discovery";
 import { applyIfEmpty } from "./merge";
 import { detectConflicts, type CollectedCandidate } from "./validation";
 import { websiteProvider } from "./providers/website";
@@ -10,7 +9,6 @@ import { googleSearchProvider } from "./providers/googleSearch";
 import { companyWallProvider } from "./providers/companywall";
 import { biziProvider } from "./providers/bizi";
 import { ajpesProvider } from "./providers/ajpes";
-import { googleMapsProvider, linkedinProvider, facebookProvider, instagramProvider } from "./providers/snippetProviders";
 import {
   CORE_FIELDS,
   PUBLIC_ENRICHMENT_SOURCE_IDS,
@@ -29,20 +27,17 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // davčna, SKD, status, pravna oblika, ustanovitev) must only ever come from
 // an authoritative registry — AJPES first, then CompanyWall, then Bizi — so
 // those three run before anything web-search-based gets a chance to claim
-// those fields via applyIfEmpty's "first empty slot wins" merge. Website/AI
-// extraction and Google run only after identity is resolved (or confirmed
-// unresolved), and social snippets are the last, lowest-trust resort.
-// Adding a new source later means adding one entry here — nothing else changes.
+// those fields via applyIfEmpty's "first empty slot wins" merge. Website
+// extraction runs once identity is resolved (or confirmed unresolved), and
+// Google is the last, optional resort — only when no website is known.
+// No LinkedIn/Facebook/Instagram/Google Maps — dropped as the lowest-trust,
+// highest-cost tier; identity and contact info are already covered above.
 const PROVIDERS: PublicEnrichmentProvider[] = [
   ajpesProvider,
   companyWallProvider,
   biziProvider,
   websiteProvider,
   googleSearchProvider,
-  googleMapsProvider,
-  linkedinProvider,
-  facebookProvider,
-  instagramProvider,
 ];
 
 const CORE_FIELD_SET = new Set<string>(CORE_FIELDS);
@@ -71,8 +66,6 @@ export async function runPublicEnrichment(
   );
   if (alreadyRan) return;
 
-  const discovered = await discoverUrls(lead).catch(() => ({ snippets: [] }));
-
   let workingMeta: Record<string, PublicFieldMeta> = { ...meta };
   const coreColumnUpdates: Record<string, string> = {};
   const customFieldUpdates: Record<string, string> = {};
@@ -91,7 +84,7 @@ export async function runPublicEnrichment(
     // see identity fields an earlier provider (AJPES) already resolved in
     // THIS run — the original static `lead` snapshot never reflects that.
     const liveLead: IntelLead = { ...lead, ...liveCore, custom_fields: { ...liveCustom } } as IntelLead;
-    const willRun = provider.shouldRun(liveLead, discovered);
+    const willRun = provider.shouldRun(liveLead);
     if (!willRun) {
       debugEntries.push({
         id: provider.id,
@@ -108,7 +101,7 @@ export async function runPublicEnrichment(
 
     const startedAt = Date.now();
     try {
-      const result = await provider.run(liveLead, discovered);
+      const result = await provider.run(liveLead);
       const checkedAt = new Date().toISOString();
       const resultFields = result.fields ?? {};
       let debugUrl: string | null = null;

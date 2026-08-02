@@ -7,16 +7,16 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
  * backfill loop and claim-guard state machine, which must stay untouched).
  */
 
+// LinkedIn/Facebook/Instagram/Google Maps removed per the discovery-layer
+// refactor — identity comes from AJPES/CompanyWall/Bizi, contact info from
+// Website/Google; social snippets were the lowest-trust, highest-cost tier
+// and added little the others didn't already cover.
 export const PUBLIC_ENRICHMENT_SOURCE_IDS = [
   "public_website",
   "google_search",
   "companywall",
   "bizi",
   "ajpes",
-  "google_maps",
-  "linkedin_snippet",
-  "facebook_snippet",
-  "instagram_snippet",
 ] as const;
 export type PublicEnrichmentSourceId = (typeof PUBLIC_ENRICHMENT_SOURCE_IDS)[number];
 
@@ -26,10 +26,6 @@ export const PUBLIC_ENRICHMENT_SOURCE_LABELS: Record<PublicEnrichmentSourceId, s
   companywall: "CompanyWall",
   bizi: "Bizi.si",
   ajpes: "AJPES",
-  google_maps: "Google Maps",
-  linkedin_snippet: "LinkedIn",
-  facebook_snippet: "Facebook",
-  instagram_snippet: "Instagram",
 };
 
 export const REGISTRY_FIELDS = [
@@ -88,10 +84,6 @@ export const CONFIDENCE = {
   COMPANYWALL_SCRAPE: 88,
   BIZI_SCRAPE: 86,
   GOOGLE_SEARCH_SNIPPET: 60,
-  GOOGLE_MAPS_SNIPPET: 58,
-  LINKEDIN_SNIPPET: 55,
-  FACEBOOK_SNIPPET: 50,
-  INSTAGRAM_SNIPPET: 48,
 } as const;
 
 export type FieldCandidate = {
@@ -108,19 +100,6 @@ export type PublicFieldMeta = {
   checked_at: string;
 };
 
-export type DiscoverySnippet = { url: string; title: string; description: string | null };
-
-export type DiscoveredUrls = {
-  companywall?: string;
-  bizi?: string;
-  ajpes?: string;
-  googleMaps?: string;
-  linkedin?: string;
-  facebook?: string;
-  instagram?: string;
-  snippets: DiscoverySnippet[];
-};
-
 export type PublicProviderResult = {
   /** Keys: any CoreField name or any RegistryField name (or a bonus custom_fields key, e.g. "bank_account"). */
   fields?: Record<string, FieldCandidate>;
@@ -135,8 +114,8 @@ export interface PublicEnrichmentProvider {
   priority: number; // 1 = highest, also the literal run order
   /** Declarative list of field keys this provider's prompt asks for — drives debug "fields missing" reporting. */
   possibleFields: string[];
-  shouldRun(lead: IntelLead, discovered: DiscoveredUrls): boolean;
-  run(lead: IntelLead, discovered: DiscoveredUrls): Promise<PublicProviderResult>;
+  shouldRun(lead: IntelLead): boolean;
+  run(lead: IntelLead): Promise<PublicProviderResult>;
 }
 
 export type ProviderDebugEntry = {
