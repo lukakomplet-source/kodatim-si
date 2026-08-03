@@ -21,6 +21,9 @@ export const BIZI_POSSIBLE_FIELDS = [
 const BASE = "https://www.bizi.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
+// Bump when parseDetailPage changes shape so cached entries re-parse.
+const PARSER_VERSION = 2;
+
 const DIACRITICS: Record<string, string> = {
   č: "c", ć: "c", š: "s", ž: "z", đ: "dj",
   Č: "c", Ć: "c", Š: "s", Ž: "z", Đ: "dj",
@@ -97,35 +100,51 @@ export const biziProvider: PublicEnrichmentProvider = {
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
-    const cached = await readCache("bizi", lead.company_name, CACHE_TTL.REGISTRY_MS);
+    const cached = await readCache("bizi", lead.company_name, CACHE_TTL.REGISTRY_MS, PARSER_VERSION);
     if (cached) {
       const fields = toFields(cached.parsedFields as Record<string, string>, cached.sourceUrl ?? BASE);
       return { fields, note: `Bizi.si: ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
     }
 
-    const slug = toBiziSlug(lead.company_name);
-    if (!slug) {
+    // The lead's name doesn't always match Bizi's registered short name — the
+    // lead "DEJAN VIDOVIĆ s.p." lives at /K-V-T-MOBILE-DEJAN-VIDOVIC-S-P/
+    // (confirmed live). CompanyWall runs first and resolves that short name,
+    // so try it as a second candidate before giving up. Still no guessing:
+    // every candidate is an exact registered name, and a miss is a clean 404.
+    const officialName = lead.custom_fields?.official_name;
+    const candidates = [...new Set([lead.company_name, officialName].filter(Boolean).map((n) => toBiziSlug(n as string)))].filter(Boolean);
+
+    if (candidates.length === 0) {
       const note = "Bizi.si: imena podjetja ni bilo mogoče pretvoriti v naslov strani.";
       return { note, skippedReason: note };
     }
 
-    const detailUrl = `${BASE}/${slug}/`;
     try {
-      const res = await providerFetch("bizi", detailUrl, { headers: HEADERS });
-      if (!res.ok) throw new Error(`Bizi.si stran ni dosegljiva (${res.status})`);
-      if (res.url.includes("/404")) {
+      let detailUrl: string | null = null;
+      let html: string | null = null;
+
+      for (const slug of candidates) {
+        const url = `${BASE}/${slug}/`;
+        const res = await providerFetch("bizi", url, { headers: HEADERS });
+        if (!res.ok) throw new Error(`Bizi.si stran ni dosegljiva (${res.status})`);
+        if (res.url.includes("/404")) continue;
+        detailUrl = url;
+        html = await res.text();
+        break;
+      }
+
+      if (!detailUrl || html === null) {
         const note = "Bizi.si: ni bilo mogoče najti javne strani podjetja.";
         return { note, skippedReason: note };
       }
 
-      const html = await res.text();
       const text = stripHtmlToText(html);
 
       const parsed = parseDetailPage(text);
       const fields = verifyNumericFields(toFields(parsed, detailUrl), text);
       const count = Object.keys(fields).length;
 
-      await writeCache("bizi", lead.company_name, html, parsed, detailUrl);
+      await writeCache("bizi", lead.company_name, html, parsed, detailUrl, PARSER_VERSION);
 
       return {
         fields,

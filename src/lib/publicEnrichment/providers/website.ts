@@ -73,8 +73,25 @@ type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" |
  * fetch() got (even if thin) and clearly mark Firecrawl as skipped, rather
  * than losing the step entirely.
  */
+/**
+ * Small business sites frequently run expired or misconfigured certificates —
+ * arhivpnm.si fails HTTPS with CERT_HAS_EXPIRED but serves fine over HTTP
+ * (confirmed live). Across 400k companies that would silently cost a large
+ * share of website enrichments, so fall back to http:// once before giving up.
+ */
+async function fetchWithHttpFallback(url: string): Promise<Response> {
+  try {
+    return await providerFetch("website", url, { headers: HEADERS });
+  } catch (err) {
+    if (!url.startsWith("https://")) throw err;
+    const httpUrl = url.replace(/^https:\/\//, "http://");
+    console.warn(`[website] HTTPS ni uspel za ${url} — poskušam ${httpUrl}`);
+    return providerFetch("website", httpUrl, { headers: HEADERS });
+  }
+}
+
 async function fetchHtml(url: string): Promise<FetchOutcome> {
-  const res = await providerFetch("website", url, { headers: HEADERS });
+  const res = await fetchWithHttpFallback(url);
   if (!res.ok) throw new Error(`Stran ni dosegljiva (${res.status})`);
   const html = await res.text();
   const plainMarkdown = html.replace(/<[^>]+>/g, " ");

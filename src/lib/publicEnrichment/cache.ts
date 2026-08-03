@@ -10,8 +10,15 @@ export type CachedEntry = {
   fetchedAt: string;
 };
 
-function normalizeKey(key: string): string {
-  return key.trim().toLowerCase();
+/**
+ * The cache stores PARSED fields, so improving a parser would otherwise have
+ * no effect on companies already cached — a real hazard when a run spans
+ * weeks over 400k companies. Folding a per-provider parser version into the
+ * key makes a parser change invalidate its own old entries automatically,
+ * without touching the other providers' entries or needing a migration.
+ */
+function normalizeKey(key: string, parserVersion: number): string {
+  return `v${parserVersion}::${key.trim().toLowerCase()}`;
 }
 
 /**
@@ -22,7 +29,8 @@ function normalizeKey(key: string): string {
 export async function readCache(
   provider: CacheProvider,
   key: string,
-  maxAgeMs: number
+  maxAgeMs: number,
+  parserVersion = 1
 ): Promise<CachedEntry | null> {
   try {
     const admin = createAdminClient();
@@ -30,7 +38,7 @@ export async function readCache(
       .from("public_enrichment_cache")
       .select("html, parsed_fields, source_url, fetched_at")
       .eq("provider", provider)
-      .eq("cache_key", normalizeKey(key))
+      .eq("cache_key", normalizeKey(key, parserVersion))
       .maybeSingle();
 
     if (error || !data) return null;
@@ -54,14 +62,15 @@ export async function writeCache(
   key: string,
   html: string | null,
   parsedFields: Record<string, unknown>,
-  sourceUrl: string | null
+  sourceUrl: string | null,
+  parserVersion = 1
 ): Promise<void> {
   try {
     const admin = createAdminClient();
     await admin.from("public_enrichment_cache").upsert(
       {
         provider,
-        cache_key: normalizeKey(key),
+        cache_key: normalizeKey(key, parserVersion),
         html,
         parsed_fields: parsedFields,
         source_url: sourceUrl,

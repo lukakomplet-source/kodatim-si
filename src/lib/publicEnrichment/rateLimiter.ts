@@ -21,8 +21,18 @@ type Config = {
   minMs: number;
   maxMs: number;
   stepMs: number;
+  recoveryRatio: number;
   backoffFactor: number;
   healthyStreak: number;
+};
+
+/**
+ * Per-provider starting intervals. Back-off is multiplicative, so a provider
+ * that punishes bursts hard (CompanyWall returned 429 with `Retry-After: 60`
+ * during a real 2-worker run) is cheaper to start slow than to recover from.
+ */
+const PROVIDER_START_MS: Partial<Record<ProviderId, number>> = {
+  companywall: 10_000,
 };
 
 function envInt(name: string, fallback: number): number {
@@ -42,7 +52,7 @@ function envFloat(name: string, fallback: number): number {
 /** Global defaults, overridable per provider via RATE_<PROVIDER>_* (e.g. RATE_COMPANYWALL_MIN_MS). */
 function configFor(provider: ProviderId): Config {
   const P = provider.toUpperCase();
-  const startMs = envInt(`RATE_${P}_START_MS`, envInt("RATE_START_MS", 5000));
+  const startMs = envInt(`RATE_${P}_START_MS`, envInt("RATE_START_MS", PROVIDER_START_MS[provider] ?? 5000));
   const minMs = envInt(`RATE_${P}_MIN_MS`, envInt("RATE_MIN_MS", 1000));
   const maxMs = envInt(`RATE_${P}_MAX_MS`, envInt("RATE_MAX_MS", 120_000));
   return {
@@ -50,6 +60,7 @@ function configFor(provider: ProviderId): Config {
     minMs,
     maxMs,
     stepMs: envInt(`RATE_${P}_STEP_MS`, envInt("RATE_STEP_MS", 250)),
+    recoveryRatio: envFloat(`RATE_${P}_RECOVERY_RATIO`, envFloat("RATE_RECOVERY_RATIO", 0.15)),
     backoffFactor: envFloat(`RATE_${P}_BACKOFF_FACTOR`, envFloat("RATE_BACKOFF_FACTOR", 2)),
     healthyStreak: envInt(`RATE_${P}_HEALTHY_STREAK`, envInt("RATE_HEALTHY_STREAK", 20)),
   };
@@ -119,7 +130,14 @@ export function recordOutcome(provider: ProviderId, outcome: RequestOutcome, ret
     s.totals.success += 1;
     s.successStreak += 1;
     if (s.successStreak >= config.healthyStreak && s.intervalMs > config.minMs) {
-      s.intervalMs = Math.max(config.minMs, s.intervalMs - config.stepMs);
+      // Recovery must be PROPORTIONAL, because back-off is multiplicative.
+      // A flat step made this pathological in a real run: CompanyWall backed
+      // off to the 120s ceiling, and at 250ms per healthy streak it would
+      // have needed ~9,200 successful requests to return to 5s. Shrinking by
+      // a share of the current interval instead makes recovery symmetric
+      // with the penalty (~380 requests for the same journey).
+      const shrinkBy = Math.max(config.stepMs, Math.ceil(s.intervalMs * config.recoveryRatio));
+      s.intervalMs = Math.max(config.minMs, s.intervalMs - shrinkBy);
       s.successStreak = 0; // require another full healthy streak before speeding up again
     }
     return;

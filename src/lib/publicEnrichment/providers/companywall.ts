@@ -1,5 +1,6 @@
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
+import { BLOCKED_DOMAINS } from "@/lib/enrichment/blockedDomains";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
 import { providerFetch } from "../httpClient";
@@ -14,11 +15,14 @@ import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type Pu
 export const COMPANYWALL_POSSIBLE_FIELDS = [
   "director", "founded_date", "legal_form", "registration_number", "vat_id",
   "skd_code", "skd_name", "employees_count", "phone", "email", "address_street",
-  "address_city", "description",
+  "address_city", "description", "website", "official_name",
 ];
 
 const BASE = "https://www.companywall.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
+
+// Bump when parseDetailPage changes shape so cached entries re-parse.
+const PARSER_VERSION = 2;
 
 function toFields(values: Record<string, string | null | undefined>, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
@@ -33,12 +37,19 @@ function toFields(values: Record<string, string | null | undefined>, sourceUrl: 
 type SearchResult = { href: string; name: string } | null;
 
 /**
- * Same precedent as AJPES: a bare name search can match several unrelated
- * companies (see the search results table — substring matching, not
- * relevance-ranked). Only auto-pick an exact (case-insensitive) name match,
- * or the single candidate if there's just one — otherwise report not found
- * rather than guessing.
+ * CompanyWall appends the legal status to the listed name ("E-ARHIV d.o.o.
+ * - v stečaju"). That is the same company, so comparing raw strings wrongly
+ * rejected it. Strip only these known suffixes — nothing else — so matching
+ * stays strict enough to never resolve a *different* company.
  */
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s*[-–]\s*v\s+(stečaju|likvidaciji|prisilni poravnavi)\s*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function pickSearchResult(html: string, companyName: string): SearchResult {
   const rows = [...html.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">([^<]+)<\/a>/gi)].map((m) => ({
     href: m[1],
@@ -46,8 +57,8 @@ function pickSearchResult(html: string, companyName: string): SearchResult {
   }));
   if (rows.length === 0) return null;
 
-  const normalized = companyName.trim().toLowerCase();
-  const exact = rows.find((r) => r.name.toLowerCase() === normalized);
+  const normalized = normalizeCompanyName(companyName);
+  const exact = rows.find((r) => normalizeCompanyName(r.name) === normalized);
   return exact ?? (rows.length === 1 ? rows[0] : null);
 }
 
@@ -59,6 +70,24 @@ function pickSearchResult(html: string, companyName: string): SearchResult {
 //  direktor podjetja je RICHTER MARTIN- direktor."
 // Confirmed live against a real detail page — far more reliable than
 // scattered <dt>/<dd> pairs, which break under nested markup.
+/**
+ * CompanyWall prints the company's own domain on the detail page (confirmed
+ * live: "www.arhivpnm.si"). This is the only Firecrawl-free source of a
+ * website in the whole pipeline — without it the Website + AI step never has
+ * anything to read, since Google's HTML is unparseable for non-browsers.
+ * Directory/social domains are excluded so we never mistake CompanyWall's own
+ * links for the company's site.
+ */
+function extractWebsite(text: string): string | null {
+  const matches = text.match(/(?:https?:\/\/)?www\.[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi) ?? [];
+  for (const raw of matches) {
+    const candidate = raw.toLowerCase().replace(/^https?:\/\//, "");
+    if (BLOCKED_DOMAINS.some((d) => candidate.includes(d))) continue;
+    return `https://${candidate}`;
+  }
+  return null;
+}
+
 function parseDetailPage(text: string): Record<string, string | null> {
   // The whole auto-generated "Opis podjetja" sentence, captured once so it
   // can double as both the description field and the source for the
@@ -92,6 +121,7 @@ function parseDetailPage(text: string): Record<string, string | null> {
     skd_name: skdMatch?.[2]?.trim() || null,
     employees_count: firstNonEmptyLineAfter(text, "Velikost podjetja"),
     description,
+    website: extractWebsite(text),
   };
 }
 
@@ -106,7 +136,7 @@ export const companyWallProvider: PublicEnrichmentProvider = {
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
-    const cached = await readCache("companywall", lead.company_name, CACHE_TTL.REGISTRY_MS);
+    const cached = await readCache("companywall", lead.company_name, CACHE_TTL.REGISTRY_MS, PARSER_VERSION);
     if (cached) {
       const fields = toFields(cached.parsedFields as Record<string, string>, cached.sourceUrl ?? BASE);
       return { fields, note: `CompanyWall: ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
@@ -140,10 +170,14 @@ export const companyWallProvider: PublicEnrichmentProvider = {
       const text = stripHtmlToText(html);
 
       const parsed = parseDetailPage(text);
+      // CompanyWall's own listing name is the company's registered short name,
+      // which is exactly the form Bizi builds its URLs from — passing it along
+      // lets Bizi find companies whose lead name doesn't match (see bizi.ts).
+      parsed.official_name = match.name;
       const fields = verifyNumericFields(toFields(parsed, detailUrl), text);
       const count = Object.keys(fields).length;
 
-      await writeCache("companywall", lead.company_name, html, parsed, detailUrl);
+      await writeCache("companywall", lead.company_name, html, parsed, detailUrl, PARSER_VERSION);
 
       return {
         fields,
