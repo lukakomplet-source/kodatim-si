@@ -1,7 +1,7 @@
 import { chatJSON } from "@/lib/openai";
 import { providerFetch } from "../httpClient";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Last resort — only runs when Website found nothing (no known website at
 // all). No Firecrawl per spec: a direct fetch() against Google's results
@@ -65,23 +65,42 @@ export const googleSearchProvider: PublicEnrichmentProvider = {
     return !lead.website;
   },
 
+  notRunReason() {
+    return "Google ni bil potreben — spletna stran je bila že znana iz zanesljivejšega vira.";
+  },
+
   async run(lead: IntelLead): Promise<PublicProviderResult> {
+    const requests: ProviderRequestLog[] = [];
+    const parserChecks: ParserCheck[] = [];
+    const everyFieldBecause = (reason: string): Record<string, string> =>
+      Object.fromEntries(GOOGLE_SEARCH_POSSIBLE_FIELDS.map((f) => [f, reason]));
+
+    const query = `${lead.company_name} kontakt uradna stran`;
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
     let html: string;
     try {
-      const query = `${lead.company_name} kontakt uradna stran`;
-      const res = await providerFetch("google", `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`, { headers: HEADERS });
+      const res = await providerFetch("google", searchUrl, { headers: HEADERS });
+      requests.push({ url: searchUrl, status: res.status, ok: res.ok });
       if (!res.ok) throw new Error(`Google iskanje napaka (${res.status})`);
       html = await res.text();
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       const note = `Google iskanje: napaka pri iskanju — ${message}`;
-      return { note, skippedReason: note };
+      if (requests.length === 0) requests.push({ url: searchUrl, status: null, ok: false, note: message });
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`Google iskanje ni uspelo: ${message}`) } };
     }
 
     const snippets = parseGoogleResults(html);
+    parserChecks.push({
+      element: "zadetki iskanja (<a href><h3>)",
+      found: snippets.length > 0,
+      detail: snippets.length > 0 ? `${snippets.length} zadetkov` : "selector ni najden — Google je vrnil okrnjeno stran brez rezultatov",
+    });
+
     if (snippets.length === 0) {
       const note = "Google iskanje: ni bilo mogoče pridobiti razčlenljivih rezultatov (Google pogosto zavrne neposredne poizvedbe brez brskalnika).";
-      return { note, skippedReason: note };
+      const reason = "Google je zavrnil neposredno poizvedbo (okrnjena stran brez rezultatov, brez brskalnika)";
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) } };
     }
 
     try {
@@ -109,16 +128,25 @@ export const googleSearchProvider: PublicEnrichmentProvider = {
       }
 
       const count = Object.keys(fields).length;
+      const fieldReasons: Record<string, string> = {};
+      for (const f of GOOGLE_SEARCH_POSSIBLE_FIELDS) {
+        if (!fields[f]) fieldReasons[f] = "vrednosti ni bilo v naslovih/opisih Google zadetkov";
+      }
       return {
         fields,
         note:
           count > 0
             ? `Google iskanje: najdenih ${count} podatkov v iskalnih izsekih.`
             : "Google iskanje: v izsekih ni bilo mogoče najti dodatnih podatkov.",
+        diagnostics: { requests, parserChecks, fieldReasons },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `Google iskanje: napaka — ${message}` };
+      return {
+        note: `Google iskanje: napaka — ${message}`,
+        skippedReason: `obdelava zadetkov ni uspela: ${message}`,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`obdelava zadetkov ni uspela: ${message}`) },
+      };
     }
   },
 };

@@ -100,12 +100,41 @@ export type PublicFieldMeta = {
   checked_at: string;
 };
 
+/** One outbound request a provider made, so the report can show exactly what was opened and what came back. */
+export type ProviderRequestLog = {
+  url: string;
+  /** null = no HTTP response at all (DNS/TLS/timeout) — `note` then says which. */
+  status: number | null;
+  ok: boolean;
+  note?: string;
+};
+
+/** Whether an element the parser depends on was actually present in the fetched page. */
+export type ParserCheck = {
+  element: string;
+  found: boolean;
+  detail?: string;
+};
+
+/**
+ * Everything needed to explain a provider's outcome field-by-field, so the
+ * report never has to fall back on a single blanket sentence.
+ */
+export type ProviderDiagnostics = {
+  requests: ProviderRequestLog[];
+  parserChecks: ParserCheck[];
+  /** Exact reason PER FIELD that came back empty (404, 403, selector missing, paywalled, not published by this source …). */
+  fieldReasons: Record<string, string>;
+};
+
 export type PublicProviderResult = {
   /** Keys: any CoreField name or any RegistryField name (or a bonus custom_fields key, e.g. "bank_account"). */
   fields?: Record<string, FieldCandidate>;
   note: string; // Slovenian, always present — becomes an "enrichment_step" activity entry
   /** Set when the provider deliberately didn't attempt anything (e.g. missing credentials) — used for debug "missing field" reasons instead of the generic "vir ni vseboval tega podatka". */
   skippedReason?: string;
+  /** Per-request / per-field detail for the permanent debug report. */
+  diagnostics?: ProviderDiagnostics;
   /**
    * True = the source itself malfunctioned (login rejected, HTTP error, rate
    * limited) — something is broken and needs attention. False/absent = the
@@ -125,6 +154,8 @@ export interface PublicEnrichmentProvider {
   /** Declarative list of field keys this provider's prompt asks for — drives debug "fields missing" reporting. */
   possibleFields: string[];
   shouldRun(lead: IntelLead): boolean;
+  /** Why shouldRun() said no — so a provider that never ran still explains itself in the report. */
+  notRunReason?(lead: IntelLead): string;
   run(lead: IntelLead): Promise<PublicProviderResult>;
 }
 
@@ -157,6 +188,10 @@ export type ProviderDebugEntry = {
   /** The provider's own Slovenian explanation ("why") — previously computed and thrown away, now surfaced in the UI. */
   note?: string;
   outcome?: ProviderOutcome;
+  /** Every URL opened, with its HTTP status. */
+  requests?: ProviderRequestLog[];
+  /** Whether the elements the parser relies on were present. */
+  parserChecks?: ParserCheck[];
 };
 
 export type FieldConflict = {

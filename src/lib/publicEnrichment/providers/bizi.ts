@@ -3,7 +3,7 @@ import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
 import { providerFetch } from "../httpClient";
-import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Deterministic HTML parsing — no Firecrawl, no AI, no search step at all.
 // Bizi's detail-page URLs are a deterministic transformation of the company
@@ -100,10 +100,27 @@ export const biziProvider: PublicEnrichmentProvider = {
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
+    const requests: ProviderRequestLog[] = [];
+    const parserChecks: ParserCheck[] = [];
+    const everyFieldBecause = (reason: string): Record<string, string> =>
+      Object.fromEntries(BIZI_POSSIBLE_FIELDS.map((f) => [f, reason]));
+
     const cached = await readCache("bizi", lead.company_name, CACHE_TTL.REGISTRY_MS, PARSER_VERSION);
     if (cached) {
       const fields = toFields(cached.parsedFields as Record<string, string>, cached.sourceUrl ?? BASE);
-      return { fields, note: `Bizi.si: ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
+      const cachedReasons: Record<string, string> = {};
+      for (const f of BIZI_POSSIBLE_FIELDS) {
+        if (!fields[f]) cachedReasons[f] = "podatka ni bilo na strani (vrednost iz predpomnilnika)";
+      }
+      return {
+        fields,
+        note: `Bizi.si: ${Object.keys(fields).length} podatkov (iz predpomnilnika).`,
+        diagnostics: {
+          requests: [{ url: cached.sourceUrl ?? BASE, status: null, ok: true, note: "iz predpomnilnika — brez omrežnega klica" }],
+          parserChecks: [{ element: "predpomnilnik", found: true, detail: `shranjeno ${cached.fetchedAt}` }],
+          fieldReasons: cachedReasons,
+        },
+      };
     }
 
     // The lead's name doesn't always match Bizi's registered short name — the
@@ -116,7 +133,7 @@ export const biziProvider: PublicEnrichmentProvider = {
 
     if (candidates.length === 0) {
       const note = "Bizi.si: imena podjetja ni bilo mogoče pretvoriti v naslov strani.";
-      return { note, skippedReason: note };
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause("iz imena podjetja ni bilo mogoče sestaviti naslova Bizi strani") } };
     }
 
     try {
@@ -126,25 +143,64 @@ export const biziProvider: PublicEnrichmentProvider = {
       for (const slug of candidates) {
         const url = `${BASE}/${slug}/`;
         const res = await providerFetch("bizi", url, { headers: HEADERS });
+        const redirectedTo404 = res.url.includes("/404");
+        requests.push({
+          url,
+          status: res.status,
+          ok: res.ok && !redirectedTo404,
+          note: redirectedTo404 ? "preusmeritev na /404 — podjetje pod tem imenom ni objavljeno" : undefined,
+        });
         if (!res.ok) throw new Error(`Bizi.si stran ni dosegljiva (${res.status})`);
-        if (res.url.includes("/404")) continue;
+        if (redirectedTo404) continue;
         detailUrl = url;
         html = await res.text();
         break;
       }
 
+      parserChecks.push({
+        element: "naslov strani iz imena podjetja (slug)",
+        found: Boolean(detailUrl),
+        detail: detailUrl ? `zadel: ${detailUrl}` : `preizkušeni naslovi: ${candidates.join(", ")} — vsi 404`,
+      });
+
       if (!detailUrl || html === null) {
         const note = "Bizi.si: ni bilo mogoče najti javne strani podjetja.";
-        return { note, skippedReason: note };
+        return {
+          note,
+          skippedReason: note,
+          diagnostics: {
+            requests,
+            parserChecks,
+            fieldReasons: everyFieldBecause(`podjetje ni objavljeno na Bizi.si (404 na ${candidates.length} preizkušenih naslovih)`),
+          },
+        };
       }
 
       const text = stripHtmlToText(html);
 
       const parsed = parseDetailPage(text);
+      parserChecks.push({
+        element: 'kontaktni blok ("Več kontaktov v TIS-u")',
+        found: Boolean(parsed.phone || parsed.email || parsed.address_street),
+        detail: parsed.phone || parsed.email || parsed.address_street ? "najden" : "sidro ni najdeno — telefon/email/naslov niso na voljo",
+      });
+      parserChecks.push({
+        element: 'oznaka "Matična"',
+        found: Boolean(parsed.registration_number),
+        detail: parsed.registration_number ? "najdena" : "oznaka ni najdena na strani",
+      });
       const fields = verifyNumericFields(toFields(parsed, detailUrl), text);
       const count = Object.keys(fields).length;
 
       await writeCache("bizi", lead.company_name, html, parsed, detailUrl, PARSER_VERSION);
+
+      const fieldReasons: Record<string, string> = {};
+      for (const f of BIZI_POSSIBLE_FIELDS) {
+        if (fields[f]) continue;
+        fieldReasons[f] = parsed[f] === null || parsed[f] === undefined
+          ? "podatka ni na javni strani Bizi.si"
+          : "vrednost zavrnjena pri preverjanju (ni se ujemala z besedilom strani)";
+      }
 
       return {
         fields,
@@ -152,12 +208,17 @@ export const biziProvider: PublicEnrichmentProvider = {
           count > 0
             ? `Bizi.si: najdenih ${count} javnih podatkov.`
             : `Bizi.si: stran najdena, dodatnih javnih podatkov ni bilo mogoče izluščiti.`,
+        diagnostics: { requests, parserChecks, fieldReasons },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       // Network/HTTP failure — a real malfunction. (A 404 redirect, i.e. the
       // company genuinely isn't on Bizi, is handled above as a plain skip.)
-      return { note: `Bizi.si: napaka — ${message}`, failed: true };
+      return {
+        note: `Bizi.si: napaka — ${message}`,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`napaka pri branju strani: ${message}`) },
+      };
     }
   },
 };

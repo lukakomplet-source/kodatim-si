@@ -56,6 +56,8 @@ type ProviderDebugEntry = {
   error: string | null;
   note?: string;
   outcome?: "ok" | "skipped" | "error";
+  requests?: { url: string; status: number | null; ok: boolean; note?: string }[];
+  parserChecks?: { element: string; found: boolean; detail?: string }[];
 };
 type Debug = {
   providers: ProviderDebugEntry[];
@@ -138,10 +140,22 @@ async function main() {
     ] as const) {
       const p = byId.get(id);
       const status = p ? STATUS_LABEL[p.outcome ?? "skipped"] ?? "SKIPPED" : "SKIPPED";
-      console.log(`\n${label}: ${status}`);
+      console.log(
+        `\n${label}: ${status}   [${p?.executed ? "zagnan" : "ni bil zagnan"}${p?.durationMs ? `, ${(p.durationMs / 1000).toFixed(1)}s` : ""}]`
+      );
       console.log(`  ${p?.note ?? "(ni podatka)"}`);
-      if (p?.fieldsFound.length) console.log(`  polja: ${p.fieldsFound.join(", ")}`);
-      if (p?.durationMs) console.log(`  čas: ${(p.durationMs / 1000).toFixed(1)}s`);
+      for (const r of p?.requests ?? []) {
+        console.log(
+          `  → ${r.status === null ? "brez odgovora" : `HTTP ${r.status}`}  ${r.url}${r.note ? `  (${r.note})` : ""}`
+        );
+      }
+      for (const c of p?.parserChecks ?? []) {
+        console.log(`  ${c.found ? "✓" : "✗"} ${c.element}${c.detail ? ` — ${c.detail}` : ""}`);
+      }
+      if (p?.fieldsFound.length) console.log(`  zapolnjeno: ${p.fieldsFound.join(", ")}`);
+      for (const m of p?.fieldsMissing ?? []) {
+        console.log(`  ✗ ${m.field.padEnd(26)} ${m.reason}`);
+      }
     }
 
     const seen = new Set<string>();

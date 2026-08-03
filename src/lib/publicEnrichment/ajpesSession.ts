@@ -44,7 +44,7 @@ async function login(): Promise<AjpesSession | null> {
 export async function fetchAjpesAuthed(
   url: string,
   session: AjpesSession | null
-): Promise<{ html: string; session: AjpesSession }> {
+): Promise<{ html: string; session: AjpesSession; status: number }> {
   let current = session ?? (await login());
   if (!current) throw new Error("AJPES: poverilnice niso nastavljene.");
 
@@ -62,7 +62,7 @@ export async function fetchAjpesAuthed(
     }
   }
 
-  return { html, session: current };
+  return { html, session: current, status: response.status };
 }
 
 export { login as loginAjpes };

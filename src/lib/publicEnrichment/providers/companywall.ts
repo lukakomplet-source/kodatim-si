@@ -4,7 +4,7 @@ import { BLOCKED_DOMAINS } from "@/lib/enrichment/blockedDomains";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
 import { providerFetch } from "../httpClient";
-import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Deterministic HTML parsing — no Firecrawl, no AI. CompanyWall's own search
 // (https://www.companywall.si/iskanje?q=...) is a plain unauthenticated GET
@@ -23,6 +23,11 @@ const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
 const PARSER_VERSION = 2;
+
+/** Behind the CompanyWall Plus paywall — never present on the public page. */
+const COMPANYWALL_PAYWALLED = new Set([
+  "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating",
+]);
 
 function toFields(values: Record<string, string | null | undefined>, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
@@ -136,40 +141,93 @@ export const companyWallProvider: PublicEnrichmentProvider = {
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
+    const requests: ProviderRequestLog[] = [];
+    const parserChecks: ParserCheck[] = [];
+    const everyFieldBecause = (reason: string): Record<string, string> =>
+      Object.fromEntries(COMPANYWALL_POSSIBLE_FIELDS.map((f) => [f, reason]));
+
     const cached = await readCache("companywall", lead.company_name, CACHE_TTL.REGISTRY_MS, PARSER_VERSION);
     if (cached) {
       const fields = toFields(cached.parsedFields as Record<string, string>, cached.sourceUrl ?? BASE);
-      return { fields, note: `CompanyWall: ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
+      const cachedReasons: Record<string, string> = {};
+      for (const f of COMPANYWALL_POSSIBLE_FIELDS) {
+        if (fields[f]) continue;
+        cachedReasons[f] = COMPANYWALL_PAYWALLED.has(f)
+          ? "za plačilnim zidom (CompanyWall Plus) — javno ni objavljeno"
+          : "podatka ni bilo na strani (vrednost iz predpomnilnika)";
+      }
+      return {
+        fields,
+        note: `CompanyWall: ${Object.keys(fields).length} podatkov (iz predpomnilnika).`,
+        diagnostics: {
+          requests: [{ url: cached.sourceUrl ?? BASE, status: null, ok: true, note: "iz predpomnilnika — brez omrežnega klica" }],
+          parserChecks: [{ element: "predpomnilnik", found: true, detail: `shranjeno ${cached.fetchedAt}` }],
+          fieldReasons: cachedReasons,
+        },
+      };
     }
 
+    const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(lead.company_name)}`;
     let searchHtml: string;
     try {
-      const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(lead.company_name)}`;
       const res = await providerFetch("companywall", searchUrl, { headers: HEADERS });
+      requests.push({ url: searchUrl, status: res.status, ok: res.ok });
       if (!res.ok) throw new Error(`CompanyWall iskanje napaka (${res.status})`);
       searchHtml = await res.text();
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       const note = `CompanyWall: napaka pri iskanju — ${message}`;
+      if (requests.length === 0) requests.push({ url: searchUrl, status: null, ok: false, note: message });
       // The site itself misbehaved (HTTP error / rate limit) — a real failure,
       // unlike "company simply isn't listed here" below.
-      return { note, skippedReason: note, failed: true };
+      return {
+        note,
+        skippedReason: note,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`iskanje ni uspelo: ${message}`) },
+      };
     }
 
+    const rowCount = [...searchHtml.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">/gi)].length;
     const match = pickSearchResult(searchHtml, lead.company_name);
+    parserChecks.push({
+      element: "zadetki iskanja (<h3><a href=/podjetje/…>)",
+      found: rowCount > 0,
+      detail: rowCount > 0 ? `${rowCount} zadetkov` : "selector ni najden na strani",
+    });
+    parserChecks.push({
+      element: "ujemanje imena podjetja",
+      found: Boolean(match),
+      detail: match ? `izbrano: ${match.name}` : `${rowCount} zadetkov, nobeden se ne ujema natančno`,
+    });
+
     if (!match) {
       const note = "CompanyWall: ni bilo mogoče najti javne strani podjetja.";
-      return { note, skippedReason: note };
+      const reason = rowCount === 0
+        ? "iskanje na CompanyWall ni vrnilo nobenega zadetka"
+        : `${rowCount} zadetkov, a nobeden se natančno ne ujema z imenom — vrednost namerno ni pripisana`;
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) } };
     }
 
     const detailUrl = `${BASE}${match.href}`;
     try {
       const res = await providerFetch("companywall", detailUrl, { headers: HEADERS });
+      requests.push({ url: detailUrl, status: res.status, ok: res.ok });
       if (!res.ok) throw new Error(`CompanyWall stran ni dosegljiva (${res.status})`);
       const html = await res.text();
       const text = stripHtmlToText(html);
 
       const parsed = parseDetailPage(text);
+      parserChecks.push({
+        element: 'opisni stavek ("… registrirana je na naslovu …")',
+        found: Boolean(parsed.description),
+        detail: parsed.description ? "najden" : "ni ga na strani — telefon/email/naslov iz njega niso na voljo",
+      });
+      parserChecks.push({
+        element: "oznaka SKD",
+        found: Boolean(parsed.skd_code),
+        detail: parsed.skd_code ? `SKD ${parsed.skd_code}` : "oznaka ni najdena",
+      });
       // CompanyWall's own listing name is the company's registered short name,
       // which is exactly the form Bizi builds its URLs from — passing it along
       // lets Bizi find companies whose lead name doesn't match (see bizi.ts).
@@ -179,16 +237,32 @@ export const companyWallProvider: PublicEnrichmentProvider = {
 
       await writeCache("companywall", lead.company_name, html, parsed, detailUrl, PARSER_VERSION);
 
+      const fieldReasons: Record<string, string> = {};
+      for (const f of COMPANYWALL_POSSIBLE_FIELDS) {
+        if (fields[f]) continue;
+        fieldReasons[f] = COMPANYWALL_PAYWALLED.has(f)
+          ? "za plačilnim zidom (CompanyWall Plus) — javno ni objavljeno"
+          : parsed[f] === null || parsed[f] === undefined
+            ? "podatka ni na javni strani CompanyWall"
+            : "vrednost zavrnjena pri preverjanju (ni se ujemala z besedilom strani)";
+      }
+
       return {
         fields,
         note:
           count > 0
             ? `CompanyWall: najdenih ${count} javnih podatkov.`
             : `CompanyWall: stran najdena, dodatnih javnih podatkov ni bilo mogoče izluščiti.`,
+        diagnostics: { requests, parserChecks, fieldReasons },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `CompanyWall: napaka — ${message}`, failed: true };
+      if (!requests.some((r) => r.url === detailUrl)) requests.push({ url: detailUrl, status: null, ok: false, note: message });
+      return {
+        note: `CompanyWall: napaka — ${message}`,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`napaka pri branju strani: ${message}`) },
+      };
     }
   },
 };

@@ -87,16 +87,18 @@ export async function runPublicEnrichment(
     const liveLead: IntelLead = { ...lead, ...liveCore, custom_fields: { ...liveCustom } } as IntelLead;
     const willRun = provider.shouldRun(liveLead);
     if (!willRun) {
+      const notRunReason =
+        provider.notRunReason?.(liveLead) ?? "Vir ni bil poizvedovan (pogoj za zagon ni izpolnjen).";
       debugEntries.push({
         id: provider.id,
         label: provider.label,
         executed: false,
         url: null,
         fieldsFound: [],
-        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: "vir ni bil poizvedovan (pogoj za zagon ni izpolnjen)" })),
+        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: notRunReason })),
         durationMs: 0,
         error: null,
-        note: "Vir ni bil potreben (pogoj za zagon ni izpolnjen).",
+        note: notRunReason,
         outcome: "skipped",
       });
       continue;
@@ -132,7 +134,11 @@ export async function runPublicEnrichment(
       }
 
       const fieldsFound = Object.keys(resultFields).filter((f) => resultFields[f]?.value);
-      const missingReason = result.skippedReason ?? "vir ni vseboval tega podatka";
+      // Precise, per-field reason first; the provider-wide reason is only a
+      // fallback. "Vedno izpiši razlog, zakaj polje ni bilo vrnjeno."
+      const fieldReasons = result.diagnostics?.fieldReasons ?? {};
+      const fallbackReason = result.skippedReason ?? "vir tega podatka ni objavil na strani";
+      const reasonFor = (field: string) => fieldReasons[field] ?? fallbackReason;
       debugEntries.push({
         id: provider.id,
         label: provider.label,
@@ -141,10 +147,12 @@ export async function runPublicEnrichment(
         fieldsFound,
         fieldsMissing: provider.possibleFields
           .filter((f) => !fieldsFound.includes(f))
-          .map((field) => ({ field, reason: missingReason })),
+          .map((field) => ({ field, reason: reasonFor(field) })),
         durationMs: Date.now() - startedAt,
         error: result.failed && isPrimaryProvider(provider.id) ? result.note : null,
         note: result.note,
+        requests: result.diagnostics?.requests,
+        parserChecks: result.diagnostics?.parserChecks,
         // A provider that ran and contributed nothing is normally just
         // "skipped" (AJPES AMBIGUOUS MATCH, company not listed on
         // CompanyWall/Bizi, Firecrawl unavailable). It only becomes a red
@@ -173,7 +181,7 @@ export async function runPublicEnrichment(
         executed: true,
         url: null,
         fieldsFound: [],
-        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: `napaka: ${message}` })),
+        fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: `nepričakovana napaka: ${message}` })),
         durationMs: Date.now() - startedAt,
         error: isPrimary ? message : null,
         note: isPrimary

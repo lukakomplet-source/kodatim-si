@@ -4,7 +4,7 @@ import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
-import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Runs only after AJPES/CompanyWall/Bizi (see orchestrator.ts's PROVIDERS
 // order) — website is read from lead.website (set manually, or by
@@ -61,7 +61,13 @@ function looksLikeJsShell(html: string): boolean {
   return text.length < 200;
 }
 
-type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" | "skipped" };
+type FetchOutcome = {
+  markdown: string;
+  firecrawlStatus: "not_needed" | "used" | "skipped";
+  firecrawlSkipDetail?: string;
+  requests: ProviderRequestLog[];
+  jsShell: boolean;
+};
 
 /**
  * Firecrawl here is an optional enhancement, never a requirement — the whole
@@ -79,30 +85,39 @@ type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" |
  * (confirmed live). Across 400k companies that would silently cost a large
  * share of website enrichments, so fall back to http:// once before giving up.
  */
-async function fetchWithHttpFallback(url: string): Promise<Response> {
+async function fetchWithHttpFallback(url: string, requests: ProviderRequestLog[]): Promise<Response> {
   try {
-    return await providerFetch("website", url, { headers: HEADERS });
+    const res = await providerFetch("website", url, { headers: HEADERS });
+    requests.push({ url, status: res.status, ok: res.ok });
+    return res;
   } catch (err) {
+    const message = err instanceof Error ? err.message : "neznana napaka";
+    requests.push({ url, status: null, ok: false, note: `zahtevek ni uspel: ${message}` });
     if (!url.startsWith("https://")) throw err;
     const httpUrl = url.replace(/^https:\/\//, "http://");
     console.warn(`[website] HTTPS ni uspel za ${url} — poskušam ${httpUrl}`);
-    return providerFetch("website", httpUrl, { headers: HEADERS });
+    const res = await providerFetch("website", httpUrl, { headers: HEADERS });
+    requests.push({ url: httpUrl, status: res.status, ok: res.ok, note: "zasilni prehod na HTTP (HTTPS ni uspel)" });
+    return res;
   }
 }
 
 async function fetchHtml(url: string): Promise<FetchOutcome> {
-  const res = await fetchWithHttpFallback(url);
+  const requests: ProviderRequestLog[] = [];
+  const res = await fetchWithHttpFallback(url, requests);
   if (!res.ok) throw new Error(`Stran ni dosegljiva (${res.status})`);
   const html = await res.text();
   const plainMarkdown = html.replace(/<[^>]+>/g, " ");
+  const jsShell = looksLikeJsShell(html);
 
-  if (!looksLikeJsShell(html)) {
-    return { markdown: plainMarkdown, firecrawlStatus: "not_needed" };
+  if (!jsShell) {
+    return { markdown: plainMarkdown, firecrawlStatus: "not_needed", requests, jsShell };
   }
 
   try {
     const scraped = await scrapeUrl(url, { onlyMainContent: false });
-    return { markdown: scraped.markdown, firecrawlStatus: "used" };
+    requests.push({ url: `firecrawl:scrape ${url}`, status: 200, ok: true });
+    return { markdown: scraped.markdown, firecrawlStatus: "used", requests, jsShell };
   } catch (err) {
     // Firecrawl is optional. Its failure reason (402 insufficient credits,
     // rate limit, timeout, bad key …) belongs in the server log only — it
@@ -116,7 +131,8 @@ async function fetchHtml(url: string): Promise<FetchOutcome> {
         ? err.message
         : "neznana napaka";
     console.warn(`[website] Firecrawl preskočen za ${url} — ${detail}`);
-    return { markdown: plainMarkdown, firecrawlStatus: "skipped" };
+    requests.push({ url: `firecrawl:scrape ${url}`, status: null, ok: false, note: `neobvezno — preskočeno: ${detail}` });
+    return { markdown: plainMarkdown, firecrawlStatus: "skipped", firecrawlSkipDetail: detail, requests, jsShell };
   }
 }
 
@@ -130,27 +146,77 @@ export const websiteProvider: PublicEnrichmentProvider = {
     return Boolean(lead.website);
   },
 
+  notRunReason() {
+    return "Spletna stran ni znana — noben prejšnji vir (AJPES/CompanyWall/Bizi) je ni objavil.";
+  },
+
   async run(lead: IntelLead): Promise<PublicProviderResult> {
-    if (!lead.website) return { note: "Spletna stran: ni znanega naslova." };
+    const everyFieldBecause = (reason: string): Record<string, string> =>
+      Object.fromEntries(WEBSITE_POSSIBLE_FIELDS.map((f) => [f, reason]));
+
+    if (!lead.website) {
+      const reason = "spletna stran podjetja ni znana";
+      return { note: "Spletna stran: ni znanega naslova.", skippedReason: reason, diagnostics: { requests: [], parserChecks: [], fieldReasons: everyFieldBecause(reason) } };
+    }
     const targetUrl = toUrl(lead.website);
 
     const cached = await readCache("website", targetUrl, CACHE_TTL.WEBSITE_MS);
     if (cached) {
       const fields = toFields(cached.parsedFields as Extracted, CONFIDENCE.WEBSITE_DEEP, targetUrl);
-      return { fields, note: `Spletna stran (poglobljeno): ${Object.keys(fields).length} podatkov (iz predpomnilnika).` };
+      const cachedReasons: Record<string, string> = {};
+      for (const f of WEBSITE_POSSIBLE_FIELDS) {
+        if (!fields[f]) cachedReasons[f] = "podatka ni bilo na strani (vrednost iz predpomnilnika)";
+      }
+      return {
+        fields,
+        note: `Spletna stran (poglobljeno): ${Object.keys(fields).length} podatkov (iz predpomnilnika).`,
+        diagnostics: {
+          requests: [{ url: targetUrl, status: null, ok: true, note: "iz predpomnilnika — brez omrežnega klica" }],
+          parserChecks: [{ element: "predpomnilnik", found: true, detail: `shranjeno ${cached.fetchedAt}` }],
+          fieldReasons: cachedReasons,
+        },
+      };
     }
 
     try {
-      const { markdown, firecrawlStatus } = await fetchHtml(targetUrl);
+      const { markdown, firecrawlStatus, firecrawlSkipDetail, requests, jsShell } = await fetchHtml(targetUrl);
+      const parserChecks: ParserCheck[] = [
+        {
+          element: "strežniško izrisana vsebina",
+          found: !jsShell,
+          detail: jsShell ? "stran je JS lupina (skoraj brez besedila na strežniku)" : "stran vsebuje besedilo",
+        },
+        {
+          element: "Firecrawl (neobvezno)",
+          // "not needed" is a good outcome, not a failed check — only an
+          // actual skip (unavailable) deserves the ✗ marker.
+          found: firecrawlStatus !== "skipped",
+          detail:
+            firecrawlStatus === "not_needed"
+              ? "ni bil potreben — navaden fetch() je zadostoval"
+              : firecrawlStatus === "used"
+                ? "uporabljen za JS stran"
+                : `preskočen: ${firecrawlSkipDetail ?? "ni na voljo"}`,
+        },
+      ];
       // Neutral and fixed — never carries the underlying provider error text.
       const firecrawlNote =
         firecrawlStatus === "skipped"
           ? " (Spletna AI obogatitev preskočena — neobvezna storitev trenutno ni na voljo.)"
           : "";
 
+      parserChecks.push({
+        element: `dovolj besedila za analizo (>= ${MIN_CONTENT_LENGTH} znakov)`,
+        found: markdown.trim().length >= MIN_CONTENT_LENGTH,
+        detail: `${markdown.trim().length} znakov`,
+      });
+
       if (markdown.trim().length < MIN_CONTENT_LENGTH) {
+        const reason = `stran je vrnila premalo besedila (${markdown.trim().length} znakov) — izluščanje bi bilo ugibanje`;
         return {
           note: `Spletna stran (poglobljeno): stran ${targetUrl} ni vsebovala dovolj besedila za zanesljivo izluščanje (verjetno JS stran brez vsebine na strežniku).${firecrawlNote}`,
+          skippedReason: reason,
+          diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) },
         };
       }
 
@@ -164,16 +230,26 @@ export const websiteProvider: PublicEnrichmentProvider = {
 
       await writeCache("website", targetUrl, null, ai, targetUrl);
 
+      const fieldReasons: Record<string, string> = {};
+      for (const f of WEBSITE_POSSIBLE_FIELDS) {
+        if (!fields[f]) fieldReasons[f] = "podatka ni bilo na spletni strani podjetja";
+      }
+
       return {
         fields,
         note:
           count > 0
             ? `Spletna stran (poglobljeno): najdenih ${count} podatkov na ${targetUrl}.${firecrawlNote}`
             : `Spletna stran (poglobljeno): stran ${targetUrl} prebrana, dodatnih podatkov ni bilo mogoče izluščiti.${firecrawlNote}`,
+        diagnostics: { requests, parserChecks, fieldReasons },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `Spletna stran (poglobljeno): napaka — ${message}` };
+      return {
+        note: `Spletna stran (poglobljeno): napaka — ${message}`,
+        skippedReason: `spletne strani ni bilo mogoče prebrati: ${message}`,
+        diagnostics: { requests: [{ url: targetUrl, status: null, ok: false, note: message }], parserChecks: [], fieldReasons: everyFieldBecause(`spletne strani ni bilo mogoče prebrati: ${message}`) },
+      };
     }
   },
 };

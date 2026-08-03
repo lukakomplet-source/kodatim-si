@@ -3,9 +3,10 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { fetchAjpesAuthed } from "../ajpesSession";
 import { stripHtmlToText } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
-import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
+import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 const BASE = "https://www.ajpes.si/prs";
+const TABLE_ID_LABEL = 'id="tableRezultati"';
 
 const EXTRACTION_PROMPT = `Iz podane vsebine strani AJPES (Poslovni register Slovenije, po prijavi) izlušči podatke o podjetju in odgovori
 IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "authorized_representatives",
@@ -57,9 +58,14 @@ type DetailLinkResult =
   | { status: "not_found" }
   | { status: "ambiguous"; candidateCount: number };
 
-function findDetailLink(html: string, companyName: string): DetailLinkResult {
+/** Fields the free PRS record simply never carries — reported as such rather than as "missing data". */
+const AJPES_NOT_PUBLISHED = new Set([
+  "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating",
+]);
+
+function findDetailLink(html: string, companyName: string): DetailLinkResult & { rowCount: number; tableFound: boolean } {
   const tableStart = html.indexOf('id="tableRezultati"');
-  if (tableStart === -1) return { status: "not_found" };
+  if (tableStart === -1) return { status: "not_found", rowCount: 0, tableFound: false };
   const tableEnd = html.indexOf("</table>", tableStart);
   const tableHtml = tableEnd === -1 ? html.slice(tableStart) : html.slice(tableStart, tableEnd);
 
@@ -69,15 +75,15 @@ function findDetailLink(html: string, companyName: string): DetailLinkResult {
   while ((match = rowPattern.exec(tableHtml)) !== null) {
     rows.push({ href: match[1], firma: match[2].trim(), skrajsana: match[3].trim() });
   }
-  if (rows.length === 0) return { status: "not_found" };
+  if (rows.length === 0) return { status: "not_found", rowCount: 0, tableFound: true };
 
   const normalized = companyName.trim().toLowerCase();
   const exact = rows.find(
     (r) => r.skrajsana.toLowerCase() === normalized || r.firma.toLowerCase() === normalized
   );
-  if (exact) return { status: "found", url: `${BASE}/${exact.href.replace(/&amp;/g, "&")}` };
-  if (rows.length === 1) return { status: "found", url: `${BASE}/${rows[0].href.replace(/&amp;/g, "&")}` };
-  return { status: "ambiguous", candidateCount: rows.length };
+  if (exact) return { status: "found", url: `${BASE}/${exact.href.replace(/&amp;/g, "&")}`, rowCount: rows.length, tableFound: true };
+  if (rows.length === 1) return { status: "found", url: `${BASE}/${rows[0].href.replace(/&amp;/g, "&")}`, rowCount: 1, tableFound: true };
+  return { status: "ambiguous", candidateCount: rows.length, rowCount: rows.length, tableFound: true };
 }
 
 export const ajpesProvider: PublicEnrichmentProvider = {
@@ -91,42 +97,82 @@ export const ajpesProvider: PublicEnrichmentProvider = {
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {
+    const requests: ProviderRequestLog[] = [];
+    const parserChecks: ParserCheck[] = [];
+    const everyFieldBecause = (reason: string): Record<string, string> =>
+      Object.fromEntries(AJPES_POSSIBLE_FIELDS.map((f) => [f, reason]));
+
     if (!process.env.AJPES_USERNAME || !process.env.AJPES_PASSWORD) {
+      const reason = "AJPES_USERNAME/AJPES_PASSWORD nista nastavljena — prijava ni mogoča";
       return {
         note: "AJPES: poverilnice niso nastavljene (AJPES_USERNAME/AJPES_PASSWORD), preskočeno.",
-        skippedReason: "AJPES: poverilnice niso nastavljene",
+        skippedReason: reason,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) },
       };
     }
 
+    const searchUrl = `${BASE}/rezultati.asp?naziv=${encodeURIComponent(lead.company_name)}&status=1`;
     let searchResult: Awaited<ReturnType<typeof fetchAjpesAuthed>>;
     try {
-      const searchUrl = `${BASE}/rezultati.asp?naziv=${encodeURIComponent(lead.company_name)}&status=1`;
       searchResult = await fetchAjpesAuthed(searchUrl, null);
+      requests.push({ url: searchUrl, status: searchResult.status, ok: searchResult.status < 400 });
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       // Distinct from "not found" — the search itself never ran because
       // authentication failed, so nothing downstream can be trusted.
       const note = `AJPES: PRIJAVA NI USPELA — ${message}`;
+      requests.push({ url: searchUrl, status: null, ok: false, note: `prijava/zahtevek ni uspel: ${message}` });
       // A rejected login / unreachable AJPES is a genuine malfunction (nothing
       // can ever come through until it's fixed) — unlike "company not in the
       // register", which is a legitimate empty result.
-      return { note, skippedReason: note, failed: true };
+      return {
+        note,
+        skippedReason: note,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`prijava v AJPES ni uspela: ${message}`) },
+      };
     }
 
     const detail = findDetailLink(searchResult.html, lead.company_name);
+    parserChecks.push({
+      element: "tabela zadetkov (" + TABLE_ID_LABEL + ")",
+      found: detail.tableFound,
+      detail: detail.tableFound ? `${detail.rowCount} vrstic` : "selector ni najden na strani",
+    });
+    parserChecks.push({
+      element: "natančno ujemanje imena",
+      found: detail.status === "found",
+      detail:
+        detail.status === "found"
+          ? "izbrana ena vrstica"
+          : detail.status === "ambiguous"
+            ? `${detail.candidateCount} kandidatov, nobeden se ne ujema natančno`
+            : "ni kandidatov",
+    });
+
     if (detail.status === "not_found") {
       const note = "AJPES: ni bilo mogoče najti podjetja v registru.";
-      return { note, skippedReason: note };
+      const reason = detail.tableFound
+        ? "podjetja ni v poslovnem registru AJPES (0 zadetkov)"
+        : "tabela zadetkov ni bila najdena na strani AJPES (spremenjen HTML?)";
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) } };
     }
     if (detail.status === "ambiguous") {
       const note = `AJPES: AMBIGUOUS MATCH — ${detail.candidateCount} zadetkov za "${lead.company_name}", brez natančnega ujemanja imena; podatkov ni bilo mogoče zanesljivo pripisati.`;
-      return { note, skippedReason: note };
+      const reason = `AMBIGUOUS MATCH — ${detail.candidateCount} zadetkov brez natančnega ujemanja; vrednost namerno ni pripisana`;
+      return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) } };
     }
     const detailUrl = detail.url;
 
     try {
       const detailResult = await fetchAjpesAuthed(detailUrl, searchResult.session);
+      requests.push({ url: detailUrl, status: detailResult.status, ok: detailResult.status < 400 });
       const text = stripHtmlToText(detailResult.html).slice(0, 8000);
+      parserChecks.push({
+        element: "besedilo strani podjetja",
+        found: text.length > 200,
+        detail: `${text.length} znakov po odstranitvi HTML`,
+      });
 
       const ai = await chatJSON<Extracted>(
         EXTRACTION_PROMPT,
@@ -135,16 +181,31 @@ export const ajpesProvider: PublicEnrichmentProvider = {
       );
       const fields = verifyNumericFields(toFields(ai, detailUrl), text);
       const count = Object.keys(fields).length;
+
+      const fieldReasons: Record<string, string> = {};
+      for (const f of AJPES_POSSIBLE_FIELDS) {
+        if (fields[f]) continue;
+        fieldReasons[f] = AJPES_NOT_PUBLISHED.has(f)
+          ? "AJPES PRS tega podatka ne objavlja (finančni podatki niso v javnem registru)"
+          : "podatka ni bilo na strani podjetja v AJPES";
+      }
+
       return {
         fields,
         note:
           count > 0
             ? `AJPES: najdenih ${count} registrskih podatkov.`
             : `AJPES: podjetje najdeno, vsebine ni bilo mogoče izluščiti.`,
+        diagnostics: { requests, parserChecks, fieldReasons },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
-      return { note: `AJPES: napaka — ${message}`, failed: true };
+      requests.push({ url: detailUrl, status: null, ok: false, note: message });
+      return {
+        note: `AJPES: napaka — ${message}`,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`napaka pri branju strani: ${message}`) },
+      };
     }
   },
 };
