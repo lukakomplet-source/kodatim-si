@@ -61,7 +61,7 @@ function looksLikeJsShell(html: string): boolean {
   return text.length < 200;
 }
 
-type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" | "skipped"; firecrawlSkipReason?: string };
+type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" | "skipped" };
 
 /**
  * Firecrawl here is an optional enhancement, never a requirement — the whole
@@ -87,8 +87,13 @@ async function fetchHtml(url: string): Promise<FetchOutcome> {
     const scraped = await scrapeUrl(url, { onlyMainContent: false });
     return { markdown: scraped.markdown, firecrawlStatus: "used" };
   } catch (err) {
+    // Firecrawl is optional. Its failure reason (402 insufficient credits,
+    // rate limit, timeout, bad key …) belongs in the server log only — it
+    // must never travel onward into the provider note, because that note is
+    // persisted to enrichment_meta and rendered verbatim in the admin UI.
     const message = err instanceof Error ? err.message : "neznana napaka";
-    return { markdown: plainMarkdown, firecrawlStatus: "skipped", firecrawlSkipReason: message };
+    console.warn(`[website] Firecrawl ni na voljo za ${url} — ${message}`);
+    return { markdown: plainMarkdown, firecrawlStatus: "skipped" };
   }
 }
 
@@ -113,10 +118,11 @@ export const websiteProvider: PublicEnrichmentProvider = {
     }
 
     try {
-      const { markdown, firecrawlStatus, firecrawlSkipReason } = await fetchHtml(targetUrl);
+      const { markdown, firecrawlStatus } = await fetchHtml(targetUrl);
+      // Neutral and fixed — never carries the underlying provider error text.
       const firecrawlNote =
         firecrawlStatus === "skipped"
-          ? ` (Firecrawl AI povzetek preskočen — ${firecrawlSkipReason}; osnovni podatki iz navadnega fetch())`
+          ? " (Spletna AI obogatitev preskočena — neobvezna storitev trenutno ni na voljo.)"
           : "";
 
       if (markdown.trim().length < MIN_CONTENT_LENGTH) {
