@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
+import { providerFetch } from "@/lib/publicEnrichment/httpClient";
 import { chatJSON } from "@/lib/openai";
 
 type LeadWebsiteExtraction = {
@@ -36,6 +37,39 @@ async function extractLeadInfo(
   };
 }
 
+const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
+const MIN_CONTENT = 300;
+
+/** Reads a page without depending on Firecrawl; uses it only when plain HTML is a JS shell. */
+async function readPage(url: string): Promise<{ markdown: string; title: string | null }> {
+  let html: string | null = null;
+  try {
+    const res = await providerFetch("website", url, { headers: HEADERS });
+    if (res.ok) html = await res.text();
+  } catch {
+    if (url.startsWith("https://")) {
+      const res = await providerFetch("website", url.replace(/^https:\/\//, "http://"), { headers: HEADERS });
+      if (res.ok) html = await res.text();
+    }
+  }
+
+  if (html) {
+    const title = html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? null;
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length >= MIN_CONTENT) return { markdown: text, title };
+  }
+
+  // Only now is Firecrawl worth trying (JS-rendered page). If it is
+  // unavailable the caller turns that into a neutral warning, not an error.
+  const scraped = await scrapeUrl(url, { onlyMainContent: false });
+  return { markdown: scraped.markdown, title: scraped.title };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();
@@ -66,8 +100,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const scraped = await scrapeUrl(url, { onlyMainContent: false });
-    const extracted = await extractLeadInfo(scraped.markdown, scraped.title);
+    // Plain fetch() first — Firecrawl is only needed for JS-only pages, so a
+    // missing Firecrawl balance must not break this button. Falls back to
+    // http:// because small business sites often have expired certificates.
+    const { markdown, title } = await readPage(url);
+    const extracted = await extractLeadInfo(markdown, title);
     return NextResponse.json({
       name: extracted.name,
       industry: extracted.industry,

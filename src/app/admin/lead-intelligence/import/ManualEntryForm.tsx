@@ -60,6 +60,12 @@ export default function ManualEntryForm() {
   const [completeError, setCompleteError] = useState<string | null>(null);
   const [completeWarning, setCompleteWarning] = useState<string | null>(null);
   const [completeSource, setCompleteSource] = useState<string | null>(null);
+  // Which source filled each field, and why the rest stayed empty — so the
+  // form can explain itself instead of just failing silently.
+  const [fieldSources, setFieldSources] = useState<Record<string, string>>({});
+  const [fieldNotes, setFieldNotes] = useState<Record<string, string>>({});
+  const [providerNotes, setProviderNotes] = useState<{ label: string; note: string }[]>([]);
+  const [showNotes, setShowNotes] = useState(false);
   const [noWebsite, setNoWebsite] = useState(false);
 
   function toggleNoWebsite(checked: boolean) {
@@ -125,6 +131,9 @@ export default function ManualEntryForm() {
     setCompleteError(null);
     setCompleteWarning(null);
     setCompleteSource(null);
+    setFieldSources({});
+    setFieldNotes({});
+    setProviderNotes([]);
     try {
       const res = await fetch("/api/admin/lead-intelligence/ai-complete", {
         method: "POST",
@@ -137,6 +146,10 @@ export default function ManualEntryForm() {
         if (res.status === 422) setNoWebsite(true);
         return;
       }
+      setFieldSources((json.sources ?? {}) as Record<string, string>);
+      setFieldNotes((json.fieldNotes ?? {}) as Record<string, string>);
+      setProviderNotes((json.providerNotes ?? []) as { label: string; note: string }[]);
+
       if (json?.warning) {
         setCompleteWarning(json.warning);
         return;
@@ -195,6 +208,40 @@ export default function ManualEntryForm() {
         <p className="sm:col-span-2 text-xs text-emerald-600">
           Dopolnjeno na podlagi: {completeSource}. Preverite podatke pred shranjevanjem.
         </p>
+      )}
+      {providerNotes.length > 0 && (
+        <div className="sm:col-span-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowNotes((v) => !v)}
+            className="font-medium text-zinc-600 hover:text-zinc-900"
+          >
+            {showNotes ? "Skrij" : "Pokaži"} podrobnosti po virih ({providerNotes.length})
+          </button>
+          {showNotes && (
+            <div className="mt-2 space-y-2">
+              <ul className="space-y-0.5">
+                {providerNotes.map((p, i) => (
+                  <li key={`${p.label}-${i}`} className="text-zinc-600">
+                    <span className="font-medium text-zinc-700">{p.label}:</span> {p.note}
+                  </li>
+                ))}
+              </ul>
+              {Object.keys(fieldNotes).length > 0 && (
+                <div>
+                  <div className="mb-0.5 font-medium text-zinc-600">Zakaj je polje ostalo prazno</div>
+                  <ul className="space-y-0.5">
+                    {Object.entries(fieldNotes).map(([field, reason]) => (
+                      <li key={field} className="text-zinc-500">
+                        <span className="font-medium text-zinc-700">{IMPORT_FIELD_LABELS[field as ImportField] ?? field}</span> — {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {IMPORT_FIELDS.map((field) => {
@@ -260,6 +307,12 @@ export default function ManualEntryForm() {
                 className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
               />
             )}
+            {/* Where the value came from, or why it stayed empty — visible per field. */}
+            {fieldSources[field] ? (
+              <p className="mt-0.5 text-[11px] text-emerald-600">vir: {fieldSources[field]}</p>
+            ) : fieldNotes[field] ? (
+              <p className="mt-0.5 text-[11px] text-zinc-400">{fieldNotes[field]}</p>
+            ) : null}
           </div>
         );
       })}

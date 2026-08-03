@@ -1,46 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { searchWeb, scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
-import { chatJSON } from "@/lib/openai";
+import { isFirecrawlUnavailable } from "@/lib/firecrawl";
+import type { IntelLead } from "@/lib/lead-intelligence/types";
+import { ajpesProvider } from "@/lib/publicEnrichment/providers/ajpes";
+import { companyWallProvider } from "@/lib/publicEnrichment/providers/companywall";
+import { biziProvider } from "@/lib/publicEnrichment/providers/bizi";
+import { websiteProvider } from "@/lib/publicEnrichment/providers/website";
+import {
+  PUBLIC_ENRICHMENT_SOURCE_LABELS,
+  type PublicEnrichmentProvider,
+  type PublicEnrichmentSourceId,
+} from "@/lib/publicEnrichment/types";
 
-const BLOCKED_DOMAINS = [
-  "facebook.com",
-  "instagram.com",
-  "linkedin.com",
-  "tiktok.com",
-  "youtube.com",
-  "x.com",
-  "twitter.com",
-];
+/**
+ * "AI dopolni vse" on the import screen.
+ *
+ * This used to run entirely on Firecrawl web search, so once the Firecrawl
+ * account ran out of credits the button filled nothing and could only show a
+ * warning — while AJPES/CompanyWall/Bizi returned 7/10/10 fields for the very
+ * same company, for free. It now uses those registries in the same priority
+ * order as the enrichment pipeline (AJPES -> CompanyWall -> Bizi -> website),
+ * with Firecrawl demoted to an optional extra it never depends on.
+ *
+ * Also returns, per empty field, WHY it is empty — so the form can say
+ * "AJPES: AMBIGUOUS MATCH …" instead of a generic failure.
+ */
 
-const SYSTEM_PROMPT = `Iz vsebine spletne strani podjetja izlušči kontaktne podatke in odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
-"industry" (panoga/dejavnost v nekaj besedah), "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id" (davčna/ID za DDV, npr. "SI12345678"), "description" (1-2 povedi povzetka dejavnosti).
+/** Fields the import form actually has inputs for. */
+const FORM_FIELDS = [
+  "industry",
+  "email",
+  "phone",
+  "address_street",
+  "address_city",
+  "address_region",
+  "address_country",
+  "vat_id",
+] as const;
 
-Pravila:
-- Vsak ključ izpolni SAMO, če je podatek dejansko naveden na strani. Če ga ni, ključ izpusti — ne izmišljuj.
-- Telefon, email in DŠ prepiši natančno tako, kot so zapisani.
-- Vse v slovenščini.`;
+/** Extra values worth returning even though the form has no dedicated input. */
+const EXTRA_FIELDS = ["skd_code", "skd_name", "registration_number", "director", "founded_date", "legal_form"] as const;
 
-type Extracted = {
-  industry?: string;
-  email?: string;
-  phone?: string;
-  address_street?: string;
-  address_city?: string;
-  address_region?: string;
-  address_country?: string;
-  vat_id?: string;
-  description?: string;
-};
+const WANTED: readonly string[] = [...FORM_FIELDS, ...EXTRA_FIELDS];
 
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Napaka." },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Napaka." }, { status: 401 });
   }
 
   let companyName: string | undefined;
@@ -57,68 +64,105 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Najprej vnesite ime podjetja." }, { status: 400 });
   }
 
-  try {
-    const query = [companyName, city, "kontakt"].filter(Boolean).join(" ");
-    const results = await searchWeb(query, { limit: 5, scrapeMarkdown: true, country: "SI" });
+  const fields: Record<string, string> = {};
+  const sources: Record<string, string> = {};
+  const fieldNotes: Record<string, string> = {};
+  const providerNotes: { label: string; note: string }[] = [];
+  let website: string | null = null;
+  let description: string | null = null;
 
-    const candidate =
-      results.find(
-        (r) => r.markdown && !BLOCKED_DOMAINS.some((d) => r.url.toLowerCase().includes(d))
-      ) ?? results.find((r) => r.markdown);
+  // Mutable working lead so each provider sees what the previous one resolved
+  // (CompanyWall's official name is what lets Bizi build the right URL).
+  const working: Record<string, unknown> = {
+    company_name: companyName,
+    address_city: city || null,
+    custom_fields: {} as Record<string, string>,
+  };
 
-    if (!candidate) {
-      return NextResponse.json(
-        { error: "AI na spletu ni našel uporabnih rezultatov za to podjetje." },
-        { status: 422 }
-      );
+  const chain: PublicEnrichmentProvider[] = [ajpesProvider, companyWallProvider, biziProvider];
+
+  for (const provider of chain) {
+    try {
+      const result = await provider.run(working as unknown as IntelLead);
+      providerNotes.push({ label: provider.label, note: result.note });
+
+      for (const [key, candidate] of Object.entries(result.fields ?? {})) {
+        if (!candidate?.value) continue;
+        if (key === "website" && !website) website = candidate.value;
+        if (key === "description" && !description) description = candidate.value;
+
+        // Feed identity forward for the next provider in the chain.
+        (working.custom_fields as Record<string, string>)[key] = candidate.value;
+        if (key === "address_city" && !working.address_city) working.address_city = candidate.value;
+
+        if (!WANTED.includes(key)) continue;
+        if (fields[key]) continue; // first (highest-priority) source wins
+        fields[key] = candidate.value;
+        sources[key] = PUBLIC_ENRICHMENT_SOURCE_LABELS[provider.id as PublicEnrichmentSourceId] ?? provider.id;
+      }
+
+      // Keep the FIRST provider's reason — the chain runs in authority order,
+      // so AJPES's "AMBIGUOUS MATCH" is the root cause worth showing, not
+      // Bizi's downstream 404 that merely follows from it.
+      for (const [key, reason] of Object.entries(result.diagnostics?.fieldReasons ?? {})) {
+        if (WANTED.includes(key) && !fields[key] && !fieldNotes[key]) {
+          fieldNotes[key] = `${provider.label}: ${reason}`;
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "neznana napaka";
+      providerNotes.push({ label: provider.label, note: `napaka — ${message}` });
     }
-
-    let markdown = candidate.markdown ?? "";
-    if (!markdown.trim()) {
-      const scraped = await scrapeUrl(candidate.url, { onlyMainContent: false });
-      markdown = scraped.markdown;
-    }
-
-    const ai = await chatJSON<Extracted>(
-      SYSTEM_PROMPT,
-      `Podjetje: ${companyName}\n\nVsebina strani (${candidate.url}):\n\n${markdown.slice(0, 8000)}`,
-      { temperature: 0.1 }
-    );
-
-    const fields: Record<string, string> = {};
-    for (const key of [
-      "industry",
-      "email",
-      "phone",
-      "address_street",
-      "address_city",
-      "address_region",
-      "address_country",
-      "vat_id",
-    ] as const) {
-      const value = ai[key];
-      if (typeof value === "string" && value.trim()) fields[key] = value.trim().slice(0, 300);
-    }
-
-    return NextResponse.json({
-      website: candidate.url,
-      fields,
-      description: typeof ai.description === "string" ? ai.description.slice(0, 500) : null,
-      source: candidate.title,
-    });
-  } catch (err) {
-    // Firecrawl is an optional enhancement — its unavailability is a warning,
-    // not a failure, so this returns 200 and the UI renders it neutrally
-    // instead of as a red error.
-    if (isFirecrawlUnavailable(err)) {
-      console.warn(`[ai-complete] Firecrawl preskočen — ${err.detail}`);
-      return NextResponse.json({
-        warning: "Firecrawl preskočen (ni kreditov) — samodejno dopolnjevanje trenutno ni na voljo.",
-      });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Dopolnjevanje ni uspelo." },
-      { status: 502 }
-    );
   }
+
+  // Optional final pass: if a website turned up, read it for anything still
+  // missing. Plain fetch() first, Firecrawl only for JS-only pages — so a
+  // missing Firecrawl balance costs nothing here.
+  if (website) {
+    try {
+      const result = await websiteProvider.run({ ...working, website } as unknown as IntelLead);
+      providerNotes.push({ label: websiteProvider.label, note: result.note });
+      for (const [key, candidate] of Object.entries(result.fields ?? {})) {
+        if (!candidate?.value || !WANTED.includes(key) || fields[key]) continue;
+        fields[key] = candidate.value;
+        sources[key] = "Spletna stran";
+      }
+    } catch (err) {
+      if (!isFirecrawlUnavailable(err)) {
+        const message = err instanceof Error ? err.message : "neznana napaka";
+        providerNotes.push({ label: websiteProvider.label, note: `napaka — ${message}` });
+      }
+    }
+  }
+
+  const filled = Object.keys(fields).length;
+  if (filled === 0 && !website) {
+    // Nothing found anywhere — say exactly why, per source, instead of a
+    // generic "dopolnjevanje ni uspelo".
+    return NextResponse.json({
+      fields: {},
+      sources: {},
+      fieldNotes,
+      providerNotes,
+      website: null,
+      description: null,
+      warning: `Za "${companyName}" ni bilo mogoče najti podatkov. ${providerNotes
+        .map((p) => `${p.label}: ${p.note}`)
+        .join(" · ")}`,
+    });
+  }
+
+  for (const key of WANTED) {
+    if (!fields[key] && !fieldNotes[key]) fieldNotes[key] = "noben vir ni objavil tega podatka";
+  }
+
+  return NextResponse.json({
+    website,
+    fields,
+    sources,
+    fieldNotes,
+    providerNotes,
+    description,
+    source: providerNotes.map((p) => p.label).join(" + "),
+  });
 }
