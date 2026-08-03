@@ -1,4 +1,5 @@
 import "server-only";
+import { providerFetch } from "./httpClient";
 
 const BASE = "https://www.ajpes.si";
 const LOGIN_URL = `${BASE}/MDScripts/ajax.asp?method=checkuser`;
@@ -22,7 +23,7 @@ async function login(): Promise<AjpesSession | null> {
   if (!username || !password) return null;
 
   const body = new URLSearchParams({ uporabnik: username, geslo: password, avto: "0" });
-  const response = await fetch(LOGIN_URL, {
+  const response = await providerFetch("ajpes", LOGIN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -47,14 +48,14 @@ export async function fetchAjpesAuthed(
   let current = session ?? (await login());
   if (!current) throw new Error("AJPES: poverilnice niso nastavljene.");
 
-  let response = await fetch(url, { headers: { Cookie: current.cookie } });
+  let response = await providerFetch("ajpes", url, { headers: { Cookie: current.cookie } });
   let html = await response.text();
 
   if (html.includes(LOGIN_REQUIRED_MARKER)) {
     const relogin = await login();
     if (!relogin) throw new Error("AJPES: poverilnice niso nastavljene.");
     current = relogin;
-    response = await fetch(url, { headers: { Cookie: current.cookie } });
+    response = await providerFetch("ajpes", url, { headers: { Cookie: current.cookie } });
     html = await response.text();
     if (html.includes(LOGIN_REQUIRED_MARKER)) {
       throw new Error("AJPES: prijava ni uspela (napačni podatki ali sprememba prijavnega postopka).");

@@ -2,7 +2,7 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
-import { politeFetch } from "../politeFetch";
+import { providerFetch } from "../httpClient";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Deterministic HTML parsing — no Firecrawl, no AI, no search step at all.
@@ -111,7 +111,7 @@ export const biziProvider: PublicEnrichmentProvider = {
 
     const detailUrl = `${BASE}/${slug}/`;
     try {
-      const res = await politeFetch(detailUrl, { headers: HEADERS });
+      const res = await providerFetch("bizi", detailUrl, { headers: HEADERS });
       if (!res.ok) throw new Error(`Bizi.si stran ni dosegljiva (${res.status})`);
       if (res.url.includes("/404")) {
         const note = "Bizi.si: ni bilo mogoče najti javne strani podjetja.";

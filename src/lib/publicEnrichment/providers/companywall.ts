@@ -2,7 +2,7 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
-import { politeFetch } from "../politeFetch";
+import { providerFetch } from "../httpClient";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
 // Deterministic HTML parsing — no Firecrawl, no AI. CompanyWall's own search
@@ -115,7 +115,7 @@ export const companyWallProvider: PublicEnrichmentProvider = {
     let searchHtml: string;
     try {
       const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(lead.company_name)}`;
-      const res = await politeFetch(searchUrl, { headers: HEADERS });
+      const res = await providerFetch("companywall", searchUrl, { headers: HEADERS });
       if (!res.ok) throw new Error(`CompanyWall iskanje napaka (${res.status})`);
       searchHtml = await res.text();
     } catch (err) {
@@ -134,7 +134,7 @@ export const companyWallProvider: PublicEnrichmentProvider = {
 
     const detailUrl = `${BASE}${match.href}`;
     try {
-      const res = await politeFetch(detailUrl, { headers: HEADERS });
+      const res = await providerFetch("companywall", detailUrl, { headers: HEADERS });
       if (!res.ok) throw new Error(`CompanyWall stran ni dosegljiva (${res.status})`);
       const html = await res.text();
       const text = stripHtmlToText(html);

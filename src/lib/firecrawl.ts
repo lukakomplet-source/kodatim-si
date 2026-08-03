@@ -1,38 +1,13 @@
 import "server-only";
+import { providerFetch } from "./publicEnrichment/httpClient";
 
 // The Firecrawl plan on this account enforces a hard ~13 requests/minute cap
 // (confirmed empirically: bursts of concurrent calls come back 429 "Rate
-// limit exceeded ... Remaining (req/min): 0"). Every caller in this codebase
-// (search AND scrape, across every enrichment provider) shares this one
-// queue so concurrent providers can't overrun the limit — dispatches are
-// paced at a fixed minimum interval, and a 429 is retried after the
-// server-provided backoff instead of being treated as "no data found".
-const MIN_INTERVAL_MS = 5000;
-const MAX_RETRIES = 3;
-let queueTail: Promise<void> = Promise.resolve();
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function parseRetryAfterSeconds(body: string): number | null {
-  const match = body.match(/retry after (\d+)s/i);
-  return match ? Number(match[1]) : null;
-}
-
-async function throttledFetch(url: string, init: RequestInit): Promise<Response> {
-  const mySlot = queueTail.then(() => sleep(MIN_INTERVAL_MS));
-  queueTail = mySlot;
-  await mySlot;
-
-  for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, init);
-    if (response.status !== 429 || attempt >= MAX_RETRIES) return response;
-    const body = await response.clone().text();
-    const waitSeconds = parseRetryAfterSeconds(body) ?? 30;
-    await sleep((waitSeconds + 1) * 1000);
-  }
-}
+// limit exceeded ... Remaining (req/min): 0"). Pacing and 429 backoff are now
+// handled by the shared providerFetch client under the "firecrawl" provider
+// id, so Firecrawl shares one adaptive budget across every caller instead of
+// keeping its own private queue that couldn't coordinate with the others.
+// Tune via RATE_FIRECRAWL_* env vars.
 
 export type FirecrawlScrapeResult = {
   markdown: string;
@@ -50,7 +25,7 @@ export async function scrapeUrl(
     throw new Error("FIRECRAWL_API_KEY ni nastavljen v .env.local.");
   }
 
-  const response = await throttledFetch("https://api.firecrawl.dev/v2/scrape", {
+  const response = await providerFetch("firecrawl", "https://api.firecrawl.dev/v2/scrape", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -120,7 +95,7 @@ export async function searchWeb(
     throw new Error("FIRECRAWL_API_KEY ni nastavljen v .env.local.");
   }
 
-  const response = await throttledFetch("https://api.firecrawl.dev/v2/search", {
+  const response = await providerFetch("firecrawl", "https://api.firecrawl.dev/v2/search", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

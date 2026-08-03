@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueLeads } from "@/lib/enrichment/queue";
 import { IMPORT_FIELDS, type ImportField } from "@/lib/lead-intelligence/types";
 
 type ImportRow = Partial<Record<ImportField, string>>;
@@ -120,13 +121,24 @@ export async function POST(request: NextRequest) {
     });
 
     if (toInsert.length > 0) {
-      const { error } = await admin.from("intel_leads").insert(
-        toInsert.map((r) => ({ ...r, import_id: importId, enrichment_status: "queued" }))
-      );
+      const { data: insertedRows, error } = await admin
+        .from("intel_leads")
+        .insert(toInsert.map((r) => ({ ...r, import_id: importId, enrichment_status: "queued" })))
+        .select("id");
       if (error) {
         return NextResponse.json({ error: "Vrstic ni bilo mogoče shraniti." }, { status: 500 });
       }
       inserted = toInsert.length;
+
+      // Queue the work instead of doing it here: the import request returns
+      // immediately and standalone workers (npm run worker) drain the queue.
+      // A queueing failure must not lose the imported leads — they're already
+      // saved and can be re-queued from the Discovery screen.
+      try {
+        await enqueueLeads(admin, (insertedRows ?? []).map((r) => r.id as string));
+      } catch (err) {
+        console.error("enqueueLeads after import failed:", err);
+      }
     }
   }
 

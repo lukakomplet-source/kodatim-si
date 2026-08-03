@@ -1,4 +1,5 @@
 import { chatJSON } from "@/lib/openai";
+import { providerFetch } from "../httpClient";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { CONFIDENCE, type FieldCandidate, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
 
@@ -68,7 +69,7 @@ export const googleSearchProvider: PublicEnrichmentProvider = {
     let html: string;
     try {
       const query = `${lead.company_name} kontakt uradna stran`;
-      const res = await fetch(`https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`, { headers: HEADERS });
+      const res = await providerFetch("google", `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`, { headers: HEADERS });
       if (!res.ok) throw new Error(`Google iskanje napaka (${res.status})`);
       html = await res.text();
     } catch (err) {

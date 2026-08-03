@@ -25,9 +25,9 @@ export default async function DiscoveryPage({
 
       <h1 className="mt-4 text-3xl font-semibold text-zinc-900">AI Discovery vrsta</h1>
       <p className="mt-2 max-w-2xl text-base text-zinc-500">
-        Vsak lead gre skozi iskanje spletne strani, pregled vsebine in AI poslovno analizo.
-        Vrsta teče, dokler je ta zavihek odprt — status vsakega leada je shranjen, zato lahko
-        stran kadarkoli zaprete in se vrnete pozneje.
+        Vsak lead gre skozi AJPES, CompanyWall, Bizi, spletno stran in (neobvezno) AI analizo.
+        Obdelavo izvaja ločen delovni proces v ozadju, zato lahko to stran kadarkoli zaprete —
+        vrsta teče naprej. Ta pogled samo prikazuje napredek in se samodejno osvežuje.
       </p>
 
       <DiscoveryQueueClient initialLeads={leads} importId={importId} />

@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
 import { logActivity } from "@/lib/activity/log";
 import { mergeContactPersonName } from "@/lib/enrichment/contactMerge";
+import { enqueueLeads } from "@/lib/enrichment/queue";
 import {
   LEAD_PRIORITIES,
   LEAD_STATUSES,
@@ -300,6 +301,13 @@ export async function createLead(
   }
 
   await logActivity(data.id, "note", "Ročno dodan lead.", user.id);
+  // Hand off to the durable queue — a worker picks it up, so the form returns
+  // immediately instead of waiting on the enrichment pipeline.
+  try {
+    await enqueueLeads(admin, [data.id as string]);
+  } catch (err) {
+    console.error("enqueueLeads after createLead failed:", err);
+  }
   revalidatePath("/admin/lead-intelligence/leads");
   revalidatePath("/admin/lead-intelligence");
   return { success: true };
@@ -404,7 +412,7 @@ export async function bulkDeleteLeads(leadIds: string[]): Promise<ActionResult> 
   return { success: true };
 }
 
-/** Resets a stuck/failed lead back to 'queued' so the Discovery queue picks it up again. */
+/** Puts a stuck/failed lead back on the durable queue so a worker retries it. */
 export async function requeueEnrichment(leadId: string): Promise<ActionResult> {
   try {
     await requireAdmin();
@@ -417,12 +425,19 @@ export async function requeueEnrichment(leadId: string): Promise<ActionResult> {
     .from("intel_leads")
     .update({ enrichment_status: "queued", enrichment_error: null })
     .eq("id", leadId)
-    .in("enrichment_status", ["searching", "scraping", "analyzing", "error"]);
+    .in("enrichment_status", ["searching", "scraping", "finding_contacts", "analyzing", "error"]);
 
   if (error) return { error: "Leada ni bilo mogoče ponovno uvrstiti v vrsto." };
 
+  // Clear any exhausted job so enqueueLeads (which skips leads with a live
+  // job) can create a fresh one.
+  await admin.from("enrichment_jobs").delete().eq("lead_id", leadId).in("status", ["done", "failed"]);
+  const queued = await enqueueLeads(admin, [leadId]);
+
   revalidatePath("/admin/lead-intelligence/discovery");
-  return { success: true };
+  return queued > 0 || !error
+    ? { success: true }
+    : { error: "Leada ni bilo mogoče ponovno uvrstiti v vrsto." };
 }
 
 /** Moved out of the old batch AI-enrich route: fuzzy duplicate detection against the whole table. */

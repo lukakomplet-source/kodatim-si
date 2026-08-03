@@ -1,12 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { RefreshCw, Sparkles, Users } from "lucide-react";
+import { RefreshCw, Users } from "lucide-react";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import type { EnrichmentStatus } from "@/lib/enrichment/types";
 import EnrichmentStatusBadge from "@/components/ui/EnrichmentStatusBadge";
 import { requeueEnrichment, detectDuplicates } from "../actions";
+
+/**
+ * Monitor only — this screen no longer executes enrichment.
+ *
+ * It used to run the queue in the browser (3 client-side workers calling the
+ * API route), which meant closing the tab stopped everything and made 400k
+ * companies impossible. Execution now belongs to the standalone worker
+ * process (`npm run worker`); this view just reports what the worker is doing
+ * and lets you push a stuck lead back onto the queue.
+ */
 
 type DiscoveryLead = Pick<
   IntelLead,
@@ -19,7 +30,7 @@ type DiscoveryLead = Pick<
   | "enrichment_started_at"
 >;
 
-const CONCURRENCY = 3;
+const REFRESH_MS = 10_000;
 const STUCK_AFTER_MS = 10 * 60 * 1000;
 const PROCESSING_STATUSES: EnrichmentStatus[] = ["searching", "scraping", "finding_contacts", "analyzing"];
 
@@ -29,20 +40,6 @@ function isStuck(lead: DiscoveryLead): boolean {
   return Date.now() - new Date(lead.enrichment_started_at).getTime() > STUCK_AFTER_MS;
 }
 
-async function runOne(leadId: string): Promise<EnrichmentStatus | "error"> {
-  try {
-    const res = await fetch("/api/admin/lead-intelligence/enrichment/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leadId }),
-    });
-    const json = await res.json();
-    return (json.status ?? "error") as EnrichmentStatus | "error";
-  } catch {
-    return "error";
-  }
-}
-
 export default function DiscoveryQueueClient({
   initialLeads,
   importId,
@@ -50,10 +47,21 @@ export default function DiscoveryQueueClient({
   initialLeads: IntelLead[];
   importId?: string;
 }) {
-  const [leads, setLeads] = useState<DiscoveryLead[]>(initialLeads);
-  const [running, setRunning] = useState(false);
+  const router = useRouter();
+  // Rendered straight from props — the server component re-queries on every
+  // router.refresh(), so there's no local copy to drift out of sync with the
+  // worker's actual progress.
+  const leads: DiscoveryLead[] = initialLeads;
+  const [retrying, setRetrying] = useState<Set<string>>(new Set());
   const [dupMessage, setDupMessage] = useState<string | null>(null);
   const [dupLoading, setDupLoading] = useState(false);
+
+  // The worker runs elsewhere, so poll the server for its progress rather
+  // than tracking state locally.
+  useEffect(() => {
+    const timer = setInterval(() => router.refresh(), REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [router]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { queued: 0, processing: 0, done: 0, error: 0 };
@@ -66,43 +74,19 @@ export default function DiscoveryQueueClient({
     return c;
   }, [leads]);
 
-  function updateLead(id: string, patch: Partial<DiscoveryLead>) {
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  }
-
-  async function runQueue(ids: string[]) {
-    if (ids.length === 0) return;
-    setRunning(true);
-    let idx = 0;
-
-    async function worker() {
-      while (idx < ids.length) {
-        const id = ids[idx++];
-        updateLead(id, { enrichment_status: "searching", enrichment_started_at: new Date().toISOString() });
-        const status = await runOne(id);
-        updateLead(id, {
-          enrichment_status: status === "error" ? "error" : (status as EnrichmentStatus),
-        });
-      }
-    }
-
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, worker));
-    setRunning(false);
-  }
-
-  function startQueue() {
-    const ids = leads.filter((l) => l.enrichment_status === "queued").map((l) => l.id);
-    runQueue(ids);
-  }
-
   async function retryLead(id: string) {
+    setRetrying((prev) => new Set(prev).add(id));
     const res = await requeueEnrichment(id);
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     if (res.error) {
       alert(res.error);
       return;
     }
-    updateLead(id, { enrichment_status: "queued", enrichment_error: null });
-    runQueue([id]);
+    router.refresh();
   }
 
   async function runDuplicateDetection() {
@@ -115,9 +99,7 @@ export default function DiscoveryQueueClient({
       return;
     }
     setDupMessage(
-      res.flagged
-        ? `Zaznanih ${res.flagged} možnih duplikatov.`
-        : "Ni bilo zaznanih duplikatov."
+      res.flagged ? `Zaznanih ${res.flagged} možnih duplikatov.` : "Ni bilo zaznanih duplikatov."
     );
   }
 
@@ -140,21 +122,20 @@ export default function DiscoveryQueueClient({
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={startQueue}
-          disabled={running || counts.queued === 0}
-          className="flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Sparkles className="h-4 w-4" />
-          {running ? "Obdelujem …" : `Zaženi vrsto (${counts.queued})`}
-        </button>
-        <button
-          type="button"
           onClick={runDuplicateDetection}
           disabled={dupLoading || leads.length === 0}
           className="flex items-center gap-2 rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50"
         >
           <Users className="h-4 w-4" />
           {dupLoading ? "Preverjam …" : "Zaznaj duplikate"}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.refresh()}
+          className="flex items-center gap-2 rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Osveži
         </button>
         {dupMessage && <p className="text-sm text-zinc-500">{dupMessage}</p>}
       </div>
@@ -170,10 +151,7 @@ export default function DiscoveryQueueClient({
           <div className="divide-y divide-zinc-100">
             {leads.map((lead) => (
               <div key={lead.id} className="flex items-center gap-3 px-6 py-3.5">
-                <Link
-                  href={`/admin/lead-intelligence/leads/${lead.id}`}
-                  className="flex-1 hover:underline"
-                >
+                <Link href={`/admin/lead-intelligence/leads/${lead.id}`} className="flex-1 hover:underline">
                   <p className="text-sm font-medium text-zinc-900">{lead.company_name}</p>
                   <p className="text-xs text-zinc-500">
                     {[lead.industry, lead.address_city].filter(Boolean).join(" · ") || "—"}
@@ -188,7 +166,8 @@ export default function DiscoveryQueueClient({
                 {(lead.enrichment_status === "error" || isStuck(lead)) && (
                   <button
                     type="button"
-                    title="Ponovno poskusi"
+                    title="Ponovno uvrsti v vrsto"
+                    disabled={retrying.has(lead.id)}
                     onClick={() => retryLead(lead.id)}
                     className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900"
                   >

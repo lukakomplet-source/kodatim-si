@@ -1,4 +1,5 @@
 import { scrapeUrl } from "@/lib/firecrawl";
+import { providerFetch } from "../httpClient";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { verifyNumericFields } from "../verifyNumericFields";
@@ -73,7 +74,7 @@ type FetchOutcome = { markdown: string; firecrawlStatus: "not_needed" | "used" |
  * than losing the step entirely.
  */
 async function fetchHtml(url: string): Promise<FetchOutcome> {
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await providerFetch("website", url, { headers: HEADERS });
   if (!res.ok) throw new Error(`Stran ni dosegljiva (${res.status})`);
   const html = await res.text();
   const plainMarkdown = html.replace(/<[^>]+>/g, " ");

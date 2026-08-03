@@ -110,7 +110,9 @@ async function main() {
       continue;
     }
 
+    const startedAt = Date.now();
     await runLeadEnrichment(lead.id, admin, null);
+    const elapsedMs = Date.now() - startedAt;
 
     const { data: finalLead } = await admin.from("intel_leads").select("*").eq("id", lead.id).single();
     if (!finalLead) {
@@ -184,6 +186,7 @@ async function main() {
 
     const completion = Math.round((filled.length / (filled.length + missing.length || 1)) * 100);
     console.log(`\nCompletion %: ${completion}%`);
+    console.log(`Execution time: ${(elapsedMs / 1000).toFixed(1)}s`);
 
     console.log("\nConflicts:");
     if (!debug?.conflicts.length) {
