@@ -9,6 +9,32 @@ import { providerFetch } from "./publicEnrichment/httpClient";
 // keeping its own private queue that couldn't coordinate with the others.
 // Tune via RATE_FIRECRAWL_* env vars.
 
+/**
+ * Firecrawl is an OPTIONAL enhancement layer. When it's unavailable — 402 out
+ * of credits, 403, 429, timeout, missing key — that is a warning, never an
+ * error: AJPES/CompanyWall/Bizi are what determine whether enrichment
+ * succeeded.
+ *
+ * The raw provider text ("Firecrawl napaka (402): {\"error\":\"Insufficient
+ * credits...\"}") must never reach a user. Callers routinely surface
+ * `err.message` straight into the UI, so the message here is deliberately
+ * neutral and the underlying text is kept on `detail` for server logs only.
+ */
+export class FirecrawlUnavailableError extends Error {
+  readonly detail: string;
+  readonly isFirecrawlUnavailable = true;
+
+  constructor(detail: string) {
+    super("Firecrawl ni na voljo — nadaljujem brez AI obogatitve spletne strani.");
+    this.name = "FirecrawlUnavailableError";
+    this.detail = detail;
+  }
+}
+
+export function isFirecrawlUnavailable(err: unknown): err is FirecrawlUnavailableError {
+  return err instanceof FirecrawlUnavailableError;
+}
+
 export type FirecrawlScrapeResult = {
   markdown: string;
   title: string | null;
@@ -22,7 +48,7 @@ export async function scrapeUrl(
 ): Promise<FirecrawlScrapeResult> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) {
-    throw new Error("FIRECRAWL_API_KEY ni nastavljen v .env.local.");
+    throw new FirecrawlUnavailableError("FIRECRAWL_API_KEY ni nastavljen.");
   }
 
   const response = await providerFetch("firecrawl", "https://api.firecrawl.dev/v2/scrape", {
@@ -43,14 +69,12 @@ export async function scrapeUrl(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
-      `Firecrawl napaka (${response.status}): ${text.slice(0, 300)}`
-    );
+    throw new FirecrawlUnavailableError(`HTTP ${response.status}: ${text.slice(0, 300)}`);
   }
 
   const json = await response.json();
   if (!json.success || !json.data) {
-    throw new Error("Firecrawl ni vrnil vsebine za ta URL.");
+    throw new FirecrawlUnavailableError("Firecrawl ni vrnil vsebine za ta URL.");
   }
 
   const markdown = String(json.data.markdown ?? "");
@@ -92,7 +116,7 @@ export async function searchWeb(
 ): Promise<FirecrawlSearchResult[]> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) {
-    throw new Error("FIRECRAWL_API_KEY ni nastavljen v .env.local.");
+    throw new FirecrawlUnavailableError("FIRECRAWL_API_KEY ni nastavljen.");
   }
 
   const response = await providerFetch("firecrawl", "https://api.firecrawl.dev/v2/search", {
@@ -114,12 +138,12 @@ export async function searchWeb(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Firecrawl napaka (${response.status}): ${text.slice(0, 300)}`);
+    throw new FirecrawlUnavailableError(`HTTP ${response.status}: ${text.slice(0, 300)}`);
   }
 
   const json = await response.json();
   if (!json.success) {
-    throw new Error("Firecrawl iskanje ni uspelo.");
+    throw new FirecrawlUnavailableError("Firecrawl iskanje ni uspelo.");
   }
 
   const web = json.data?.web ?? [];

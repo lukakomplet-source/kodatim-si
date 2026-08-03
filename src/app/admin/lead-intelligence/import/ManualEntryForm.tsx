@@ -54,8 +54,11 @@ export default function ManualEntryForm() {
 
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  // Optional-provider notices (e.g. Firecrawl out of credits) — informational, never red.
+  const [lookupWarning, setLookupWarning] = useState<string | null>(null);
   const [completeLoading, setCompleteLoading] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [completeWarning, setCompleteWarning] = useState<string | null>(null);
   const [completeSource, setCompleteSource] = useState<string | null>(null);
   const [noWebsite, setNoWebsite] = useState(false);
 
@@ -72,6 +75,7 @@ export default function ManualEntryForm() {
     }
     setLookupLoading(true);
     setLookupError(null);
+    setLookupWarning(null);
     try {
       const res = await fetch("/api/admin/lead-intelligence/lookup-website", {
         method: "POST",
@@ -81,6 +85,10 @@ export default function ManualEntryForm() {
       const json = await res.json();
       if (!res.ok) {
         setLookupError(json?.error ?? "Preverjanje ni uspelo.");
+        return;
+      }
+      if (json?.warning) {
+        setLookupWarning(json.warning);
         return;
       }
       if (industryRef.current && !industryRef.current.value.trim() && json.industry) {
@@ -115,6 +123,7 @@ export default function ManualEntryForm() {
     }
     setCompleteLoading(true);
     setCompleteError(null);
+    setCompleteWarning(null);
     setCompleteSource(null);
     try {
       const res = await fetch("/api/admin/lead-intelligence/ai-complete", {
@@ -126,6 +135,10 @@ export default function ManualEntryForm() {
       if (!res.ok) {
         setCompleteError(json?.error ?? "Dopolnjevanje ni uspelo.");
         if (res.status === 422) setNoWebsite(true);
+        return;
+      }
+      if (json?.warning) {
+        setCompleteWarning(json.warning);
         return;
       }
 
@@ -175,6 +188,9 @@ export default function ManualEntryForm() {
       {completeError && (
         <p className="sm:col-span-2 text-xs text-red-500">{completeError}</p>
       )}
+      {completeWarning && (
+        <p className="sm:col-span-2 text-xs text-amber-600">{completeWarning}</p>
+      )}
       {completeSource && (
         <p className="sm:col-span-2 text-xs text-emerald-600">
           Dopolnjeno na podlagi: {completeSource}. Preverite podatke pred shranjevanjem.
@@ -209,6 +225,7 @@ export default function ManualEntryForm() {
                 </button>
               </div>
               {lookupError && <p className="mt-1 text-xs text-red-500">{lookupError}</p>}
+              {lookupWarning && <p className="mt-1 text-xs text-amber-600">{lookupWarning}</p>}
               <label className="mt-1.5 flex items-center gap-2 text-xs text-zinc-500">
                 <input
                   type="checkbox"

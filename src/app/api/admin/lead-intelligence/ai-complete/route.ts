@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { searchWeb, scrapeUrl } from "@/lib/firecrawl";
+import { searchWeb, scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 
 const BLOCKED_DOMAINS = [
@@ -107,6 +107,15 @@ export async function POST(request: NextRequest) {
       source: candidate.title,
     });
   } catch (err) {
+    // Firecrawl is an optional enhancement — its unavailability is a warning,
+    // not a failure, so this returns 200 and the UI renders it neutrally
+    // instead of as a red error.
+    if (isFirecrawlUnavailable(err)) {
+      console.warn(`[ai-complete] Firecrawl preskočen — ${err.detail}`);
+      return NextResponse.json({
+        warning: "Firecrawl preskočen (ni kreditov) — samodejno dopolnjevanje trenutno ni na voljo.",
+      });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Dopolnjevanje ni uspelo." },
       { status: 502 }

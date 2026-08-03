@@ -26,6 +26,8 @@ export default function ContactsSection({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Optional-provider notice (e.g. Firecrawl out of credits) — informational, never red.
+  const [searchWarning, setSearchWarning] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
 
   const visible = rows.filter((c) => c.status !== "dismissed" || showDismissed);
@@ -58,6 +60,7 @@ export default function ContactsSection({
   async function handleDiscover() {
     setSearching(true);
     setSearchError(null);
+    setSearchWarning(null);
     try {
       const res = await fetch("/api/admin/lead-intelligence/contacts/discover", {
         method: "POST",
@@ -70,6 +73,7 @@ export default function ContactsSection({
         return;
       }
       setRows(json.contacts ?? []);
+      if (json.warning) setSearchWarning(json.warning);
       router.refresh();
     } catch {
       setSearchError("Prišlo je do napake. Poskusite znova.");
@@ -93,6 +97,7 @@ export default function ContactsSection({
         </button>
       </div>
       {searchError && <p className="mt-1 text-xs text-red-500">{searchError}</p>}
+      {searchWarning && <p className="mt-1 text-xs text-amber-600">{searchWarning}</p>}
 
       {visible.length === 0 ? (
         <p className="mt-2 text-sm text-zinc-400">

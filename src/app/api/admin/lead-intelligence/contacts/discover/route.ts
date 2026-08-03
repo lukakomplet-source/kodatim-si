@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { scrapeUrl } from "@/lib/firecrawl";
+import { scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
 import { contactDiscoverySource } from "@/lib/enrichment/sources/contactDiscovery";
 import { applyContactDiscoveryResult } from "@/lib/enrichment/contactPipeline";
 import { pickBestContact } from "@/lib/enrichment/bestContactPick";
@@ -70,6 +70,14 @@ export async function POST(request: NextRequest) {
     const contacts = await getLeadContacts(admin, leadId);
     return NextResponse.json({ contacts });
   } catch (err) {
+    if (isFirecrawlUnavailable(err)) {
+      console.warn(`[contacts/discover] Firecrawl preskočen — ${err.detail}`);
+      const contacts = await getLeadContacts(admin, leadId);
+      return NextResponse.json({
+        contacts,
+        warning: "Firecrawl preskočen (ni kreditov) — iskanje kontaktov na spletu trenutno ni na voljo.",
+      });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Iskanje kontaktov ni uspelo." },
       { status: 502 }

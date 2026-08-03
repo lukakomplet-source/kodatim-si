@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { scrapeUrl } from "@/lib/firecrawl";
+import { scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
 import { chatJSON } from "@/lib/openai";
 
 type LeadWebsiteExtraction = {
@@ -76,6 +76,12 @@ export async function POST(request: NextRequest) {
       email: extracted.email,
     });
   } catch (err) {
+    if (isFirecrawlUnavailable(err)) {
+      console.warn(`[lookup-website] Firecrawl preskočen — ${err.detail}`);
+      return NextResponse.json({
+        warning: "Firecrawl preskočen (ni kreditov) — preverjanje spletne strani trenutno ni na voljo.",
+      });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Preverjanje spletne strani ni uspelo." },
       { status: 502 }

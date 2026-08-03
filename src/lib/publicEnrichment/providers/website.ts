@@ -1,4 +1,4 @@
-import { scrapeUrl } from "@/lib/firecrawl";
+import { scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
 import { providerFetch } from "../httpClient";
 import { chatJSON } from "@/lib/openai";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
@@ -91,8 +91,14 @@ async function fetchHtml(url: string): Promise<FetchOutcome> {
     // rate limit, timeout, bad key …) belongs in the server log only — it
     // must never travel onward into the provider note, because that note is
     // persisted to enrichment_meta and rendered verbatim in the admin UI.
-    const message = err instanceof Error ? err.message : "neznana napaka";
-    console.warn(`[website] Firecrawl ni na voljo za ${url} — ${message}`);
+    // Log the underlying detail (HTTP 402 body etc.), not the neutral
+    // user-facing message — otherwise the server log says nothing useful.
+    const detail = isFirecrawlUnavailable(err)
+      ? err.detail
+      : err instanceof Error
+        ? err.message
+        : "neznana napaka";
+    console.warn(`[website] Firecrawl preskočen za ${url} — ${detail}`);
     return { markdown: plainMarkdown, firecrawlStatus: "skipped" };
   }
 }

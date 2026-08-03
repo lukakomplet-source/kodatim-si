@@ -46,8 +46,11 @@ export default function AiImageEntryForm() {
   const [cardErrors, setCardErrors] = useState<(string | null)[]>([]);
   const [lookupLoading, setLookupLoading] = useState<boolean[]>([]);
   const [lookupErrors, setLookupErrors] = useState<(string | null)[]>([]);
+  // Optional-provider notices (e.g. Firecrawl out of credits) — informational, never red.
+  const [lookupWarnings, setLookupWarnings] = useState<(string | null)[]>([]);
   const [completeLoading, setCompleteLoading] = useState<boolean[]>([]);
   const [completeErrors, setCompleteErrors] = useState<(string | null)[]>([]);
+  const [completeWarnings, setCompleteWarnings] = useState<(string | null)[]>([]);
   const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
   const [completingAll, setCompletingAll] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
@@ -98,8 +101,10 @@ export default function AiImageEntryForm() {
       setCardErrors(detected.map(() => null));
       setLookupLoading(detected.map(() => false));
       setLookupErrors(detected.map(() => null));
+      setLookupWarnings(detected.map(() => null));
       setCompleteLoading(detected.map(() => false));
       setCompleteErrors(detected.map(() => null));
+      setCompleteWarnings(detected.map(() => null));
       setCompleteSources(detected.map(() => null));
     } catch {
       setExtractError("Prišlo je do napake. Poskusite znova.");
@@ -115,8 +120,10 @@ export default function AiImageEntryForm() {
     setCardErrors([]);
     setLookupLoading([]);
     setLookupErrors([]);
+    setLookupWarnings([]);
     setCompleteLoading([]);
     setCompleteErrors([]);
+    setCompleteWarnings([]);
     setCompleteSources([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -163,6 +170,7 @@ export default function AiImageEntryForm() {
 
     setLookupLoading((prev) => prev.map((v, i) => (i === index ? true : v)));
     setLookupErrors((prev) => prev.map((e, i) => (i === index ? null : e)));
+    setLookupWarnings((prev) => prev.map((e, i) => (i === index ? null : e)));
 
     try {
       const res = await fetch("/api/admin/lead-intelligence/lookup-website", {
@@ -173,6 +181,10 @@ export default function AiImageEntryForm() {
       const json = await res.json();
       if (!res.ok) {
         setLookupErrors((prev) => prev.map((e, i) => (i === index ? json?.error ?? "Preverjanje ni uspelo." : e)));
+        return;
+      }
+      if (json?.warning) {
+        setLookupWarnings((prev) => prev.map((e, i) => (i === index ? json.warning : e)));
         return;
       }
 
@@ -215,6 +227,7 @@ export default function AiImageEntryForm() {
 
     setCompleteLoading((prev) => prev.map((v, i) => (i === index ? true : v)));
     setCompleteErrors((prev) => prev.map((e, i) => (i === index ? null : e)));
+    setCompleteWarnings((prev) => prev.map((e, i) => (i === index ? null : e)));
     setCompleteSources((prev) => prev.map((s, i) => (i === index ? null : s)));
 
     try {
@@ -226,6 +239,10 @@ export default function AiImageEntryForm() {
       const json = await res.json();
       if (!res.ok) {
         setCompleteErrors((prev) => prev.map((e, i) => (i === index ? json?.error ?? "Dopolnjevanje ni uspelo." : e)));
+        return;
+      }
+      if (json?.warning) {
+        setCompleteWarnings((prev) => prev.map((e, i) => (i === index ? json.warning : e)));
         return;
       }
 
@@ -478,6 +495,9 @@ export default function AiImageEntryForm() {
                 {completeErrors[index] && (
                   <p className="mt-1 text-xs text-red-500">{completeErrors[index]}</p>
                 )}
+                {completeWarnings[index] && (
+                  <p className="mt-1 text-xs text-amber-600">{completeWarnings[index]}</p>
+                )}
                 {completeSources[index] && (
                   <p className="mt-1 text-xs text-emerald-600">
                     Dopolnjeno na podlagi: {completeSources[index]}. Preverite podatke pred shranjevanjem.
@@ -515,6 +535,9 @@ export default function AiImageEntryForm() {
                           </div>
                           {lookupErrors[index] && (
                             <p className="mt-1 text-xs text-red-500">{lookupErrors[index]}</p>
+                          )}
+                          {lookupWarnings[index] && (
+                            <p className="mt-1 text-xs text-amber-600">{lookupWarnings[index]}</p>
                           )}
                         </div>
                       );
