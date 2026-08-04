@@ -131,7 +131,7 @@ export default function LeadScrapeClient() {
   const errorCount = rows.filter((r) => r.status === "error").length;
   const scrapedRows = useMemo(() => rows.filter((r) => r.status === "done"), [rows]);
 
-  async function runSearch() {
+  async function runSearch(): Promise<Row[]> {
     setSearching(true);
     setSearchError(null);
     setSearchNote(null);
@@ -145,17 +145,31 @@ export default function LeadScrapeClient() {
       const json = await res.json();
       if (!res.ok) {
         setSearchError(json?.error ?? "Iskanje ni uspelo.");
-        return;
+        return [];
       }
       const found: Row[] = (json.rows as SearchRow[]).map((r) => ({ ...r, status: "waiting" as const }));
       setRows(found);
       setSelected(new Set(found.map((_, i) => i)));
       setSearchNote(json.note ?? null);
+      return found;
     } catch {
       setSearchError("Prišlo je do napake pri iskanju.");
+      return [];
     } finally {
       setSearching(false);
     }
+  }
+
+  /**
+   * One button for the whole job: enter an SKD code, and the search and the
+   * scrape run back to back without a second click. The rows are passed
+   * straight through rather than read back from state, which has not been
+   * committed yet at this point.
+   */
+  async function searchAndScrape() {
+    const found = await runSearch();
+    if (found.length === 0) return;
+    await scrapeAll(found.map((row, index) => ({ row, index })));
   }
 
   async function scrapeOne(index: number, row: Row) {
@@ -187,8 +201,7 @@ export default function LeadScrapeClient() {
     }
   }
 
-  async function startScrape() {
-    const queue = rows.map((row, index) => ({ row, index })).filter(({ index }) => selected.has(index));
+  async function scrapeAll(queue: { row: Row; index: number }[]) {
     if (queue.length === 0) return;
 
     setScraping(true);
@@ -206,6 +219,11 @@ export default function LeadScrapeClient() {
     });
     await Promise.all(workers);
     setScraping(false);
+  }
+
+  /** Re-run only the ticked rows — for retrying failures or a partial selection. */
+  async function startScrape() {
+    await scrapeAll(rows.map((row, index) => ({ row, index })).filter(({ index }) => selected.has(index)));
   }
 
   function downloadCsv() {
@@ -277,10 +295,12 @@ export default function LeadScrapeClient() {
   return (
     <div className="mt-6 space-y-5">
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-zinc-900">1. Poišči podjetja v AJPES</p>
+        <p className="text-sm font-semibold text-zinc-900">1. Kaj naj skrejpa</p>
         <p className="mt-1 text-xs text-zinc-500">
-          Vnesite vsaj en pogoj. AJPES vrne največ 100 podjetij na iskanje — pri večjem številu
-          zadetkov iskanje zožite (npr. dejavnost + poštna številka).
+          Vnesite SKD kodo (ali kateri koli drug pogoj) in pritisnite <strong>Poišči in skrejpaj</strong> —
+          podjetja se poiščejo v AJPES in skrejpajo samodejno, brez dodatnega klika. AJPES vrne
+          največ 100 podjetij na iskanje; pri večjem številu zadetkov iskanje zožite
+          (npr. dejavnost + poštna številka).
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -331,18 +351,58 @@ export default function LeadScrapeClient() {
               <option value="4">Aktivne in izbrisane</option>
             </select>
           </label>
-          <div className="flex items-end">
+          <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Hitrost skrejpanja
+            <select
+              value={speed}
+              onChange={(e) => setSpeed(e.target.value as SpeedKey)}
+              disabled={scraping}
+              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none disabled:bg-zinc-50"
+            >
+              {(Object.keys(SPEEDS) as SpeedKey[]).map((k) => (
+                <option key={k} value={k}>
+                  {SPEEDS[k].label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {scraping ? (
             <button
               type="button"
-              onClick={runSearch}
-              disabled={searching}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+              onClick={() => {
+                stopRef.current = true;
+              }}
+              className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-100"
             >
-              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              {searching ? "Iščem …" : "Poišči v AJPES"}
+              <Square className="h-4 w-4" />
+              Ustavi
             </button>
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={searchAndScrape}
+              disabled={searching}
+              className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {searching ? "Iščem v AJPES …" : "Poišči in skrejpaj"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={runSearch}
+            disabled={searching || scraping}
+            className="flex items-center gap-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            <Search className="h-4 w-4" />
+            Samo poišči
+          </button>
+          <span className="text-xs text-zinc-400">{SPEEDS[speed].hint}</span>
         </div>
+
         {searchError && <p className="mt-2 text-xs text-red-500">{searchError}</p>}
         {searchNote && <p className="mt-2 text-xs text-zinc-500">{searchNote}</p>}
       </div>
@@ -351,54 +411,25 @@ export default function LeadScrapeClient() {
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-zinc-900">2. Skrejpaj izbrana podjetja</p>
+              <p className="text-sm font-semibold text-zinc-900">2. Rezultat</p>
               <p className="mt-1 text-xs text-zinc-500">
                 Vsako podjetje gre skozi AJPES → CompanyWall → Bizi → spletno stran.
-                Izbranih {selected.size} od {rows.length}. Končanih {doneCount}
-                {errorCount > 0 && `, napak ${errorCount}`}.
+                Najdenih {rows.length}, končanih {doneCount}
+                {errorCount > 0 && `, napak ${errorCount}`}. Označenih {selected.size}.
               </p>
             </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                Hitrost
-                <select
-                  value={speed}
-                  onChange={(e) => setSpeed(e.target.value as SpeedKey)}
-                  disabled={scraping}
-                  className="mt-1 block rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none disabled:bg-zinc-50"
-                >
-                  {(Object.keys(SPEEDS) as SpeedKey[]).map((k) => (
-                    <option key={k} value={k}>
-                      {SPEEDS[k].label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {scraping ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    stopRef.current = true;
-                  }}
-                  className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-100"
-                >
-                  <Square className="h-4 w-4" />
-                  Ustavi
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startScrape}
-                  disabled={selected.size === 0}
-                  className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  <Play className="h-4 w-4" />
-                  Začni skrejp
-                </button>
-              )}
-            </div>
+            {!scraping && doneCount < rows.length && (
+              <button
+                type="button"
+                onClick={startScrape}
+                disabled={selected.size === 0}
+                className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-4 py-2.5 text-sm font-semibold text-accent hover:bg-accent/10 disabled:opacity-50"
+              >
+                <Play className="h-4 w-4" />
+                Skrejpaj označene
+              </button>
+            )}
           </div>
-          <p className="mt-2 text-xs text-zinc-400">{SPEEDS[speed].hint}</p>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
