@@ -119,8 +119,8 @@ function pageBelongsToCompany(
  * a company whose site is not in the top three results almost certainly has
  * none worth finding this way.
  */
-const MAX_CANDIDATES = 3;
-const SEARCH_DEADLINE_MS = 25_000;
+const MAX_CANDIDATES = 2;
+const SEARCH_DEADLINE_MS = 12_000;
 
 export async function searchForWebsite(
   companyName: string,

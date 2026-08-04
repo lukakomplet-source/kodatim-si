@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       // handing out new work once the budget is spent and reports what it did
       // not get to. The client re-queues those, so a slow company is retried
       // instead of being marked failed.
-      const budgetMs = Number(process.env.SCRAPE_BATCH_BUDGET_MS ?? 40_000);
+      const budgetMs = Number(process.env.SCRAPE_BATCH_BUDGET_MS ?? 25_000);
       const unprocessed: number[] = [];
 
       let cursor = 0;

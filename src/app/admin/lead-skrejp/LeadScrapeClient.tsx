@@ -362,10 +362,21 @@ export default function LeadScrapeClient() {
       return pending;
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
-      const message = aborted ? "ustavljeno" : "zahtevek ni uspel";
-      addLog("paket", message, aborted ? "info" : "error");
-      markBatchFailed(batch, aborted ? "ustavljeno pred obdelavo" : "zahtevek ni uspel", handled);
-      return [];
+      if (aborted) {
+        addLog("paket", "ustavljeno", "info");
+        markBatchFailed(batch, "ustavljeno pred obdelavo", handled);
+        return [];
+      }
+      // The connection dropped mid-stream — which is how a function being
+      // killed for exceeding its time limit actually presents itself. That is
+      // not the company's fault, so its row goes back in the queue instead of
+      // being branded a failure.
+      const unfinished = batch.map((b) => b.index).filter((i) => !handled.has(i));
+      addLog("paket", `povezava prekinjena — ${unfinished.length} podjetij nazaj v vrsto`, "info");
+      setRows((prev) =>
+        prev.map((r, i) => (unfinished.includes(i) && r.status === "running" ? { ...r, status: "waiting" } : r))
+      );
+      return unfinished;
     } finally {
       abortRef.current = null;
     }
