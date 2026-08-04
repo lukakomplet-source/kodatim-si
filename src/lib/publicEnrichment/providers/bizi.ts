@@ -14,7 +14,7 @@ import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequest
 // never falls back to guessing a different company.
 
 export const BIZI_POSSIBLE_FIELDS = [
-  "registration_number", "vat_id", "founded_date", "skd_code", "skd_name",
+  "registration_number", "vat_id", "founded_date", "skis_code", "skis_name",
   "industry", "address_street", "address_city", "phone", "email",
 ];
 
@@ -22,7 +22,7 @@ const BASE = "https://www.bizi.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
-const PARSER_VERSION = 2;
+const PARSER_VERSION = 3;
 
 const DIACRITICS: Record<string, string> = {
   č: "c", ć: "c", š: "s", ž: "z", đ: "dj",
@@ -72,16 +72,23 @@ function parseDetailPage(text: string): Record<string, string | null> {
   const addressParts = contact.address ? contact.address.split(",").map((p) => p.trim()) : [];
 
   const vatDigits = firstNonEmptyLineAfter(text, "Davčna številka SI");
-  const skdRaw = firstNonEmptyLineAfter(text, "SKIS");
-  const skdMatch = skdRaw?.match(/^([A-Z0-9.]+)\s*-?\s*(.*)$/);
+  // Bizi publishes SKIS — the institutional-sector code (e.g. "S.11002 —
+  // Nacionalne zasebne nefinančne družbe"). That is NOT the activity
+  // classification: mapping it onto skd_code/skd_name put "Nacionalne
+  // zasebne nefinančne družbe" in the "SKD naziv dejavnosti" field, which is
+  // meaningless as a description of what a company does. The real SKD
+  // (91.120 — Dejavnost arhivov) comes from AJPES/CompanyWall, so SKIS is
+  // kept under its own name and never competes with it.
+  const skisRaw = firstNonEmptyLineAfter(text, "SKIS");
+  const skisMatch = skisRaw?.match(/^([A-Z0-9.]+)\s*-?\s*(.*)$/);
 
   return {
     registration_number: firstNonEmptyLineAfter(text, "Matična"),
     vat_id: vatDigits ? `SI${vatDigits.replace(/\D/g, "")}` : null,
     founded_date: firstNonEmptyLineAfter(text, "Datum vpisa"),
     industry: firstNonEmptyLineAfter(text, "Dejavnost TSmedia"),
-    skd_code: skdMatch?.[1] ?? null,
-    skd_name: skdMatch?.[2]?.trim() || null,
+    skis_code: skisMatch?.[1] ?? null,
+    skis_name: skisMatch?.[2]?.trim() || null,
     address_street: addressParts[0] ?? null,
     address_city: addressParts[addressParts.length - 1]?.replace(/^\d{4}\s*/, "") ?? null,
     phone: contact.phone,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { isFirecrawlUnavailable } from "@/lib/firecrawl";
+import { providerFetch } from "@/lib/publicEnrichment/httpClient";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { ajpesProvider } from "@/lib/publicEnrichment/providers/ajpes";
 import { companyWallProvider } from "@/lib/publicEnrichment/providers/companywall";
@@ -42,6 +43,54 @@ const FORM_FIELDS = [
 const EXTRA_FIELDS = ["skd_code", "skd_name", "registration_number", "director", "founded_date", "legal_form"] as const;
 
 const WANTED: readonly string[] = [...FORM_FIELDS, ...EXTRA_FIELDS];
+
+/**
+ * Mailbox providers — an address here says nothing about the company's own
+ * domain, so it must never be turned into a website guess.
+ */
+const FREE_MAIL_DOMAINS = [
+  "gmail.com", "googlemail.com", "yahoo.com", "hotmail.com", "outlook.com", "live.com",
+  "icloud.com", "protonmail.com", "proton.me", "siol.net", "t-2.net", "telemach.net",
+  "amis.net", "volja.net", "triera.net", "email.si", "gmail.si", "telemach.si",
+];
+
+/** A company email on its own domain is a reliable website hint (info@podjetje.si -> podjetje.si). */
+function websiteFromEmail(email: string | undefined): string | null {
+  if (!email) return null;
+  const domain = email.split("@")[1]?.toLowerCase().trim();
+  if (!domain || !domain.includes(".")) return null;
+  if (FREE_MAIL_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) return null;
+  return `https://${domain}`;
+}
+
+/**
+ * A short "what does this company actually do" line for the notes field, so
+ * the list can be skimmed without opening each lead. Built from registry data
+ * (always available when a registry matched) and enriched by the website
+ * summary when one exists.
+ */
+function composeDescription(
+  fields: Record<string, string>,
+  registryDescription?: string | null,
+  officialName?: string
+): string | null {
+  // Plain-language activity first ("Arhiviranje"), then the official SKD
+  // classification, then the registered long name — which in Slovenia often
+  // spells the activities out ("… podjetje za arhiviranje, trgovino in druge
+  // storitve, d.o.o.") and is the most informative line of the three.
+  const parts: string[] = [];
+  const activity = fields.industry || fields.skd_name;
+  if (activity) parts.push(activity);
+  if (fields.skd_name && fields.skd_name !== activity) {
+    parts.push(`SKD ${fields.skd_code ?? ""} ${fields.skd_name}`.trim());
+  }
+
+  const longName = registryDescription && registryDescription.length > 25 ? registryDescription : officialName;
+  if (longName && !parts.some((p) => p === longName)) parts.push(longName);
+
+  if (parts.length === 0) return null;
+  return parts.join(" · ");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,6 +164,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // No registry listed a site? A company email on its own domain is a solid
+  // hint (info@podjetje.si -> podjetje.si). Free mailbox domains are excluded,
+  // and the address is only kept if it actually responds — never a blind guess.
+  if (!website) {
+    const guess = websiteFromEmail(fields.email);
+    if (guess) {
+      try {
+        const res = await providerFetch("website", guess, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" },
+          maxAttempts: 1,
+        });
+        if (res.ok) {
+          website = guess;
+          providerNotes.push({ label: "Spletna stran", note: `ugotovljena iz e-poštne domene (${guess}) in preverjena — HTTP ${res.status}.` });
+        }
+      } catch {
+        providerNotes.push({ label: "Spletna stran", note: `domena iz e-pošte (${guess}) se ni odzvala — ni uporabljena.` });
+      }
+    }
+  }
+
   // Optional final pass: if a website turned up, read it for anything still
   // missing. Plain fetch() first, Firecrawl only for JS-only pages — so a
   // missing Firecrawl balance costs nothing here.
@@ -156,13 +226,20 @@ export async function POST(request: NextRequest) {
     if (!fields[key] && !fieldNotes[key]) fieldNotes[key] = "noben vir ni objavil tega podatka";
   }
 
+  // Notes get a short "what they do" line for quick skimming. A registry
+  // "description" is often just the long registered name, so the activity
+  // (SKD naziv / panoga) leads and the name only adds detail.
+  const officialName = (working.custom_fields as Record<string, string>).official_name;
+  const composed = composeDescription(fields, description, officialName);
+  const finalDescription = composed ?? description;
+
   return NextResponse.json({
     website,
     fields,
     sources,
     fieldNotes,
     providerNotes,
-    description,
+    description: finalDescription,
     source: providerNotes.map((p) => p.label).join(" + "),
   });
 }

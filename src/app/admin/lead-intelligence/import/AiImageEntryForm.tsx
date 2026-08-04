@@ -35,6 +35,27 @@ async function downscaleToJpegDataUrl(file: File): Promise<string> {
   return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
 }
 
+
+/**
+ * Fields an official registry (AJPES/CompanyWall/Bizi) knows better than an
+ * AI reading a photo. OCR of a scanned list produced a phone number that was
+ * actually the VAT number, and enrichment used to only fill EMPTY inputs, so
+ * such a value could never be corrected. For these fields the registry wins.
+ */
+const REGISTRY_AUTHORITATIVE = new Set([
+  "vat_id",
+  "registration_number",
+  "address_street",
+  "address_city",
+  "address_region",
+  "address_country",
+  "phone",
+  "email",
+  "industry",
+  "skd_code",
+  "skd_name",
+]);
+
 const SKIP_DEFAULT_RENDER: ImportField[] = ["contact_person"];
 
 export default function AiImageEntryForm() {
@@ -52,6 +73,8 @@ export default function AiImageEntryForm() {
   const [completeErrors, setCompleteErrors] = useState<(string | null)[]>([]);
   const [completeWarnings, setCompleteWarnings] = useState<(string | null)[]>([]);
   const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
+  const [fieldSources, setFieldSources] = useState<Record<string, string>[]>([]);
+  const [fieldNotes, setFieldNotes] = useState<Record<string, string>[]>([]);
   const [completingAll, setCompletingAll] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -251,10 +274,16 @@ export default function AiImageEntryForm() {
         websiteInput.value = json.website;
       }
       const fieldsToFill = (json.fields ?? {}) as Record<string, string>;
+      const returnedSources = (json.sources ?? {}) as Record<string, string>;
       for (const [key, value] of Object.entries(fieldsToFill)) {
         const input = form?.elements.namedItem(key) as HTMLInputElement | null;
-        if (input && !input.value.trim() && value) input.value = value;
+        if (!input || !value) continue;
+        // Registry data overrides what the image AI guessed; everything else
+        // only fills a blank so manual edits are never clobbered.
+        if (!input.value.trim() || REGISTRY_AUTHORITATIVE.has(key)) input.value = value;
       }
+      setFieldSources((prev) => prev.map((s, i) => (i === index ? returnedSources : s)));
+      setFieldNotes((prev) => prev.map((s, i) => (i === index ? ((json.fieldNotes ?? {}) as Record<string, string>) : s)));
       const notesInput = form?.elements.namedItem("notes") as HTMLTextAreaElement | null;
       if (notesInput && json.description) {
         const existing = notesInput.value.trim();
@@ -566,6 +595,12 @@ export default function AiImageEntryForm() {
                             className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-400"
                           />
                         )}
+                        {/* Where the value came from, or why it stayed empty. */}
+                        {fieldSources[index]?.[field] ? (
+                          <p className="mt-0.5 text-[11px] text-emerald-600">vir: {fieldSources[index][field]}</p>
+                        ) : fieldNotes[index]?.[field] ? (
+                          <p className="mt-0.5 text-[11px] text-zinc-400">{fieldNotes[index][field]}</p>
+                        ) : null}
                       </div>
                     );
                   })}

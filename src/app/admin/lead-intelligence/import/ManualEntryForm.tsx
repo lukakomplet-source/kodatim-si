@@ -22,6 +22,27 @@ function SubmitButton() {
 
 const initialState: CreateLeadState = {};
 
+
+/**
+ * Fields an official registry (AJPES/CompanyWall/Bizi) knows better than an
+ * AI reading a photo. OCR of a scanned list produced a phone number that was
+ * actually the VAT number, and enrichment used to only fill EMPTY inputs, so
+ * such a value could never be corrected. For these fields the registry wins.
+ */
+const REGISTRY_AUTHORITATIVE = new Set([
+  "vat_id",
+  "registration_number",
+  "address_street",
+  "address_city",
+  "address_region",
+  "address_country",
+  "phone",
+  "email",
+  "industry",
+  "skd_code",
+  "skd_name",
+]);
+
 const SKIP_DEFAULT_RENDER: ImportField[] = ["contact_person"];
 
 type FieldRefs = Partial<Record<ImportField, RefObject<HTMLInputElement | null>>>;
@@ -162,7 +183,9 @@ export default function ManualEntryForm() {
       const fields = (json.fields ?? {}) as Record<string, string>;
       for (const [key, ref] of Object.entries(fieldRefs)) {
         const value = fields[key];
-        if (ref?.current && !ref.current.value.trim() && value) {
+        if (!ref?.current || !value) continue;
+        // Registry data overrides a guessed value; otherwise only fill blanks.
+        if (!ref.current.value.trim() || REGISTRY_AUTHORITATIVE.has(key)) {
           ref.current.value = value;
         }
       }
