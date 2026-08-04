@@ -81,44 +81,85 @@ function websiteFromEmail(email: string | undefined): string | null {
  * A short "what does this company actually do" line for the notes field, so
  * the list can be skimmed without opening each lead.
  */
+/**
+ * The "what is this company" block that lands in Opombe.
+ *
+ * Written as a few labelled lines rather than one run-on sentence, because it
+ * is read while skimming a list of leads. What the company DOES comes first —
+ * the SKD activity, then the full registered name (in Slovenia that name spells
+ * the activities out: "ARHIV PNM, podjetje za arhiviranje, trgovino in druge
+ * storitve, d.o.o."), then, when a verified website exists, what the company
+ * says about its own services. Numbers always come from the registries, never
+ * from the website.
+ */
 function composeDescription(
   fields: Record<string, string>,
-  registryDescription?: string | null
+  registryDescription: string | null,
+  siteDescription: string | null,
+  website: string | null,
+  websiteNote: string
 ): string | null {
-  // Plain-language activity first ("Arhiviranje"), then the official SKD
-  // classification, then the full registered name — which in Slovenia spells
-  // the activities out ("ARHIV PNM, podjetje za arhiviranje, trgovino in druge
-  // storitve, d.o.o.") and is the most informative line of the three. Bizi is
-  // the only source that publishes that long form.
-  const parts: string[] = [];
+  const lines: string[] = [];
+
   const activity = fields.industry || fields.skd_name;
-  if (activity) parts.push(activity);
-  if (fields.skd_name && fields.skd_name !== activity) {
-    parts.push(`SKD ${fields.skd_code ?? ""} ${fields.skd_name}`.trim());
+  const skd = fields.skd_code && fields.skd_name ? `SKD ${fields.skd_code} — ${fields.skd_name}` : null;
+  if (activity || skd) {
+    lines.push(`Dejavnost: ${[activity, skd && skd !== activity ? `(${skd})` : null].filter(Boolean).join(" ")}`);
   }
 
   const longName = fields.official_long_name || fields.official_name;
-  if (longName && !parts.some((p) => p === longName)) parts.push(longName);
+  if (longName) lines.push(`Registrirano ime: ${longName}`);
 
-  // Size and status make a lead triageable at a glance — a company in
-  // receivership or with no revenue is not worth a sales call.
+  if (siteDescription) {
+    lines.push(`S spletne strani (${website}): ${siteDescription}`);
+  } else if (website) {
+    lines.push(`Spletna stran: ${website} — opisa dejavnosti z nje ni bilo mogoče izluščiti.`);
+  } else {
+    lines.push(`Spletna stran: ${websiteNote}`);
+  }
+
+  // A registry sometimes carries its own sentence; keep it when it adds
+  // something the registered name doesn't already say.
+  if (registryDescription && longName && !registryDescription.includes(longName)) {
+    lines.push(`Iz registra: ${registryDescription}`);
+  }
+
   const facts: string[] = [];
   // Only a real headcount reads as "N zaposlenih"; a size class is printed as-is.
   if (fields.employees_count && /^\d/.test(fields.employees_count)) {
     facts.push(`${fields.employees_count} zaposlenih`);
-  } else if (fields.company_size && /mikro|majhn|srednj|velik/i.test(fields.company_size)) {
+  }
+  if (fields.company_size && /mikro|majhn|srednj|velik/i.test(fields.company_size)) {
     facts.push(fields.company_size.toLowerCase());
   }
   if (fields.revenue_amount) {
     facts.push(`prihodki ${fields.revenue_amount} €${fields.revenue_year ? ` (${fields.revenue_year})` : ""}`);
   }
-  if (fields.company_status && fields.company_status.toLowerCase() !== "aktivna") {
-    facts.push(fields.company_status);
-  }
-  if (facts.length > 0) parts.push(facts.join(", "));
+  if (fields.profit) facts.push(`dobiček ${fields.profit} €`);
+  if (fields.credit_rating) facts.push(`boniteta ${fields.credit_rating}`);
+  if (fields.founded_date) facts.push(`ustanovljeno ${fields.founded_date}`);
+  if (fields.legal_form) facts.push(fields.legal_form.toLowerCase());
+  // AJPES writes the legal form as "Družba z omejeno odgovornostjo d.o.o.",
+  // which already ends in a dot — joining a sentence period onto that gave "..".
+  if (facts.length > 0) lines.push(`Podatki: ${facts.join(", ").replace(/\.+$/, "")}.`);
 
-  if (parts.length === 0) return registryDescription ?? null;
-  return parts.join(" · ");
+  const address = [fields.address_street, [fields.postal_code, fields.address_city].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  if (address) lines.push(`Sedež: ${address}.`);
+
+  const people: string[] = [];
+  if (fields.director) people.push(`direktor ${fields.director}`);
+  if (fields.owners) people.push(`lastniki ${fields.owners}`);
+  if (fields.authorized_representatives) people.push(`prokurist ${fields.authorized_representatives}`);
+  if (people.length > 0) lines.push(`Osebe: ${people.join("; ")}.`);
+
+  if (fields.company_status && isBankrupt(fields.company_status)) {
+    lines.push(`⚠ Status: ${fields.company_status} — pred kontaktom preverite, ali je lead sploh smiseln.`);
+  }
+
+  if (lines.length === 0) return registryDescription;
+  return lines.join("\n");
 }
 
 /**
@@ -335,10 +376,14 @@ export async function quickComplete(
   // Optional final pass: if a website turned up, read it for anything still
   // missing. Plain fetch() first, Firecrawl only for JS-only pages — so a
   // missing Firecrawl balance costs nothing here.
+  let siteDescription: string | null = null;
   if (website) {
     try {
       const result = await websiteProvider.run({ ...working, website } as unknown as IntelLead);
       providerNotes.push({ label: websiteProvider.label, note: result.note });
+      // What the company says it does, in its own words. Kept separate from the
+      // registry fields: it is prose for Opombe, not a value for a column.
+      siteDescription = result.fields?.description?.value ?? null;
       for (const [key, candidate] of Object.entries(result.fields ?? {})) {
         if (!candidate?.value || !QUICK_COMPLETE_FIELDS.includes(key) || fields[key]) continue;
         fields[key] = candidate.value;
@@ -395,7 +440,7 @@ export async function quickComplete(
     providerNotes,
     contactPersons: collectContactPersons(fields),
     bankrupt,
-    description: composeDescription(fields, description) ?? description,
+    description: composeDescription(fields, description, siteDescription, website, websiteNote) ?? description,
     source: providerNotes.map((p) => p.label).join(" + "),
   };
 }

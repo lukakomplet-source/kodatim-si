@@ -12,24 +12,31 @@ import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequest
 // Discovery of an unknown website is Google's job now (last resort, only
 // when this provider finds nothing to work with).
 const EXTRACTION_PROMPT = `Iz vsebine spletne strani podjetja izlušči podatke in odgovori IZKLJUČNO z veljavnim JSON objektom
-s ključi: "industry", "email", "phone", "address_street", "address_city", "address_region", "address_country",
-"vat_id", "director", "owners", "employees_count", "founded_date", "registration_number".
+s ključi: "industry", "description", "email", "phone", "address_street", "address_city", "address_region",
+"address_country", "vat_id", "director", "owners", "employees_count", "founded_date", "registration_number".
 
 Pravila:
 - Vsak ključ izpolni SAMO, če je podatek dejansko naveden na strani. Če ga ni, ključ izpusti — ne izmišljuj.
+- "description" je 2-4 povedi o tem, S ČIM SE PODJETJE UKVARJA: katere storitve ali izdelke ponuja,
+  komu so namenjeni in kaj je njihova posebnost. Povzemi SAMO tisto, kar na strani dejansko piše —
+  ne dodajaj splošnih fraz ("kakovostne storitve", "dolgoletne izkušnje"), če jih stran ne navaja.
+  Če stran ne pove, kaj podjetje počne, ta ključ izpusti.
+- "description" naj ne vsebuje številk o prometu, zaposlenih ali davčne številke — ti podatki pridejo iz registrov.
 - "address_region" je IME statistične regije ali pokrajine (npr. "Podravska", "Osrednjeslovenska").
   Poštna številka (npr. "2000") NI regija — v tem primeru ključ izpusti.
 - "employees_count" je SAMO število zaposlenih. Velikostni razred ("Mikro enote") ni število — izpusti ga.
 - Vse v slovenščini.`;
 
 type Extracted = Partial<Record<
-  | "industry" | "email" | "phone" | "address_street" | "address_city" | "address_region" | "address_country" | "vat_id"
+  | "industry" | "description" | "email" | "phone" | "address_street" | "address_city" | "address_region"
+  | "address_country" | "vat_id"
   | "director" | "owners" | "employees_count" | "founded_date" | "registration_number",
   string
 >>;
 
 export const WEBSITE_POSSIBLE_FIELDS = [
-  "industry", "email", "phone", "address_street", "address_city", "address_region", "address_country", "vat_id",
+  "industry", "description", "email", "phone", "address_street", "address_city", "address_region",
+  "address_country", "vat_id",
   "director", "owners", "employees_count", "founded_date", "registration_number",
 ];
 
@@ -43,6 +50,11 @@ const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 // to plausibly contain real business data, rather than relying on the model
 // to decline on its own.
 const MIN_CONTENT_LENGTH = 300;
+
+// Bump when the extraction shape changes so cached entries are re-extracted.
+// Without this, pages cached before "description" existed would keep coming
+// back without one, forever.
+const PARSER_VERSION = 2;
 
 function toUrl(website: string): string {
   return website.startsWith("http") ? website : `https://${website}`;
@@ -66,7 +78,10 @@ function toFields(extracted: Extracted, confidence: number, sourceUrl: string): 
   const fields: Record<string, FieldCandidate> = {};
   for (const [key, value] of Object.entries(extracted)) {
     if (typeof value === "string" && value.trim() && !isWrongShape(key, value)) {
-      fields[key] = { value: value.trim().slice(0, 300), confidence, source_url: sourceUrl };
+      // Every other field is a short value; the description is meant to be
+      // several sentences, so the 300-char cap would cut it mid-word.
+      const limit = key === "description" ? 1200 : 300;
+      fields[key] = { value: value.trim().slice(0, limit), confidence, source_url: sourceUrl };
     }
   }
   return fields;
@@ -177,7 +192,7 @@ export const websiteProvider: PublicEnrichmentProvider = {
     }
     const targetUrl = toUrl(lead.website);
 
-    const cached = await readCache("website", targetUrl, CACHE_TTL.WEBSITE_MS);
+    const cached = await readCache("website", targetUrl, CACHE_TTL.WEBSITE_MS, PARSER_VERSION);
     if (cached) {
       const fields = toFields(cached.parsedFields as Extracted, CONFIDENCE.WEBSITE_DEEP, targetUrl);
       const cachedReasons: Record<string, string> = {};
@@ -245,7 +260,7 @@ export const websiteProvider: PublicEnrichmentProvider = {
       const fields = verifyNumericFields(toFields(ai, CONFIDENCE.WEBSITE_DEEP, targetUrl), markdown);
       const count = Object.keys(fields).length;
 
-      await writeCache("website", targetUrl, null, ai, targetUrl);
+      await writeCache("website", targetUrl, null, ai, targetUrl, PARSER_VERSION);
 
       const fieldReasons: Record<string, string> = {};
       for (const f of WEBSITE_POSSIBLE_FIELDS) {
