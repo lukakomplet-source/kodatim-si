@@ -68,11 +68,24 @@ function normalizeCompanyName(name: string): string {
     .trim();
 }
 
-function pickSearchResult(html: string, companyName: string): SearchResult {
-  const rows = [...html.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">([^<]+)<\/a>/gi)].map((m) => ({
+/** How many fuzzy search hits are worth opening to check their tax number. */
+const VAT_PROBE_LIMIT = 4;
+
+function searchResultRows(html: string): { href: string; name: string }[] {
+  return [...html.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">([^<]+)<\/a>/gi)].map((m) => ({
     href: m[1],
     name: stripHtmlToText(m[2]).trim(),
   }));
+}
+
+/** The tax number an earlier registry (AJPES) already established, digits only. */
+function knownVatDigits(lead: IntelLead): string {
+  const custom = lead.custom_fields as Record<string, string> | null;
+  return (custom?.vat_id ?? lead.vat_id ?? "").replace(/\D/g, "");
+}
+
+function pickSearchResult(html: string, companyName: string): SearchResult {
+  const rows = searchResultRows(html);
   if (rows.length === 0) return null;
 
   const normalized = normalizeCompanyName(companyName);
@@ -352,11 +365,54 @@ export const companyWallProvider: PublicEnrichmentProvider = {
       detail: match ? `izbrano: ${match.name}` : `${rowCount} zadetkov, nobeden se ne ujema natančno`,
     });
 
+    // CompanyWall's search is fuzzy, not exact: "AKTRA d.o.o." returns AKTEA,
+    // Astra Wood and ASTRA NOVA (confirmed live), so a name comparison alone
+    // both rejects lookalikes correctly AND misses companies that really are
+    // listed, just under a differently punctuated name. When the tax number is
+    // already known from AJPES, open the top candidates and take the one whose
+    // DŠ matches — identity proven by number, not by spelling.
+    let verifiedBy: string | null = null;
+    if (!match) {
+      const knownVat = knownVatDigits(lead);
+      if (knownVat) {
+        const candidates = searchResultRows(searchHtml).slice(0, VAT_PROBE_LIMIT);
+        for (const candidate of candidates) {
+          const url = `${BASE}${candidate.href}`;
+          try {
+            const res = await providerFetch("companywall", url, { headers: HEADERS });
+            requests.push({ url, status: res.status, ok: res.ok, note: "preverjanje kandidata po davčni" });
+            if (!res.ok) continue;
+            const candidateText = stripHtmlToText(await res.text());
+            const candidateVat = (firstNonEmptyLineAfter(candidateText, "DŠ") ?? "").replace(/\D/g, "");
+            if (candidateVat && candidateVat === knownVat) {
+              match = candidate;
+              verifiedBy = `davčna ${knownVat}`;
+              break;
+            }
+          } catch {
+            // One unreachable candidate must not stop the others.
+          }
+        }
+      }
+      parserChecks.push({
+        element: "preverjanje kandidatov po davčni številki",
+        found: Boolean(verifiedBy),
+        detail: verifiedBy
+          ? `ujemanje po ${verifiedBy}`
+          : knownVatDigits(lead)
+            ? `preverjenih ${Math.min(rowCount, VAT_PROBE_LIMIT)} kandidatov, nobeden nima te davčne`
+            : "davčna ni bila znana, zato preverjanje ni bilo mogoče",
+      });
+    }
+
     if (!match) {
       const note = "CompanyWall: ni bilo mogoče najti javne strani podjetja.";
-      const reason = rowCount === 0
-        ? "iskanje na CompanyWall ni vrnilo nobenega zadetka"
-        : `${rowCount} zadetkov, a nobeden se natančno ne ujema z imenom — vrednost namerno ni pripisana`;
+      const reason =
+        rowCount === 0
+          ? "iskanje na CompanyWall ni vrnilo nobenega zadetka"
+          : knownVatDigits(lead)
+            ? `${rowCount} zadetkov; nobeden se ne ujema po imenu, prvih ${Math.min(rowCount, VAT_PROBE_LIMIT)} pa tudi ne po davčni številki — podjetja na CompanyWall očitno ni`
+            : `${rowCount} zadetkov, a nobeden se natančno ne ujema z imenom in davčna ni bila znana — vrednost namerno ni pripisana`;
       return { note, skippedReason: note, diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) } };
     }
 

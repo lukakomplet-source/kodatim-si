@@ -1,5 +1,5 @@
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { fetchAjpesAuthed } from "../ajpesSession";
+import { fetchAjpesAuthed, withAjpesLock } from "../ajpesSession";
 import { stripHtmlToText } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { PEOPLE_SEPARATOR } from "./companywall";
@@ -326,18 +326,53 @@ async function readDetailPage(
 ): Promise<PublicProviderResult> {
   // Always the PRS view: the court-register view the search links to has no
   // region, no activity codes and a different label layout entirely.
-  const prsUrl = detailUrl.includes("&p=1") ? detailUrl : `${detailUrl}${PRS_VIEW_SUFFIX}`;
+  const baseUrl = detailUrl.replace(/&p=1$/, "");
+  const prsUrl = `${baseUrl}${PRS_VIEW_SUFFIX}`;
   try {
-    const detailResult = await fetchAjpesAuthed(prsUrl, session);
+    // Select-then-read must be atomic: the PRS view is only served for the
+    // company currently selected in the session, so another company selecting
+    // itself in between returns a ~4.7 kB stub with none of the labels on it.
+    const { detailResult, text, parsed } = await withAjpesLock(async () => {
+      const selectResult = await fetchAjpesAuthed(baseUrl, session);
+      requests.push({ url: baseUrl, status: selectResult.status, ok: selectResult.status < 400, note: "izbira podjetja v seji" });
+
+      let read = await fetchAjpesAuthed(prsUrl, selectResult.session);
+      let pageText = stripHtmlToText(read.html);
+      let fieldsFromPage = parseAjpesDetail(pageText, companyName);
+
+      // Every company page carries a matična številka. If it doesn't, the read
+      // still went wrong — retry once, inside the lock, without disturbing the
+      // shared session that other companies are queued behind.
+      if (!fieldsFromPage.registration_number) {
+        requests.push({ url: prsUrl, status: read.status, ok: false, note: "stran brez podatkov podjetja — ponovna izbira in branje" });
+        const retrySelect = await fetchAjpesAuthed(baseUrl, selectResult.session);
+        read = await fetchAjpesAuthed(prsUrl, retrySelect.session);
+        pageText = stripHtmlToText(read.html);
+        fieldsFromPage = parseAjpesDetail(pageText, companyName);
+      }
+      return { detailResult: read, text: pageText, parsed: fieldsFromPage };
+    });
+
     requests.push({ url: prsUrl, status: detailResult.status, ok: detailResult.status < 400 });
-    const text = stripHtmlToText(detailResult.html);
     parserChecks.push({
       element: "besedilo strani podjetja",
       found: text.length > 200,
       detail: `${text.length} znakov po odstranitvi HTML`,
     });
 
-    const parsed = parseAjpesDetail(text, companyName);
+    // A real company page is ~8 kB of text and always carries a matična
+    // številka. Anything else is AJPES serving a stub, and reporting that as
+    // "found 1 field" (the one hardcoded constant) hides a failure behind a
+    // number. Say plainly that the page did not open.
+    if (!parsed.registration_number) {
+      const reason = `AJPES je vrnil okrnjeno stran brez podatkov podjetja (${text.length} znakov, brez oznake "matična številka") — naslov strani iz seznama zadetkov za to podjetje ne odpre kartice`;
+      return {
+        note: `AJPES: strani podjetja ni bilo mogoče odpreti — ${reason}.`,
+        skippedReason: reason,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) },
+      };
+    }
     parserChecks.push({
       element: 'oznaka "matična številka:" (PRS pogled)',
       found: Boolean(parsed.registration_number),

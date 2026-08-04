@@ -35,6 +35,8 @@ type ScrapeResult = {
   websiteNote: string;
   fields: Record<string, string>;
   sources: Record<string, string>;
+  /** Per field, why it came back empty — surfaced in the "Zakaj manjka" column. */
+  fieldNotes: Record<string, string>;
   contactPersons: string[];
   bankrupt: boolean;
   description: string | null;
@@ -66,6 +68,8 @@ type SpeedKey = keyof typeof SPEEDS;
 /** Columns of the final spreadsheet, in the order they are shown and exported. */
 const COLUMNS: { key: string; label: string }[] = [
   { key: "company_name", label: "Podjetje" },
+  { key: "why_missing", label: "Zakaj manjka" },
+  { key: "description", label: "Opis" },
   { key: "company_status", label: "Status" },
   { key: "industry", label: "Panoga" },
   { key: "skd_code", label: "SKD" },
@@ -92,8 +96,40 @@ const COLUMNS: { key: string; label: string }[] = [
   { key: "official_long_name", label: "Polni naziv" },
 ];
 
+/** The fields that decide whether a row is actually usable as a lead. */
+const KEY_FIELDS = ["email", "phone", "website", "contact_person", "revenue_amount"];
+
+/**
+ * Why this row is thin — the whole point being that a blank cell always has a
+ * stated cause, whether that is a failed scrape or a source that genuinely
+ * publishes nothing.
+ */
+function whyMissing(row: Row): string {
+  if (row.status === "error") return `Napaka: ${row.error ?? "neznana"}`;
+  if (row.status === "waiting") return "še ni skrejpano";
+  if (row.status === "running") return "v teku …";
+
+  const result = row.result;
+  if (!result) return "";
+  if (result.warning) return result.warning;
+
+  const missing = KEY_FIELDS.filter((f) =>
+    f === "website" ? !result.website : f === "contact_person" ? result.contactPersons.length === 0 : !result.fields[f]
+  );
+  if (missing.length === 0) return "";
+
+  const reasons = missing.map((f) => {
+    if (f === "website") return `spletna stran: ${result.websiteNote}`;
+    if (f === "contact_person") return "kontaktne osebe: v registrih ni vpisane osebe";
+    return `${f}: ${result.fieldNotes?.[f] ?? "noben vir ni objavil tega podatka"}`;
+  });
+  return reasons.join(" · ");
+}
+
 function valueFor(row: Row, key: string): string {
   if (key === "company_name") return row.name;
+  if (key === "why_missing") return whyMissing(row);
+  if (key === "description") return row.result?.description ?? "";
   if (key === "contact_person") return row.result?.contactPersons.join(", ") ?? "";
   if (key === "website") return row.result?.website ?? "";
   // Before the scrape runs, the AJPES search row is already worth showing.
@@ -634,12 +670,18 @@ export default function LeadScrapeClient() {
                   {COLUMNS.map((c) => {
                     const value = valueFor(row, c.key);
                     const isStatus = c.key === "company_status";
+                    const isWhy = c.key === "why_missing";
+                    const tone = isStatus && row.result?.bankrupt
+                      ? "font-semibold text-red-600"
+                      : isWhy
+                        ? row.status === "error"
+                          ? "text-red-600"
+                          : "text-amber-700"
+                        : "text-zinc-700";
                     return (
                       <td
                         key={c.key}
-                        className={`max-w-[220px] truncate px-3 py-2 align-top ${
-                          isStatus && row.result?.bankrupt ? "font-semibold text-red-600" : "text-zinc-700"
-                        }`}
+                        className={`${isWhy || c.key === "description" ? "max-w-[320px]" : "max-w-[220px]"} truncate px-3 py-2 align-top ${tone}`}
                         title={value}
                       >
                         {value}
