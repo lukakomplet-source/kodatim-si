@@ -11,6 +11,7 @@ import {
   PUBLIC_ENRICHMENT_SOURCE_LABELS,
   type PublicEnrichmentProvider,
   type PublicEnrichmentSourceId,
+  type PublicProviderResult,
 } from "./types";
 
 /**
@@ -54,6 +55,7 @@ const EXTRA_FIELDS = [
   "owners", "authorized_representatives", "founded_date", "legal_form", "company_status",
   "company_size", "employees_count", "revenue_amount", "revenue_year", "profit", "ebitda",
   "credit_rating", "official_name", "official_long_name", "bank_account", "postal_code",
+  "other_activities",
 ] as const;
 
 export const QUICK_COMPLETE_FIELDS: readonly string[] = [...FORM_FIELDS, ...EXTRA_FIELDS];
@@ -124,6 +126,12 @@ function composeDescription(
     lines.push(`Iz registra: ${registryDescription}`);
   }
 
+  // Everything else the company is registered for. Often a long list, and the
+  // fullest available answer to "what else could they need from us".
+  if (fields.other_activities) {
+    lines.push(`Druge registrirane dejavnosti: ${fields.other_activities}`);
+  }
+
   const facts: string[] = [];
   // Only a real headcount reads as "N zaposlenih"; a size class is printed as-is.
   if (fields.employees_count && /^\d/.test(fields.employees_count)) {
@@ -177,10 +185,20 @@ export function isBankrupt(status?: string | null): boolean {
  * ("RICHTER MARTIN(50,00%)" -> "RICHTER MARTIN") and the same person named in
  * two roles appears once.
  */
+/**
+ * Registries print these instead of a name when nobody is recorded. They are
+ * not people and must never become a contact — "USTANOVITELJ NI VPISAN" was
+ * showing up in the Kontaktne osebe column.
+ */
+export function isPlaceholderName(value: string): boolean {
+  return /\bni vpisan|ni podatka|^-+$/i.test(value.trim());
+}
+
 function collectContactPersons(fields: Record<string, string>): string[] {
   const raw = [fields.director, fields.owners, fields.authorized_representatives]
     .filter(Boolean)
-    .flatMap((value) => value.split(PEOPLE_SEPARATOR));
+    .flatMap((value) => value.split(PEOPLE_SEPARATOR))
+    .filter((name) => !isPlaceholderName(name));
 
   // Sources disagree on word order and casing for the same person — AJPES says
   // "Irena Bauman", CompanyWall "BAUMAN IRENA". Keying on the sorted words
@@ -237,17 +255,39 @@ export type QuickCompleteResult = {
   warning?: string;
 };
 
-export async function quickComplete(
-  companyName: string,
-  city?: string,
+/** A single readable line about what the scrape is doing right now. */
+export type ScrapeProgress = {
+  /** Which source, e.g. "CompanyWall". */
+  label: string;
+  /** Slovenian, human-readable — shown verbatim in the live log. */
+  note: string;
+  state: "start" | "done" | "info";
+  ms?: number;
+};
+
+export type QuickCompleteOptions = {
   /**
    * Identity already established elsewhere — the AJPES search results on the
    * Lead skrejp screen already carry davčna and matična, so every later source
    * can be checked against them from the very first provider instead of
    * trusting whichever registry happened to answer first.
    */
-  known?: CompanyIdentity
+  known?: CompanyIdentity;
+  /** The AJPES company page, when the caller already resolved it — saves a search. */
+  ajpesDetailUrl?: string | null;
+  /** Called as each step starts and finishes, so the UI can show live progress. */
+  onProgress?: (event: ScrapeProgress) => void;
+};
+
+export async function quickComplete(
+  companyName: string,
+  city?: string,
+  options: QuickCompleteOptions = {}
 ): Promise<QuickCompleteResult> {
+  const { known, ajpesDetailUrl, onProgress } = options;
+  const report = (label: string, note: string, state: ScrapeProgress["state"] = "info", ms?: number) =>
+    onProgress?.({ label, note, state, ms });
+
   const fields: Record<string, string> = {};
   const sources: Record<string, string> = {};
   const fieldNotes: Record<string, string> = {};
@@ -260,10 +300,8 @@ export async function quickComplete(
   const working: Record<string, unknown> = {
     company_name: companyName,
     address_city: city || null,
-    custom_fields: {} as Record<string, string>,
+    custom_fields: (ajpesDetailUrl ? { ajpes_detail_url: ajpesDetailUrl } : {}) as Record<string, string>,
   };
-
-  const chain: PublicEnrichmentProvider[] = [ajpesProvider, companyWallProvider, biziProvider];
 
   // Company names repeat in Slovenia, so a later source is only trusted once
   // its davčna/matična agrees with the one an earlier registry established.
@@ -280,51 +318,79 @@ export async function quickComplete(
     sources.registration_number = "AJPES";
   }
 
-  for (const provider of chain) {
+  /** Folds one provider's result into the running answer, in priority order. */
+  const absorb = (provider: PublicEnrichmentProvider, result: PublicProviderResult) => {
+    const claimed: CompanyIdentity = {
+      vat_id: result.fields?.vat_id?.value ?? null,
+      registration_number: result.fields?.registration_number?.value ?? null,
+    };
+
+    const conflict = identityConflict(identity, claimed);
+    if (conflict) {
+      providerNotes.push({ label: provider.label, note: `podatki zavrnjeni — ${conflict}` });
+      report(provider.label, `podatki zavrnjeni — ${conflict}`);
+      return;
+    }
+    identity = mergeIdentity(identity, claimed);
+    providerNotes.push({ label: provider.label, note: result.note });
+
+    for (const [key, candidate] of Object.entries(result.fields ?? {})) {
+      if (!candidate?.value) continue;
+      if (key === "website" && !website) website = candidate.value;
+      if (key === "description" && !description) description = candidate.value;
+
+      // Feed identity forward for whatever runs next.
+      (working.custom_fields as Record<string, string>)[key] = candidate.value;
+      if (key === "address_city" && !working.address_city) working.address_city = candidate.value;
+
+      if (!QUICK_COMPLETE_FIELDS.includes(key)) continue;
+      // First (highest-priority) source wins — except for the activity name,
+      // where AJPES publishes a squashed abbreviation ("Prid.žit(razen riža),
+      // stročnic in oljnic") and CompanyWall the spelled-out official name.
+      const preferLonger = key === "skd_name" && candidate.value.length > (fields[key]?.length ?? 0);
+      if (fields[key] && !preferLonger) continue;
+      fields[key] = candidate.value;
+      sources[key] = PUBLIC_ENRICHMENT_SOURCE_LABELS[provider.id as PublicEnrichmentSourceId] ?? provider.id;
+    }
+
+    // Keep the FIRST provider's reason — the chain runs in authority order,
+    // so AJPES's "AMBIGUOUS MATCH" is the root cause worth showing, not
+    // Bizi's downstream 404 that merely follows from it.
+    for (const [key, reason] of Object.entries(result.diagnostics?.fieldReasons ?? {})) {
+      if (QUICK_COMPLETE_FIELDS.includes(key) && !fields[key] && !fieldNotes[key]) {
+        fieldNotes[key] = `${provider.label}: ${reason}`;
+      }
+    }
+  };
+
+  const runProvider = async (provider: PublicEnrichmentProvider): Promise<PublicProviderResult | null> => {
+    const startedAt = Date.now();
+    report(provider.label, "poizvedujem …", "start");
     try {
       const result = await provider.run(working as unknown as IntelLead);
-      const claimed: CompanyIdentity = {
-        vat_id: result.fields?.vat_id?.value ?? null,
-        registration_number: result.fields?.registration_number?.value ?? null,
-      };
-
-      const conflict = identityConflict(identity, claimed);
-      if (conflict) {
-        providerNotes.push({ label: provider.label, note: `podatki zavrnjeni — ${conflict}` });
-        continue;
-      }
-      identity = mergeIdentity(identity, claimed);
-
-      providerNotes.push({ label: provider.label, note: result.note });
-
-      for (const [key, candidate] of Object.entries(result.fields ?? {})) {
-        if (!candidate?.value) continue;
-        if (key === "website" && !website) website = candidate.value;
-        if (key === "description" && !description) description = candidate.value;
-
-        // Feed identity forward for the next provider in the chain.
-        (working.custom_fields as Record<string, string>)[key] = candidate.value;
-        if (key === "address_city" && !working.address_city) working.address_city = candidate.value;
-
-        if (!QUICK_COMPLETE_FIELDS.includes(key)) continue;
-        if (fields[key]) continue; // first (highest-priority) source wins
-        fields[key] = candidate.value;
-        sources[key] = PUBLIC_ENRICHMENT_SOURCE_LABELS[provider.id as PublicEnrichmentSourceId] ?? provider.id;
-      }
-
-      // Keep the FIRST provider's reason — the chain runs in authority order,
-      // so AJPES's "AMBIGUOUS MATCH" is the root cause worth showing, not
-      // Bizi's downstream 404 that merely follows from it.
-      for (const [key, reason] of Object.entries(result.diagnostics?.fieldReasons ?? {})) {
-        if (QUICK_COMPLETE_FIELDS.includes(key) && !fields[key] && !fieldNotes[key]) {
-          fieldNotes[key] = `${provider.label}: ${reason}`;
-        }
-      }
+      report(provider.label, result.note, "done", Date.now() - startedAt);
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : "neznana napaka";
       providerNotes.push({ label: provider.label, note: `napaka — ${message}` });
+      report(provider.label, `napaka — ${message}`, "done", Date.now() - startedAt);
+      return null;
     }
-  }
+  };
+
+  // AJPES goes first and alone: it establishes the identity and the registered
+  // names the other two search by. CompanyWall and Bizi then run together —
+  // neither depends on the other, and running them in sequence meant waiting
+  // out both providers' rate limits back to back instead of side by side.
+  const ajpesResult = await runProvider(ajpesProvider);
+  if (ajpesResult) absorb(ajpesProvider, ajpesResult);
+
+  const [companyWallResult, biziResult] = await Promise.all([
+    runProvider(companyWallProvider),
+    runProvider(biziProvider),
+  ]);
+  if (companyWallResult) absorb(companyWallProvider, companyWallResult);
+  if (biziResult) absorb(biziProvider, biziResult);
 
   const bankrupt = isBankrupt(fields.company_status);
   let websiteNote = website ? "objavljena v registru." : "";
@@ -353,6 +419,14 @@ export async function quickComplete(
     }
   }
 
+  // A domain already tried and rejected above must not be fetched again by the
+  // search — that cost a full timeout twice for the same dead host.
+  const triedHosts: string[] = [];
+  {
+    const guess = websiteFromEmail(fields.email);
+    if (guess && !website) triedHosts.push(guess);
+  }
+
   // Still nothing: search the web. Skipped for companies in receivership or
   // liquidation — they no longer run a site, so the requests would only cost
   // time and every hit would be a false positive.
@@ -367,10 +441,17 @@ export async function quickComplete(
       "iskanje preskočeno — podjetje ni bilo enolično določeno (brez davčne/matične), zato zadetka ni mogoče preveriti.";
     providerNotes.push({ label: "Spletna stran", note: websiteNote });
   } else if (!website) {
-    const found = await searchForWebsite(companyName, { city, vatId: fields.vat_id });
+    report("Spletno iskanje", "iščem uradno spletno stran …", "start");
+    const startedAt = Date.now();
+    const found = await searchForWebsite(companyName, {
+      city,
+      vatId: fields.vat_id,
+      skipHosts: triedHosts,
+    });
     website = found.website;
     websiteNote = found.note;
     providerNotes.push({ label: "Spletno iskanje", note: found.note });
+    report("Spletno iskanje", found.note, "done", Date.now() - startedAt);
   }
 
   // Optional final pass: if a website turned up, read it for anything still
@@ -378,9 +459,12 @@ export async function quickComplete(
   // missing Firecrawl balance costs nothing here.
   let siteDescription: string | null = null;
   if (website) {
+    const startedAt = Date.now();
+    report(websiteProvider.label, `berem ${website} …`, "start");
     try {
       const result = await websiteProvider.run({ ...working, website } as unknown as IntelLead);
       providerNotes.push({ label: websiteProvider.label, note: result.note });
+      report(websiteProvider.label, result.note, "done", Date.now() - startedAt);
       // What the company says it does, in its own words. Kept separate from the
       // registry fields: it is prose for Opombe, not a value for a column.
       siteDescription = result.fields?.description?.value ?? null;
@@ -394,6 +478,15 @@ export async function quickComplete(
         const message = err instanceof Error ? err.message : "neznana napaka";
         providerNotes.push({ label: websiteProvider.label, note: `napaka — ${message}` });
       }
+    }
+  }
+
+  // Drop registry placeholders before anything reads them as a person's name.
+  for (const key of ["director", "owners", "authorized_representatives"]) {
+    if (fields[key] && isPlaceholderName(fields[key])) {
+      fieldNotes[key] = `${sources[key] ?? "vir"}: oseba ni vpisana v register`;
+      delete fields[key];
+      delete sources[key];
     }
   }
 

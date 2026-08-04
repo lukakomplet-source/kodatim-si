@@ -30,5 +30,5 @@ export async function POST(request: NextRequest) {
 
   // Always HTTP 200: a provider that found nothing is informational, not an
   // error, and must never surface as a red banner in the form.
-  return NextResponse.json(await quickComplete(companyName, city));
+  return NextResponse.json(await quickComplete(companyName, city, {}));
 }

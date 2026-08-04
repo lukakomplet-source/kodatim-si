@@ -4,11 +4,13 @@ import { quickComplete } from "@/lib/publicEnrichment/quickComplete";
 
 /**
  * Step 2 of Lead skrejp: scrape ONE company through the usual chain
- * (AJPES -> CompanyWall -> Bizi -> spletna stran), seeded with the identity
+ * (AJPES -> CompanyWall + Bizi -> spletna stran), seeded with the identity the
  * AJPES search already returned so every source can be verified against it.
  *
- * One company per request on purpose: the page drives the loop, so the table
- * fills in live and the user can stop it at any time.
+ * The response is a stream of newline-delimited JSON: one `{"progress": …}`
+ * line as each source starts and finishes, then a final `{"result": …}` line.
+ * Without it the request is silent for half a minute and a stuck source looks
+ * exactly like a slow one.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -30,12 +32,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Manjka ime podjetja." }, { status: 400 });
   }
 
-  // Always HTTP 200 — a company the sources know nothing about is a result,
-  // not an error, and must not break the loop over the remaining rows.
-  return NextResponse.json(
-    await quickComplete(companyName, str("city"), {
-      vat_id: str("vatId") ?? null,
-      registration_number: str("registrationNumber") ?? null,
-    })
-  );
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+      };
+      try {
+        const result = await quickComplete(companyName, str("city"), {
+          known: {
+            vat_id: str("vatId") ?? null,
+            registration_number: str("registrationNumber") ?? null,
+          },
+          ajpesDetailUrl: str("ajpesDetailUrl") ?? null,
+          onProgress: (event) => send({ progress: event }),
+        });
+        send({ result });
+      } catch (err) {
+        // A company no source knows is a result, not an error — but a genuine
+        // crash still has to reach the UI instead of ending the stream silently.
+        send({ error: err instanceof Error ? err.message : "Neznana napaka." });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      // Stops proxies from buffering the stream into one delayed blob.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

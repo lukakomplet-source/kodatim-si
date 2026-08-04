@@ -55,7 +55,7 @@ async function main() {
   }
 
   const started = Date.now();
-  const full = await quickComplete(company, city);
+  const full = await quickComplete(company, city, {});
   console.log(`\nCELOTEN quickComplete: ${Date.now() - started} ms`);
   console.log(`  spletna stran: ${full.website ?? "—"}`);
   for (const p of full.providerNotes) console.log(`  ${p.label.padEnd(28)} ${p.note.slice(0, 90)}`);

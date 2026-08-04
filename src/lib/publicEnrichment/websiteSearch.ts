@@ -112,10 +112,21 @@ function pageBelongsToCompany(
   return null;
 }
 
+/**
+ * Checking candidates is the slowest part of a scrape — one company spent 130 s
+ * here because several hosts were dead or answered 403 after retries. Three
+ * candidates, one attempt each, and a hard overall deadline keep it bounded:
+ * a company whose site is not in the top three results almost certainly has
+ * none worth finding this way.
+ */
+const MAX_CANDIDATES = 3;
+const SEARCH_DEADLINE_MS = 25_000;
+
 export async function searchForWebsite(
   companyName: string,
-  opts: { city?: string | null; vatId?: string | null } = {}
+  opts: { city?: string | null; vatId?: string | null; skipHosts?: string[] } = {}
 ): Promise<WebsiteSearchResult> {
+  const deadline = Date.now() + SEARCH_DEADLINE_MS;
   const tokens = identifyingTokens(companyName);
   if (tokens.length === 0) {
     return { website: null, note: "iz imena podjetja ni bilo mogoče sestaviti iskalnega niza" };
@@ -149,12 +160,21 @@ export async function searchForWebsite(
   const seen = new Set<string>();
   const rejected: string[] = [];
 
+  // Hosts the caller already tried and ruled out (the email-domain guess runs
+  // first, and re-fetching a domain that just failed to respond costs another
+  // full timeout for nothing).
+  for (const host of opts.skipHosts ?? []) seen.add(host.replace(/^https?:\/\//, "").replace(/^www\./, ""));
+
   // Only the first few hosts are worth the requests — a real company site is
   // near the top or not there at all.
   for (const candidate of candidates) {
     if (seen.has(candidate.host)) continue;
     seen.add(candidate.host);
-    if (seen.size > 5) break;
+    if (rejected.length >= MAX_CANDIDATES) break;
+    if (Date.now() > deadline) {
+      rejected.push("časovna omejitev iskanja dosežena");
+      break;
+    }
 
     const homepage = `https://${candidate.host}`;
     try {

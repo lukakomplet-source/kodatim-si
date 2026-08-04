@@ -68,8 +68,10 @@ async function main() {
   for (const row of search.rows.slice(0, limit)) {
     const started = Date.now();
     const result = await quickComplete(row.shortName || row.name, row.city ?? undefined, {
-      vat_id: row.vatId,
-      registration_number: row.registrationNumber,
+      known: { vat_id: row.vatId, registration_number: row.registrationNumber },
+      ajpesDetailUrl: row.detailUrl,
+      onProgress: (e) =>
+        console.log(`      ${e.state === "done" ? "✓" : "…"} ${e.label}: ${e.note.slice(0, 80)}${e.ms ? ` (${(e.ms / 1000).toFixed(1)}s)` : ""}`),
     });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     const filled = Object.values(result.fields).filter(Boolean).length;

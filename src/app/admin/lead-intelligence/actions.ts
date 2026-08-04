@@ -215,7 +215,7 @@ const ALLOWED_EXTRA_FIELDS = new Set([
   "registration_number", "director", "owners", "authorized_representatives", "founded_date",
   "legal_form", "company_status", "skis_code", "skis_name", "company_size", "employees_count",
   "profit", "ebitda", "credit_rating", "official_name", "official_long_name", "postal_code",
-  "bank_account",
+  "bank_account", "other_activities",
 ]);
 
 function parseExtraFields(raw: FormDataEntryValue | null): Record<string, string> {

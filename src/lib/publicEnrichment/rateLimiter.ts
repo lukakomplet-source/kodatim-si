@@ -32,7 +32,13 @@ type Config = {
  * during a real 2-worker run) is cheaper to start slow than to recover from.
  */
 const PROVIDER_START_MS: Partial<Record<ProviderId, number>> = {
-  companywall: 10_000,
+  // 10 s was safe but dominated the clock: CompanyWall makes two requests per
+  // company, so the wait alone cost ~10 s of every scrape. 3 s is the new
+  // starting point and the adaptive limiter still doubles it the moment a 429
+  // or 403 appears (and honours Retry-After), so the ceiling is unchanged —
+  // only the optimistic starting guess moved. Override with
+  // RATE_COMPANYWALL_START_MS if it ever proves too eager.
+  companywall: 3_000,
 };
 
 function envInt(name: string, fallback: number): number {

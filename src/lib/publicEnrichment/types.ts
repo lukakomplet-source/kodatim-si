@@ -65,7 +65,7 @@ export const REGISTRY_FIELD_LABELS: Record<RegistryField, string> = {
 export const BONUS_CUSTOM_FIELDS = [
   "skd_code", "skd_name", "skis_code", "skis_name", "company_size",
   "revenue_amount", "revenue_year", "bank_account",
-  "official_name", "official_long_name", "postal_code",
+  "official_name", "official_long_name", "postal_code", "other_activities",
 ] as const;
 
 export const CORE_FIELDS = [

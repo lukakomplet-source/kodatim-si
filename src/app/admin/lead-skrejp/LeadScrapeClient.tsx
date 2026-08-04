@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { Search, Play, Square, Download, Upload, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, Play, Square, Download, Upload, AlertTriangle, CheckCircle2, Loader2, Terminal } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 
 /**
@@ -45,6 +45,14 @@ type Row = SearchRow & {
   status: "waiting" | "running" | "done" | "error";
   error?: string;
   result?: ScrapeResult;
+};
+
+type LogEntry = {
+  at: string;
+  company: string;
+  note: string;
+  state: "start" | "done" | "info" | "error";
+  ms?: number;
 };
 
 /** Speeds map to how many companies run at once and how long to pause between them. */
@@ -127,6 +135,25 @@ export default function LeadScrapeClient() {
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
 
+  // Live log: what the scrape is doing right now, newest last.
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  function addLog(company: string, note: string, state: LogEntry["state"], ms?: number) {
+    setLog((prev) => {
+      const next = [
+        ...prev,
+        { at: new Date().toLocaleTimeString("sl-SI"), company, note, state, ms },
+      ];
+      // Bounded so a 100-company run can't grow the page without limit.
+      return next.length > 400 ? next.slice(-400) : next;
+    });
+  }
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ block: "nearest" });
+  }, [log]);
+
   const doneCount = rows.filter((r) => r.status === "done").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
   const scrapedRows = useMemo(() => rows.filter((r) => r.status === "done"), [rows]);
@@ -172,29 +199,80 @@ export default function LeadScrapeClient() {
     await scrapeAll(found.map((row, index) => ({ row, index })));
   }
 
+  /**
+   * Reads the NDJSON stream so each step appears in the log as it happens.
+   * A plain await would sit silent for the whole scrape, and a source that is
+   * stuck would look exactly like one that is merely slow.
+   */
   async function scrapeOne(index: number, row: Row) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "running" } : r)));
+    const company = row.shortName || row.name;
+    const startedAt = Date.now();
+    addLog(company, "začenjam …", "start");
+
     try {
       const res = await fetch("/api/admin/lead-skrejp/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           // The short name is what CompanyWall and Bizi list companies under.
-          companyName: row.shortName || row.name,
+          companyName: company,
           city: row.city,
           vatId: row.vatId,
           registrationNumber: row.registrationNumber,
+          ajpesDetailUrl: row.detailUrl,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setRows((prev) =>
-          prev.map((r, i) => (i === index ? { ...r, status: "error", error: json?.error ?? "Napaka." } : r))
-        );
+
+      if (!res.ok || !res.body) {
+        const message = res.ok ? "Prazen odgovor strežnika." : `Napaka strežnika (${res.status}).`;
+        addLog(company, message, "error");
+        setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error: message } : r)));
         return;
       }
-      setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "done", result: json } : r)));
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalResult: ScrapeResult | null = null;
+      let failure: string | null = null;
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // keep the partial last line for the next chunk
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.progress) {
+              addLog(company, `${event.progress.label} — ${event.progress.note}`, event.progress.state, event.progress.ms);
+            } else if (event.result) {
+              finalResult = event.result as ScrapeResult;
+            } else if (event.error) {
+              failure = event.error as string;
+            }
+          } catch {
+            // A truncated line is not fatal — the next chunk completes it.
+          }
+        }
+      }
+
+      if (failure || !finalResult) {
+        const message = failure ?? "Skrejp se ni zaključil.";
+        addLog(company, message, "error");
+        setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error: message } : r)));
+        return;
+      }
+
+      const filled = Object.keys(finalResult.fields ?? {}).length;
+      addLog(company, `končano — ${filled} polj`, "done", Date.now() - startedAt);
+      setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "done", result: finalResult! } : r)));
     } catch {
+      addLog(company, "zahtevek ni uspel", "error");
       setRows((prev) =>
         prev.map((r, i) => (i === index ? { ...r, status: "error", error: "Zahtevek ni uspel." } : r))
       );
@@ -249,6 +327,7 @@ export default function LeadScrapeClient() {
           "owners", "authorized_representatives", "founded_date", "legal_form", "company_status",
           "company_size", "employees_count", "revenue_amount", "revenue_year", "profit", "ebitda",
           "credit_rating", "official_name", "official_long_name", "bank_account", "postal_code",
+          "other_activities",
         ]) {
           if (f[key]) custom[key] = f[key];
         }
@@ -407,8 +486,9 @@ export default function LeadScrapeClient() {
         {searchNote && <p className="mt-2 text-xs text-zinc-500">{searchNote}</p>}
       </div>
 
-      {rows.length > 0 && (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      {(rows.length > 0 || log.length > 0) && (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-zinc-900">2. Rezultat</p>
@@ -451,6 +531,56 @@ export default function LeadScrapeClient() {
             </button>
           </div>
           {importMessage && <p className="mt-2 text-xs text-emerald-600">{importMessage}</p>}
+          </div>
+
+          {/*
+            Live log. The scrape is a long series of network calls against four
+            different sources; without this the page just sits there and a
+            source that is stuck is indistinguishable from one that is slow.
+          */}
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-950 p-4 shadow-sm lg:sticky lg:top-4 lg:self-start">
+            <div className="flex items-center justify-between">
+              <p className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                {scraping ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <Terminal className="h-3.5 w-3.5 text-zinc-400" />}
+                Kaj se dogaja
+              </p>
+              {log.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLog([])}
+                  className="text-[11px] text-zinc-500 hover:text-zinc-300"
+                >
+                  Počisti
+                </button>
+              )}
+            </div>
+            <div className="mt-3 max-h-[28rem] space-y-1 overflow-y-auto font-mono text-[11px] leading-relaxed">
+              {log.length === 0 ? (
+                <p className="text-zinc-500">Še ni dogodkov — pritisnite „Poišči in skrejpaj&ldquo;.</p>
+              ) : (
+                log.map((entry, i) => (
+                  <div key={i} className="flex gap-2">
+                    <span className="shrink-0 text-zinc-600">{entry.at}</span>
+                    <span
+                      className={
+                        entry.state === "error"
+                          ? "text-red-400"
+                          : entry.state === "done"
+                            ? "text-emerald-400"
+                            : entry.state === "start"
+                              ? "text-zinc-300"
+                              : "text-zinc-400"
+                      }
+                    >
+                      <span className="text-zinc-500">{entry.company}</span> · {entry.note}
+                      {entry.ms !== undefined && ` (${(entry.ms / 1000).toFixed(1)}s)`}
+                    </span>
+                  </div>
+                ))
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </div>
         </div>
       )}
 
