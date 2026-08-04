@@ -28,20 +28,34 @@ export const PUBLIC_ENRICHMENT_SOURCE_LABELS: Record<PublicEnrichmentSourceId, s
   ajpes: "AJPES",
 };
 
+/**
+ * Everything the registries publish that the lead form has no dedicated input
+ * for. Kept in one list so the Lead Intelligence "Javni registri" section shows
+ * exactly what Lead skrejp collects — the two used to drift, and values the
+ * scrape had already found were invisible on the lead itself.
+ */
 export const REGISTRY_FIELDS = [
   "director",
   "owners",
   "founders",
   "authorized_representatives",
   "employees_count",
+  "company_size",
   "founded_date",
   "legal_form",
+  "company_status",
   "registration_number",
+  "skis_code",
+  "skis_name",
+  "other_activities",
   "profit",
   "ebit",
   "ebitda",
   "credit_rating",
-  "company_status",
+  "bank_account",
+  "postal_code",
+  "official_name",
+  "official_long_name",
 ] as const;
 export type RegistryField = (typeof REGISTRY_FIELDS)[number];
 
@@ -51,14 +65,22 @@ export const REGISTRY_FIELD_LABELS: Record<RegistryField, string> = {
   founders: "Ustanovitelji",
   authorized_representatives: "Prokuristi",
   employees_count: "Št. zaposlenih",
+  company_size: "Velikost podjetja",
   founded_date: "Datum ustanovitve",
   legal_form: "Pravna oblika",
+  company_status: "Status podjetja",
   registration_number: "Matična številka",
+  skis_code: "SKIS šifra",
+  skis_name: "SKIS naziv",
+  other_activities: "Druge registrirane dejavnosti",
   profit: "Dobiček",
   ebit: "EBIT",
   ebitda: "EBITDA",
   credit_rating: "Boniteta",
-  company_status: "Status podjetja",
+  bank_account: "TRR",
+  postal_code: "Poštna številka",
+  official_name: "Skrajšana firma",
+  official_long_name: "Polni naziv",
 };
 
 /** custom_fields keys used by providers that aren't in REGISTRY_FIELDS (already established in phase 1). */

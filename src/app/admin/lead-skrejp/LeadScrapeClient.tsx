@@ -262,7 +262,8 @@ export default function LeadScrapeClient() {
    * each other out. One request per batch fixes that AND keeps each function
    * call short enough not to be cut off.
    */
-  async function scrapeBatch(batch: { row: Row; index: number }[]) {
+  /** Returns the indices this batch did not finish, for the caller to re-queue. */
+  async function scrapeBatch(batch: { row: Row; index: number }[]): Promise<number[]> {
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -297,12 +298,15 @@ export default function LeadScrapeClient() {
         const message = res.ok ? "Prazen odgovor strežnika." : `Napaka strežnika (${res.status}).`;
         addLog("paket", message, "error");
         markBatchFailed(batch, message, handled);
-        return;
+        return [];
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      // Companies the server deliberately left for the next batch because its
+      // time budget ran out — not failures.
+      let deferred: number[] = [];
 
       for (;;) {
         const { done, value } = await reader.read();
@@ -332,6 +336,11 @@ export default function LeadScrapeClient() {
               handled.add(index);
               addLog(nameFor(index), error, "error");
               setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error } : r)));
+            } else if (event.done) {
+              deferred = (event.done.unprocessed as number[] | undefined) ?? [];
+              if (deferred.length > 0) {
+                addLog("paket", `${deferred.length} podjetij prenesenih v naslednji paket (časovni proračun)`, "info");
+              }
             }
           } catch {
             // A truncated line is not fatal — the next chunk completes it.
@@ -339,17 +348,24 @@ export default function LeadScrapeClient() {
         }
       }
 
-      // Anything the stream never reported on was cut off mid-flight.
-      markBatchFailed(
-        batch,
-        "obdelava je bila prekinjena, preden je prišel rezultat (najverjetneje časovna omejitev funkcije) — poskusite znova z „Skrejpaj označene“",
-        handled
-      );
+      // Deferred = the server chose to postpone them. Anything else it never
+      // reported on was cut off mid-flight; both go back into the queue, and
+      // the rows return to "waiting" rather than showing a failure.
+      const pending = [
+        ...new Set([...deferred, ...batch.map((b) => b.index).filter((i) => !handled.has(i))]),
+      ];
+      if (pending.length > 0) {
+        setRows((prev) =>
+          prev.map((r, i) => (pending.includes(i) && r.status === "running" ? { ...r, status: "waiting" } : r))
+        );
+      }
+      return pending;
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
       const message = aborted ? "ustavljeno" : "zahtevek ni uspel";
       addLog("paket", message, aborted ? "info" : "error");
       markBatchFailed(batch, aborted ? "ustavljeno pred obdelavo" : "zahtevek ni uspel", handled);
+      return [];
     } finally {
       abortRef.current = null;
     }
@@ -364,6 +380,9 @@ export default function LeadScrapeClient() {
     );
   }
 
+  /** How many times a company may be re-queued before it is called a failure. */
+  const MAX_ATTEMPTS = 3;
+
   async function scrapeAll(queue: { row: Row; index: number }[]) {
     if (queue.length === 0) return;
 
@@ -371,11 +390,40 @@ export default function LeadScrapeClient() {
     stopRef.current = false;
     const { batchSize } = SPEEDS[speed];
 
+    const attempts = new Map<number, number>();
+    let remaining = [...queue];
+
     // Batches go one after another: two scrape requests in flight would land on
     // separate server instances and collide over the single AJPES session.
-    for (let i = 0; i < queue.length; i += batchSize) {
-      if (stopRef.current) break;
-      await scrapeBatch(queue.slice(i, i + batchSize));
+    while (remaining.length > 0 && !stopRef.current) {
+      const requeued: { row: Row; index: number }[] = [];
+
+      for (let i = 0; i < remaining.length; i += batchSize) {
+        if (stopRef.current) break;
+        const batch = remaining.slice(i, i + batchSize);
+        const pending = await scrapeBatch(batch);
+
+        for (const index of pending) {
+          const used = (attempts.get(index) ?? 0) + 1;
+          attempts.set(index, used);
+          const entry = batch.find((b) => b.index === index);
+          if (!entry) continue;
+
+          if (used < MAX_ATTEMPTS) {
+            requeued.push(entry);
+          } else {
+            // Give up, but say why — the row is not silently blank.
+            const message = `obdelava se ni zaključila v ${MAX_ATTEMPTS} poskusih (časovna omejitev funkcije) — poskusite z nastavitvijo „Počasi in varno“`;
+            addLog(entry.row.shortName || entry.row.name, message, "error");
+            setRows((prev) => prev.map((r, j) => (j === index ? { ...r, status: "error", error: message } : r)));
+          }
+        }
+      }
+
+      remaining = requeued;
+      if (remaining.length > 0 && !stopRef.current) {
+        addLog("paket", `${remaining.length} podjetij gre v ponovni poskus`, "info");
+      }
     }
     setScraping(false);
   }

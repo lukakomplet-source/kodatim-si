@@ -72,8 +72,12 @@ export default function LeadEditor({
   const [revenueAmount, setRevenueAmount] = useState(lead.custom_fields?.revenue_amount ?? "");
   const [skdCode, setSkdCode] = useState(lead.custom_fields?.skd_code ?? "");
   const [skdName, setSkdName] = useState(lead.custom_fields?.skd_name ?? "");
+  // Registry values have their own inputs below; without excluding them here
+  // they would also appear as free-form custom fields, i.e. twice.
   const [customFields, setCustomFields] = useState<[string, string][]>(
-    Object.entries(lead.custom_fields ?? {}).filter(([k]) => !CUSTOM_FIELD_KEYS.includes(k))
+    Object.entries(lead.custom_fields ?? {}).filter(
+      ([k]) => !CUSTOM_FIELD_KEYS.includes(k) && !(REGISTRY_FIELDS as readonly string[]).includes(k)
+    )
   );
   const [reminder, setReminder] = useState(lead.reminder_date ?? "");
   const [noteDraft, setNoteDraft] = useState("");

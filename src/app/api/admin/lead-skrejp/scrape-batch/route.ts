@@ -92,11 +92,23 @@ export async function POST(request: NextRequest) {
         }
       };
 
+      // Rather than trusting maxDuration — the hosting plan silently caps it,
+      // and an over-run kills the function mid-company — the batch stops
+      // handing out new work once the budget is spent and reports what it did
+      // not get to. The client re-queues those, so a slow company is retried
+      // instead of being marked failed.
+      const budgetMs = Number(process.env.SCRAPE_BATCH_BUDGET_MS ?? 40_000);
+      const unprocessed: number[] = [];
+
       let cursor = 0;
       const worker = async () => {
         for (;;) {
           const company = companies[cursor++];
           if (!company || closed) return;
+          if (Date.now() - startedAt > budgetMs) {
+            unprocessed.push(company.index);
+            continue;
+          }
           const companyStartedAt = Date.now();
           try {
             const result = await quickComplete(company.searchName, company.city ?? undefined, {
@@ -123,7 +135,7 @@ export async function POST(request: NextRequest) {
         // AJPES is serialised internally regardless; this only parallelises
         // CompanyWall, Bizi and website work across companies.
         await Promise.all(Array.from({ length: concurrency }, worker));
-        send({ done: { ms: Date.now() - startedAt } });
+        send({ done: { ms: Date.now() - startedAt, unprocessed } });
       } finally {
         closed = true;
         try {
