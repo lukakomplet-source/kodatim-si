@@ -13,12 +13,21 @@ function parseNames(defaultValue?: string): string[] {
 
 export default function ContactPersonsField({
   defaultValue,
+  people,
   disabled,
 }: {
   defaultValue?: string;
+  /**
+   * People the registries found (direktor, lastniki, prokurist). Passed as an
+   * array rather than a joined string because an owner can be a company whose
+   * own name contains commas, which a comma-split can never undo.
+   */
+  people?: string[];
   disabled?: boolean;
 }) {
-  const [names, setNames] = useState<string[]>(() => parseNames(defaultValue));
+  const [names, setNames] = useState<string[]>(() =>
+    people && people.length > 0 ? people : parseNames(defaultValue)
+  );
 
   return (
     <div>

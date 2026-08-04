@@ -1,8 +1,9 @@
 import { isFirecrawlUnavailable } from "@/lib/firecrawl";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { providerFetch } from "./httpClient";
+import { searchForWebsite } from "./websiteSearch";
 import { ajpesProvider } from "./providers/ajpes";
-import { companyWallProvider } from "./providers/companywall";
+import { companyWallProvider, PEOPLE_SEPARATOR } from "./providers/companywall";
 import { biziProvider } from "./providers/bizi";
 import { websiteProvider } from "./providers/website";
 import { identityConflict, mergeIdentity, type CompanyIdentity } from "./identity";
@@ -50,8 +51,8 @@ const FORM_FIELDS = [
  */
 const EXTRA_FIELDS = [
   "skd_code", "skd_name", "skis_code", "skis_name", "registration_number", "director",
-  "owners", "founded_date", "legal_form", "company_status", "company_size",
-  "employees_count", "revenue_amount", "revenue_year", "profit", "ebitda",
+  "owners", "authorized_representatives", "founded_date", "legal_form", "company_status",
+  "company_size", "employees_count", "revenue_amount", "revenue_year", "profit", "ebitda",
   "credit_rating", "official_name", "official_long_name", "bank_account", "postal_code",
 ] as const;
 
@@ -120,12 +121,75 @@ function composeDescription(
   return parts.join(" · ");
 }
 
+/**
+ * A company in receivership or liquidation is not a sales lead. It is flagged
+ * so the UI can mark it, and so the pipeline can skip work that makes no sense
+ * for it (a bankrupt company no longer runs a website).
+ */
+export function isBankrupt(status?: string | null): boolean {
+  return /steč|likvidac|prisiln|izbrisan/i.test(status ?? "");
+}
+
+/**
+ * Every person the registries name — director, owners, prokurist — as a clean
+ * list for the "Kontaktne osebe" field. Ownership shares are stripped
+ * ("RICHTER MARTIN(50,00%)" -> "RICHTER MARTIN") and the same person named in
+ * two roles appears once.
+ */
+function collectContactPersons(fields: Record<string, string>): string[] {
+  const raw = [fields.director, fields.owners, fields.authorized_representatives]
+    .filter(Boolean)
+    .flatMap((value) => value.split(PEOPLE_SEPARATOR));
+
+  // Sources disagree on word order and casing for the same person — AJPES says
+  // "Irena Bauman", CompanyWall "BAUMAN IRENA". Keying on the sorted words
+  // collapses them into one contact instead of two.
+  const byPerson = new Map<string, string>();
+  for (const entry of raw) {
+    const name = entry
+      .replace(/\([^)]*%\)/g, "") // ownership share
+      .replace(/\s*[-–]\s*(direktor|prokurist|zastopnik|lastnik)\.?$/i, "") // trailing role
+      .replace(/\s+/g, " ")
+      .trim();
+    if (name.length < 3) continue;
+
+    const key = name
+      .toLowerCase()
+      .replace(/[čć]/g, "c").replace(/š/g, "s").replace(/ž/g, "z").replace(/đ/g, "d")
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .sort()
+      .join(" ");
+
+    const display = isAllCaps(name) ? toTitleCase(name) : name;
+    const existing = byPerson.get(key);
+    // Prefer the readable form over the registry's shouting caps.
+    if (!existing || (isAllCaps(existing) && !isAllCaps(display))) byPerson.set(key, display);
+  }
+  return [...byPerson.values()];
+}
+
+function isAllCaps(value: string): boolean {
+  return value === value.toUpperCase() && /[A-ZČŠŽĐĆ]/.test(value);
+}
+
+function toTitleCase(value: string): string {
+  return value.toLowerCase().replace(/(^|[\s.'-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
 export type QuickCompleteResult = {
   website: string | null;
+  /** Why the website is what it is — including "nima spletne strani" when none exists. */
+  websiteNote: string;
   fields: Record<string, string>;
   sources: Record<string, string>;
   fieldNotes: Record<string, string>;
   providerNotes: { label: string; note: string }[];
+  /** Director, owners and prokurist, deduplicated — fills "Kontaktne osebe". */
+  contactPersons: string[];
+  /** True for a company in receivership/liquidation — shown as a red badge. */
+  bankrupt: boolean;
   description: string | null;
   source: string;
   /** Set only when nothing at all could be found — the UI shows it in amber, never red. */
@@ -200,6 +264,9 @@ export async function quickComplete(companyName: string, city?: string): Promise
     }
   }
 
+  const bankrupt = isBankrupt(fields.company_status);
+  let websiteNote = website ? "objavljena v registru." : "";
+
   // No registry listed a site? A company email on its own domain is a solid
   // hint (info@podjetje.si -> podjetje.si). Free mailbox domains are excluded,
   // and the address is only kept if it actually responds — never a blind guess.
@@ -213,18 +280,35 @@ export async function quickComplete(companyName: string, city?: string): Promise
         });
         if (res.ok) {
           website = guess;
-          providerNotes.push({
-            label: "Spletna stran",
-            note: `ugotovljena iz e-poštne domene (${guess}) in preverjena — HTTP ${res.status}.`,
-          });
+          websiteNote = `ugotovljena iz e-poštne domene (${guess}) in preverjena — HTTP ${res.status}.`;
+        } else {
+          websiteNote = `domena iz e-pošte (${guess}) je vrnila HTTP ${res.status} — ni uporabljena.`;
         }
       } catch {
-        providerNotes.push({
-          label: "Spletna stran",
-          note: `domena iz e-pošte (${guess}) se ni odzvala — ni uporabljena.`,
-        });
+        websiteNote = `domena iz e-pošte (${guess}) se ni odzvala — ni uporabljena.`;
       }
+      providerNotes.push({ label: "Spletna stran", note: websiteNote });
     }
+  }
+
+  // Still nothing: search the web. Skipped for companies in receivership or
+  // liquidation — they no longer run a site, so the requests would only cost
+  // time and every hit would be a false positive.
+  if (!website && bankrupt) {
+    websiteNote = `iskanje preskočeno — podjetje je ${fields.company_status?.toLowerCase()}, zato spletne strani ne pričakujemo.`;
+    providerNotes.push({ label: "Spletna stran", note: websiteNote });
+  } else if (!website && !fields.vat_id && !fields.registration_number) {
+    // Without a resolved davčna/matična there is nothing to verify a search hit
+    // against, and an unverified hit is how "ARS" ended up pointing at
+    // arstechnica.com. Better no website than the wrong one.
+    websiteNote =
+      "iskanje preskočeno — podjetje ni bilo enolično določeno (brez davčne/matične), zato zadetka ni mogoče preveriti.";
+    providerNotes.push({ label: "Spletna stran", note: websiteNote });
+  } else if (!website) {
+    const found = await searchForWebsite(companyName, { city, vatId: fields.vat_id });
+    website = found.website;
+    websiteNote = found.note;
+    providerNotes.push({ label: "Spletno iskanje", note: found.note });
   }
 
   // Optional final pass: if a website turned up, read it for anything still
@@ -270,6 +354,9 @@ export async function quickComplete(companyName: string, city?: string): Promise
       fieldNotes,
       providerNotes,
       website: null,
+      websiteNote: websiteNote || "ni bilo mogoče preveriti — podjetja ni bilo mogoče identificirati.",
+      contactPersons: [],
+      bankrupt,
       description: null,
       source: providerNotes.map((p) => p.label).join(" + "),
       warning: `Za "${companyName}" ni bilo mogoče najti podatkov. ${providerNotes
@@ -280,10 +367,13 @@ export async function quickComplete(companyName: string, city?: string): Promise
 
   return {
     website,
+    websiteNote: website ? websiteNote : websiteNote || "nima spletne strani — v nobenem viru je ni bilo mogoče najti.",
     fields,
     sources,
     fieldNotes,
     providerNotes,
+    contactPersons: collectContactPersons(fields),
+    bankrupt,
     description: composeDescription(fields, description) ?? description,
     source: providerNotes.map((p) => p.label).join(" + "),
   };

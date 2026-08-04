@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2, Save, ExternalLink } from "lucide-react";
+import { ImageUp, Sparkles, RotateCcw, X, Plus, CheckCircle2, Wand2, Save, ExternalLink, AlertTriangle } from "lucide-react";
 import { createLead } from "../actions";
 import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportField } from "@/lib/lead-intelligence/types";
 import ContactPersonsField from "./ContactPersonsField";
@@ -75,6 +75,15 @@ export default function AiImageEntryForm() {
   const [completeSources, setCompleteSources] = useState<(string | null)[]>([]);
   const [fieldSources, setFieldSources] = useState<Record<string, string>[]>([]);
   const [fieldNotes, setFieldNotes] = useState<Record<string, string>[]>([]);
+  // Registry values with no visible input (lastniki, boniteta, EBITDA, TRR),
+  // carried into custom_fields through a hidden field on submit.
+  const [extraFields, setExtraFields] = useState<Record<string, string>[]>([]);
+  // Direktor / lastniki / prokurist, plus a counter that remounts the contact
+  // field so it picks the new list up (it holds its own row state).
+  const [contactPersons, setContactPersons] = useState<string[][]>([]);
+  const [contactsVersion, setContactsVersion] = useState<number[]>([]);
+  const [websiteNotes, setWebsiteNotes] = useState<(string | null)[]>([]);
+  const [bankruptFlags, setBankruptFlags] = useState<boolean[]>([]);
   const [completingAll, setCompletingAll] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +138,11 @@ export default function AiImageEntryForm() {
       setCompleteErrors(detected.map(() => null));
       setCompleteWarnings(detected.map(() => null));
       setCompleteSources(detected.map(() => null));
+      setExtraFields(detected.map(() => ({})));
+      setContactPersons(detected.map(() => []));
+      setContactsVersion(detected.map(() => 0));
+      setWebsiteNotes(detected.map(() => null));
+      setBankruptFlags(detected.map(() => false));
     } catch {
       setExtractError("Prišlo je do napake. Poskusite znova.");
     } finally {
@@ -148,6 +162,11 @@ export default function AiImageEntryForm() {
     setCompleteErrors([]);
     setCompleteWarnings([]);
     setCompleteSources([]);
+    setExtraFields([]);
+    setContactPersons([]);
+    setContactsVersion([]);
+    setWebsiteNotes([]);
+    setBankruptFlags([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -275,13 +294,30 @@ export default function AiImageEntryForm() {
       }
       const fieldsToFill = (json.fields ?? {}) as Record<string, string>;
       const returnedSources = (json.sources ?? {}) as Record<string, string>;
+      const withoutInput: Record<string, string> = {};
       for (const [key, value] of Object.entries(fieldsToFill)) {
         const input = form?.elements.namedItem(key) as HTMLInputElement | null;
-        if (!input || !value) continue;
+        if (!value) continue;
+        if (!input) {
+          // No visible input for this one — keep it for custom_fields.
+          withoutInput[key] = value;
+          continue;
+        }
         // Registry data overrides what the image AI guessed; everything else
         // only fills a blank so manual edits are never clobbered.
         if (!input.value.trim() || REGISTRY_AUTHORITATIVE.has(key)) input.value = value;
       }
+      setExtraFields((prev) => prev.map((s, i) => (i === index ? withoutInput : s)));
+
+      const people = Array.isArray(json.contactPersons) ? (json.contactPersons as string[]) : [];
+      if (people.length > 0) {
+        setContactPersons((prev) => prev.map((p, i) => (i === index ? people : p)));
+        // Bump the key so the contact field remounts with the new list — it
+        // owns its row state, so a prop change alone would not reach it.
+        setContactsVersion((prev) => prev.map((v, i) => (i === index ? v + 1 : v)));
+      }
+      setWebsiteNotes((prev) => prev.map((n, i) => (i === index ? (json.websiteNote ?? null) : n)));
+      setBankruptFlags((prev) => prev.map((b, i) => (i === index ? Boolean(json.bankrupt) : b)));
       setFieldSources((prev) => prev.map((s, i) => (i === index ? returnedSources : s)));
       setFieldNotes((prev) => prev.map((s, i) => (i === index ? ((json.fieldNotes ?? {}) as Record<string, string>) : s)));
       const notesInput = form?.elements.namedItem("notes") as HTMLTextAreaElement | null;
@@ -478,10 +514,19 @@ export default function AiImageEntryForm() {
                 onSubmit={(e) => handleSaveCard(index, e)}
                 className="rounded-2xl border border-zinc-200 p-5"
               >
+                <input type="hidden" name="extra_fields" value={JSON.stringify(extraFields[index] ?? {})} />
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    Podjetje {index + 1} od {leads.length}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                      Podjetje {index + 1} od {leads.length}
+                    </p>
+                    {bankruptFlags[index] && (
+                      <span className="flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 ring-1 ring-red-200">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {extraFields[index]?.company_status ?? "V stečaju"}
+                      </span>
+                    )}
+                  </div>
                   {saved ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
                       <CheckCircle2 className="h-3.5 w-3.5" />
@@ -568,6 +613,9 @@ export default function AiImageEntryForm() {
                           {lookupWarnings[index] && (
                             <p className="mt-1 text-xs text-amber-600">{lookupWarnings[index]}</p>
                           )}
+                          {websiteNotes[index] && (
+                            <p className="mt-1 text-xs text-zinc-500">{websiteNotes[index]}</p>
+                          )}
                         </div>
                       );
                     }
@@ -606,7 +654,12 @@ export default function AiImageEntryForm() {
                   })}
 
                   <div className="sm:col-span-2">
-                    <ContactPersonsField defaultValue={fields.contact_person} disabled={saved} />
+                    <ContactPersonsField
+                      key={`contacts-${index}-${contactsVersion[index] ?? 0}`}
+                      defaultValue={fields.contact_person}
+                      people={contactPersons[index]}
+                      disabled={saved}
+                    />
                   </div>
 
                   <div>
@@ -648,9 +701,13 @@ export default function AiImageEntryForm() {
                     <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                       Letni prihodki (€)
                     </label>
+                    {/*
+                      Text, not number: registries publish the Slovenian format
+                      ("74.950,36"), which a number input silently rejects — the
+                      year filled in but the amount stayed empty.
+                    */}
                     <input
                       name="revenue_amount"
-                      type="number"
                       defaultValue={fields.revenue_amount ?? ""}
                       disabled={saved}
                       className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-400"

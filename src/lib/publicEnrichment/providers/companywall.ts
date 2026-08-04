@@ -13,18 +13,25 @@ import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequest
 // already proven for AJPES.
 
 export const COMPANYWALL_POSSIBLE_FIELDS = [
-  "director", "owners", "founded_date", "legal_form", "company_status",
+  "director", "owners", "authorized_representatives", "founded_date", "legal_form", "company_status",
   "registration_number", "vat_id", "skd_code", "skd_name", "skis_code", "skis_name",
   "company_size", "employees_count", "phone", "email", "address_street", "postal_code", "address_city",
   "address_country", "description", "website", "official_name",
   "revenue_amount", "revenue_year", "profit", "ebitda", "credit_rating",
 ];
 
+/**
+ * Joins several people in one field. Deliberately not a comma: an owner can be
+ * a company whose own name contains commas ("BOER, svetovanje in storitve
+ * d.o.o."), so a comma-joined list cannot be split back apart reliably.
+ */
+export const PEOPLE_SEPARATOR = " · ";
+
 const BASE = "https://www.companywall.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
-const PARSER_VERSION = 5;
+const PARSER_VERSION = 6;
 
 /**
  * Behind the CompanyWall Plus paywall. Confirmed against a live page, the free
@@ -130,7 +137,10 @@ function peopleAfterLabel(text: string, label: string): string | null {
     // Guard against an empty section, where the next label lands in the capture.
     .filter((n) => n.length > 2 && !/^(Lastnik|Direktor|Prokurist|Zastopnik|Prikaži|Več|Ustanovitelj)/.test(n));
   if (names.length === 0) return null;
-  return [...new Set(names)].join(", ").slice(0, 300);
+  // Separated by "·", not ",": an owner can be a company whose own name
+  // contains commas ("BOER, svetovanje in storitve d.o.o."), so a comma-joined
+  // list cannot be split back into people again.
+  return [...new Set(names)].join(PEOPLE_SEPARATOR).slice(0, 300);
 }
 
 /**
@@ -222,6 +232,10 @@ function parseDetailPage(text: string): Record<string, string | null> {
   return {
     director: directorMatch?.[1]?.trim() ?? peopleAfterLabel(text, "Direktor"),
     owners: peopleAfterLabel(text, "Lastniki") ?? ownersProse?.[1]?.trim() ?? null,
+    // Prokurist / zastopnik — also a real contact person at the company, and
+    // for many sole traders the only person listed besides the owner.
+    authorized_representatives:
+      peopleAfterLabel(text, "Prokurist") ?? peopleAfterLabel(text, "Zastopnik"),
     founded_date: addressMatch?.[2]?.trim() ?? firstNonEmptyLineAfter(text, "Datum vpisa v register"),
     legal_form: legalFormMatch?.[1]?.trim() ?? null,
     company_status: statusMatch?.[1]?.trim() ?? null,

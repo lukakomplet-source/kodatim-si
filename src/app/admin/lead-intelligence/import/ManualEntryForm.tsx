@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState, type RefObject } from "react";
 import { useFormStatus } from "react-dom";
-import { Sparkles, Wand2 } from "lucide-react";
+import { Sparkles, Wand2, AlertTriangle } from "lucide-react";
 import { createLead, type CreateLeadState } from "../actions";
 import { IMPORT_FIELDS, IMPORT_FIELD_LABELS, type ImportField } from "@/lib/lead-intelligence/types";
 import ContactPersonsField from "./ContactPersonsField";
@@ -91,6 +91,13 @@ export default function ManualEntryForm() {
   // Registry values with no visible input (lastniki, boniteta, EBITDA, status …).
   // Submitted as JSON so they land in custom_fields instead of being discarded.
   const [extraFields, setExtraFields] = useState<Record<string, string>>({});
+  // Direktor / lastniki / prokurist, plus a counter that remounts the contact
+  // field so it picks the new list up (it owns its own row state).
+  const [contactPersons, setContactPersons] = useState<string[]>([]);
+  const [contactsVersion, setContactsVersion] = useState(0);
+  const [websiteNote, setWebsiteNote] = useState<string | null>(null);
+  const [bankrupt, setBankrupt] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   function toggleNoWebsite(checked: boolean) {
     setNoWebsite(checked);
@@ -184,19 +191,33 @@ export default function ManualEntryForm() {
       }
       if (json.website) setNoWebsite(false);
       const fields = (json.fields ?? {}) as Record<string, string>;
-      for (const [key, ref] of Object.entries(fieldRefs)) {
-        const value = fields[key];
-        if (!ref?.current || !value) continue;
-        // Registry data overrides a guessed value; otherwise only fill blanks.
-        if (!ref.current.value.trim() || REGISTRY_AUTHORITATIVE.has(key)) {
-          ref.current.value = value;
+      // Matched by input NAME, not by the ref map: that is what also reaches
+      // SKD koda / naziv and the revenue inputs, which have no refs and were
+      // therefore never filled even when the registries returned them.
+      const withoutInput: Record<string, string> = {};
+      for (const [key, value] of Object.entries(fields)) {
+        if (!value) continue;
+        const input = formRef.current?.elements.namedItem(key) as HTMLInputElement | null;
+        if (!input || typeof input.value !== "string") {
+          withoutInput[key] = value;
+          continue;
         }
+        // Registry data overrides a guessed value; otherwise only fill blanks.
+        if (!input.value.trim() || REGISTRY_AUTHORITATIVE.has(key)) input.value = value;
       }
       // Everything the registries returned that has no input of its own still
       // gets saved, via the hidden extra_fields payload.
-      setExtraFields(
-        Object.fromEntries(Object.entries(fields).filter(([key]) => !(key in fieldRefs)))
-      );
+      setExtraFields(withoutInput);
+
+      const people = Array.isArray(json.contactPersons) ? (json.contactPersons as string[]) : [];
+      if (people.length > 0) {
+        setContactPersons(people);
+        // Bump the key so the contact field remounts with the new list.
+        setContactsVersion((v) => v + 1);
+      }
+      setWebsiteNote(json.websiteNote ?? null);
+      setBankrupt(json.bankrupt ? (fields.company_status ?? "V stečaju") : null);
+
       if (notesRef.current && json.description) {
         const existing = notesRef.current.value.trim();
         const aiLine = `AI opis: ${json.description}`;
@@ -213,8 +234,14 @@ export default function ManualEntryForm() {
   }
 
   return (
-    <form action={formAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <form ref={formRef} action={formAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <input type="hidden" name="extra_fields" value={JSON.stringify(extraFields)} />
+      {bankrupt && (
+        <p className="sm:col-span-2 flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 ring-1 ring-red-200">
+          <AlertTriangle className="h-4 w-4" />
+          Podjetje je {bankrupt.toLowerCase()} — preverite, ali je še smiselno kot lead.
+        </p>
+      )}
       <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent/[0.04] px-4 py-3">
         <p className="text-xs text-zinc-600">
           Vnesite ime podjetja (in po možnosti mesto), nato naj AI poišče
@@ -305,6 +332,7 @@ export default function ManualEntryForm() {
               </div>
               {lookupError && <p className="mt-1 text-xs text-red-500">{lookupError}</p>}
               {lookupWarning && <p className="mt-1 text-xs text-amber-600">{lookupWarning}</p>}
+              {websiteNote && <p className="mt-1 text-xs text-zinc-500">{websiteNote}</p>}
               <label className="mt-1.5 flex items-center gap-2 text-xs text-zinc-500">
                 <input
                   type="checkbox"
@@ -350,7 +378,7 @@ export default function ManualEntryForm() {
       })}
 
       <div className="sm:col-span-2">
-        <ContactPersonsField />
+        <ContactPersonsField key={`contacts-${contactsVersion}`} people={contactPersons} />
       </div>
 
       <div>
@@ -390,10 +418,13 @@ export default function ManualEntryForm() {
         <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
           Letni prihodki (€)
         </label>
+        {/*
+          Text, not number: registries publish the Slovenian format
+          ("74.950,36"), which a number input silently rejects.
+        */}
         <input
           name="revenue_amount"
-          type="number"
-          placeholder="npr. 120000"
+          placeholder="npr. 120.000,00"
           className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none"
         />
       </div>

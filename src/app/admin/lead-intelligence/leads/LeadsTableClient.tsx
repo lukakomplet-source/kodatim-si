@@ -13,6 +13,7 @@ import {
   Download,
   Tag as TagIcon,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import type { IntelLead, LeadStatus } from "@/lib/lead-intelligence/types";
 import {
@@ -41,6 +42,16 @@ const STATUS_STYLES: Record<LeadStatus, string> = {
   not_interested: "bg-red-50 text-red-500",
   duplicate: "bg-amber-50 text-amber-600",
 };
+
+/**
+ * A company in receivership or liquidation, per the registry status stored
+ * during enrichment. Worth flagging in the list itself: it is not a sales lead,
+ * and that is invisible from the name alone.
+ */
+function bankruptStatus(lead: IntelLead): string | null {
+  const status = (lead.custom_fields as Record<string, string> | null)?.company_status;
+  return status && /steč|likvidac|prisiln|izbrisan/i.test(status) ? status : null;
+}
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -293,6 +304,12 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
                     >
                       {lead.company_name}
                     </Link>
+                    {bankruptStatus(lead) && (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 ring-1 ring-red-200 align-middle">
+                        <AlertTriangle className="h-3 w-3" />
+                        {bankruptStatus(lead)}
+                      </span>
+                    )}
                     {lead.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {lead.tags.slice(0, 3).map((t) => (

@@ -212,9 +212,10 @@ export type CreateLeadState = ActionResult;
 
 /** Registry values that live in custom_fields — the only keys extra_fields may set. */
 const ALLOWED_EXTRA_FIELDS = new Set([
-  "registration_number", "director", "owners", "founded_date", "legal_form", "company_status",
-  "skis_code", "skis_name", "company_size", "employees_count", "profit", "ebitda",
-  "credit_rating", "official_name", "official_long_name", "postal_code", "bank_account",
+  "registration_number", "director", "owners", "authorized_representatives", "founded_date",
+  "legal_form", "company_status", "skis_code", "skis_name", "company_size", "employees_count",
+  "profit", "ebitda", "credit_rating", "official_name", "official_long_name", "postal_code",
+  "bank_account",
 ]);
 
 function parseExtraFields(raw: FormDataEntryValue | null): Record<string, string> {

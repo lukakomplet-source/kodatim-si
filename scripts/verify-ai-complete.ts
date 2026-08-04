@@ -75,7 +75,10 @@ async function main() {
     console.log("\nViri:");
     for (const p of result.providerNotes) console.log(`  ${p.label.padEnd(22)} ${p.note}`);
 
-    console.log(`\nSpletna stran: ${result.website ?? "— ni najdena"}`);
+    console.log(`\nStečaj: ${result.bankrupt ? `DA (${result.fields.company_status})` : "ne"}`);
+    console.log(`Spletna stran: ${result.website ?? "— ni najdena"}`);
+    console.log(`  razlog: ${result.websiteNote}`);
+    console.log(`Kontaktne osebe (${result.contactPersons.length}): ${result.contactPersons.join(" | ") || "—"}`);
     console.log(`Opis (Opombe): ${result.description ?? "— ni opisa"}`);
 
     const filled = QUICK_COMPLETE_FIELDS.filter((f) => result.fields[f]);
