@@ -196,7 +196,17 @@ export type QuickCompleteResult = {
   warning?: string;
 };
 
-export async function quickComplete(companyName: string, city?: string): Promise<QuickCompleteResult> {
+export async function quickComplete(
+  companyName: string,
+  city?: string,
+  /**
+   * Identity already established elsewhere — the AJPES search results on the
+   * Lead skrejp screen already carry davčna and matična, so every later source
+   * can be checked against them from the very first provider instead of
+   * trusting whichever registry happened to answer first.
+   */
+  known?: CompanyIdentity
+): Promise<QuickCompleteResult> {
   const fields: Record<string, string> = {};
   const sources: Record<string, string> = {};
   const fieldNotes: Record<string, string> = {};
@@ -216,7 +226,18 @@ export async function quickComplete(companyName: string, city?: string): Promise
 
   // Company names repeat in Slovenia, so a later source is only trusted once
   // its davčna/matična agrees with the one an earlier registry established.
-  let identity: CompanyIdentity = { vat_id: null, registration_number: null };
+  let identity: CompanyIdentity = {
+    vat_id: known?.vat_id ?? null,
+    registration_number: known?.registration_number ?? null,
+  };
+  if (known?.vat_id) {
+    fields.vat_id = known.vat_id;
+    sources.vat_id = "AJPES";
+  }
+  if (known?.registration_number) {
+    fields.registration_number = known.registration_number;
+    sources.registration_number = "AJPES";
+  }
 
   for (const provider of chain) {
     try {

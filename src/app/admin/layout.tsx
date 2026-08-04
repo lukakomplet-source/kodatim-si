@@ -10,6 +10,7 @@ import {
   Inbox,
   Radar,
   Target,
+  DatabaseZap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -40,6 +41,12 @@ const NAV_ITEMS: {
     href: "/admin/lead-intelligence",
     label: "Lead Intelligence",
     icon: <Radar className={ICON_CLASS} />,
+    permission: "lead_intelligence.view",
+  },
+  {
+    href: "/admin/lead-skrejp",
+    label: "Lead skrejp",
+    icon: <DatabaseZap className={ICON_CLASS} />,
     permission: "lead_intelligence.view",
   },
   {
