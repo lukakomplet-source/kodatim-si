@@ -57,11 +57,19 @@ type LogEntry = {
   ms?: number;
 };
 
-/** Speeds map to how many companies run at once and how long to pause between them. */
+/**
+ * Speed = how many companies the server works on at once inside one batch.
+ * `batchSize` is a separate concern: it caps how long a single request runs, so
+ * the hosting platform cannot cut the function off mid-company.
+ */
 const SPEEDS = {
-  slow: { label: "Počasi in varno", concurrency: 1, pauseMs: 1500, hint: "1 hkrati — najmanjše tveganje blokade" },
-  medium: { label: "Srednje", concurrency: 3, pauseMs: 500, hint: "3 hkrati — hitreje, možne blokade" },
-  fast: { label: "Hitro", concurrency: 5, pauseMs: 0, hint: "5 hkrati — realno tvegate 429/403" },
+  // Batch sizes are deliberately small: one company can take ~30 s, and the
+  // hosting plan caps how long a single function may run. A batch that goes
+  // over is cut off mid-company, which is what produced "Skrejp se ni
+  // zaključil" rows for companies whose data was perfectly available.
+  slow: { label: "Počasi in varno", concurrency: 1, batchSize: 2, hint: "1 hkrati — najmanjše tveganje blokade" },
+  medium: { label: "Srednje", concurrency: 3, batchSize: 4, hint: "3 hkrati — hitreje, možne blokade" },
+  fast: { label: "Hitro", concurrency: 5, batchSize: 6, hint: "5 hkrati — realno tvegate 429/403" },
 } as const;
 type SpeedKey = keyof typeof SPEEDS;
 
@@ -167,6 +175,11 @@ export default function LeadScrapeClient() {
   const [speed, setSpeed] = useState<SpeedKey>("slow");
   const [scraping, setScraping] = useState(false);
   const stopRef = useRef(false);
+  // "Ustavi" has to cut the request that is already streaming, not just stop
+  // queueing the next batch.
+  const abortRef = useRef<AbortController | null>(null);
+  // Latest rows, readable from inside the stream loop without re-subscribing.
+  const rowsRef = useRef<Row[]>([]);
 
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -189,6 +202,10 @@ export default function LeadScrapeClient() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [log]);
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   const doneCount = rows.filter((r) => r.status === "done").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
@@ -236,42 +253,56 @@ export default function LeadScrapeClient() {
   }
 
   /**
-   * Reads the NDJSON stream so each step appears in the log as it happens.
-   * A plain await would sit silent for the whole scrape, and a source that is
-   * stuck would look exactly like one that is merely slow.
+   * Scrapes one batch in a single request, reading the NDJSON stream so each
+   * step lands in the log as it happens.
+   *
+   * A request per company was silently broken in production: every concurrent
+   * request gets its own serverless instance, so the server could not keep one
+   * AJPES session (its select-then-read is stateful) and the instances logged
+   * each other out. One request per batch fixes that AND keeps each function
+   * call short enough not to be cut off.
    */
-  async function scrapeOne(index: number, row: Row) {
-    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "running" } : r)));
-    const company = row.shortName || row.name;
-    const startedAt = Date.now();
-    addLog(company, "začenjam …", "start");
+  async function scrapeBatch(batch: { row: Row; index: number }[]) {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setRows((prev) =>
+      prev.map((r, i) => (batch.some((b) => b.index === i) ? { ...r, status: "running" } : r))
+    );
+
+    const nameFor = (index: number) => rowsRef.current[index]?.shortName || rowsRef.current[index]?.name || `#${index}`;
+    const handled = new Set<number>();
 
     try {
-      const res = await fetch("/api/admin/lead-skrejp/scrape", {
+      const res = await fetch("/api/admin/lead-skrejp/scrape-batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
-          // The short name is what CompanyWall and Bizi list companies under.
-          companyName: company,
-          city: row.city,
-          vatId: row.vatId,
-          registrationNumber: row.registrationNumber,
-          ajpesDetailUrl: row.detailUrl,
+          concurrency: SPEEDS[speed].concurrency,
+          companies: batch.map(({ row, index }) => ({
+            index,
+            name: row.name,
+            // The short name is what CompanyWall and Bizi list companies under.
+            searchName: row.shortName || row.name,
+            city: row.city,
+            vatId: row.vatId,
+            registrationNumber: row.registrationNumber,
+            ajpesDetailUrl: row.detailUrl,
+          })),
         }),
       });
 
       if (!res.ok || !res.body) {
         const message = res.ok ? "Prazen odgovor strežnika." : `Napaka strežnika (${res.status}).`;
-        addLog(company, message, "error");
-        setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error: message } : r)));
+        addLog("paket", message, "error");
+        markBatchFailed(batch, message, handled);
         return;
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let finalResult: ScrapeResult | null = null;
-      let failure: string | null = null;
 
       for (;;) {
         const { done, value } = await reader.read();
@@ -285,11 +316,22 @@ export default function LeadScrapeClient() {
           try {
             const event = JSON.parse(line);
             if (event.progress) {
-              addLog(company, `${event.progress.label} — ${event.progress.note}`, event.progress.state, event.progress.ms);
-            } else if (event.result) {
-              finalResult = event.result as ScrapeResult;
-            } else if (event.error) {
-              failure = event.error as string;
+              addLog(
+                event.progress.company ?? nameFor(event.progress.index),
+                `${event.progress.label} — ${event.progress.note}`,
+                event.progress.state,
+                event.progress.ms
+              );
+            } else if (event.row) {
+              const { index, result, ms } = event.row as { index: number; result: ScrapeResult; ms: number };
+              handled.add(index);
+              addLog(nameFor(index), `končano — ${Object.keys(result.fields ?? {}).length} polj`, "done", ms);
+              setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "done", result } : r)));
+            } else if (event.rowError) {
+              const { index, error } = event.rowError as { index: number; error: string };
+              handled.add(index);
+              addLog(nameFor(index), error, "error");
+              setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error } : r)));
             }
           } catch {
             // A truncated line is not fatal — the next chunk completes it.
@@ -297,22 +339,29 @@ export default function LeadScrapeClient() {
         }
       }
 
-      if (failure || !finalResult) {
-        const message = failure ?? "Skrejp se ni zaključil.";
-        addLog(company, message, "error");
-        setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "error", error: message } : r)));
-        return;
-      }
-
-      const filled = Object.keys(finalResult.fields ?? {}).length;
-      addLog(company, `končano — ${filled} polj`, "done", Date.now() - startedAt);
-      setRows((prev) => prev.map((r, i) => (i === index ? { ...r, status: "done", result: finalResult! } : r)));
-    } catch {
-      addLog(company, "zahtevek ni uspel", "error");
-      setRows((prev) =>
-        prev.map((r, i) => (i === index ? { ...r, status: "error", error: "Zahtevek ni uspel." } : r))
+      // Anything the stream never reported on was cut off mid-flight.
+      markBatchFailed(
+        batch,
+        "obdelava je bila prekinjena, preden je prišel rezultat (najverjetneje časovna omejitev funkcije) — poskusite znova z „Skrejpaj označene“",
+        handled
       );
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      const message = aborted ? "ustavljeno" : "zahtevek ni uspel";
+      addLog("paket", message, aborted ? "info" : "error");
+      markBatchFailed(batch, aborted ? "ustavljeno pred obdelavo" : "zahtevek ni uspel", handled);
+    } finally {
+      abortRef.current = null;
     }
+  }
+
+  /** Rows the batch never reported on keep a stated reason instead of spinning forever. */
+  function markBatchFailed(batch: { index: number }[], message: string, handled: Set<number>) {
+    const missing = batch.filter((b) => !handled.has(b.index)).map((b) => b.index);
+    if (missing.length === 0) return;
+    setRows((prev) =>
+      prev.map((r, i) => (missing.includes(i) && r.status === "running" ? { ...r, status: "error", error: message } : r))
+    );
   }
 
   async function scrapeAll(queue: { row: Row; index: number }[]) {
@@ -320,18 +369,14 @@ export default function LeadScrapeClient() {
 
     setScraping(true);
     stopRef.current = false;
-    const { concurrency, pauseMs } = SPEEDS[speed];
+    const { batchSize } = SPEEDS[speed];
 
-    let cursor = 0;
-    const workers = Array.from({ length: concurrency }, async () => {
-      while (!stopRef.current) {
-        const next = queue[cursor++];
-        if (!next) break;
-        await scrapeOne(next.index, next.row);
-        if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
-      }
-    });
-    await Promise.all(workers);
+    // Batches go one after another: two scrape requests in flight would land on
+    // separate server instances and collide over the single AJPES session.
+    for (let i = 0; i < queue.length; i += batchSize) {
+      if (stopRef.current) break;
+      await scrapeBatch(queue.slice(i, i + batchSize));
+    }
     setScraping(false);
   }
 
@@ -489,6 +534,7 @@ export default function LeadScrapeClient() {
               type="button"
               onClick={() => {
                 stopRef.current = true;
+                abortRef.current?.abort();
               }}
               className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-100"
             >

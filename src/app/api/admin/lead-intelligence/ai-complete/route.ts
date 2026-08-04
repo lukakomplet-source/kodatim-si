@@ -7,6 +7,11 @@ import { quickComplete } from "@/lib/publicEnrichment/quickComplete";
  * `quickComplete` so the verification script can exercise the identical code
  * path without auth — see src/lib/publicEnrichment/quickComplete.ts.
  */
+export const runtime = "nodejs";
+// One company through four registries plus a website read — well past the
+// platform's short default.
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();

@@ -12,6 +12,12 @@ import { quickComplete } from "@/lib/publicEnrichment/quickComplete";
  * Without it the request is silent for half a minute and a stuck source looks
  * exactly like a slow one.
  */
+export const runtime = "nodejs";
+// A scrape is minutes of waiting on other people's servers. Without this the
+// platform's short default killed the function mid-company and the browser saw
+// a truncated stream.
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();
