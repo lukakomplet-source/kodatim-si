@@ -62,7 +62,11 @@ export const REGISTRY_FIELD_LABELS: Record<RegistryField, string> = {
 };
 
 /** custom_fields keys used by providers that aren't in REGISTRY_FIELDS (already established in phase 1). */
-export const BONUS_CUSTOM_FIELDS = ["skd_code", "skd_name", "revenue_amount", "revenue_year", "bank_account"] as const;
+export const BONUS_CUSTOM_FIELDS = [
+  "skd_code", "skd_name", "skis_code", "skis_name", "company_size",
+  "revenue_amount", "revenue_year", "bank_account",
+  "official_name", "official_long_name", "postal_code",
+] as const;
 
 export const CORE_FIELDS = [
   "industry",

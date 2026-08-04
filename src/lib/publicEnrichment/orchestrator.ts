@@ -3,6 +3,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/activity/log";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { applyIfEmpty } from "./merge";
+import { identityConflict, mergeIdentity, type CompanyIdentity } from "./identity";
 import { detectConflicts, type CollectedCandidate } from "./validation";
 import { websiteProvider } from "./providers/website";
 import { googleSearchProvider } from "./providers/googleSearch";
@@ -80,6 +81,14 @@ export async function runPublicEnrichment(
   const fieldCandidates: Record<string, CollectedCandidate[]> = {};
   const debugEntries: ProviderDebugEntry[] = [];
 
+  // The company this lead is about, as proven by numbers rather than by name.
+  // Seeded from whatever the lead already carries, then locked in by the first
+  // registry that states a davčna/matična. See identity.ts for why.
+  let identity: CompanyIdentity = {
+    vat_id: lead.vat_id ?? null,
+    registration_number: (lead.custom_fields as Record<string, string>)?.registration_number ?? null,
+  };
+
   for (const provider of PROVIDERS) {
     // Rebuilt every iteration so a later provider (e.g. CompanyWall/Bizi) can
     // see identity fields an earlier provider (AJPES) already resolved in
@@ -110,6 +119,35 @@ export async function runPublicEnrichment(
       const checkedAt = new Date().toISOString();
       const resultFields = result.fields ?? {};
       let debugUrl: string | null = null;
+
+      // Identity gate: a source whose davčna/matična contradicts the already
+      // established one is describing a DIFFERENT company that merely shares
+      // the name. Drop everything it returned rather than blending two
+      // companies into one lead.
+      const claimed: CompanyIdentity = {
+        vat_id: resultFields.vat_id?.value ?? null,
+        registration_number: resultFields.registration_number?.value ?? null,
+      };
+      const conflict = identityConflict(identity, claimed);
+      if (conflict) {
+        debugEntries.push({
+          id: provider.id,
+          label: provider.label,
+          executed: true,
+          url: Object.values(resultFields)[0]?.source_url ?? null,
+          fieldsFound: [],
+          fieldsMissing: provider.possibleFields.map((field) => ({ field, reason: conflict })),
+          durationMs: Date.now() - startedAt,
+          error: null,
+          note: `${provider.label}: podatki zavrnjeni — ${conflict}`,
+          requests: result.diagnostics?.requests,
+          parserChecks: result.diagnostics?.parserChecks,
+          outcome: "skipped",
+        });
+        await logActivity(leadId, "enrichment_step", `${provider.label}: podatki zavrnjeni — ${conflict}`, userId);
+        continue;
+      }
+      identity = mergeIdentity(identity, claimed);
 
       for (const [field, candidate] of Object.entries(resultFields)) {
         if (!candidate?.value) continue;

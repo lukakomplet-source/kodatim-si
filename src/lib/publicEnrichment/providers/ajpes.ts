@@ -10,23 +10,25 @@ const TABLE_ID_LABEL = 'id="tableRezultati"';
 
 const EXTRACTION_PROMPT = `Iz podane vsebine strani AJPES (Poslovni register Slovenije, po prijavi) izlušči podatke o podjetju in odgovori
 IZKLJUČNO z veljavnim JSON objektom s ključi: "director", "owners", "founders", "authorized_representatives",
-"employees_count", "founded_date", "legal_form", "registration_number", "vat_id", "skd_code", "skd_name",
+"employees_count", "company_size", "founded_date", "legal_form", "registration_number", "vat_id", "skd_code", "skd_name",
 "company_status", "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating", "description".
 
 Pravila:
 - Uporabi SAMO podatke, ki so v vsebini dejansko izpisani — nikoli si ne izmišljuj.
 - Vsak ključ izpolni SAMO, če je dejansko naveden. Če ga ni, ključ izpusti.
+- "employees_count" je SAMO število zaposlenih. Velikostni razred ("Mikro enote",
+  "Velikost RS se ne izračunava") NI število — tak podatek daj v "company_size".
 - Vse v slovenščini.`;
 
 export const AJPES_POSSIBLE_FIELDS = [
-  "director", "owners", "founders", "authorized_representatives", "employees_count", "founded_date",
-  "legal_form", "registration_number", "vat_id", "skd_code", "skd_name", "company_status",
+  "director", "owners", "founders", "authorized_representatives", "employees_count", "company_size",
+  "founded_date", "legal_form", "registration_number", "vat_id", "skd_code", "skd_name", "company_status",
   "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating", "description",
 ];
 
 type Extracted = Partial<Record<
-  | "director" | "owners" | "founders" | "authorized_representatives" | "employees_count" | "founded_date"
-  | "legal_form" | "registration_number" | "vat_id" | "skd_code" | "skd_name" | "company_status"
+  | "director" | "owners" | "founders" | "authorized_representatives" | "employees_count" | "company_size"
+  | "founded_date" | "legal_form" | "registration_number" | "vat_id" | "skd_code" | "skd_name" | "company_status"
   | "revenue_amount" | "revenue_year" | "profit" | "ebit" | "ebitda" | "credit_rating" | "description",
   string
 >>;
@@ -34,9 +36,12 @@ type Extracted = Partial<Record<
 function toFields(extracted: Extracted, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
   for (const [key, value] of Object.entries(extracted)) {
-    if (typeof value === "string" && value.trim()) {
-      fields[key] = { value: value.trim().slice(0, 300), confidence: CONFIDENCE.AJPES_SCRAPE, source_url: sourceUrl };
-    }
+    if (typeof value !== "string" || !value.trim()) continue;
+    // The prompt asks for a number here, but a prompt is not enforcement: the
+    // model kept returning the size class ("Mikro enote"), which then beat
+    // CompanyWall's real headcount because AJPES runs first.
+    if (key === "employees_count" && !/\d/.test(value)) continue;
+    fields[key] = { value: value.trim().slice(0, 300), confidence: CONFIDENCE.AJPES_SCRAPE, source_url: sourceUrl };
   }
   return fields;
 }

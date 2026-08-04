@@ -210,6 +210,29 @@ export async function updateLead(
 
 export type CreateLeadState = ActionResult;
 
+/** Registry values that live in custom_fields — the only keys extra_fields may set. */
+const ALLOWED_EXTRA_FIELDS = new Set([
+  "registration_number", "director", "owners", "founded_date", "legal_form", "company_status",
+  "skis_code", "skis_name", "company_size", "employees_count", "profit", "ebitda",
+  "credit_rating", "official_name", "official_long_name", "postal_code", "bank_account",
+]);
+
+function parseExtraFields(raw: FormDataEntryValue | null): Record<string, string> {
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!ALLOWED_EXTRA_FIELDS.has(key)) continue;
+      if (typeof value !== "string" || !value.trim()) continue;
+      out[key] = value.trim().slice(0, 300);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 export async function createLead(
   _prevState: CreateLeadState,
   formData: FormData
@@ -243,6 +266,10 @@ export async function createLead(
   if (revenueAmount) customFields.revenue_amount = revenueAmount;
   if (skdCode) customFields.skd_code = skdCode;
   if (skdName) customFields.skd_name = skdName;
+  // Registry data that "AI dopolni vse" found but the form has no input for
+  // (lastniki, boniteta, EBITDA, status …). Carried as JSON in a hidden field
+  // and whitelisted here so it can never write arbitrary keys.
+  Object.assign(customFields, parseExtraFields(formData.get("extra_fields")));
 
   const admin = createAdminClient();
 

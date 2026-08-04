@@ -88,6 +88,9 @@ export default function ManualEntryForm() {
   const [providerNotes, setProviderNotes] = useState<{ label: string; note: string }[]>([]);
   const [showNotes, setShowNotes] = useState(false);
   const [noWebsite, setNoWebsite] = useState(false);
+  // Registry values with no visible input (lastniki, boniteta, EBITDA, status …).
+  // Submitted as JSON so they land in custom_fields instead of being discarded.
+  const [extraFields, setExtraFields] = useState<Record<string, string>>({});
 
   function toggleNoWebsite(checked: boolean) {
     setNoWebsite(checked);
@@ -189,6 +192,11 @@ export default function ManualEntryForm() {
           ref.current.value = value;
         }
       }
+      // Everything the registries returned that has no input of its own still
+      // gets saved, via the hidden extra_fields payload.
+      setExtraFields(
+        Object.fromEntries(Object.entries(fields).filter(([key]) => !(key in fieldRefs)))
+      );
       if (notesRef.current && json.description) {
         const existing = notesRef.current.value.trim();
         const aiLine = `AI opis: ${json.description}`;
@@ -206,6 +214,7 @@ export default function ManualEntryForm() {
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <input type="hidden" name="extra_fields" value={JSON.stringify(extraFields)} />
       <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent/[0.04] px-4 py-3">
         <p className="text-xs text-zinc-600">
           Vnesite ime podjetja (in po možnosti mesto), nato naj AI poišče

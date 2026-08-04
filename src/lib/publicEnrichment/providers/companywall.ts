@@ -13,21 +13,27 @@ import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequest
 // already proven for AJPES.
 
 export const COMPANYWALL_POSSIBLE_FIELDS = [
-  "director", "founded_date", "legal_form", "registration_number", "vat_id",
-  "skd_code", "skd_name", "employees_count", "phone", "email", "address_street",
-  "address_city", "description", "website", "official_name",
+  "director", "owners", "founded_date", "legal_form", "company_status",
+  "registration_number", "vat_id", "skd_code", "skd_name", "skis_code", "skis_name",
+  "company_size", "employees_count", "phone", "email", "address_street", "postal_code", "address_city",
+  "address_country", "description", "website", "official_name",
+  "revenue_amount", "revenue_year", "profit", "ebitda", "credit_rating",
 ];
 
 const BASE = "https://www.companywall.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
-const PARSER_VERSION = 2;
+const PARSER_VERSION = 5;
 
-/** Behind the CompanyWall Plus paywall — never present on the public page. */
-const COMPANYWALL_PAYWALLED = new Set([
-  "revenue_amount", "revenue_year", "profit", "ebit", "ebitda", "credit_rating",
-]);
+/**
+ * Behind the CompanyWall Plus paywall. Confirmed against a live page, the free
+ * view actually publishes the whole three-year "FINANČNI PODATKI" table
+ * (revenue, net profit, headcount, EBITDA) and the credit rating in prose —
+ * only EBIT is genuinely absent, so everything else is parsed rather than
+ * written off as unavailable.
+ */
+const COMPANYWALL_PAYWALLED = new Set(["ebit"]);
 
 function toFields(values: Record<string, string | null | undefined>, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
@@ -93,38 +99,154 @@ function extractWebsite(text: string): string | null {
   return null;
 }
 
-function parseDetailPage(text: string): Record<string, string | null> {
-  // The whole auto-generated "Opis podjetja" sentence, captured once so it
-  // can double as both the description field and the source for the
-  // individual pieces below — one match instead of three overlapping ones.
-  const descriptionMatch = text.match(
-    /([A-ZŠČŽ][^.]*?registrirana je na naslovu[^.]*?\.\.?\s*Kontaktni telefon je[^.]*?\.\s*Trenutni direktor podjetja je[^.]*?direktor\.)/
-  );
-  const description = descriptionMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null;
+/**
+ * The flattened page puts a classification label and its value on separate
+ * lines ("SKD \n \n 91.120 -\n Dejavnost arhivov \n SKIS"), so the old
+ * "first non-empty line after the label" lookup truncated the value to
+ * "91.120 -" and silently lost every activity name. These patterns span the
+ * line break and stop at the next known label instead.
+ */
+function labelledCodeAndName(
+  text: string,
+  re: RegExp
+): { code: string | null; name: string | null } {
+  const m = text.match(re);
+  if (!m) return { code: null, name: null };
+  return {
+    code: m[1]?.trim() || null,
+    name: m[2]?.replace(/\s+/g, " ").trim() || null,
+  };
+}
 
-  const addressMatch = text.match(/registrirana je na naslovu\s+([^.]+?)\s+in deluje od leta\s+(\d{1,2}\.\s?\d{1,2}\.\s?\d{4})/i);
-  const contactMatch = text.match(/Kontaktni telefon je\s+([^\s]+)\s+in email\s+([^\s.,]+@[^\s.,]+\.[^\s.,]+)/i);
+/**
+ * People are printed as a label line followed by the name on its own line
+ * ("Lastniki \n \n \n RICHTER MARTIN(50,00%)"), with the label repeated once
+ * per person. Matched case-sensitively so the lowercase "direktor" inside the
+ * prose description can never be mistaken for the label.
+ */
+function peopleAfterLabel(text: string, label: string): string | null {
+  const names = [...text.matchAll(new RegExp(`\\b${label}\\s+([^\\n]+)`, "g"))]
+    .map((m) => m[1].replace(/\s+/g, " ").trim())
+    // Guard against an empty section, where the next label lands in the capture.
+    .filter((n) => n.length > 2 && !/^(Lastnik|Direktor|Prokurist|Zastopnik|Prikaži|Več|Ustanovitelj)/.test(n));
+  if (names.length === 0) return null;
+  return [...new Set(names)].join(", ").slice(0, 300);
+}
+
+/**
+ * The public "FINANČNI PODATKI" table is a year header row followed by value
+ * rows:
+ *
+ *   2023        2024        2025
+ *   Celotni prihodki   63.292,69   53.472,52   74.950,36
+ *
+ * Values are paired with years by position and the most recent one wins. This
+ * is public data — only EBIT/EBITDA and the credit rating sit behind Plus.
+ */
+function financialRow(
+  text: string,
+  rowLabel: string,
+  stopLabel: string
+): { amount: string | null; year: string | null } {
+  const tableStart = text.indexOf("FINANČNI PODATKI");
+  if (tableStart === -1) return { amount: null, year: null };
+  const block = text.slice(tableStart);
+
+  const rowStart = block.indexOf(rowLabel);
+  if (rowStart === -1) return { amount: null, year: null };
+
+  // Only the last few years mentioned before the row belong to the header.
+  const years = [...block.slice(0, rowStart).matchAll(/\b(20\d{2})\b/g)].map((m) => m[1]).slice(-4);
+
+  const stopAt = block.indexOf(stopLabel, rowStart);
+  const rowSeg = block.slice(rowStart + rowLabel.length, stopAt === -1 ? rowStart + 400 : stopAt);
+  const values = [...rowSeg.matchAll(/(-?[\d.]+,\d{2})/g)].map((m) => m[1]);
+  if (values.length === 0) return { amount: null, year: null };
+
+  const last = values.length - 1;
+  // Years and values are column-aligned, so index from the right in both.
+  const year = years.length >= values.length ? years[years.length - values.length + last] : years[years.length - 1];
+  return { amount: values[last], year: year ?? null };
+}
+
+function parseDetailPage(text: string): Record<string, string | null> {
+  // The auto-generated "Opis podjetja" sentence. Its tail (phone, director)
+  // is missing for many sole traders, so the capture no longer requires it —
+  // demanding the full sentence used to throw away the address and the
+  // founding date of every company that had no director line.
+  const descriptionMatch = text.match(
+    /((?:Družba z omejeno odgovornostjo|Samostojni podjetnik|Delniška družba|Zavod|Društvo|Ustanova)[\s\S]{0,600}?deluje od leta\s+\d{1,2}\.\s?\d{1,2}\.\s?\d{4}[\s\S]{0,300}?)(?:\n\s*\n|$)/
+  );
+  const description = descriptionMatch?.[1]?.replace(/\s+/g, " ").replace(/\.{2,}$/, ".").trim() ?? null;
+
+  const addressMatch = text.match(
+    /registrirana je na naslovu\s+([^.]+?)\s+in deluje od leta\s+(\d{1,2}\.\s?\d{1,2}\.\s?\d{4})/i
+  );
+
+  // Phone and email are matched INDEPENDENTLY. They used to share one regex
+  // that required both ("… telefon je X in email Y"), so every company that
+  // publishes only a phone number lost the phone as well. The local part must
+  // allow dots — "arhiv.pnm@triera.net" is a real address on a live page and
+  // a dot-free pattern silently dropped every address shaped like it.
+  const phoneMatch = text.match(/Kontaktni telefon je\s+([0-9+][\d\s()/+-]{5,})/i);
+  const emailMatch = text.match(/email\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/i);
+
   const directorMatch = text.match(/Trenutni direktor podjetja je\s+([^\n.]+?)\s*-\s*direktor/i);
+  // Owners appear twice: as a labelled block and as prose. The prose form is
+  // the fallback for pages that render only the sentence.
+  const ownersProse = text.match(/Trenutni lastniki podjetja so\s+([^\n]+)/i);
+  // The status badge sits between the address block and the tax number. No \b
+  // after "DŠ" — Š is not a word character, so a trailing word boundary there
+  // can never match.
+  const statusMatch = text.match(
+    /(Aktivna|Neaktivna|V stečaju|V likvidaciji|V prisilni poravnavi|Izbrisana)\s+DŠ/i
+  );
+  const ratingMatch = text.match(/Bonitetna ocena podjetja za leto\s+(\d{4})\.?\s+je\s+([A-Z]{1,3}[+-]?)/i);
+  const legalFormMatch = text.match(
+    /(Družba z omejeno odgovornostjo|Samostojni podjetnik|Delniška družba|Zavod|Društvo|Ustanova)[\s\S]{0,160}?registrirana je na naslovu/i
+  );
 
   const address = addressMatch?.[1]?.trim() ?? null;
   // "Street N, ZIP, City, Country" — split defensively, city is usually the third comma-part.
   const addressParts = address ? address.split(",").map((p) => p.trim()) : [];
 
-  const skdRaw = firstNonEmptyLineAfter(text, "SKD");
-  const skdMatch = skdRaw?.match(/^([\d.]+)\s*-?\s*(.*)$/);
+  const skd = labelledCodeAndName(text, /SKD\s+([\d.]+)\s*-\s*([\s\S]{0,160}?)\s+SKIS/i);
+  const skis = labelledCodeAndName(text, /SKIS\s+([A-Za-z0-9.]+)\s*-\s*([\s\S]{0,160}?)\s+Velikost podjetja/i);
+  const revenue = financialRow(text, "Celotni prihodki", "Celotni odhodki");
+  const profit = financialRow(text, "Čisti poslovni izid leta", "Kapital");
+  const ebitda = financialRow(text, "EBITDA", "vir:");
+  // "Velikost podjetja" is a size CLASS ("Mikro enote"), not a headcount — the
+  // real number is a row of the financial table, which the old parser missed.
+  const headcount = financialRow(text, "Število zaposlenih", "Povprečna plača");
 
   return {
-    director: directorMatch?.[1]?.trim() ?? firstNonEmptyLineAfter(text, "Direktor"),
+    director: directorMatch?.[1]?.trim() ?? peopleAfterLabel(text, "Direktor"),
+    owners: peopleAfterLabel(text, "Lastniki") ?? ownersProse?.[1]?.trim() ?? null,
     founded_date: addressMatch?.[2]?.trim() ?? firstNonEmptyLineAfter(text, "Datum vpisa v register"),
-    phone: contactMatch?.[1]?.trim() ?? null,
-    email: contactMatch?.[2]?.trim() ?? null,
+    legal_form: legalFormMatch?.[1]?.trim() ?? null,
+    company_status: statusMatch?.[1]?.trim() ?? null,
+    phone: phoneMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null,
+    email: emailMatch?.[1]?.trim() ?? null,
     address_street: addressParts[0] ?? null,
+    // "Trg Leona Štuklja 5, 2000, Maribor, Slovenija" — the second part is the
+    // postal code. It is NOT a region: putting it in address_region produced a
+    // field reading "2000" under the label "Regija".
+    postal_code: addressParts[1]?.match(/^\d{4}$/) ? addressParts[1] : null,
     address_city: addressParts[2] ?? null,
+    address_country: addressParts[3] ?? null,
     vat_id: firstNonEmptyLineAfter(text, "DŠ"),
     registration_number: firstNonEmptyLineAfter(text, "MŠ"),
-    skd_code: skdMatch?.[1] ?? null,
-    skd_name: skdMatch?.[2]?.trim() || null,
-    employees_count: firstNonEmptyLineAfter(text, "Velikost podjetja"),
+    skd_code: skd.code,
+    skd_name: skd.name,
+    skis_code: skis.code,
+    skis_name: skis.name,
+    company_size: firstNonEmptyLineAfter(text, "Velikost podjetja"),
+    employees_count: headcount.amount?.replace(/,00$/, "") ?? null,
+    revenue_amount: revenue.amount,
+    revenue_year: revenue.year,
+    profit: profit.amount,
+    ebitda: ebitda.amount,
+    credit_rating: ratingMatch ? `${ratingMatch[2]} (${ratingMatch[1]})` : null,
     description,
     website: extractWebsite(text),
   };
@@ -167,29 +289,44 @@ export const companyWallProvider: PublicEnrichmentProvider = {
       };
     }
 
-    const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(lead.company_name)}`;
-    let searchHtml: string;
-    try {
-      const res = await providerFetch("companywall", searchUrl, { headers: HEADERS });
-      requests.push({ url: searchUrl, status: res.status, ok: res.ok });
-      if (!res.ok) throw new Error(`CompanyWall iskanje napaka (${res.status})`);
-      searchHtml = await res.text();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "neznana napaka";
-      const note = `CompanyWall: napaka pri iskanju — ${message}`;
-      if (requests.length === 0) requests.push({ url: searchUrl, status: null, ok: false, note: message });
-      // The site itself misbehaved (HTTP error / rate limit) — a real failure,
-      // unlike "company simply isn't listed here" below.
-      return {
-        note,
-        skippedReason: note,
-        failed: true,
-        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`iskanje ni uspelo: ${message}`) },
-      };
-    }
+    // The lead's own name first; if that is too vague to resolve ("ARS"), the
+    // official name AJPES already established is tried as a second query
+    // rather than giving up. The extra request only happens on a miss.
+    const officialName = (lead.custom_fields as Record<string, string> | null)?.official_name;
+    const searchTerms = [lead.company_name, officialName].filter(
+      (term, i, all): term is string => Boolean(term?.trim()) && all.indexOf(term) === i
+    );
 
-    const rowCount = [...searchHtml.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">/gi)].length;
-    const match = pickSearchResult(searchHtml, lead.company_name);
+    let searchHtml = "";
+    let rowCount = 0;
+    let match: SearchResult = null;
+    for (const term of searchTerms) {
+      const searchUrl = `${BASE}/iskanje?q=${encodeURIComponent(term)}`;
+      try {
+        const res = await providerFetch("companywall", searchUrl, { headers: HEADERS });
+        requests.push({ url: searchUrl, status: res.status, ok: res.ok });
+        if (!res.ok) throw new Error(`CompanyWall iskanje napaka (${res.status})`);
+        searchHtml = await res.text();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "neznana napaka";
+        const note = `CompanyWall: napaka pri iskanju — ${message}`;
+        if (!requests.some((r) => r.url === searchUrl)) {
+          requests.push({ url: searchUrl, status: null, ok: false, note: message });
+        }
+        // The site itself misbehaved (HTTP error / rate limit) — a real failure,
+        // unlike "company simply isn't listed here" below.
+        return {
+          note,
+          skippedReason: note,
+          failed: true,
+          diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(`iskanje ni uspelo: ${message}`) },
+        };
+      }
+
+      rowCount = [...searchHtml.matchAll(/<h3[^>]*>[\s\S]*?<a href="(\/podjetje\/[^"]+)">/gi)].length;
+      match = pickSearchResult(searchHtml, term);
+      if (match) break;
+    }
     parserChecks.push({
       element: "zadetki iskanja (<h3><a href=/podjetje/…>)",
       found: rowCount > 0,

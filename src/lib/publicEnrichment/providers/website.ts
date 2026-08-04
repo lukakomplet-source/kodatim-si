@@ -17,6 +17,9 @@ s ključi: "industry", "email", "phone", "address_street", "address_city", "addr
 
 Pravila:
 - Vsak ključ izpolni SAMO, če je podatek dejansko naveden na strani. Če ga ni, ključ izpusti — ne izmišljuj.
+- "address_region" je IME statistične regije ali pokrajine (npr. "Podravska", "Osrednjeslovenska").
+  Poštna številka (npr. "2000") NI regija — v tem primeru ključ izpusti.
+- "employees_count" je SAMO število zaposlenih. Velikostni razred ("Mikro enote") ni število — izpusti ga.
 - Vse v slovenščini.`;
 
 type Extracted = Partial<Record<
@@ -45,10 +48,24 @@ function toUrl(website: string): string {
   return website.startsWith("http") ? website : `https://${website}`;
 }
 
+/**
+ * Shape checks the prompt cannot enforce on its own. Confirmed live: the model
+ * returned the postal code "2000" as address_region, which then outranked every
+ * later source because the first value wins. A value of the wrong KIND is worse
+ * than an empty field, so these are dropped rather than merged.
+ */
+function isWrongShape(key: string, value: string): boolean {
+  // A region is a name ("Podravska"), never a postal code.
+  if (key === "address_region" && /^\d+$/.test(value.trim())) return true;
+  // A headcount is a number, not a size class ("Mikro enote").
+  if (key === "employees_count" && !/\d/.test(value)) return true;
+  return false;
+}
+
 function toFields(extracted: Extracted, confidence: number, sourceUrl: string): Record<string, FieldCandidate> {
   const fields: Record<string, FieldCandidate> = {};
   for (const [key, value] of Object.entries(extracted)) {
-    if (typeof value === "string" && value.trim()) {
+    if (typeof value === "string" && value.trim() && !isWrongShape(key, value)) {
       fields[key] = { value: value.trim().slice(0, 300), confidence, source_url: sourceUrl };
     }
   }

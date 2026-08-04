@@ -16,13 +16,21 @@ import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequest
 export const BIZI_POSSIBLE_FIELDS = [
   "registration_number", "vat_id", "founded_date", "skis_code", "skis_name",
   "industry", "address_street", "address_city", "phone", "email",
+  "official_long_name", "bank_account",
 ];
+
+/**
+ * Everything below this line on a Bizi page is subscriber-only, so an empty
+ * value there is expected rather than a parser failure and is reported as
+ * such. Confirmed live: "Ta funkcionalnost je na voljo le naročnikom."
+ */
+const BIZI_SUBSCRIBER_ONLY = new Set(["owners", "director", "credit_rating", "revenue_amount", "profit"]);
 
 const BASE = "https://www.bizi.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
-const PARSER_VERSION = 3;
+const PARSER_VERSION = 5;
 
 const DIACRITICS: Record<string, string> = {
   č: "c", ć: "c", š: "s", ž: "z", đ: "dj",
@@ -67,9 +75,27 @@ function extractContactBlock(text: string): { address: string | null; phone: str
   return out;
 }
 
+/**
+ * Bizi's page title carries the full REGISTERED name — "ARHIV PNM, podjetje za
+ * arhiviranje, trgovino in druge storitve, d.o.o." — while every other source
+ * only has the short form ("ARHIV PNM d.o.o."). In Slovenia the long name
+ * spells out what the company actually does, which makes it the single most
+ * useful line for skimming a lead, so it is captured on its own.
+ */
+function extractLongName(text: string): string | null {
+  const firstLine = text.split("\n").find((l) => l.trim().length > 0)?.trim();
+  if (!firstLine) return null;
+  const name = firstLine.replace(/\s*[-–]\s*Bizi\s*$/i, "").trim();
+  return name.length > 3 ? name : null;
+}
+
 function parseDetailPage(text: string): Record<string, string | null> {
   const contact = extractContactBlock(text);
   const addressParts = contact.address ? contact.address.split(",").map((p) => p.trim()) : [];
+  // "Odprtih: 1 \n SI56 0451 5000 2043 037 \n (odprt 12. 06. 2012, OTP banka d.d.)"
+  // A Slovenian IBAN is SI56 + 15 digits, i.e. three groups of four and a final
+  // group of THREE — requiring a fourth group of four never matched.
+  const bankMatch = text.match(/\b(SI56(?:\s?\d{4}){3}\s?\d{3})\b/);
 
   const vatDigits = firstNonEmptyLineAfter(text, "Davčna številka SI");
   // Bizi publishes SKIS — the institutional-sector code (e.g. "S.11002 —
@@ -93,6 +119,8 @@ function parseDetailPage(text: string): Record<string, string | null> {
     address_city: addressParts[addressParts.length - 1]?.replace(/^\d{4}\s*/, "") ?? null,
     phone: contact.phone,
     email: contact.email,
+    official_long_name: extractLongName(text),
+    bank_account: bankMatch?.[1]?.replace(/\s+/g, " ").trim() ?? null,
   };
 }
 
@@ -204,9 +232,11 @@ export const biziProvider: PublicEnrichmentProvider = {
       const fieldReasons: Record<string, string> = {};
       for (const f of BIZI_POSSIBLE_FIELDS) {
         if (fields[f]) continue;
-        fieldReasons[f] = parsed[f] === null || parsed[f] === undefined
-          ? "podatka ni na javni strani Bizi.si"
-          : "vrednost zavrnjena pri preverjanju (ni se ujemala z besedilom strani)";
+        fieldReasons[f] = BIZI_SUBSCRIBER_ONLY.has(f)
+          ? "na Bizi.si samo za naročnike — pridobljeno iz AJPES/CompanyWall"
+          : parsed[f] === null || parsed[f] === undefined
+            ? "podatka ni na javni strani Bizi.si"
+            : "vrednost zavrnjena pri preverjanju (ni se ujemala z besedilom strani)";
       }
 
       return {
