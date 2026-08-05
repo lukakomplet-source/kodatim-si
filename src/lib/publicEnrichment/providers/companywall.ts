@@ -316,11 +316,19 @@ export const companyWallProvider: PublicEnrichmentProvider = {
       };
     }
 
-    // The lead's own name first; if that is too vague to resolve ("ARS"), the
-    // official name AJPES already established is tried as a second query
-    // rather than giving up. The extra request only happens on a miss.
-    const officialName = (lead.custom_fields as Record<string, string> | null)?.official_name;
-    const searchTerms = [lead.company_name, officialName].filter(
+    // CompanyWall's search box takes "ime podjetja, DŠ ali MŠ", and a number
+    // returns exactly one row — the right company — where a name returns
+    // twenty fuzzy neighbours ("2-MB d.o.o." gives MB - NAKLO, A-MB, AS - MB).
+    // So the numbers go first whenever an earlier registry established them.
+    // (An earlier probe with a made-up tax number returned nothing, which led
+    // to the wrong conclusion that numeric search was unsupported.)
+    const custom = (lead.custom_fields as Record<string, string> | null) ?? {};
+    const searchTerms = [
+      knownVatDigits(lead) || null,
+      custom.registration_number?.replace(/\D/g, "") || null,
+      lead.company_name,
+      custom.official_name,
+    ].filter(
       (term, i, all): term is string => Boolean(term?.trim()) && all.indexOf(term) === i
     );
 

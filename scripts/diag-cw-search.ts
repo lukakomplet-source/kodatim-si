@@ -10,7 +10,7 @@ for (const line of c.split("\n")) { const t = line.trim(); if (!t || t.startsWit
 async function main() {
   const { providerFetch } = await import("@/lib/publicEnrichment/httpClient");
   const { stripHtmlToText } = await import("@/lib/publicEnrichment/htmlText");
-  for (const q of ["66896184", "AKTRA proizvodnja, trgovina in storitve, d.o.o.", "AKTRA d.o.o."]) {
+  for (const q of ["29685567", "SI29685567", "9950796000", "2-MB d.o.o."]) {
     const url = `https://www.companywall.si/iskanje?q=${encodeURIComponent(q)}`;
     const res = await providerFetch("companywall", url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" } });
     const html = await res.text();

@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
             registration_number: str("registrationNumber") ?? null,
           },
           ajpesDetailUrl: str("ajpesDetailUrl") ?? null,
+          officialName: str("officialName") ?? null,
           onProgress: (event) => send({ progress: event }),
         });
         send({ result });

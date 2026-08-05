@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
                 registration_number: company.registrationNumber,
               },
               ajpesDetailUrl: company.ajpesDetailUrl,
+              officialName: company.name,
               onProgress: (event) => send({ progress: { ...event, index: company.index, company: company.name } }),
             });
             send({ row: { index: company.index, result, ms: Date.now() - companyStartedAt } });

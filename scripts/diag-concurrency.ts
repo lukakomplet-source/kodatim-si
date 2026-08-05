@@ -51,6 +51,7 @@ async function main() {
         const result = await quickComplete(row.shortName || row.name, row.city ?? undefined, {
           known: { vat_id: row.vatId, registration_number: row.registrationNumber },
           ajpesDetailUrl: row.detailUrl,
+          officialName: row.name,
         });
         return { row, result, ms: Date.now() - t0, crash: null as string | null };
       } catch (err) {

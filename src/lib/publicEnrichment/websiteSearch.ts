@@ -124,15 +124,30 @@ const SEARCH_DEADLINE_MS = 12_000;
 
 export async function searchForWebsite(
   companyName: string,
-  opts: { city?: string | null; vatId?: string | null; skipHosts?: string[] } = {}
+  opts: {
+    city?: string | null;
+    vatId?: string | null;
+    skipHosts?: string[];
+    /** Registered long name, used when the short one has nothing to search on. */
+    fallbackName?: string | null;
+  } = {}
 ): Promise<WebsiteSearchResult> {
   const deadline = Date.now() + SEARCH_DEADLINE_MS;
-  const tokens = identifyingTokens(companyName);
+
+  // "2-MB d.o.o." reduces to "2" and "mb" — both too short to identify
+  // anything, so the search used to stop here. The registered long name
+  // ("2-MB, storitvene dejavnosti v kopenskem prometu, d.o.o.") has real words.
+  let searchName = companyName;
+  let tokens = identifyingTokens(searchName);
+  if (tokens.length === 0 && opts.fallbackName) {
+    searchName = opts.fallbackName;
+    tokens = identifyingTokens(searchName);
+  }
   if (tokens.length === 0) {
     return { website: null, note: "iz imena podjetja ni bilo mogoče sestaviti iskalnega niza" };
   }
 
-  const query = [companyName, opts.city].filter(Boolean).join(" ");
+  const query = [searchName, opts.city].filter(Boolean).join(" ");
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
   let html: string;

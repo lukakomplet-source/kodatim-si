@@ -275,6 +275,12 @@ export type QuickCompleteOptions = {
   known?: CompanyIdentity;
   /** The AJPES company page, when the caller already resolved it — saves a search. */
   ajpesDetailUrl?: string | null;
+  /**
+   * The full registered name, when the caller searched by the short one.
+   * "2-MB d.o.o." carries no searchable words; "2-MB, storitvene dejavnosti v
+   * kopenskem prometu, d.o.o." does.
+   */
+  officialName?: string | null;
   /** Called as each step starts and finishes, so the UI can show live progress. */
   onProgress?: (event: ScrapeProgress) => void;
 };
@@ -284,7 +290,7 @@ export async function quickComplete(
   city?: string,
   options: QuickCompleteOptions = {}
 ): Promise<QuickCompleteResult> {
-  const { known, ajpesDetailUrl, onProgress } = options;
+  const { known, ajpesDetailUrl, officialName, onProgress } = options;
   const report = (label: string, note: string, state: ScrapeProgress["state"] = "info", ms?: number) =>
     onProgress?.({ label, note, state, ms });
 
@@ -297,10 +303,23 @@ export async function quickComplete(
 
   // Mutable working lead so each provider sees what the previous one resolved
   // (CompanyWall's official name is what lets Bizi build the right URL).
+  // Identity the caller already has goes into custom_fields, not just into the
+  // output: that is where the providers read it from. Without this, CompanyWall
+  // reported "davčna ni bila znana" and gave up on companies it could have
+  // verified by tax number — while the number sat right there in the AJPES
+  // search row that started the scrape.
   const working: Record<string, unknown> = {
     company_name: companyName,
     address_city: city || null,
-    custom_fields: (ajpesDetailUrl ? { ajpes_detail_url: ajpesDetailUrl } : {}) as Record<string, string>,
+    custom_fields: {
+      ...(ajpesDetailUrl ? { ajpes_detail_url: ajpesDetailUrl } : {}),
+      ...(known?.vat_id ? { vat_id: known.vat_id } : {}),
+      ...(known?.registration_number ? { registration_number: known.registration_number } : {}),
+      // The full registered name is a far better second search term than the
+      // short one ("2-MB d.o.o." vs "2-MB, storitvene dejavnosti v kopenskem
+      // prometu, d.o.o.") for both CompanyWall and website search.
+      ...(officialName ? { official_name: officialName } : {}),
+    } as Record<string, string>,
   };
 
   // Company names repeat in Slovenia, so a later source is only trusted once
@@ -447,6 +466,9 @@ export async function quickComplete(
       city,
       vatId: fields.vat_id,
       skipHosts: triedHosts,
+      // A short name can be all punctuation and initials; the registered long
+      // name is what actually has words to search with.
+      fallbackName: fields.official_long_name || officialName || null,
     });
     website = found.website;
     websiteNote = found.note;
