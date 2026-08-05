@@ -62,6 +62,12 @@ export default async function PromocijePage() {
         </div>
         <div className="flex gap-3">
           <Link
+            href="/admin/promocije/tematska"
+            className="rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+          >
+            Tematska kampanja
+          </Link>
+          <Link
             href="/admin/promocije/new"
             className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700"
           >

@@ -11,6 +11,7 @@ import {
   Radar,
   Target,
   DatabaseZap,
+  GraduationCap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -53,6 +54,12 @@ const NAV_ITEMS: {
     href: "/admin/promocije",
     label: "Promocije",
     icon: <Target className={ICON_CLASS} />,
+    permission: "promotion.view",
+  },
+  {
+    href: "/admin/prodajni-coach",
+    label: "Prodajni coach",
+    icon: <GraduationCap className={ICON_CLASS} />,
     permission: "promotion.view",
   },
   {
