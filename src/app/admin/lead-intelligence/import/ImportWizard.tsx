@@ -21,6 +21,33 @@ function sourceFromFilename(name: string): "csv" | "xlsx" | "xls" {
   return "xlsx";
 }
 
+/**
+ * Reads a CSV or Excel file into a workbook, decoding text files ourselves.
+ *
+ * Handing raw bytes to SheetJS is right for .xlsx/.xls — they are containers
+ * that carry their own encoding — but for a plain CSV it falls back to
+ * codepage 1252, so a UTF-8 file (which is what this app exports) came out as
+ * "PrevozniÅ¡tvo" instead of "Prevozništvo" and those names went into the
+ * database that way.
+ *
+ * So text files are decoded here: UTF-8 first, and if that produces the
+ * replacement character the file was really Windows-1250 — what Excel writes
+ * when a Slovenian Windows saves a plain .csv — so decode it again as that.
+ */
+async function readWorkbook(file: File, XLSX: typeof import("xlsx")) {
+  if (sourceFromFilename(file.name) !== "csv") {
+    return XLSX.read(await file.arrayBuffer(), { type: "array" });
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let text = new TextDecoder("utf-8").decode(bytes);
+  if (text.includes("�")) {
+    text = new TextDecoder("windows-1250").decode(bytes);
+  }
+  // A leading BOM would otherwise become part of the first column heading.
+  return XLSX.read(text.replace(/^﻿/, ""), { type: "string" });
+}
+
 export default function ImportWizard() {
   const [step, setStep] = useState<Step>("upload");
   const [filename, setFilename] = useState("");
@@ -37,8 +64,7 @@ export default function ImportWizard() {
     setParseError(null);
     try {
       const XLSX = await import("xlsx");
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = await readWorkbook(file, XLSX);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows: string[][] = XLSX.utils.sheet_to_json(sheet, {
         header: 1,
