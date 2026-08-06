@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Play, Square, Download, Upload, AlertTriangle, CheckCircle2, Loader2, Terminal } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
+import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
 
 /**
  * "Lead skrejp" — bulk discovery + enrichment with a spreadsheet at the end.
@@ -55,6 +56,19 @@ type LogEntry = {
   note: string;
   state: "start" | "done" | "info" | "error";
   ms?: number;
+};
+
+/** Everything worth surviving a closed tab. */
+type SkrejpSession = {
+  activity: string;
+  name: string;
+  postalCode: string;
+  town: string;
+  status: string;
+  speed: SpeedKey;
+  rows: Row[];
+  selected: number[];
+  log: LogEntry[];
 };
 
 /**
@@ -187,6 +201,37 @@ export default function LeadScrapeClient() {
   // Live log: what the scrape is doing right now, newest last.
   const [log, setLog] = useState<LogEntry[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The whole screen, kept on the server so closing the tab — or switching
+   * from a phone to a desk — does not throw the work away. Only "Počisti"
+   * removes it.
+   */
+  const { restored, loaded: sessionLoaded } = useRestoreOnce<SkrejpSession>("lead-skrejp", (saved) => {
+    setActivity(saved.activity ?? "");
+    setName(saved.name ?? "");
+    setPostalCode(saved.postalCode ?? "");
+    setTown(saved.town ?? "");
+    setStatus(saved.status ?? "1");
+    if (saved.speed && saved.speed in SPEEDS) setSpeed(saved.speed);
+    // A row left mid-flight when the tab closed is waiting again, not running.
+    setRows((saved.rows ?? []).map((r) => (r.status === "running" ? { ...r, status: "waiting" as const } : r)));
+    setSelected(new Set(saved.selected ?? []));
+    setLog(saved.log ?? []);
+  });
+
+  const session: SkrejpSession = {
+    activity,
+    name,
+    postalCode,
+    town,
+    status,
+    speed,
+    rows,
+    selected: [...selected],
+    log: log.slice(-120),
+  };
+  useAutoSave("lead-skrejp", session, sessionLoaded);
 
   function addLog(company: string, note: string, state: LogEntry["state"], ms?: number) {
     setLog((prev) => {
@@ -456,9 +501,14 @@ export default function LeadScrapeClient() {
     URL.revokeObjectURL(url);
   }
 
-  async function importSelected() {
+  /**
+   * @param includeUnscraped Also import rows the browser never got to, and
+   * queue them for the background worker. They arrive with what AJPES already
+   * gave (name, address, davčna, matična) and are finished with the tab shut.
+   */
+  async function importSelected(includeUnscraped = false) {
     const payload: ScrapedLeadInput[] = rows
-      .filter((r, i) => selected.has(i) && r.status === "done")
+      .filter((r, i) => selected.has(i) && (r.status === "done" || includeUnscraped))
       .map((r) => {
         const f = r.result?.fields ?? {};
         const custom: Record<string, string> = {};
@@ -488,13 +538,15 @@ export default function LeadScrapeClient() {
       });
 
     if (payload.length === 0) {
-      setImportMessage("Izberite vsaj eno vrstico, ki je že skrejpana.");
+      setImportMessage(
+        includeUnscraped ? "Izberite vsaj eno vrstico." : "Izberite vsaj eno vrstico, ki je že skrejpana."
+      );
       return;
     }
 
     setImporting(true);
     setImportMessage(null);
-    const result = await importScrapedLeads(payload);
+    const result = await importScrapedLeads(payload, includeUnscraped);
     setImporting(false);
 
     if (result.error) {
@@ -503,6 +555,7 @@ export default function LeadScrapeClient() {
     }
     setImportMessage(
       `Uvoženih ${result.inserted} leadov.` +
+        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "") +
         (result.skipped ? ` Preskočenih ${result.skipped} (že v bazi): ${result.skippedNames?.slice(0, 5).join(", ")}${(result.skippedNames?.length ?? 0) > 5 ? " …" : ""}` : "")
     );
   }
@@ -513,6 +566,29 @@ export default function LeadScrapeClient() {
 
   return (
     <div className="mt-6 space-y-5">
+      {restored && rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3">
+          <p className="text-sm text-emerald-800">
+            Nadaljujete tam, kjer ste ostali — {rows.length} podjetij, {doneCount} končanih. Delo se
+            samodejno shranjuje in se ne izgubi, ko zaprete stran.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm("Počistiti shranjeno delo? Tega ni mogoče razveljaviti.")) return;
+              void clearSavedState("lead-skrejp");
+              setRows([]);
+              setSelected(new Set());
+              setLog([]);
+              setSearchNote(null);
+            }}
+            className="rounded-full border border-emerald-300 bg-white px-4 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+          >
+            Počisti
+          </button>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <p className="text-sm font-semibold text-zinc-900">1. Kaj naj skrejpa</p>
         <p className="mt-1 text-xs text-zinc-500">
@@ -663,12 +739,22 @@ export default function LeadScrapeClient() {
             </button>
             <button
               type="button"
-              onClick={importSelected}
+              onClick={() => importSelected(false)}
               disabled={importing || doneCount === 0}
               className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
             >
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               Uvozi v Lead Intelligence
+            </button>
+            <button
+              type="button"
+              onClick={() => importSelected(true)}
+              disabled={importing || selected.size === 0}
+              title="Uvozi tudi še neskrejpana podjetja in jih daj v vrsto, da jih dokonča delovni proces v ozadju"
+              className="flex items-center gap-2 rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              <Upload className="h-4 w-4" />
+              Uvozi vse in dokončaj v ozadju
             </button>
           </div>
           {importMessage && <p className="mt-2 text-xs text-emerald-600">{importMessage}</p>}

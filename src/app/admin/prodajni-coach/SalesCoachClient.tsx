@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Plus, Trash2, MessageSquare, BookOpen, Save } from "lucide-react";
 import { saveKnowledge, deleteKnowledge, saveCoachStyle, type KnowledgeResult } from "./actions";
 import { KNOWLEDGE_KIND_LABELS, KNOWLEDGE_KINDS, type KnowledgeEntry } from "@/lib/salesCoachTypes";
+import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
 
 /**
  * Two halves of the same idea: on the left the material you decide is true
@@ -37,6 +38,10 @@ export default function SalesCoachClient({
     { role: "user" | "assistant"; text: string; used?: string[]; outOfScope?: boolean }[]
   >([]);
   const [chatBusy, setChatBusy] = useState(false);
+
+  // The conversation is the work here — it should still be there tomorrow.
+  const { loaded: chatLoaded } = useRestoreOnce<typeof chat>("prodajni-coach", (saved) => setChat(saved));
+  useAutoSave("prodajni-coach", chat, chatLoaded);
 
   if (state.success && showForm) {
     // The action revalidated the page; close the form and pick up fresh data.

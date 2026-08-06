@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
+import LastPathTracker from "@/components/dashboard/LastPathTracker";
 import { getCurrentUserPermissions, hasPermission } from "@/lib/permissions/require-permission";
 import type { PermissionKey } from "@/lib/permissions/registry";
 
@@ -135,6 +136,7 @@ export default async function AdminLayout({
       navItems={visibleNavItems}
       userEmail={user.email ?? ""}
     >
+      <LastPathTracker />
       {children}
     </DashboardShell>
   );

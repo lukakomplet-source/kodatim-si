@@ -1,5 +1,6 @@
 import { Inbox, Percent, Users } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import ResumeCard from "@/components/dashboard/ResumeCard";
 
 export default async function AdminOverviewPage() {
   const supabase = createAdminClient();
@@ -35,6 +36,8 @@ export default async function AdminOverviewPage() {
       <p className="mt-2 text-base text-zinc-500">
         Hiter povzetek leadov, partnerjev in provizij.
       </p>
+
+      <ResumeCard />
 
       <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
         {stats.map((stat) => (

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
+import { enqueueLeads } from "@/lib/enrichment/queue";
 
 /**
  * Moves finished Lead skrejp rows into Lead Intelligence.
@@ -32,6 +33,8 @@ export type ImportScrapedResult = {
   inserted?: number;
   skipped?: number;
   skippedNames?: string[];
+  /** How many were queued for the background worker to finish. */
+  queued?: number;
 };
 
 function clean(value: string | null | undefined): string | null {
@@ -39,7 +42,16 @@ function clean(value: string | null | undefined): string | null {
   return trimmed ? trimmed.slice(0, 300) : null;
 }
 
-export async function importScrapedLeads(rows: ScrapedLeadInput[]): Promise<ImportScrapedResult> {
+/**
+ * @param enqueue Queue the imported leads for the background worker. Use this
+ * for rows the browser never finished scraping: they land in the database with
+ * whatever AJPES already gave (name, address, davčna, matična) and
+ * `npm run worker` fills the rest, with the tab closed.
+ */
+export async function importScrapedLeads(
+  rows: ScrapedLeadInput[],
+  enqueue = false
+): Promise<ImportScrapedResult> {
   try {
     await requireAdmin();
   } catch (err) {
@@ -111,7 +123,12 @@ export async function importScrapedLeads(rows: ScrapedLeadInput[]): Promise<Impo
     return { error: `Uvoz ni uspel: ${error.message}` };
   }
 
+  let queued = 0;
+  if (enqueue && data?.length) {
+    queued = await enqueueLeads(admin, data.map((r) => r.id as string));
+  }
+
   revalidatePath("/admin/lead-intelligence");
   revalidatePath("/admin/lead-intelligence/leads");
-  return { inserted: data?.length ?? 0, skipped: skippedNames.length, skippedNames };
+  return { inserted: data?.length ?? 0, skipped: skippedNames.length, skippedNames, queued };
 }

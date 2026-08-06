@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare } from "lucide-react";
 import { createThemedCampaign } from "./actions";
+import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
 
 /**
  * Themed campaign wizard: a goal in plain Slovenian becomes a search profile,
@@ -38,6 +39,20 @@ type Candidate = {
 
 type Email = { leadId: string; subject: string; body: string; angle: string };
 
+/** Everything worth surviving a closed tab. */
+type WizardSession = {
+  theme: string;
+  senderContext: string;
+  profile: Profile | null;
+  candidates: Candidate[] | null;
+  candidateNote: string | null;
+  selected: string[];
+  template: { subject: string; body: string } | null;
+  emails: Email[];
+  campaignName: string;
+  chat: { role: "user" | "assistant"; text: string; used?: string[] }[];
+};
+
 const CARD = "rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm";
 const INPUT =
   "mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/50 focus:outline-none";
@@ -62,6 +77,41 @@ export default function ThemedCampaignClient() {
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "assistant"; text: string; used?: string[] }[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
+
+  /**
+   * The wizard can take several minutes and several AI steps; losing it to a
+   * closed tab would mean paying for all of it again. Kept per user on the
+   * server, so a phone and a desk share the same half-finished campaign.
+   */
+  const { loaded: sessionLoaded } = useRestoreOnce<WizardSession>("tematska-kampanja", (saved) => {
+    setTheme(saved.theme ?? "");
+    setSenderContext(saved.senderContext ?? "");
+    setProfile(saved.profile ?? null);
+    setCandidates(saved.candidates ?? null);
+    setCandidateNote(saved.candidateNote ?? null);
+    setSelected(new Set(saved.selected ?? []));
+    setTemplate(saved.template ?? null);
+    setEmails(saved.emails ?? []);
+    setCampaignName(saved.campaignName ?? "");
+    setChat(saved.chat ?? []);
+  });
+
+  useAutoSave(
+    "tematska-kampanja",
+    {
+      theme,
+      senderContext,
+      profile,
+      candidates,
+      candidateNote,
+      selected: [...selected],
+      template,
+      emails,
+      campaignName,
+      chat,
+    } satisfies WizardSession,
+    sessionLoaded
+  );
 
   async function call(step: "profile" | "targets" | "emails", extra: Record<string, unknown> = {}) {
     setBusy(step);
