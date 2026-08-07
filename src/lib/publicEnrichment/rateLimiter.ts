@@ -82,11 +82,14 @@ type State = {
   totals: { success: number; rateLimited: number; blocked: number; timeout: number; error: number };
 };
 
-const states = new Map<ProviderId, State>();
+/** Keyed by bucket, which is the provider except for per-host website buckets. */
+const states = new Map<string, State>();
 
-function stateFor(provider: ProviderId): State {
-  let s = states.get(provider);
+function stateFor(bucket: string, provider: ProviderId = bucket as ProviderId): State {
+  let s = states.get(bucket);
   if (!s) {
+    // Settings always come from the provider — a per-host bucket inherits the
+    // website provider's pace rather than inventing its own.
     const config = configFor(provider);
     s = {
       config,
@@ -96,7 +99,7 @@ function stateFor(provider: ProviderId): State {
       lastRequestAt: 0,
       totals: { success: 0, rateLimited: 0, blocked: 0, timeout: 0, error: 0 },
     };
-    states.set(provider, s);
+    states.set(bucket, s);
   }
   return s;
 }
@@ -111,8 +114,24 @@ function sleep(ms: number): Promise<void> {
  * a single shared interval — the whole point, since the provider rate-limits
  * by IP, not by worker.
  */
-export async function acquireSlot(provider: ProviderId): Promise<void> {
-  const s = stateFor(provider);
+/**
+ * A rate limit protects one server. "website" is not a server — it is every
+ * company's own site — so throttling them as one queue serialised whole
+ * batches: five companies looked up in parallel spent their time waiting on
+ * each other's unrelated hosts. Splitting the bucket by host keeps the
+ * protection where it belongs and lets independent sites proceed at once.
+ */
+function bucketFor(provider: ProviderId, url?: string): string {
+  if (provider !== "website" || !url) return provider;
+  try {
+    return `website:${new URL(url).hostname}`;
+  } catch {
+    return provider;
+  }
+}
+
+export async function acquireSlot(provider: ProviderId, url?: string): Promise<void> {
+  const s = stateFor(bucketFor(provider, url), provider);
   const mine = s.queueTail.then(async () => {
     const waitMs = Math.max(0, s.lastRequestAt + s.intervalMs - Date.now());
     if (waitMs > 0) await sleep(waitMs);
@@ -128,8 +147,13 @@ export async function acquireSlot(provider: ProviderId): Promise<void> {
  * Retry-After header) takes precedence over the computed backoff when larger —
  * the server's own instruction is better information than our guess.
  */
-export function recordOutcome(provider: ProviderId, outcome: RequestOutcome, retryAfterMs?: number): void {
-  const s = stateFor(provider);
+export function recordOutcome(
+  provider: ProviderId,
+  outcome: RequestOutcome,
+  retryAfterMs?: number,
+  url?: string
+): void {
+  const s = stateFor(bucketFor(provider, url), provider);
   const { config } = s;
 
   if (outcome === "success") {
@@ -165,7 +189,8 @@ export function recordOutcome(provider: ProviderId, outcome: RequestOutcome, ret
 }
 
 export type ProviderRateStats = {
-  provider: ProviderId;
+  /** Provider, or "website:<host>" for a per-host bucket. */
+  provider: string;
   intervalMs: number;
   successStreak: number;
   totals: State["totals"];
@@ -173,8 +198,8 @@ export type ProviderRateStats = {
 
 /** Snapshot for the worker's periodic progress log. */
 export function rateStats(): ProviderRateStats[] {
-  return [...states.entries()].map(([provider, s]) => ({
-    provider,
+  return [...states.entries()].map(([bucket, s]) => ({
+    provider: bucket,
     intervalMs: s.intervalMs,
     successStreak: s.successStreak,
     totals: { ...s.totals },

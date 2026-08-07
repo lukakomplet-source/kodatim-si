@@ -57,7 +57,7 @@ export async function providerFetch(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    await acquireSlot(provider);
+    await acquireSlot(provider, url);
 
     const lease = nextProxy();
     const controller = new AbortController();
@@ -73,7 +73,7 @@ export async function providerFetch(
       });
 
       if (response.status === 429) {
-        recordOutcome(provider, "rate_limited", parseRetryAfterMs(response));
+        recordOutcome(provider, "rate_limited", parseRetryAfterMs(response), url);
         if (attempt < attempts) continue;
         return response;
       }
@@ -81,14 +81,14 @@ export async function providerFetch(
       if (response.status === 403) {
         // Most likely an IP block. Park this proxy so the next attempt goes
         // out through a different address.
-        recordOutcome(provider, "blocked");
+        recordOutcome(provider, "blocked", undefined, url);
         if (lease) penalizeProxy(lease.url);
         if (attempt < attempts) continue;
         return response;
       }
 
       if (RETRYABLE_STATUS.has(response.status)) {
-        recordOutcome(provider, "error");
+        recordOutcome(provider, "error", undefined, url);
         if (attempt < attempts) {
           await sleep(Math.min(30_000, 1000 * 2 ** (attempt - 1)));
           continue;
@@ -96,12 +96,12 @@ export async function providerFetch(
         return response;
       }
 
-      recordOutcome(provider, "success");
+      recordOutcome(provider, "success", undefined, url);
       return response;
     } catch (err) {
       lastError = err;
       const isTimeout = err instanceof Error && err.name === "AbortError";
-      recordOutcome(provider, isTimeout ? "timeout" : "error");
+      recordOutcome(provider, isTimeout ? "timeout" : "error", undefined, url);
       // A connection-level failure through a proxy usually means the proxy is
       // bad, not the target — rotate away from it.
       if (lease && !isTimeout) penalizeProxy(lease.url);

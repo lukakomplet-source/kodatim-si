@@ -332,26 +332,41 @@ async function readDetailPage(
     // Select-then-read must be atomic: the PRS view is only served for the
     // company currently selected in the session, so another company selecting
     // itself in between returns a ~4.7 kB stub with none of the labels on it.
-    const { detailResult, text, parsed } = await withAjpesLock(async () => {
+    const outcome = await withAjpesLock(async () => {
       const selectResult = await fetchAjpesAuthed(baseUrl, session);
       requests.push({ url: baseUrl, status: selectResult.status, ok: selectResult.status < 400, note: "izbira podjetja v seji" });
 
-      let read = await fetchAjpesAuthed(prsUrl, selectResult.session);
-      let pageText = stripHtmlToText(read.html);
-      let fieldsFromPage = parseAjpesDetail(pageText, companyName);
-
-      // Every company page carries a matična številka. If it doesn't, the read
-      // still went wrong — retry once, inside the lock, without disturbing the
-      // shared session that other companies are queued behind.
-      if (!fieldsFromPage.registration_number) {
-        requests.push({ url: prsUrl, status: read.status, ok: false, note: "stran brez podatkov podjetja — ponovna izbira in branje" });
-        const retrySelect = await fetchAjpesAuthed(baseUrl, selectResult.session);
-        read = await fetchAjpesAuthed(prsUrl, retrySelect.session);
-        pageText = stripHtmlToText(read.html);
-        fieldsFromPage = parseAjpesDetail(pageText, companyName);
+      // If the base page is already a stub, the address simply does not open a
+      // company card and the PRS view cannot help — stop here rather than
+      // spending three more requests on it. This matters far beyond one
+      // company: every request runs inside the AJPES lock, so four wasted ones
+      // per company serialised whole batches behind a source that had nothing
+      // to give.
+      const selectText = stripHtmlToText(selectResult.html);
+      if (!/mati[čc]na [šs]tevilka/i.test(selectText)) {
+        return { stub: true as const, length: selectText.length };
       }
-      return { detailResult: read, text: pageText, parsed: fieldsFromPage };
+
+      const read = await fetchAjpesAuthed(prsUrl, selectResult.session);
+      const pageText = stripHtmlToText(read.html);
+      return {
+        stub: false as const,
+        detailResult: read,
+        text: pageText,
+        parsed: parseAjpesDetail(pageText, companyName),
+      };
     });
+
+    if (outcome.stub) {
+      const reason = `AJPES je vrnil okrnjeno stran brez podatkov podjetja (${outcome.length} znakov, brez oznake "matična številka") — naslov strani iz seznama zadetkov za to podjetje ne odpre kartice`;
+      return {
+        note: `AJPES: strani podjetja ni bilo mogoče odpreti — ${reason}.`,
+        skippedReason: reason,
+        failed: true,
+        diagnostics: { requests, parserChecks, fieldReasons: everyFieldBecause(reason) },
+      };
+    }
+    const { detailResult, text, parsed } = outcome;
 
     requests.push({ url: prsUrl, status: detailResult.status, ok: detailResult.status < 400 });
     parserChecks.push({

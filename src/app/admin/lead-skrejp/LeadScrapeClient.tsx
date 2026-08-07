@@ -307,8 +307,13 @@ export default function LeadScrapeClient() {
    * each other out. One request per batch fixes that AND keeps each function
    * call short enough not to be cut off.
    */
-  /** Returns the indices this batch did not finish, for the caller to re-queue. */
-  async function scrapeBatch(batch: { row: Row; index: number }[]): Promise<number[]> {
+  /**
+   * Returns what still needs doing: `pending` to re-queue, and which of those
+   * the server merely postponed rather than failed on.
+   */
+  async function scrapeBatch(
+    batch: { row: Row; index: number }[]
+  ): Promise<{ pending: number[]; deferred: number[] }> {
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -343,7 +348,7 @@ export default function LeadScrapeClient() {
         const message = res.ok ? "Prazen odgovor strežnika." : `Napaka strežnika (${res.status}).`;
         addLog("paket", message, "error");
         markBatchFailed(batch, message, handled);
-        return [];
+        return { pending: [], deferred: [] };
       }
 
       const reader = res.body.getReader();
@@ -393,24 +398,26 @@ export default function LeadScrapeClient() {
         }
       }
 
-      // Deferred = the server chose to postpone them. Anything else it never
-      // reported on was cut off mid-flight; both go back into the queue, and
-      // the rows return to "waiting" rather than showing a failure.
-      const pending = [
-        ...new Set([...deferred, ...batch.map((b) => b.index).filter((i) => !handled.has(i))]),
-      ];
+      // Two different things, and conflating them was a real bug: the server
+      // DEFERRED these (its time budget ran out before it started them), while
+      // anything else unreported was CUT OFF mid-flight. A deferral is not an
+      // attempt — counting it as one marked perfectly good companies as failed
+      // after three rounds, which is exactly what happened with a 25 s budget
+      // and companies that take longer than that.
+      const cutOff = batch.map((b) => b.index).filter((i) => !handled.has(i) && !deferred.includes(i));
+      const pending = [...new Set([...deferred, ...cutOff])];
       if (pending.length > 0) {
         setRows((prev) =>
           prev.map((r, i) => (pending.includes(i) && r.status === "running" ? { ...r, status: "waiting" } : r))
         );
       }
-      return pending;
+      return { pending, deferred };
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
       if (aborted) {
         addLog("paket", "ustavljeno", "info");
         markBatchFailed(batch, "ustavljeno pred obdelavo", handled);
-        return [];
+        return { pending: [], deferred: [] };
       }
       // The connection dropped mid-stream — which is how a function being
       // killed for exceeding its time limit actually presents itself. That is
@@ -421,7 +428,7 @@ export default function LeadScrapeClient() {
       setRows((prev) =>
         prev.map((r, i) => (unfinished.includes(i) && r.status === "running" ? { ...r, status: "waiting" } : r))
       );
-      return unfinished;
+      return { pending: unfinished, deferred: [] };
     } finally {
       abortRef.current = null;
     }
@@ -457,13 +464,21 @@ export default function LeadScrapeClient() {
       for (let i = 0; i < remaining.length; i += batchSize) {
         if (stopRef.current) break;
         const batch = remaining.slice(i, i + batchSize);
-        const pending = await scrapeBatch(batch);
+        const { pending, deferred } = await scrapeBatch(batch);
 
         for (const index of pending) {
-          const used = (attempts.get(index) ?? 0) + 1;
-          attempts.set(index, used);
           const entry = batch.find((b) => b.index === index);
           if (!entry) continue;
+
+          // A company the server postponed was never tried, so it costs no
+          // attempt — it simply goes round again.
+          if (deferred.includes(index)) {
+            requeued.push(entry);
+            continue;
+          }
+
+          const used = (attempts.get(index) ?? 0) + 1;
+          attempts.set(index, used);
 
           if (used < MAX_ATTEMPTS) {
             requeued.push(entry);
