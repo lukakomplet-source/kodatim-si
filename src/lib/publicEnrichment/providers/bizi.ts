@@ -1,5 +1,5 @@
 import type { IntelLead } from "@/lib/lead-intelligence/types";
-import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
+import { stripHtmlToText } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { readCache, writeCache, CACHE_TTL } from "../cache";
 import { providerFetch } from "../httpClient";
@@ -30,7 +30,7 @@ const BASE = "https://www.bizi.si";
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; KodaTimBot/1.0)" };
 
 // Bump when parseDetailPage changes shape so cached entries re-parse.
-const PARSER_VERSION = 5;
+const PARSER_VERSION = 6;
 
 const DIACRITICS: Record<string, string> = {
   č: "c", ć: "c", š: "s", ž: "z", đ: "dj",
@@ -89,6 +89,31 @@ function extractLongName(text: string): string | null {
   return name.length > 3 ? name : null;
 }
 
+/**
+ * Reads a labelled value off a Bizi page.
+ *
+ * Not the shared helper: that one skips any line without a letter or digit, and
+ * Bizi writes "/" when it has no value. The skip therefore stepped over the
+ * "no data" marker and returned the next line — which is the section's source
+ * note — so a company with no recorded activity ended up with the panoga
+ * "Vir: AJPES, TSmedia (Status)". Confirmed live on ROBI TRANSPORT.
+ */
+function biziValue(text: string, label: string): string | null {
+  const idx = text.indexOf(label);
+  if (idx === -1) return null;
+
+  for (const raw of text.slice(idx + label.length).split("\n")) {
+    const line = raw.trim();
+    if (!line || line === ":") continue;
+    // "/" or "-" alone is Bizi's way of saying the field is empty.
+    if (/^[/\-—–.]+$/.test(line)) return null;
+    // Section footers must never be mistaken for a value.
+    if (/^Vir\s*:/i.test(line)) return null;
+    return line;
+  }
+  return null;
+}
+
 function parseDetailPage(text: string): Record<string, string | null> {
   const contact = extractContactBlock(text);
   const addressParts = contact.address ? contact.address.split(",").map((p) => p.trim()) : [];
@@ -97,7 +122,7 @@ function parseDetailPage(text: string): Record<string, string | null> {
   // group of THREE — requiring a fourth group of four never matched.
   const bankMatch = text.match(/\b(SI56(?:\s?\d{4}){3}\s?\d{3})\b/);
 
-  const vatDigits = firstNonEmptyLineAfter(text, "Davčna številka SI");
+  const vatDigits = biziValue(text, "Davčna številka SI");
   // Bizi publishes SKIS — the institutional-sector code (e.g. "S.11002 —
   // Nacionalne zasebne nefinančne družbe"). That is NOT the activity
   // classification: mapping it onto skd_code/skd_name put "Nacionalne
@@ -105,14 +130,14 @@ function parseDetailPage(text: string): Record<string, string | null> {
   // meaningless as a description of what a company does. The real SKD
   // (91.120 — Dejavnost arhivov) comes from AJPES/CompanyWall, so SKIS is
   // kept under its own name and never competes with it.
-  const skisRaw = firstNonEmptyLineAfter(text, "SKIS");
+  const skisRaw = biziValue(text, "SKIS");
   const skisMatch = skisRaw?.match(/^([A-Z0-9.]+)\s*-?\s*(.*)$/);
 
   return {
-    registration_number: firstNonEmptyLineAfter(text, "Matična"),
+    registration_number: biziValue(text, "Matična"),
     vat_id: vatDigits ? `SI${vatDigits.replace(/\D/g, "")}` : null,
-    founded_date: firstNonEmptyLineAfter(text, "Datum vpisa"),
-    industry: firstNonEmptyLineAfter(text, "Dejavnost TSmedia"),
+    founded_date: biziValue(text, "Datum vpisa"),
+    industry: biziValue(text, "Dejavnost TSmedia"),
     skis_code: skisMatch?.[1] ?? null,
     skis_name: skisMatch?.[2]?.trim() || null,
     address_street: addressParts[0] ?? null,
