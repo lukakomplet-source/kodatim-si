@@ -165,6 +165,29 @@ function valueFor(row: Row, key: string): string {
   return row.result?.fields[key] ?? fallback[key] ?? "";
 }
 
+
+/** Columns whose values are numbers written the Slovenian way ("662.276,60"). */
+const NUMERIC_COLUMNS = new Set([
+  "revenue_amount",
+  "revenue_year",
+  "profit",
+  "employees_count",
+  "postal_code",
+  "vat_id",
+  "registration_number",
+]);
+
+/**
+ * "662.276,60" is six hundred thousand, not 662.28 — the dot groups thousands
+ * and the comma is the decimal point. Sorting on the raw string put 99 above
+ * 662.276,60, which is exactly backwards for picking the biggest company.
+ */
+function toNumber(value: string): number {
+  const cleaned = value.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+}
+
 function toCsv(rows: Row[]): string {
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const head = COLUMNS.map((c) => escape(c.label)).join(";");
@@ -186,6 +209,13 @@ export default function LeadScrapeClient() {
   const [rows, setRows] = useState<Row[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  /**
+   * Sorting is by column, and a numeric column starts at the biggest — asking
+   * for "prihodki" almost always means "who is the largest", not "who is the
+   * smallest". Clicking the same header again reverses it.
+   */
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
+
   const [speed, setSpeed] = useState<SpeedKey>("slow");
   const [scraping, setScraping] = useState(false);
   const stopRef = useRef(false);
@@ -194,6 +224,16 @@ export default function LeadScrapeClient() {
   const abortRef = useRef<AbortController | null>(null);
   // Latest rows, readable from inside the stream loop without re-subscribing.
   const rowsRef = useRef<Row[]>([]);
+
+  /**
+   * Progress and a running estimate. The estimate is measured, not assumed:
+   * companies vary from 5 s (cached) to 40 s (full scrape with a website
+   * search), so a fixed per-company guess would be wrong all day. Rate comes
+   * from what this run has actually managed since it started.
+   */
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [doneAtStart, setDoneAtStart] = useState(0);
+  const [now, setNow] = useState(Date.now());
 
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -252,9 +292,66 @@ export default function LeadScrapeClient() {
     rowsRef.current = rows;
   }, [rows]);
 
+  // Only ticks while a run is in flight, so an idle page does nothing.
+  useEffect(() => {
+    if (!scraping) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [scraping]);
+
+  // Kept paired with the original index so sorting the view cannot desynchronise
+  // the checkboxes, which are keyed on position in `rows`.
+  const displayRows = useMemo(() => {
+    const entries = rows.map((row, index) => ({ row, index }));
+    if (!sort) return entries;
+
+    const numeric = NUMERIC_COLUMNS.has(sort.key);
+    const factor = sort.dir === "asc" ? 1 : -1;
+    return entries.sort((a, b) => {
+      const av = valueFor(a.row, sort.key);
+      const bv = valueFor(b.row, sort.key);
+      // Blanks always sink, whichever way the column is pointing.
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      if (numeric) return (toNumber(av) - toNumber(bv)) * factor;
+      return av.localeCompare(bv, "sl") * factor;
+    });
+  }, [rows, sort]);
+
+  function toggleSort(key: string) {
+    setSort((prev) => {
+      if (prev?.key !== key) {
+        // First click: biggest first for numbers, A-Z for text.
+        return { key, dir: NUMERIC_COLUMNS.has(key) ? "desc" : "asc" };
+      }
+      return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+    });
+  }
+
   const doneCount = rows.filter((r) => r.status === "done").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
   const scrapedRows = useMemo(() => rows.filter((r) => r.status === "done"), [rows]);
+
+  const finishedCount = doneCount + errorCount;
+  const percent = rows.length === 0 ? 0 : Math.round((finishedCount / rows.length) * 100);
+
+  /** Seconds left, from this run's own measured pace. Null until it has a pace. */
+  const etaSeconds = (() => {
+    if (!scraping || !runStartedAt) return null;
+    const finishedThisRun = finishedCount - doneAtStart;
+    if (finishedThisRun < 1) return null;
+    const perCompanyMs = (now - runStartedAt) / finishedThisRun;
+    const remaining = rows.length - finishedCount;
+    return remaining > 0 ? Math.round((remaining * perCompanyMs) / 1000) : 0;
+  })();
+
+  function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds} s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ${seconds % 60} s`;
+    return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  }
 
   async function runSearch(): Promise<Row[]> {
     setSearching(true);
@@ -451,6 +548,8 @@ export default function LeadScrapeClient() {
 
     setScraping(true);
     stopRef.current = false;
+    setRunStartedAt(Date.now());
+    setDoneAtStart(rows.filter((r) => r.status === "done").length);
     const { batchSize } = SPEEDS[speed];
 
     const attempts = new Map<number, number>();
@@ -754,6 +853,25 @@ export default function LeadScrapeClient() {
                 Najdenih {rows.length}, končanih {doneCount}
                 {errorCount > 0 && `, napak ${errorCount}`}. Označenih {selected.size}.
               </p>
+
+              <div className="mt-3 w-full max-w-md">
+                <div className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="font-semibold text-zinc-900">{percent} %</span>
+                  <span className="text-zinc-500">
+                    {finishedCount} / {rows.length}
+                    {scraping && etaSeconds !== null && ` · še ~${formatDuration(etaSeconds)}`}
+                    {scraping && etaSeconds === null && " · računam hitrost …"}
+                  </span>
+                </div>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      percent === 100 ? "bg-emerald-500" : "bg-accent"
+                    }`}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
             </div>
             {!scraping && incomplete.length > 0 && (
               <button
@@ -877,13 +995,23 @@ export default function LeadScrapeClient() {
                 <th className="px-3 py-2 font-medium">#</th>
                 {COLUMNS.map((c) => (
                   <th key={c.key} className="whitespace-nowrap px-3 py-2 font-medium">
-                    {c.label}
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(c.key)}
+                      className="flex items-center gap-1 hover:text-zinc-900"
+                      title="Razvrsti po tem stolpcu"
+                    >
+                      {c.label}
+                      <span className={sort?.key === c.key ? "text-accent" : "text-zinc-300"}>
+                        {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                      </span>
+                    </button>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {rows.map((row, index) => (
+              {displayRows.map(({ row, index }) => (
                 <tr key={`${row.detailUrl}-${index}`} className={row.status === "error" ? "bg-red-50/40" : undefined}>
                   <td className="px-3 py-2 align-top">
                     <input

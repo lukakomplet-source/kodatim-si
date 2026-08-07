@@ -33,6 +33,9 @@ type Candidate = {
   contact_person: string | null;
   address_city: string | null;
   industry: string | null;
+  revenue_amount: string | null;
+  revenue_year: string | null;
+  employees_count: string | null;
   score: number;
   reason: string;
 };
@@ -344,6 +347,8 @@ export default function ThemedCampaignClient() {
                       <th className="px-2 py-2 font-medium">Ocena</th>
                       <th className="px-2 py-2 font-medium">Podjetje</th>
                       <th className="px-2 py-2 font-medium">Zakaj se ujema</th>
+                      <th className="px-2 py-2 font-medium">Promet</th>
+                      <th className="px-2 py-2 font-medium">Zapos.</th>
                       <th className="px-2 py-2 font-medium">Email</th>
                       <th className="px-2 py-2 font-medium">Telefon</th>
                       <th className="px-2 py-2 font-medium">Oseba</th>
@@ -384,6 +389,11 @@ export default function ThemedCampaignClient() {
                           {c.company_name}
                         </td>
                         <td className="max-w-[320px] px-2 py-2 align-top text-zinc-600">{c.reason}</td>
+                        <td className="whitespace-nowrap px-2 py-2 align-top text-zinc-700">
+                          {c.revenue_amount ? `${c.revenue_amount} €` : "—"}
+                          {c.revenue_year && <span className="ml-1 text-zinc-400">({c.revenue_year})</span>}
+                        </td>
+                        <td className="px-2 py-2 align-top text-zinc-600">{c.employees_count ?? "—"}</td>
                         <td className="px-2 py-2 align-top text-zinc-600">{c.email ?? "—"}</td>
                         <td className="px-2 py-2 align-top text-zinc-600">{c.phone ?? "—"}</td>
                         <td className="max-w-[160px] truncate px-2 py-2 align-top text-zinc-600">{c.contact_person ?? "—"}</td>

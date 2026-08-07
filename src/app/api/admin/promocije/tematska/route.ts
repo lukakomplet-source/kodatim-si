@@ -56,18 +56,27 @@ export async function POST(request: NextRequest) {
       }
       const candidates = await rankCandidates(leads, theme);
       return NextResponse.json({
-        candidates: candidates.map((c) => ({
-          id: c.lead.id,
-          company_name: c.lead.company_name,
-          email: c.lead.email,
-          phone: c.lead.phone,
-          website: c.lead.website,
-          contact_person: c.lead.contact_person,
-          address_city: c.lead.address_city,
-          industry: c.lead.industry,
-          score: c.score,
-          reason: c.reason,
-        })),
+        candidates: candidates.map((c) => {
+          // Size is what decides whether a lead is worth the call, so revenue
+          // and headcount travel with the candidate rather than waiting until
+          // the lead is opened.
+          const custom = (c.lead.custom_fields as Record<string, string> | null) ?? {};
+          return {
+            id: c.lead.id,
+            company_name: c.lead.company_name,
+            email: c.lead.email,
+            phone: c.lead.phone,
+            website: c.lead.website,
+            contact_person: c.lead.contact_person,
+            address_city: c.lead.address_city,
+            industry: c.lead.industry,
+            revenue_amount: custom.revenue_amount ?? null,
+            revenue_year: custom.revenue_year ?? null,
+            employees_count: custom.employees_count ?? null,
+            score: c.score,
+            reason: c.reason,
+          };
+        }),
         note: `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.`,
       });
     }
