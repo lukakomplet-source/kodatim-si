@@ -102,6 +102,47 @@ export function buildAjpesSearchUrl(params: AjpesSearchParams): string {
   return `${BASE}/rezultati.asp?${query.toString()}`;
 }
 
+/**
+ * Runs one search per activity code and merges the results.
+ *
+ * AJPES takes a single `dejavnost`, but a campaign usually spans several
+ * related codes ("49.410, 49.420, 52.290"). Each code also gets its own
+ * 100-row cap, so searching them separately returns more than a combined query
+ * could anyway. Duplicates — a company listed under two of the codes — are
+ * collapsed on the page address.
+ */
+export async function searchAjpesMulti(params: AjpesSearchParams): Promise<AjpesSearchResult> {
+  const codes = (params.activity ?? "")
+    .split(/[,;\s]+/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  if (codes.length <= 1) return searchAjpes(params);
+
+  const byUrl = new Map<string, AjpesSearchRow>();
+  const notes: string[] = [];
+  let totalFound = 0;
+  let limited = false;
+  const urls: string[] = [];
+
+  for (const code of codes) {
+    const result = await searchAjpes({ ...params, activity: code });
+    for (const row of result.rows) byUrl.set(row.detailUrl, row);
+    totalFound += result.totalFound ?? result.rows.length;
+    limited = limited || result.limited;
+    urls.push(result.url);
+    notes.push(`${code}: ${result.rows.length}${result.limited ? " (omejeno na 100)" : ""}`);
+  }
+
+  return {
+    rows: [...byUrl.values()],
+    totalFound,
+    limited,
+    url: urls.join(" | "),
+    note: `Iskano po ${codes.length} dejavnostih — ${notes.join(", ")}. Skupaj ${byUrl.size} različnih podjetij.`,
+  };
+}
+
 export async function searchAjpes(params: AjpesSearchParams): Promise<AjpesSearchResult> {
   if (!process.env.AJPES_USERNAME || !process.env.AJPES_PASSWORD) {
     throw new Error("AJPES_USERNAME/AJPES_PASSWORD nista nastavljena — prijava v AJPES ni mogoča.");

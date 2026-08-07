@@ -1,6 +1,6 @@
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { fetchAjpesAuthed, withAjpesLock } from "../ajpesSession";
-import { stripHtmlToText } from "../htmlText";
+import { stripHtmlToText, firstNonEmptyLineAfter } from "../htmlText";
 import { verifyNumericFields } from "../verifyNumericFields";
 import { PEOPLE_SEPARATOR } from "./companywall";
 import { CONFIDENCE, type FieldCandidate, type ParserCheck, type ProviderRequestLog, type PublicEnrichmentProvider, type PublicProviderResult } from "../types";
@@ -128,6 +128,125 @@ function isPlaceholderPerson(name: string): boolean {
 function toTitleCaseWord(value: string | null): string | null {
   if (!value) return null;
   return value.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+}
+
+/**
+ * Diacritic- and whitespace-insensitive haystack.
+ *
+ * A literal `/matična številka/i` test failed on pages that plainly contained
+ * the label — the same character can arrive precomposed (U+010D) or as "c" plus
+ * a combining caron, and the separator can be a non-breaking space. Flattening
+ * both away is cheaper than guessing which variant a given page used.
+ */
+function flatten(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Is this a company page at all?
+ *
+ * Checking for the words "matična številka" anywhere is not enough: the page
+ * footer carries a legend explaining them, so the shell page AJPES returns for
+ * some subjects passes that test while containing no company data whatsoever.
+ * The test is therefore whether a real labelled FIELD exists.
+ */
+function looksLikeCompanyCard(text: string): boolean {
+  return (
+    labelValue(text, "Matična številka") !== null ||
+    labelValue(text, "matična številka") !== null ||
+    labelValue(text, "Skrajšana firma") !== null ||
+    labelValue(text, "popolno ime") !== null
+  );
+}
+
+/**
+ * The court-register view, which the search links to directly. It carries less
+ * than the PRS view — no region, no activity codes — but it is served reliably,
+ * so it is what AJPES falls back to rather than contributing nothing.
+ */
+/**
+ * Finds a label however its accents happen to be encoded, and returns the next
+ * non-empty line.
+ *
+ * A literal `indexOf("Matična številka")` failed on pages that contain exactly
+ * that label — the č can be precomposed or a "c" plus a combining caron, and
+ * the separator can be a non-breaking space. Comparing flattened forms while
+ * returning the ORIGINAL line keeps the value intact.
+ */
+function labelValue(text: string, label: string): string | null {
+  const lines = text.split("\n");
+  const target = flatten(label).replace(/[:*]+$/, "").trim();
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim();
+    const flat = flatten(raw).replace(/[:*]+$/, "").trim();
+
+    // "Matična številka: 5526095000" — value on the same line.
+    if (flat.startsWith(target) && raw.includes(":")) {
+      const after = raw.slice(raw.indexOf(":") + 1).trim();
+      if (after) return after;
+    }
+
+    // The label must BE the line, not merely appear in it: the page footer
+    // carries a legend ("* Matična številka — podatki vpisani v Poslovni
+    // register …") that a substring match happily mistook for the field.
+    if (flat !== target) continue;
+
+    for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
+      const candidate = lines[j].trim();
+      if (candidate) return candidate;
+    }
+  }
+  return null;
+}
+
+function parseCourtRegisterPage(text: string, companyName: string): Record<string, string | null> {
+  const value = (label: string) => labelValue(text, label) ?? firstNonEmptyLineAfter(text, label);
+
+  // "Trg Leona Štuklja 5, 2000 Maribor"
+  const address = value("Poslovni naslov");
+  const addressMatch = address?.match(/^(.*?),\s*(\d{4})\s+(.+)$/);
+
+  const statusFromName = companyName.match(/-\s*(v\s+(?:stečaju|likvidaciji|prisilni poravnavi))/i)?.[1];
+
+  // A matična is ten digits and a davčna eight; anything else came from the
+  // wrong line and is better dropped than propagated as identity.
+  const digitsOnly = (v: string | null, length: number) =>
+    v && v.replace(/\D/g, "").length === length ? v.trim() : null;
+
+  return {
+    official_long_name: value("Firma"),
+    official_name: value("Skrajšana firma"),
+    registration_number: digitsOnly(value("Matična številka"), 10),
+    vat_id: digitsOnly(value("Ident. št. za DDV in davčna številka"), 8),
+    founded_date: value("Datum vpisa subjekta v sodni register"),
+    legal_form: value("Pravnoorganizacijska oblika"),
+    company_status: statusFromName ?? value("Status subjekta"),
+    address_street: addressMatch?.[1]?.trim() ?? address,
+    postal_code: addressMatch?.[2] ?? null,
+    address_city: addressMatch?.[3]?.trim() ?? value("Sedež"),
+    address_country: "Slovenija",
+    owners: peopleInSection(text, "DRUŽBENIKI", "POSLOVNI DELEŽI"),
+    director: peopleInSection(text, "Osebe, pooblaščene za zastopanje", "Člani organa nadzora"),
+  };
+}
+
+/** Every "Osebno ime" between two section headings, deduplicated. */
+function peopleInSection(text: string, from: string, to: string): string | null {
+  const start = text.indexOf(from);
+  if (start === -1) return null;
+  const end = text.indexOf(to, start);
+  const section = end === -1 ? text.slice(start) : text.slice(start, end);
+
+  const names = [...section.matchAll(/Osebno ime\s+([^\n]+)/g)]
+    .map((m) => m[1].replace(/\s+/g, " ").trim())
+    .filter((n) => n.length > 2 && !isPlaceholderPerson(n));
+  if (names.length === 0) return null;
+  return [...new Set(names)].join(PEOPLE_SEPARATOR).slice(0, 300);
 }
 
 function parseAjpesDetail(text: string, companyName: string): Record<string, string | null> {
@@ -336,24 +455,37 @@ async function readDetailPage(
       const selectResult = await fetchAjpesAuthed(baseUrl, session);
       requests.push({ url: baseUrl, status: selectResult.status, ok: selectResult.status < 400, note: "izbira podjetja v seji" });
 
-      // If the base page is already a stub, the address simply does not open a
-      // company card and the PRS view cannot help — stop here rather than
-      // spending three more requests on it. This matters far beyond one
-      // company: every request runs inside the AJPES lock, so four wasted ones
-      // per company serialised whole batches behind a source that had nothing
-      // to give.
+      // If the base page is not a company card at all, the PRS view cannot
+      // help — stop rather than spending three more requests on it. Every
+      // request runs inside the AJPES lock, so wasted ones serialise whole
+      // batches behind a source that has nothing to give.
       const selectText = stripHtmlToText(selectResult.html);
-      if (!/mati[čc]na [šs]tevilka/i.test(selectText)) {
+      if (!looksLikeCompanyCard(selectText)) {
         return { stub: true as const, length: selectText.length };
       }
 
       const read = await fetchAjpesAuthed(prsUrl, selectResult.session);
       const pageText = stripHtmlToText(read.html);
+      const prsParsed = parseAjpesDetail(pageText, companyName);
+
+      // The PRS view is the richer one, but it is not always served. When it
+      // comes back without even a matična, fall back to the court-register
+      // page we already have in hand — fewer fields, but far better than
+      // reporting a company AJPES plainly does know as unavailable.
+      if (!prsParsed.registration_number) {
+        return {
+          stub: false as const,
+          detailResult: selectResult,
+          text: selectText,
+          parsed: parseCourtRegisterPage(selectText, companyName),
+        };
+      }
+
       return {
         stub: false as const,
         detailResult: read,
         text: pageText,
-        parsed: parseAjpesDetail(pageText, companyName),
+        parsed: prsParsed,
       };
     });
 

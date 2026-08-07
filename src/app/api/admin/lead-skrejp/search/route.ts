@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { searchAjpes } from "@/lib/publicEnrichment/ajpesSearch";
+import { searchAjpesMulti } from "@/lib/publicEnrichment/ajpesSearch";
 
 /** Step 1 of Lead skrejp: which companies does AJPES have for these criteria? */
 export async function POST(request: NextRequest) {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   const str = (key: string) => (typeof body[key] === "string" ? (body[key] as string) : undefined);
 
   try {
-    const result = await searchAjpes({
+    const result = await searchAjpesMulti({
       activity: str("activity"),
       name: str("name"),
       postalCode: str("postalCode"),

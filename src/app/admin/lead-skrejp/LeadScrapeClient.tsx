@@ -504,6 +504,31 @@ export default function LeadScrapeClient() {
     await scrapeAll(rows.map((row, index) => ({ row, index })).filter(({ index }) => selected.has(index)));
   }
 
+  /**
+   * Rows that are not finished, or finished thin. Converging on a full table in
+   * a few passes beats re-running everything: what is already complete costs
+   * nothing to keep, and a source that was rate-limited a minute ago usually
+   * answers on the next try.
+   */
+  const incomplete = useMemo(
+    () =>
+      rows
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => {
+          if (row.status !== "done") return true;
+          const r = row.result;
+          if (!r) return true;
+          // Anything without a way to reach the company is worth another go.
+          return !r.fields.email && !r.fields.phone && !r.website;
+        }),
+    [rows]
+  );
+
+  async function scrapeIncomplete() {
+    setSelected(new Set(incomplete.map((e) => e.index)));
+    await scrapeAll(incomplete);
+  }
+
   function downloadCsv() {
     const blob = new Blob([toCsv(scrapedRows.length > 0 ? scrapedRows : rows)], {
       type: "text/csv;charset=utf-8",
@@ -607,18 +632,18 @@ export default function LeadScrapeClient() {
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <p className="text-sm font-semibold text-zinc-900">1. Kaj naj skrejpa</p>
         <p className="mt-1 text-xs text-zinc-500">
-          Vnesite SKD kodo (ali kateri koli drug pogoj) in pritisnite <strong>Poišči in skrejpaj</strong> —
+          Vnesite eno ali več SKD kod, ločenih z vejico (ali kateri koli drug pogoj), in pritisnite <strong>Poišči in skrejpaj</strong> —
           podjetja se poiščejo v AJPES in skrejpajo samodejno, brez dodatnega klika. AJPES vrne
-          največ 100 podjetij na iskanje; pri večjem številu zadetkov iskanje zožite
+          največ 100 podjetij na posamezno kodo; pri večjem številu zadetkov iskanje zožite
           (npr. dejavnost + poštna številka).
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Dejavnost (SKD koda)
+            Dejavnost (SKD kode)
             <input
               value={activity}
               onChange={(e) => setActivity(e.target.value)}
-              placeholder="npr. 91.120"
+              placeholder="npr. 49.410, 49.420, 52.290"
               className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none"
             />
           </label>
@@ -730,6 +755,17 @@ export default function LeadScrapeClient() {
                 {errorCount > 0 && `, napak ${errorCount}`}. Označenih {selected.size}.
               </p>
             </div>
+            {!scraping && incomplete.length > 0 && (
+              <button
+                type="button"
+                onClick={scrapeIncomplete}
+                title="Ponovno poskusi samo vrstice, ki niso končane ali nimajo nobenega kontakta"
+                className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+              >
+                <Play className="h-4 w-4" />
+                Dokončaj manjkajoče ({incomplete.length})
+              </button>
+            )}
             {!scraping && doneCount < rows.length && (
               <button
                 type="button"
