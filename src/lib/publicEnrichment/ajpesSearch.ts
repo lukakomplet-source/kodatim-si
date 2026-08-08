@@ -34,6 +34,14 @@ export type AjpesSearchParams = {
   postalCode?: string;
   /** Town/settlement name. */
   town?: string;
+  /** Municipality, by name — the values `ajax.asp?method=getObcine` returns. */
+  municipality?: string;
+  /**
+   * Street name, matched from the start: "cel" finds Celovška. Verified as a
+   * clean partition — the per-initial counts under one activity + postal code
+   * added up to the unsliced total exactly, with no company in two slices.
+   */
+  street?: string;
   /** 1 = active units (default), 2 = struck off, 4 = both. */
   status?: string;
 };
@@ -76,15 +84,28 @@ function cell(html: string): string | null {
   return text || null;
 }
 
-/** "Čanžkova ulica 26, 2000 Maribor" -> street / postal code / city. */
+/**
+ * "Čanžkova ulica 26, 2000 Maribor" -> street / postal code / city.
+ *
+ * Read from the end, not the start. A company seated in a named settlement gets
+ * a THREE-part address — "Prade, Cesta 2.oktobra 7, 6000 Koper - Capodistria" —
+ * and taking the first two parts made the settlement the street, the street the
+ * city, and left the postal code empty. Four of twenty-two companies in one test
+ * search were affected, and an empty postal code would also have dropped them
+ * out of a postal-code-sliced search entirely. The "1234 Kraj" tail is the
+ * anchor; whatever sits directly before it is the street.
+ */
 function splitAddress(address: string | null): { street: string | null; postalCode: string | null; city: string | null } {
   if (!address) return { street: null, postalCode: null, city: null };
-  const [street, rest] = address.split(",").map((p) => p.trim());
-  const m = rest?.match(/^(\d{4})\s+(.+)$/);
+  const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
+  const tail = parts[parts.length - 1] ?? "";
+  const m = tail.match(/^(\d{4})\s+(.+)$/);
+  // No recognisable postal tail — say nothing rather than guess wrongly.
+  if (!m) return { street: parts[0] ?? null, postalCode: null, city: parts[1] ?? null };
   return {
-    street: street || null,
-    postalCode: m?.[1] ?? null,
-    city: m?.[2] ?? rest ?? null,
+    street: parts[parts.length - 2] ?? null,
+    postalCode: m[1],
+    city: m[2],
   };
 }
 
@@ -97,6 +118,8 @@ export function buildAjpesSearchUrl(params: AjpesSearchParams): string {
   }
   if (params.postalCode?.trim()) query.set("posta", params.postalCode.trim());
   if (params.town?.trim()) query.set("naselje", params.town.trim());
+  if (params.municipality?.trim()) query.set("obcina", params.municipality.trim());
+  if (params.street?.trim()) query.set("ulica", params.street.trim());
   query.set("status", params.status?.trim() || "1");
   query.set("MAXREC", String(AJPES_MAX_RESULTS));
   return `${BASE}/rezultati.asp?${query.toString()}`;
@@ -147,7 +170,10 @@ export async function searchAjpes(params: AjpesSearchParams): Promise<AjpesSearc
   if (!process.env.AJPES_USERNAME || !process.env.AJPES_PASSWORD) {
     throw new Error("AJPES_USERNAME/AJPES_PASSWORD nista nastavljena — prijava v AJPES ni mogoča.");
   }
-  if (!params.activity?.trim() && !params.name?.trim() && !params.postalCode?.trim() && !params.town?.trim()) {
+  const hasCriteria = [params.activity, params.name, params.postalCode, params.town, params.municipality].some(
+    (v) => v?.trim()
+  );
+  if (!hasCriteria) {
     throw new Error("Vnesite vsaj en pogoj iskanja (dejavnost, ime, poštna številka ali kraj).");
   }
 

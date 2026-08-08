@@ -58,6 +58,18 @@ type LogEntry = {
   ms?: number;
 };
 
+/**
+ * One narrowing of the AJPES search. The server hands these back whenever a
+ * query hits the hundred-row cap and has to be cut up; the queue lives here so
+ * a long discovery survives the function's time limit.
+ */
+type SearchSlice = {
+  activity: string;
+  status: string;
+  municipality?: string;
+  street?: string;
+};
+
 /** Everything worth surviving a closed tab. */
 type SkrejpSession = {
   activity: string;
@@ -69,6 +81,10 @@ type SkrejpSession = {
   rows: Row[];
   selected: number[];
   log: LogEntry[];
+  /** Search slices not yet run, so an interrupted discovery can be resumed. */
+  pendingSlices?: SearchSlice[];
+  /** How many companies AJPES said exist, to check the search against. */
+  expectedTotal?: number | null;
 };
 
 /**
@@ -210,6 +226,20 @@ export default function LeadScrapeClient() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   /**
+   * Discovery progress. A big SKD code is a few hundred AJPES queries at ~5 s
+   * each, so this is a minutes-long job with its own progress, not a click that
+   * either works or doesn't.
+   */
+  const [pendingSlices, setPendingSlices] = useState<SearchSlice[]>([]);
+  const [expectedTotal, setExpectedTotal] = useState<number | null>(null);
+  const [queriesDone, setQueriesDone] = useState(0);
+  const [searchStartedAt, setSearchStartedAt] = useState<number | null>(null);
+  // Queries already done when this run began, so a resumed search measures its
+  // own pace rather than averaging in an earlier session's.
+  const [queriesAtStart, setQueriesAtStart] = useState(0);
+  const [gaps, setGaps] = useState<string[]>([]);
+
+  /**
    * Sorting is by column, and a numeric column starts at the biggest — asking
    * for "prihodki" almost always means "who is the largest", not "who is the
    * smallest". Clicking the same header again reverses it.
@@ -258,6 +288,8 @@ export default function LeadScrapeClient() {
     setRows((saved.rows ?? []).map((r) => (r.status === "running" ? { ...r, status: "waiting" as const } : r)));
     setSelected(new Set(saved.selected ?? []));
     setLog(saved.log ?? []);
+    setPendingSlices(saved.pendingSlices ?? []);
+    setExpectedTotal(saved.expectedTotal ?? null);
   });
 
   const session: SkrejpSession = {
@@ -270,6 +302,8 @@ export default function LeadScrapeClient() {
     rows,
     selected: [...selected],
     log: log.slice(-120),
+    pendingSlices,
+    expectedTotal,
   };
   useAutoSave("lead-skrejp", session, sessionLoaded);
 
@@ -292,12 +326,12 @@ export default function LeadScrapeClient() {
     rowsRef.current = rows;
   }, [rows]);
 
-  // Only ticks while a run is in flight, so an idle page does nothing.
+  // Only ticks while something is in flight, so an idle page does nothing.
   useEffect(() => {
-    if (!scraping) return;
+    if (!scraping && !searching) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [scraping]);
+  }, [scraping, searching]);
 
   // Kept paired with the original index so sorting the view cannot desynchronise
   // the checkboxes, which are keyed on position in `rows`.
@@ -346,6 +380,28 @@ export default function LeadScrapeClient() {
     return remaining > 0 ? Math.round((remaining * perCompanyMs) / 1000) : 0;
   })();
 
+  /**
+   * Discovery progress. Prefer companies-against-expected — it is the number
+   * that answers "will I get all of them" — and fall back to queries done
+   * against queries left before AJPES has told us the size of the code.
+   */
+  const searchPercent = (() => {
+    if (expectedTotal && expectedTotal > 0) {
+      return Math.min(100, Math.round((rows.length / expectedTotal) * 100));
+    }
+    const total = queriesDone + pendingSlices.length;
+    return total === 0 ? 0 : Math.round((queriesDone / total) * 100);
+  })();
+
+  /** Seconds left in discovery, from this run's own measured query rate. */
+  const searchEtaSeconds = (() => {
+    if (!searching || !searchStartedAt) return null;
+    const thisRun = queriesDone - queriesAtStart;
+    if (thisRun < 1) return null;
+    const perQueryMs = (now - searchStartedAt) / thisRun;
+    return Math.round((pendingSlices.length * perQueryMs) / 1000);
+  })();
+
   function formatDuration(seconds: number): string {
     if (seconds < 60) return `${seconds} s`;
     const minutes = Math.floor(seconds / 60);
@@ -353,33 +409,177 @@ export default function LeadScrapeClient() {
     return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
   }
 
-  async function runSearch(): Promise<Row[]> {
+  /**
+   * Finds EVERY company matching the criteria, not the hundred AJPES is willing
+   * to show at once.
+   *
+   * AJPES caps a search at 100 rows and offers no pager, but the cap is per
+   * query — so a capped query gets cut into municipalities, and a municipality
+   * that is still capped gets cut by street initial (AJPES matches `ulica` from
+   * the start, and the per-initial counts add up to the unsliced total exactly).
+   * The server runs as many slices as its time budget allows and returns the
+   * rest; this loop keeps sending them back until the queue is empty.
+   *
+   * @param resumeFrom Slices left over from an interrupted run. Rows already on
+   * screen are kept and added to, rather than the search starting over.
+   */
+  async function runSearch(resumeFrom?: SearchSlice[]): Promise<Row[]> {
     setSearching(true);
     setSearchError(null);
     setSearchNote(null);
     setImportMessage(null);
+    setSearchStartedAt(Date.now());
+    setGaps([]);
+    stopRef.current = false;
+
+    // The page address is the identity: one company can sit in two slices when
+    // several SKD codes are searched at once, and must appear once.
+    const byUrl = new Map<string, Row>();
+    if (resumeFrom) for (const row of rowsRef.current) byUrl.set(row.detailUrl, row);
+
+    let queue: SearchSlice[] = resumeFrom ?? [];
+    let expected = resumeFrom ? expectedTotal : null;
+    let queries = resumeFrom ? queriesDone : 0;
+    setQueriesAtStart(queries);
+    if (!resumeFrom) {
+      setQueriesDone(0);
+      setExpectedTotal(null);
+    }
+    const foundGaps: string[] = [];
+
+    const publish = () => {
+      const list = [...byUrl.values()];
+      setRows(list);
+      setSelected(new Set(list.map((_, i) => i)));
+      rowsRef.current = list;
+    };
+
     try {
-      const res = await fetch("/api/admin/lead-skrejp/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activity, name, postalCode, town, status }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setSearchError(json?.error ?? "Iskanje ni uspelo.");
-        return [];
+      for (;;) {
+        if (stopRef.current) break;
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        const res = await fetch("/api/admin/lead-skrejp/search-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ activity, name, postalCode, town, status, slices: queue }),
+        });
+
+        if (!res.ok || !res.body) {
+          const message = await res
+            .json()
+            .then((j) => (typeof j?.error === "string" ? j.error : null))
+            .catch(() => null);
+          setSearchError(message ?? `Iskanje ni uspelo (${res.status}).`);
+          break;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        // Rebuilt as the stream goes so a dropped connection can be resumed
+        // without losing the municipalities a capped slice just produced.
+        let cursor = 0;
+        const discovered: SearchSlice[] = [];
+        let nextQueue: SearchSlice[] | null = null;
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.progress) {
+                addLog(event.progress.label, event.progress.note, event.progress.state);
+              } else if (event.slice) {
+                const s = event.slice as {
+                  index: number;
+                  rows: SearchRow[];
+                  total: number | null;
+                  isRoot: boolean;
+                  children: SearchSlice[];
+                };
+                cursor = s.index + 1;
+                discovered.push(...s.children);
+                queries += 1;
+                setQueriesDone(queries);
+
+                // Only an unsliced query knows the size of the whole code; the
+                // slices below it each report their own share.
+                if (s.isRoot && typeof s.total === "number") {
+                  expected = (expected ?? 0) + s.total;
+                  setExpectedTotal(expected);
+                }
+                for (const r of s.rows) {
+                  if (!byUrl.has(r.detailUrl)) byUrl.set(r.detailUrl, { ...r, status: "waiting" });
+                }
+                publish();
+              } else if (event.done) {
+                nextQueue = (event.done.pending as SearchSlice[]) ?? [];
+                foundGaps.push(...((event.done.gaps as string[]) ?? []));
+              }
+            } catch {
+              // A truncated line is completed by the next chunk.
+            }
+          }
+        }
+
+        // No closing `done` means the function was cut off mid-stream. What it
+        // had not reached, plus what it discovered along the way, is the queue.
+        queue = nextQueue ?? [...queue.slice(cursor), ...discovered];
+        setPendingSlices(queue);
+        if (queue.length === 0) break;
       }
-      const found: Row[] = (json.rows as SearchRow[]).map((r) => ({ ...r, status: "waiting" as const }));
-      setRows(found);
-      setSelected(new Set(found.map((_, i) => i)));
-      setSearchNote(json.note ?? null);
-      return found;
-    } catch {
-      setSearchError("Prišlo je do napake pri iskanju.");
-      return [];
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        setSearchError("Prišlo je do napake pri iskanju.");
+      }
     } finally {
+      abortRef.current = null;
       setSearching(false);
     }
+
+    const found = [...byUrl.values()];
+    publish();
+    setGaps(foundGaps);
+
+    const stopped = stopRef.current || queue.length > 0;
+    const codeCount = activity.split(/[,;\s]+/).filter(Boolean).length;
+    const n = (v: number) => v.toLocaleString("sl-SI");
+
+    setSearchNote(
+      [
+        expected === null
+          ? `Najdenih ${n(found.length)} podjetij.`
+          : stopped
+            ? `Zbranih ${n(found.length)} od ${n(expected)} — iskanje ni dokončano.`
+            : found.length >= expected
+              ? `Najdenih vseh ${n(found.length)} podjetij (AJPES jih javlja ${n(expected)}).`
+              : codeCount > 1
+                ? // With several codes the expected number is a sum across them, so a
+                  // company registered under two of them is counted twice there but
+                  // once here. Fewer rows than expected is normal, not a shortfall.
+                  `Najdenih ${n(found.length)} različnih podjetij; AJPES po vseh ${codeCount} kodah skupaj javlja ${n(expected)} vpisov (podjetje pod dvema kodama je tam šteto dvakrat).`
+                : `Najdenih ${n(found.length)} od ${n(expected)}, ki jih javlja AJPES — ${n(expected - found.length)} jih ni bilo mogoče zajeti.`,
+        // A few thousand companies is days of scraping in an open tab; the queue
+        // exists precisely for this and the button for it is right below.
+        !stopped && found.length > 300
+          ? "Pri tem številu je smiselno uporabiti „Uvozi vse in dokončaj v ozadju“ — skrejp v zavihku bi trajal predolgo."
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+    return stopped ? [] : found;
   }
 
   /**
@@ -720,6 +920,10 @@ export default function LeadScrapeClient() {
               setSelected(new Set());
               setLog([]);
               setSearchNote(null);
+              setPendingSlices([]);
+              setExpectedTotal(null);
+              setQueriesDone(0);
+              setGaps([]);
             }}
             className="rounded-full border border-emerald-300 bg-white px-4 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
           >
@@ -732,9 +936,11 @@ export default function LeadScrapeClient() {
         <p className="text-sm font-semibold text-zinc-900">1. Kaj naj skrejpa</p>
         <p className="mt-1 text-xs text-zinc-500">
           Vnesite eno ali več SKD kod, ločenih z vejico (ali kateri koli drug pogoj), in pritisnite <strong>Poišči in skrejpaj</strong> —
-          podjetja se poiščejo v AJPES in skrejpajo samodejno, brez dodatnega klika. AJPES vrne
-          največ 100 podjetij na posamezno kodo; pri večjem številu zadetkov iskanje zožite
-          (npr. dejavnost + poštna številka).
+          podjetja se poiščejo v AJPES in skrejpajo samodejno, brez dodatnega klika. AJPES na eno
+          poizvedbo vrne največ 100 podjetij, zato se pri večjih kodah iskanje samodejno razbije
+          po občinah (in po potrebi še po ulicah), dokler ni zajeto <strong>vsako</strong> podjetje.
+          Pri kodi s tisoči zadetkov to traja nekaj minut — tabela se polni sproti in iskanje
+          lahko kadar koli ustavite ali nadaljujete.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -803,7 +1009,7 @@ export default function LeadScrapeClient() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {scraping ? (
+          {scraping || searching ? (
             <button
               type="button"
               onClick={() => {
@@ -819,27 +1025,71 @@ export default function LeadScrapeClient() {
             <button
               type="button"
               onClick={searchAndScrape}
-              disabled={searching}
-              className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
             >
-              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {searching ? "Iščem v AJPES …" : "Poišči in skrejpaj"}
+              <Play className="h-4 w-4" />
+              Poišči in skrejpaj
             </button>
           )}
           <button
             type="button"
-            onClick={runSearch}
+            onClick={() => runSearch()}
             disabled={searching || scraping}
             className="flex items-center gap-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
           >
             <Search className="h-4 w-4" />
             Samo poišči
           </button>
+          {/*
+            An interrupted discovery is not lost work: the slices it never got
+            to are saved with the rest of the screen, so it picks up mid-run
+            even after the tab was closed.
+          */}
+          {!searching && !scraping && pendingSlices.length > 0 && (
+            <button
+              type="button"
+              onClick={() => runSearch(pendingSlices)}
+              className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-4 py-2.5 text-sm font-semibold text-accent hover:bg-accent/10"
+            >
+              <Play className="h-4 w-4" />
+              Nadaljuj iskanje ({pendingSlices.length} delov)
+            </button>
+          )}
           <span className="text-xs text-zinc-400">{SPEEDS[speed].hint}</span>
         </div>
 
+        {(searching || pendingSlices.length > 0) && (
+          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
+              <span className="font-semibold text-zinc-900">
+                {searching ? `Iščem po občinah … ${searchPercent} %` : "Iskanje ni dokončano"}
+              </span>
+              <span className="text-zinc-500">
+                {rows.length.toLocaleString("sl-SI")}
+                {expectedTotal !== null && ` / ${expectedTotal.toLocaleString("sl-SI")}`} podjetij ·{" "}
+                {queriesDone} poizvedb
+                {pendingSlices.length > 0 && ` · še ${pendingSlices.length} delov`}
+                {searchEtaSeconds !== null && ` · še ~${formatDuration(searchEtaSeconds)}`}
+              </span>
+            </div>
+            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-500"
+                style={{ width: `${searchPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {searchError && <p className="mt-2 text-xs text-red-500">{searchError}</p>}
         {searchNote && <p className="mt-2 text-xs text-zinc-500">{searchNote}</p>}
+        {gaps.length > 0 && (
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            {gaps.map((g, i) => (
+              <p key={i}>{g}</p>
+            ))}
+          </div>
+        )}
       </div>
 
       {(rows.length > 0 || log.length > 0) && (
