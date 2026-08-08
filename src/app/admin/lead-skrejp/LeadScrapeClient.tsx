@@ -16,6 +16,7 @@ import {
   Sparkles,
   Plus,
   Check,
+  ChevronUp,
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
@@ -1173,7 +1174,24 @@ export default function LeadScrapeClient() {
 
         {showSkdFinder && (
           <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/5 p-4">
-            <p className="text-sm font-semibold text-zinc-900">Poišči SKD kodo</p>
+            {/*
+              The title itself closes the panel. The small "Ne veste kode?"
+              link that opens it is easy to lose track of once the panel is
+              covering the screen, so the way out has to be where you are
+              already looking.
+            */}
+            <button
+              type="button"
+              onClick={() => setShowSkdFinder(false)}
+              className="flex w-full items-center justify-between gap-2 text-left"
+              title="Zapri"
+            >
+              <span className="text-sm font-semibold text-zinc-900">Poišči SKD kodo</span>
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-zinc-500">
+                Zapri
+                <ChevronUp className="h-4 w-4" />
+              </span>
+            </button>
             <p className="mt-1 text-xs text-zinc-500">
               Vpišite panogo, stroko ali vrsto podjetja — npr. „gradbeništvo“, „zobozdravnik“,
               „odvoz smeti“. Seznam je uraden, iz registra AJPES ({SKD_COUNT} dejavnosti).
