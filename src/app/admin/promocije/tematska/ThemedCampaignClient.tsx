@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare, Flame, Trash2 } from "lucide-react";
 import { createThemedCampaign } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
+import { invalidSkdCodes } from "@/lib/skd";
 
 /**
  * Themed campaign wizard: a goal in plain Slovenian becomes a search profile,
@@ -120,6 +121,21 @@ export default function ThemedCampaignClient() {
     } satisfies WizardSession,
     sessionLoaded
   );
+
+  /**
+   * Stale SKD codes in the editable profile. The generator is already gated on
+   * the official register, but this field also holds RESTORED old profiles and
+   * hand-typed codes — precisely the ones that predate the gate.
+   */
+  const badSkd = useMemo(() => (profile ? invalidSkdCodes(profile.skdCodes) : []), [profile]);
+
+  function replaceSkdCode(oldCode: string, newCode: string) {
+    if (!profile) return;
+    setProfile({
+      ...profile,
+      skdCodes: profile.skdCodes.map((c) => (c === oldCode ? newCode : c)),
+    });
+  }
 
   /** Anything worth clearing — governs whether "Počisti vse" is shown at all. */
   const hasContent =
@@ -340,8 +356,34 @@ export default function ThemedCampaignClient() {
                         [key]: e.target.value.split(",").map((v) => v.trim()).filter(Boolean),
                       })
                     }
-                    className={`${INPUT} font-normal normal-case tracking-normal`}
+                    className={`${INPUT} font-normal normal-case tracking-normal ${
+                      key === "skdCodes" && badSkd.length > 0 ? "border-red-300 focus:border-red-400" : ""
+                    }`}
                   />
+                  {key === "skdCodes" &&
+                    badSkd.map(({ code, suggestions }) => (
+                      <div key={code} className="mt-1.5 text-[11px] font-normal normal-case tracking-normal">
+                        <span className="font-semibold text-red-600">
+                          {code} ni v uradnem šifrantu (SKD 2025) — iskanje zanjo najde 0 podjetij.
+                        </span>
+                        {suggestions.length > 0 && (
+                          <span className="ml-1 inline-flex flex-wrap items-center gap-1 text-zinc-600">
+                            Ste mislili:
+                            {suggestions.map((s) => (
+                              <button
+                                key={s.code}
+                                type="button"
+                                onClick={() => replaceSkdCode(code, s.code)}
+                                title={s.label}
+                                className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 hover:bg-emerald-100"
+                              >
+                                {s.code} {s.label.length > 30 ? `${s.label.slice(0, 30)}…` : s.label}
+                              </button>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    ))}
                 </label>
               ))}
             </div>

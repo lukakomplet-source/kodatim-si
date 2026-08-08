@@ -19,10 +19,11 @@ import {
   ChevronUp,
   Server,
   Copy,
+  RotateCcw,
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
-import { searchSkd, skdByCode, SKD_CODES, type SkdEntry } from "@/lib/skd";
+import { searchSkd, invalidSkdCodes, SKD_CODES, type SkdEntry } from "@/lib/skd";
 
 /**
  * "Lead skrejp" — bulk discovery + enrichment with a spreadsheet at the end.
@@ -376,24 +377,8 @@ export default function LeadScrapeClient() {
     [activity]
   );
 
-  /**
-   * Typed codes that are not in the official register, each with the nearest
-   * real ones from the same division. The classification changed in 2025 —
-   * 41.200 became 41.000 — so a stale code searches for an industry that no
-   * longer exists, AJPES honestly answers 0, and it looks like the scraper is
-   * broken. Only complete codes ("41.200") are checked, so nothing shouts
-   * while a code is still being typed.
-   */
-  const invalidCodes = useMemo(
-    () =>
-      [...chosenCodes]
-        .filter((c) => /^\d{2}\.\d{3}$/.test(c) && !skdByCode(c))
-        .map((code) => ({
-          code,
-          suggestions: SKD_CODES.filter((e) => e.code.startsWith(code.slice(0, 3))).slice(0, 3),
-        })),
-    [chosenCodes]
-  );
+  // Stale codes with one-click replacements — see invalidSkdCodes for why.
+  const invalidCodes = useMemo(() => invalidSkdCodes(chosenCodes), [chosenCodes]);
 
   /** Swap a stale code for the suggested real one, in place. */
   function replaceCode(oldCode: string, newCode: string) {
@@ -1015,6 +1000,37 @@ export default function LeadScrapeClient() {
     setScraping(false);
   }
 
+  /**
+   * The clean-slate button: stop everything, wipe everything, reload.
+   *
+   * State is emptied BEFORE the reload, because leaving the page flushes the
+   * autosave — with the old state still in place, that flush would faithfully
+   * re-save the session that was just deleted, and the "nadaljujete tam, kjer
+   * ste ostali" banner would walk straight back in after the reload.
+   */
+  function fullReset() {
+    if (!confirm("Ustaviti iskanje in skrejpanje ter izbrisati vse najdeno? Tega ni mogoče razveljaviti.")) return;
+    stopRef.current = true;
+    abortRef.current?.abort();
+    setActivity("");
+    setName("");
+    setPostalCode("");
+    setTown("");
+    setRows([]);
+    setSelected(new Set());
+    setLog([]);
+    setSort(null);
+    setSearchNote(null);
+    setSearchError(null);
+    setImportMessage(null);
+    setPendingSlices([]);
+    setExpectedTotal(null);
+    void clearSavedState("lead-skrejp");
+    // The reload is the point: it guarantees no loop, stream or timer
+    // survives — exactly the manual refresh this button replaces.
+    setTimeout(() => window.location.reload(), 150);
+  }
+
   /** Re-run only the ticked rows — for retrying failures or a partial selection. */
   async function startScrape() {
     await scrapeAll(rows.map((row, index) => ({ row, index })).filter(({ index }) => selected.has(index)));
@@ -1443,6 +1459,17 @@ export default function LeadScrapeClient() {
             >
               <Play className="h-4 w-4" />
               Nadaljuj iskanje ({pendingSlices.length} delov)
+            </button>
+          )}
+          {(searching || scraping || rows.length > 0 || pendingSlices.length > 0) && (
+            <button
+              type="button"
+              onClick={fullReset}
+              title="Ustavi vse, izbriši najdeno in začni s prazno stranjo"
+              className="flex items-center gap-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Resetiraj vse
             </button>
           )}
           <span className="text-xs text-zinc-400">{SPEEDS[speed].hint}</span>

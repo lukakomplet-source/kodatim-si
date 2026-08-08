@@ -94,11 +94,25 @@ export function withAjpesLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** How many fresh logins to attempt before declaring the fetch failed. */
+const MAX_LOGIN_RETRIES = 3;
+
 /**
- * Fetches an AJPES page with the given session cookie. If the response
- * indicates the session isn't authenticated (login wall text), logs in once
- * more and retries — covers both "credentials were never tried yet" and
- * "session expired mid-run".
+ * Fetches an AJPES page with the given session cookie, logging in again as
+ * needed — covers "credentials were never tried yet" and "session expired
+ * mid-run".
+ *
+ * Retried with growing, jittered pauses rather than once: there is one AJPES
+ * account, and when the worker and a discovery run use it from SEPARATE
+ * processes, each login invalidates the other side's cookie. With a single
+ * immediate retry, losing that race twice in a row threw "prijava ni uspela
+ * (napačni podatki …)" — alarming and wrong, the password was fine. The jitter
+ * breaks the lockstep where both processes re-login at the same moment,
+ * forever knocking each other out.
  */
 export async function fetchAjpesAuthed(
   url: string,
@@ -110,17 +124,19 @@ export async function fetchAjpesAuthed(
   let response = await providerFetch("ajpes", url, { headers: { Cookie: current.cookie } });
   let html = await response.text();
 
-  if (html.includes(LOGIN_REQUIRED_MARKER)) {
-    // The session expired, or another process took it over. Force one fresh
-    // login — concurrent callers hitting this at the same moment share it.
+  for (let attempt = 1; html.includes(LOGIN_REQUIRED_MARKER); attempt += 1) {
+    if (attempt > MAX_LOGIN_RETRIES) {
+      throw new Error(
+        `AJPES: prijava ni uspela po ${MAX_LOGIN_RETRIES} poskusih. Če hkrati tečeta iskanje in worker, si delita en račun in si izmenično razveljavljata sejo — poskus se samodejno ponovi, a bo hitreje, če med velikim iskanjem worker ustavite.`
+      );
+    }
+
+    await sleep(attempt * 1000 + Math.random() * 1500);
     const relogin = await getSession(true);
     if (!relogin) throw new Error("AJPES: poverilnice niso nastavljene.");
     current = relogin;
     response = await providerFetch("ajpes", url, { headers: { Cookie: current.cookie } });
     html = await response.text();
-    if (html.includes(LOGIN_REQUIRED_MARKER)) {
-      throw new Error("AJPES: prijava ni uspela (napačni podatki ali sprememba prijavnega postopka).");
-    }
   }
 
   return { html, session: current, status: response.status };

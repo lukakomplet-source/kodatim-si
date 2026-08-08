@@ -115,3 +115,25 @@ export function searchSkd(query: string, limit = 40): SkdEntry[] {
 export function skdCatalogueText(): string {
   return SKD_CODES.map((e) => `${e.code} ${e.label}`).join("\n");
 }
+
+export type InvalidSkdCode = { code: string; suggestions: SkdEntry[] };
+
+/**
+ * Complete-looking codes ("41.200") that are not in the official register,
+ * each with the nearest real codes from the same division offered as
+ * replacements. Partial input is ignored on purpose, so nothing shouts while
+ * a code is still being typed.
+ *
+ * Slovenia replaced the classification in 2025 (41.200 became 41.000), so a
+ * stale code in a pasted or remembered list is a matter of time — and it
+ * fails silently: AJPES and our own base both honestly return zero for an
+ * industry that no longer exists, which looks exactly like a broken scraper.
+ */
+export function invalidSkdCodes(codes: Iterable<string>): InvalidSkdCode[] {
+  return [...codes]
+    .filter((c) => /^\d{2}\.\d{3}$/.test(c) && !BY_CODE.has(c))
+    .map((code) => ({
+      code,
+      suggestions: SKD_CODES.filter((e) => e.code.startsWith(code.slice(0, 3))).slice(0, 3),
+    }));
+}
