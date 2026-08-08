@@ -14,6 +14,8 @@ import {
   Tag as TagIcon,
   Trash2,
   AlertTriangle,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import type { IntelLead, LeadStatus } from "@/lib/lead-intelligence/types";
 import {
@@ -91,6 +93,48 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
     skd_name: "",
   });
   const [savingCore, setSavingCore] = useState(false);
+
+  /**
+   * The on-demand AI layer. Bulk imports deliberately skip it (3–5 model calls
+   * per lead adds up to the biggest cost of a big run), so it is paid here,
+   * only for the leads someone actually intends to call. The same request also
+   * tops up the AJPES-only fields the fast bulk path left out.
+   */
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
+
+  async function runAiAnalysis() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setAiBusy(true);
+    setAiMessage(null);
+    try {
+      const res = await fetch("/api/admin/lead-intelligence/ai-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadIds: ids }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAiMessage(json?.error ?? "AI analiza ni uspela.");
+        return;
+      }
+      const parts = [`AI analiza narejena za ${json.analyzed} leadov`];
+      if (json.ajpesFilled > 0) parts.push(`AJPES podatki dopolnjeni pri ${json.ajpesFilled}`);
+      if (json.failed?.length > 0) {
+        parts.push(
+          `napake: ${json.failed.slice(0, 3).join(", ")}${json.failed.length > 3 ? ` in še ${json.failed.length - 3}` : ""}`
+        );
+      }
+      if (json.remaining > 0) parts.push(`še ${json.remaining} ni prišlo na vrsto — kliknite znova`);
+      setAiMessage(`${parts.join(" · ")}.`);
+      router.refresh();
+    } catch {
+      setAiMessage("Prišlo je do napake pri AI analizi.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -228,6 +272,16 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
           </select>
           <button
             type="button"
+            disabled={aiBusy}
+            onClick={runAiAnalysis}
+            title="Poženi AI poslovno analizo na izbranih leadih in dopolni manjkajoče AJPES podatke (regija, druge dejavnosti, ustanovitelji)"
+            className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {aiBusy ? "Analiziram …" : "AI analiza"}
+          </button>
+          <button
+            type="button"
             disabled={exporting}
             onClick={() => handleExport(Array.from(selected))}
             className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
@@ -257,6 +311,10 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
             Prekliči izbor
           </button>
         </div>
+      )}
+
+      {aiMessage && (
+        <p className="mb-3 rounded-xl bg-accent/5 px-4 py-2 text-xs text-zinc-700">{aiMessage}</p>
       )}
 
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">

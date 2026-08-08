@@ -194,7 +194,7 @@ export function isPlaceholderName(value: string): boolean {
   return /\bni vpisan|ni podatka|^-+$/i.test(value.trim());
 }
 
-function collectContactPersons(fields: Record<string, string>): string[] {
+export function collectContactPersons(fields: Record<string, string>): string[] {
   const raw = [fields.director, fields.owners, fields.authorized_representatives]
     .filter(Boolean)
     .flatMap((value) => value.split(PEOPLE_SEPARATOR))

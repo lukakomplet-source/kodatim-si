@@ -81,6 +81,18 @@ if (process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN === undefined) {
   process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN = "1";
 }
 
+/**
+ * Same reasoning, bigger numbers: the AI steps are 3–5 model calls plus
+ * Firecrawl per lead. At 200k leads that is the dominant cost of the entire
+ * project, for advisory output — while every registry fact (email, phone,
+ * revenue, director) arrives deterministically and free from the providers.
+ * AI analysis is run later, per selected lead, from the Lead Intelligence
+ * table. Set ENRICHMENT_SKIP_AI=0 in .env.local to keep it inline.
+ */
+if (process.env.ENRICHMENT_SKIP_AI === undefined) {
+  process.env.ENRICHMENT_SKIP_AI = "1";
+}
+
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -136,6 +148,11 @@ async function main() {
     process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN === "1"
       ? "AJPES se preskoči, kadar sta davčna in matična že znani (hitrejše; brez regije, drugih dejavnosti in ustanoviteljev)."
       : "AJPES se poizveduje za vsako podjetje (popolneje, a bistveno počasneje)."
+  );
+  log(
+    process.env.ENRICHMENT_SKIP_AI === "1"
+      ? "AI analiza je v masovnem teku izklopljena — poženete jo kasneje na izbranih leadih (gumb v Lead Intelligence)."
+      : "AI analiza teče za vsak lead (OPOZORILO: 3–5 klicev modela na lead — pri tisočih leadov visok strošek)."
   );
 
   const counts = await queue.queueCounts(admin);
