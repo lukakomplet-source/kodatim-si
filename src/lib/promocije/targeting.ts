@@ -1,6 +1,7 @@
 import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { chatJSON } from "@/lib/openai";
+import { skdByCode, skdCatalogueText } from "@/lib/skd";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
 /**
@@ -42,8 +43,10 @@ in odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
 "skdCodes" (polje nizov), "keywords" (polje nizov), "regions" (polje nizov), "sizes" (polje nizov), "summary" (niz).
 
 Pravila:
-- "skdCodes" so slovenske SKD 2008 šifre dejavnosti v obliki "41.200". Navedi vse, ki razumno ustrezajo
-  ciljni skupini (raje več kot premalo, a nobene, ki očitno ne spada zraven).
+- "skdCodes" izberi IZKLJUČNO iz priloženega uradnega šifranta dejavnosti — uporabi šifre dobesedno
+  tako, kot so v njem. Ne sestavljaj šifer iz spomina: šifrant se je leta 2025 spremenil in stare
+  šifre (npr. 41.200) ne obstajajo več. Navedi vse, ki razumno ustrezajo ciljni skupini
+  (raje več kot premalo, a nobene, ki očitno ne spada zraven).
 - "keywords" so besede, ki se pojavijo v opisu dejavnosti takega podjetja (npr. "gradbeništvo", "rušenje").
   Male črke, brez sklanjanja, 3-10 besed.
 - "regions" izpolni SAMO, če uporabnik omeni kraj ali regijo; sicer prazno polje.
@@ -53,9 +56,11 @@ Pravila:
 - Vse v slovenščini.`;
 
 export async function buildTargetProfile(theme: string): Promise<TargetProfile> {
-  const ai = await chatJSON<Partial<TargetProfile>>(PROFILE_PROMPT, `Cilj kampanje: ${theme}`, {
-    temperature: 0.2,
-  });
+  const ai = await chatJSON<Partial<TargetProfile>>(
+    PROFILE_PROMPT,
+    `Uradni šifrant SKD dejavnosti:\n\n${skdCatalogueText()}\n\nCilj kampanje: ${theme}`,
+    { temperature: 0.2 }
+  );
 
   const list = (value: unknown, limit: number) =>
     Array.isArray(value)
@@ -63,7 +68,11 @@ export async function buildTargetProfile(theme: string): Promise<TargetProfile> 
       : [];
 
   return {
-    skdCodes: list(ai.skdCodes, 40),
+    // The same gate as the SKD finder: a code the model returned that is not
+    // literally in the official register does not survive. A stale code (the
+    // classification changed in 2025) searches BOTH AJPES and our own base for
+    // an industry that no longer exists — finding 0 and looking like a bug.
+    skdCodes: list(ai.skdCodes, 40).filter((code) => Boolean(skdByCode(code))),
     keywords: list(ai.keywords, 12).map((k) => k.toLowerCase()),
     regions: list(ai.regions, 12),
     sizes: list(ai.sizes, 4),

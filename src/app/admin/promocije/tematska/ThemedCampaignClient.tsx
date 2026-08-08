@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare, Flame } from "lucide-react";
+import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare, Flame, Trash2 } from "lucide-react";
 import { createThemedCampaign } from "./actions";
-import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
+import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
 
 /**
  * Themed campaign wizard: a goal in plain Slovenian becomes a search profile,
@@ -120,6 +120,36 @@ export default function ThemedCampaignClient() {
     } satisfies WizardSession,
     sessionLoaded
   );
+
+  /** Anything worth clearing — governs whether "Počisti vse" is shown at all. */
+  const hasContent =
+    Boolean(theme.trim() || senderContext.trim() || profile || candidates || campaignName.trim()) ||
+    emails.length > 0 ||
+    chat.length > 0;
+
+  /**
+   * Back to a blank campaign, on an explicit click only — the same contract as
+   * Lead skrejp's "Počisti": nothing ever clears itself, and the server copy
+   * goes too, or the old campaign would just walk back in on the next load.
+   */
+  function resetWizard() {
+    if (!confirm("Izbrisati trenutno kampanjo (cilj, kandidate, maile, pogovor)? Tega ni mogoče razveljaviti.")) return;
+    void clearSavedState("tematska-kampanja");
+    setTheme("");
+    setSenderContext("");
+    setProfile(null);
+    setCandidates(null);
+    setCandidateNote(null);
+    setSelected(new Set());
+    setTemplate(null);
+    setEmails([]);
+    setCampaignName("");
+    setChat([]);
+    setQuestion("");
+    setError(null);
+    // The mindset toggle is a lasting preference, not campaign content — it
+    // survives the wipe on purpose.
+  }
 
   async function call(step: "profile" | "targets" | "emails", extra: Record<string, unknown> = {}) {
     setBusy(step);
@@ -238,7 +268,20 @@ export default function ThemedCampaignClient() {
     <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="space-y-5">
         <div className={CARD}>
-          <p className="text-sm font-semibold text-zinc-900">1. Kaj prodajate in komu</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-zinc-900">1. Kaj prodajate in komu</p>
+            {hasContent && (
+              <button
+                type="button"
+                onClick={resetWizard}
+                title="Izbriše cilj, profil, kandidate, maile in pogovor — začnete s prazno kampanjo"
+                className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-3.5 py-1.5 text-xs font-semibold text-zinc-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Počisti vse
+              </button>
+            )}
+          </div>
           <label className="mt-3 block text-xs font-medium uppercase tracking-wide text-zinc-500">
             Cilj kampanje
             <textarea

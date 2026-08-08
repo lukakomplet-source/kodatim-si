@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
-import { searchSkd, SKD_CODES, type SkdEntry } from "@/lib/skd";
+import { searchSkd, skdByCode, SKD_CODES, type SkdEntry } from "@/lib/skd";
 
 /**
  * "Lead skrejp" — bulk discovery + enrichment with a spreadsheet at the end.
@@ -375,6 +375,36 @@ export default function LeadScrapeClient() {
     () => new Set(activity.split(/[,;\s]+/).map((c) => c.trim()).filter(Boolean)),
     [activity]
   );
+
+  /**
+   * Typed codes that are not in the official register, each with the nearest
+   * real ones from the same division. The classification changed in 2025 —
+   * 41.200 became 41.000 — so a stale code searches for an industry that no
+   * longer exists, AJPES honestly answers 0, and it looks like the scraper is
+   * broken. Only complete codes ("41.200") are checked, so nothing shouts
+   * while a code is still being typed.
+   */
+  const invalidCodes = useMemo(
+    () =>
+      [...chosenCodes]
+        .filter((c) => /^\d{2}\.\d{3}$/.test(c) && !skdByCode(c))
+        .map((code) => ({
+          code,
+          suggestions: SKD_CODES.filter((e) => e.code.startsWith(code.slice(0, 3))).slice(0, 3),
+        })),
+    [chosenCodes]
+  );
+
+  /** Swap a stale code for the suggested real one, in place. */
+  function replaceCode(oldCode: string, newCode: string) {
+    setActivity((prev) =>
+      prev
+        .split(/[,;\s]+/)
+        .map((c) => (c.trim() === oldCode ? newCode : c.trim()))
+        .filter(Boolean)
+        .join(", ")
+    );
+  }
 
   function toggleCode(code: string) {
     setActivity((prev) => {
@@ -1155,8 +1185,35 @@ export default function LeadScrapeClient() {
               value={activity}
               onChange={(e) => setActivity(e.target.value)}
               placeholder="npr. 49.410, 49.420, 52.290"
-              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none"
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:outline-none ${
+                invalidCodes.length > 0
+                  ? "border-red-300 focus:border-red-400"
+                  : "border-zinc-200 focus:border-accent/50"
+              }`}
             />
+            {invalidCodes.map(({ code, suggestions }) => (
+              <div key={code} className="mt-1.5 text-[11px] font-normal normal-case tracking-normal">
+                <span className="font-semibold text-red-600">
+                  {code} ni v uradnem šifrantu (SKD 2025) — AJPES zanjo vrne 0 podjetij.
+                </span>
+                {suggestions.length > 0 && (
+                  <span className="ml-1 inline-flex flex-wrap items-center gap-1 text-zinc-600">
+                    Ste mislili:
+                    {suggestions.map((s) => (
+                      <button
+                        key={s.code}
+                        type="button"
+                        onClick={() => replaceCode(code, s.code)}
+                        title={s.label}
+                        className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 hover:bg-emerald-100"
+                      >
+                        {s.code} {s.label.length > 30 ? `${s.label.slice(0, 30)}…` : s.label}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
             Ime podjetja (delno)
