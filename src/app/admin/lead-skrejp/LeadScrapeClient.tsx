@@ -1,9 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Play, Square, Download, Upload, AlertTriangle, CheckCircle2, Loader2, Terminal } from "lucide-react";
+import {
+  Search,
+  Play,
+  Square,
+  Download,
+  Upload,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Terminal,
+  Columns3,
+  HelpCircle,
+  Sparkles,
+  Plus,
+  Check,
+} from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
+import { searchSkd, SKD_CODES, type SkdEntry } from "@/lib/skd";
 
 /**
  * "Lead skrejp" — bulk discovery + enrichment with a spreadsheet at the end.
@@ -85,6 +101,8 @@ type SkrejpSession = {
   pendingSlices?: SearchSlice[];
   /** How many companies AJPES said exist, to check the search against. */
   expectedTotal?: number | null;
+  /** Which columns the table shows. Undefined (an older session) means all. */
+  visibleColumns?: string[];
 };
 
 /**
@@ -136,6 +154,22 @@ const COLUMNS: { key: string; label: string }[] = [
 
 /** The fields that decide whether a row is actually usable as a lead. */
 const KEY_FIELDS = ["email", "phone", "website", "contact_person", "revenue_amount"];
+
+/**
+ * The subset worth seeing when you are working the list rather than auditing
+ * it: who they are, how to reach them, and how big they are.
+ */
+const ESSENTIAL_COLUMNS = [
+  "company_name",
+  "why_missing",
+  "website",
+  "email",
+  "phone",
+  "contact_person",
+  "address_city",
+  "revenue_amount",
+  "employees_count",
+];
 
 /**
  * Why this row is thin — the whole point being that a blank cell always has a
@@ -204,6 +238,46 @@ function toNumber(value: string): number {
   return Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
 }
 
+/** How many activities the bundled official list holds, for the finder's blurb. */
+const SKD_COUNT = SKD_CODES.length;
+
+/** One activity in the SKD finder: click to put it in the field, click to remove. */
+function SkdRow({
+  code,
+  label,
+  note,
+  chosen,
+  onToggle,
+}: {
+  code: string;
+  label: string;
+  note?: string;
+  chosen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left text-xs transition ${
+        chosen
+          ? "border-accent bg-accent/10 text-zinc-900"
+          : "border-zinc-200 bg-white text-zinc-700 hover:border-accent/40 hover:bg-accent/5"
+      }`}
+    >
+      {chosen ? (
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+      ) : (
+        <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400" />
+      )}
+      <span className="min-w-0">
+        <span className="font-semibold text-zinc-900">{code}</span> {label}
+        {note && <span className="block text-[11px] text-zinc-500">{note}</span>}
+      </span>
+    </button>
+  );
+}
+
 function toCsv(rows: Row[]): string {
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const head = COLUMNS.map((c) => escape(c.label)).join(";");
@@ -246,6 +320,19 @@ export default function LeadScrapeClient() {
    */
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
 
+  /**
+   * Twenty-seven columns is more than fits on any screen. Hiding some is a
+   * viewing preference only — the CSV export and the Lead Intelligence import
+   * always carry everything that was scraped.
+   */
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(COLUMNS.map((c) => c.key));
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const shownColumns = useMemo(
+    // Driven off COLUMNS so the on-screen order never depends on click order.
+    () => COLUMNS.filter((c) => visibleColumns.includes(c.key)),
+    [visibleColumns]
+  );
+
   const [speed, setSpeed] = useState<SpeedKey>("slow");
   const [scraping, setScraping] = useState(false);
   const stopRef = useRef(false);
@@ -267,6 +354,57 @@ export default function LeadScrapeClient() {
 
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
+
+  /**
+   * The SKD finder. Nobody knows 678 five-digit codes by heart, and typing the
+   * wrong one searches the wrong industry without ever looking like an error.
+   */
+  const [showSkdFinder, setShowSkdFinder] = useState(false);
+  const [skdQuery, setSkdQuery] = useState("");
+  const [skdAiResults, setSkdAiResults] = useState<{ code: string; label: string; why: string }[] | null>(null);
+  const [skdAiBusy, setSkdAiBusy] = useState(false);
+  const [skdAiError, setSkdAiError] = useState<string | null>(null);
+  // Instant, offline, no request per keystroke — the whole list is bundled.
+  const skdMatches = useMemo<SkdEntry[]>(() => searchSkd(skdQuery), [skdQuery]);
+
+  /** Codes already in the field, so the finder can show what is picked. */
+  const chosenCodes = useMemo(
+    () => new Set(activity.split(/[,;\s]+/).map((c) => c.trim()).filter(Boolean)),
+    [activity]
+  );
+
+  function toggleCode(code: string) {
+    setActivity((prev) => {
+      const codes = prev.split(/[,;\s]+/).map((c) => c.trim()).filter(Boolean);
+      const next = codes.includes(code) ? codes.filter((c) => c !== code) : [...codes, code];
+      return next.join(", ");
+    });
+  }
+
+  async function askAiForSkd() {
+    const q = skdQuery.trim();
+    if (!q) return;
+    setSkdAiBusy(true);
+    setSkdAiError(null);
+    setSkdAiResults(null);
+    try {
+      const res = await fetch("/api/admin/skd-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSkdAiError(json?.error ?? "Iskanje ni uspelo.");
+        return;
+      }
+      setSkdAiResults(json.codes ?? []);
+    } catch {
+      setSkdAiError("Prišlo je do napake.");
+    } finally {
+      setSkdAiBusy(false);
+    }
+  }
 
   // Live log: what the scrape is doing right now, newest last.
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -290,6 +428,11 @@ export default function LeadScrapeClient() {
     setLog(saved.log ?? []);
     setPendingSlices(saved.pendingSlices ?? []);
     setExpectedTotal(saved.expectedTotal ?? null);
+    // Drop keys from columns that no longer exist, and fall back to everything
+    // for a session saved before the picker existed.
+    if (saved.visibleColumns?.length) {
+      setVisibleColumns(saved.visibleColumns.filter((k) => COLUMNS.some((c) => c.key === k)));
+    }
   });
 
   const session: SkrejpSession = {
@@ -304,6 +447,7 @@ export default function LeadScrapeClient() {
     log: log.slice(-120),
     pendingSlices,
     expectedTotal,
+    visibleColumns,
   };
   useAutoSave("lead-skrejp", session, sessionLoaded);
 
@@ -903,6 +1047,14 @@ export default function LeadScrapeClient() {
     setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((_, i) => i))));
   }
 
+  function toggleColumn(key: string) {
+    setVisibleColumns((prev) => {
+      if (!prev.includes(key)) return [...prev, key];
+      // Hiding the last one would leave a table of nothing but checkboxes.
+      return prev.length === 1 ? prev : prev.filter((k) => k !== key);
+    });
+  }
+
   return (
     <div className="mt-6 space-y-5">
       {restored && rows.length > 0 && (
@@ -943,15 +1095,26 @@ export default function LeadScrapeClient() {
           lahko kadar koli ustavite ali nadaljujete.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Dejavnost (SKD kode)
+          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="skd-input">Dejavnost (SKD kode)</label>
+              <button
+                type="button"
+                onClick={() => setShowSkdFinder((v) => !v)}
+                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-accent hover:bg-accent/10"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+                Ne veste kode?
+              </button>
+            </div>
             <input
+              id="skd-input"
               value={activity}
               onChange={(e) => setActivity(e.target.value)}
               placeholder="npr. 49.410, 49.420, 52.290"
               className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none"
             />
-          </label>
+          </div>
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
             Ime podjetja (delno)
             <input
@@ -1007,6 +1170,116 @@ export default function LeadScrapeClient() {
             </select>
           </label>
         </div>
+
+        {showSkdFinder && (
+          <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/5 p-4">
+            <p className="text-sm font-semibold text-zinc-900">Poišči SKD kodo</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Vpišite panogo, stroko ali vrsto podjetja — npr. „gradbeništvo“, „zobozdravnik“,
+              „odvoz smeti“. Seznam je uraden, iz registra AJPES ({SKD_COUNT} dejavnosti).
+              Kliknite kodo, da jo dodate v polje.
+            </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input
+                value={skdQuery}
+                onChange={(e) => setSkdQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void askAiForSkd();
+                  }
+                }}
+                placeholder="npr. gradbeništvo, prevozništvo, frizer …"
+                className="min-w-[16rem] flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-accent/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={askAiForSkd}
+                disabled={skdAiBusy || !skdQuery.trim()}
+                title="Kadar iskanje po besedah ne najde pravega — npr. „avtoprevozniki“ proti uradnemu „Cestni tovorni promet“"
+                className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {skdAiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Poišči z AI
+              </button>
+            </div>
+
+            {skdAiError && <p className="mt-2 text-xs text-red-500">{skdAiError}</p>}
+
+            {chosenCodes.size > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-zinc-500">Izbrano:</span>
+                {[...chosenCodes].map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => toggleCode(code)}
+                    title="Odstrani"
+                    className="rounded-full bg-accent px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-80"
+                  >
+                    {code} ×
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/*
+              AI results are shown separately and never merged into the word
+              matches: they are a suggestion about meaning, while the list below
+              is a literal match. Worth being able to tell apart.
+            */}
+            {skdAiResults && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-zinc-700">
+                  Predlogi AI ({skdAiResults.length})
+                </p>
+                {skdAiResults.length === 0 && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Za ta opis v uradnem seznamu ni ustrezne dejavnosti.
+                  </p>
+                )}
+                <div className="mt-1.5 space-y-1">
+                  {skdAiResults.map((r) => (
+                    <SkdRow
+                      key={r.code}
+                      code={r.code}
+                      label={r.label}
+                      note={r.why}
+                      chosen={chosenCodes.has(r.code)}
+                      onToggle={() => toggleCode(r.code)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {skdQuery.trim() && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-zinc-700">
+                  Ujemanje po besedah ({skdMatches.length})
+                </p>
+                {skdMatches.length === 0 ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Po besedah ni zadetka — poskusite „Poišči z AI“.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 max-h-72 space-y-1 overflow-y-auto pr-1">
+                    {skdMatches.map((m) => (
+                      <SkdRow
+                        key={m.code}
+                        code={m.code}
+                        label={m.label}
+                        chosen={chosenCodes.has(m.code)}
+                        onToggle={() => toggleCode(m.code)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {scraping || searching ? (
@@ -1231,87 +1504,183 @@ export default function LeadScrapeClient() {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
-              <tr>
-                <th className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.size === rows.length && rows.length > 0}
-                    onChange={toggleAll}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowColumnPicker((v) => !v)}
+                className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              >
+                <Columns3 className="h-4 w-4" />
+                Stolpci ({shownColumns.length}/{COLUMNS.length})
+              </button>
+
+              {showColumnPicker && (
+                <>
+                  {/* Clicking anywhere else closes the panel. */}
+                  <button
+                    type="button"
+                    aria-label="Zapri izbirnik stolpcev"
+                    onClick={() => setShowColumnPicker(false)}
+                    className="fixed inset-0 z-30 cursor-default"
                   />
-                </th>
-                <th className="px-3 py-2 font-medium">#</th>
-                {COLUMNS.map((c) => (
-                  <th key={c.key} className="whitespace-nowrap px-3 py-2 font-medium">
+                <div className="absolute left-0 z-40 mt-2 w-72 rounded-2xl border border-zinc-200 bg-white p-3 shadow-lg">
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleSort(c.key)}
-                      className="flex items-center gap-1 hover:text-zinc-900"
-                      title="Razvrsti po tem stolpcu"
+                      onClick={() => setVisibleColumns(COLUMNS.map((c) => c.key))}
+                      className="flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
                     >
-                      {c.label}
-                      <span className={sort?.key === c.key ? "text-accent" : "text-zinc-300"}>
-                        {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
-                      </span>
+                      Vse
                     </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {displayRows.map(({ row, index }) => (
-                <tr key={`${row.detailUrl}-${index}`} className={row.status === "error" ? "bg-red-50/40" : undefined}>
-                  <td className="px-3 py-2 align-top">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleColumns(ESSENTIAL_COLUMNS)}
+                      className="flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Osnovno
+                    </button>
+                  </div>
+                  <div className="mt-2 max-h-80 overflow-y-auto">
+                    {COLUMNS.map((c) => (
+                      <label
+                        key={c.key}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns.includes(c.key)}
+                          onChange={() => toggleColumn(c.key)}
+                        />
+                        {c.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                </>
+              )}
+            </div>
+            <p className="text-xs text-zinc-400">
+              Tabela drsi levo-desno; podjetje in kljukica ostaneta vidna. Izvoz v CSV vsebuje vse
+              stolpce, tudi skrite.
+            </p>
+          </div>
+
+          {/*
+            Scrolls on both axes inside its own box, which is also what makes
+            the sticky header and the sticky first columns work — sticky
+            positions against the nearest scroll container, so there has to be
+            one here rather than the page itself.
+          */}
+          <div className="max-h-[75vh] overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+            <table className="min-w-full text-left text-xs">
+              <thead className="bg-zinc-50 text-zinc-500">
+                <tr>
+                  <th className="sticky left-0 top-0 z-30 w-10 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
                     <input
                       type="checkbox"
-                      checked={selected.has(index)}
-                      onChange={() =>
-                        setSelected((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(index)) next.delete(index);
-                          else next.add(index);
-                          return next;
-                        })
-                      }
+                      checked={selected.size === rows.length && rows.length > 0}
+                      onChange={toggleAll}
                     />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-zinc-400">
-                    {row.status === "running" && <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />}
-                    {row.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-                    {row.status === "error" && (
-                      <span title={row.error}>
-                        <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-                      </span>
-                    )}
-                    {row.status === "waiting" && index + 1}
-                  </td>
-                  {COLUMNS.map((c) => {
-                    const value = valueFor(row, c.key);
-                    const isStatus = c.key === "company_status";
-                    const isWhy = c.key === "why_missing";
-                    const tone = isStatus && row.result?.bankrupt
-                      ? "font-semibold text-red-600"
-                      : isWhy
-                        ? row.status === "error"
-                          ? "text-red-600"
-                          : "text-amber-700"
-                        : "text-zinc-700";
+                  </th>
+                  {/*
+                    The widths here are not cosmetic: the company column pins
+                    itself at left-[6rem], which only lines up if these two
+                    really are 2.5rem + 3.5rem. w-14 leaves room for a
+                    four-digit row number, since a search can return thousands.
+                  */}
+                  <th className="sticky left-10 top-0 z-30 w-14 border-b border-zinc-200 bg-zinc-50 px-3 py-2 font-medium">
+                    #
+                  </th>
+                  {shownColumns.map((c, i) => {
+                    // The company name rides along on the left so a row is
+                    // still identifiable once you have scrolled to Boniteta.
+                    const pinned = i === 0 && c.key === "company_name";
                     return (
-                      <td
+                      <th
                         key={c.key}
-                        className={`${isWhy || c.key === "description" ? "max-w-[320px]" : "max-w-[220px]"} truncate px-3 py-2 align-top ${tone}`}
-                        title={value}
+                        className={`whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-3 py-2 font-medium ${
+                          pinned ? "sticky left-[6rem] top-0 z-30" : "sticky top-0 z-20"
+                        }`}
                       >
-                        {value}
-                      </td>
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(c.key)}
+                          className="flex items-center gap-1 hover:text-zinc-900"
+                          title="Razvrsti po tem stolpcu"
+                        >
+                          {c.label}
+                          <span className={sort?.key === c.key ? "text-accent" : "text-zinc-300"}>
+                            {sort?.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                          </span>
+                        </button>
+                      </th>
                     );
                   })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {displayRows.map(({ row, index }) => {
+                  // Opaque, because a sticky cell with a see-through background
+                  // shows the columns sliding underneath it.
+                  const rowBg = row.status === "error" ? "bg-red-50" : "bg-white";
+                  return (
+                    <tr key={`${row.detailUrl}-${index}`}>
+                      <td className={`sticky left-0 z-10 w-10 px-3 py-2 align-top ${rowBg}`}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(index)}
+                          onChange={() =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(index)) next.delete(index);
+                              else next.add(index);
+                              return next;
+                            })
+                          }
+                        />
+                      </td>
+                      <td className={`sticky left-10 z-10 w-14 whitespace-nowrap px-3 py-2 align-top text-zinc-400 ${rowBg}`}>
+                        {row.status === "running" && <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />}
+                        {row.status === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        {row.status === "error" && (
+                          <span title={row.error}>
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                          </span>
+                        )}
+                        {row.status === "waiting" && index + 1}
+                      </td>
+                      {shownColumns.map((c, i) => {
+                        const value = valueFor(row, c.key);
+                        const isStatus = c.key === "company_status";
+                        const isWhy = c.key === "why_missing";
+                        const pinned = i === 0 && c.key === "company_name";
+                        const tone = isStatus && row.result?.bankrupt
+                          ? "font-semibold text-red-600"
+                          : isWhy
+                            ? row.status === "error"
+                              ? "text-red-600"
+                              : "text-amber-700"
+                            : "text-zinc-700";
+                        return (
+                          <td
+                            key={c.key}
+                            className={`${isWhy || c.key === "description" ? "max-w-[320px]" : "max-w-[220px]"} truncate px-3 py-2 align-top ${tone} ${
+                              pinned ? `sticky left-[6rem] z-10 ${rowBg}` : ""
+                            }`}
+                            title={value}
+                          >
+                            {value}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

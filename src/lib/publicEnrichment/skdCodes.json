@@ -1,0 +1,2714 @@
+[
+  {
+    "code": "01.110",
+    "label": "Prid.žit(razen riža), stročnic in oljnic"
+  },
+  {
+    "code": "01.120",
+    "label": "Pridelovanje riža"
+  },
+  {
+    "code": "01.130",
+    "label": "Prid.zelenj.in melon,koren.in gomolj."
+  },
+  {
+    "code": "01.140",
+    "label": "Pridelovanje sladkornega trsa"
+  },
+  {
+    "code": "01.150",
+    "label": "Pridelovanje tobaka"
+  },
+  {
+    "code": "01.160",
+    "label": "Pridelovanje rastlin za vlakna"
+  },
+  {
+    "code": "01.190",
+    "label": "Prid.cvetja idr.enoletnih rastlin"
+  },
+  {
+    "code": "01.210",
+    "label": "Vinogradništvo"
+  },
+  {
+    "code": "01.220",
+    "label": "Gojenje tropskega in subtrop.sadja"
+  },
+  {
+    "code": "01.230",
+    "label": "Gojenje citrusov"
+  },
+  {
+    "code": "01.240",
+    "label": "Gojenje pečkatega in koščič.sadja"
+  },
+  {
+    "code": "01.250",
+    "label": "Gojenje dr.sadnih dreves in grmovnic"
+  },
+  {
+    "code": "01.260",
+    "label": "Pridelovanje oljnih sadežev"
+  },
+  {
+    "code": "01.270",
+    "label": "Gojenje rastlin za izdelavo napitkov"
+  },
+  {
+    "code": "01.280",
+    "label": "Gojenje začim.,aromat.in zdrav.rastlin"
+  },
+  {
+    "code": "01.290",
+    "label": "Gojenje dr.trajnih nasadov"
+  },
+  {
+    "code": "01.300",
+    "label": "Razmnoževanje rastlin"
+  },
+  {
+    "code": "01.410",
+    "label": "Prireja mleka"
+  },
+  {
+    "code": "01.420",
+    "label": "Dr.govedoreja"
+  },
+  {
+    "code": "01.430",
+    "label": "Konjereja"
+  },
+  {
+    "code": "01.440",
+    "label": "Reja kamel"
+  },
+  {
+    "code": "01.450",
+    "label": "Reja drobnice"
+  },
+  {
+    "code": "01.460",
+    "label": "Prašičereja"
+  },
+  {
+    "code": "01.470",
+    "label": "Reja perutnine"
+  },
+  {
+    "code": "01.480",
+    "label": "Reja dr.živali"
+  },
+  {
+    "code": "01.500",
+    "label": "Mešano kmetijstvo"
+  },
+  {
+    "code": "01.610",
+    "label": "Stor.za rastlinsko pridelavo"
+  },
+  {
+    "code": "01.620",
+    "label": "Stor.za živinorejo,razen veterinarskih"
+  },
+  {
+    "code": "01.630",
+    "label": "Priprava pridelkov in obdelava semen"
+  },
+  {
+    "code": "01.700",
+    "label": "Lovstvo"
+  },
+  {
+    "code": "02.100",
+    "label": "Gojenje gozdov idr.gozdarske dej."
+  },
+  {
+    "code": "02.200",
+    "label": "Sečnja"
+  },
+  {
+    "code": "02.300",
+    "label": "Nabiranje gozdnih dobrin, razen lesa"
+  },
+  {
+    "code": "02.400",
+    "label": "Stor.za gozdarstvo"
+  },
+  {
+    "code": "03.110",
+    "label": "Morsko ribištvo"
+  },
+  {
+    "code": "03.120",
+    "label": "Sladkovodno ribištvo"
+  },
+  {
+    "code": "03.210",
+    "label": "Morska akvakultura"
+  },
+  {
+    "code": "03.220",
+    "label": "Sladkovodna akvakultura"
+  },
+  {
+    "code": "03.300",
+    "label": "Stor.za ribištvo in akvakulturo"
+  },
+  {
+    "code": "05.100",
+    "label": "Pridobivanje črnega premoga"
+  },
+  {
+    "code": "05.200",
+    "label": "Pridobivanje rjavega premoga in lignita"
+  },
+  {
+    "code": "06.100",
+    "label": "Pridobivanje surove nafte"
+  },
+  {
+    "code": "06.200",
+    "label": "Pridobivanje zemeljskega plina"
+  },
+  {
+    "code": "07.100",
+    "label": "Pridobivanje železove rude"
+  },
+  {
+    "code": "07.210",
+    "label": "Pridobivanje uranove in torijeve rude"
+  },
+  {
+    "code": "07.290",
+    "label": "Pridobivanje rud dr.neželeznih kovin"
+  },
+  {
+    "code": "08.110",
+    "label": "Prid.okr.kam.,apn.,sadre,skril.in dr.kam."
+  },
+  {
+    "code": "08.120",
+    "label": "Pridobivanje gramoza, peska, gline"
+  },
+  {
+    "code": "08.910",
+    "label": "Pridobivanje mineral.za kemik.in gnojila"
+  },
+  {
+    "code": "08.920",
+    "label": "Pridobivanje šote"
+  },
+  {
+    "code": "08.930",
+    "label": "Pridobivanje soli"
+  },
+  {
+    "code": "08.990",
+    "label": "Dr.pridobivanje rudnin in kamnin,d.n."
+  },
+  {
+    "code": "09.100",
+    "label": "Stor.za pridob. nafte in zemelj.plina"
+  },
+  {
+    "code": "09.900",
+    "label": "Stor.za dr.rudarjenje"
+  },
+  {
+    "code": "10.110",
+    "label": "Prz.mesa, razen perutninskega"
+  },
+  {
+    "code": "10.120",
+    "label": "Prz.perutninskega mesa"
+  },
+  {
+    "code": "10.130",
+    "label": "Prz.mesnih izd."
+  },
+  {
+    "code": "10.200",
+    "label": "Predelava in konz.rib, rakov in mehkuž."
+  },
+  {
+    "code": "10.310",
+    "label": "Predelava in konz.krompirja"
+  },
+  {
+    "code": "10.320",
+    "label": "Prz.sadnih in zelenjavnih sokov"
+  },
+  {
+    "code": "10.390",
+    "label": "Dr.predelava in konz.sadja in zelenjave"
+  },
+  {
+    "code": "10.410",
+    "label": "Prz.olja in maščob"
+  },
+  {
+    "code": "10.420",
+    "label": "Prz.margarine ipd.jedilnih maščob"
+  },
+  {
+    "code": "10.510",
+    "label": "Prz.mlečnih izd."
+  },
+  {
+    "code": "10.520",
+    "label": "Prz.sladoleda idr.led.sladic"
+  },
+  {
+    "code": "10.610",
+    "label": "Mlinarstvo"
+  },
+  {
+    "code": "10.620",
+    "label": "Prz.škroba in škrobnih izd."
+  },
+  {
+    "code": "10.710",
+    "label": "Prz.kruha, svežega peciva in slaščic"
+  },
+  {
+    "code": "10.720",
+    "label": "Prz.prepeč.,piškot., trajn.pec. in slašč."
+  },
+  {
+    "code": "10.730",
+    "label": "Prz.testenin"
+  },
+  {
+    "code": "10.810",
+    "label": "Prz.sladkorja"
+  },
+  {
+    "code": "10.820",
+    "label": "Prz.kakava, čokolade in sladkornih izd."
+  },
+  {
+    "code": "10.830",
+    "label": "Predelava čaja in kave"
+  },
+  {
+    "code": "10.840",
+    "label": "Prz.začimb, dišav idr.dodatkov"
+  },
+  {
+    "code": "10.850",
+    "label": "Prz.pripravljenih jedi in obrokov"
+  },
+  {
+    "code": "10.860",
+    "label": "Prz.homogeniziranih in dietet.živil"
+  },
+  {
+    "code": "10.890",
+    "label": "Prz.dr.živil, d. n."
+  },
+  {
+    "code": "10.910",
+    "label": "Prz.krmil"
+  },
+  {
+    "code": "10.920",
+    "label": "Prz.hrane za hišne živali"
+  },
+  {
+    "code": "11.010",
+    "label": "Prz.žganih pijač"
+  },
+  {
+    "code": "11.020",
+    "label": "Prz.vina iz grozdja"
+  },
+  {
+    "code": "11.030",
+    "label": "Prz.jabolčnika idr.ferment. sadnih pijač"
+  },
+  {
+    "code": "11.040",
+    "label": "Prz.dr.nedestiliranih fermentiranih pijač"
+  },
+  {
+    "code": "11.050",
+    "label": "Prz.piva"
+  },
+  {
+    "code": "11.060",
+    "label": "Prz.slada"
+  },
+  {
+    "code": "11.070",
+    "label": "Prz.brezalk.pijač in steklenič.vod"
+  },
+  {
+    "code": "12.000",
+    "label": "Prz.tobačnih izd."
+  },
+  {
+    "code": "13.100",
+    "label": "Priprava in predenje tekstilnih vlaken"
+  },
+  {
+    "code": "13.200",
+    "label": "Tkanje tekstilij"
+  },
+  {
+    "code": "13.300",
+    "label": "Dodelava tekstilij"
+  },
+  {
+    "code": "13.910",
+    "label": "Prz.pletenih in kvačkanih materialov"
+  },
+  {
+    "code": "13.920",
+    "label": "Prz.gosp.teks.in gotov.izd.za notr.opr."
+  },
+  {
+    "code": "13.930",
+    "label": "Prz.preprog"
+  },
+  {
+    "code": "13.940",
+    "label": "Prz.vrvi,vrvic in mrež"
+  },
+  {
+    "code": "13.950",
+    "label": "Prz.netkan.tekstilij in izd."
+  },
+  {
+    "code": "13.960",
+    "label": "Prz.tehničnega in ind.tekstila"
+  },
+  {
+    "code": "13.990",
+    "label": "Prz.tekstilij,d.n."
+  },
+  {
+    "code": "14.100",
+    "label": "Prz.pletenih in kvačkanih oblačil"
+  },
+  {
+    "code": "14.210",
+    "label": "Prz.vrhnjih oblačil"
+  },
+  {
+    "code": "14.220",
+    "label": "Prz.spodnjega perila"
+  },
+  {
+    "code": "14.230",
+    "label": "Prz.delovnih oblačil"
+  },
+  {
+    "code": "14.240",
+    "label": "Prz.usnjenih in krznenih oblačil"
+  },
+  {
+    "code": "14.290",
+    "label": "Prz.drugih oblačil,pokrival in dod.,d.n."
+  },
+  {
+    "code": "15.110",
+    "label": "Strojenje in dodel.usnja in krzna"
+  },
+  {
+    "code": "15.120",
+    "label": "Prz.pot.gal.in sedl.izd.iz kateregak.mat."
+  },
+  {
+    "code": "15.200",
+    "label": "Prz.obutve"
+  },
+  {
+    "code": "16.110",
+    "label": "Žaganje,skobljanje in impreg.lesa"
+  },
+  {
+    "code": "16.120",
+    "label": "Pred.in dodel.lesa"
+  },
+  {
+    "code": "16.210",
+    "label": "Prz.furnirja in plošč na osnovi lesa"
+  },
+  {
+    "code": "16.220",
+    "label": "Prz.sestavljenega parketa"
+  },
+  {
+    "code": "16.230",
+    "label": "Stavbno mizarstvo in tesarstvo"
+  },
+  {
+    "code": "16.240",
+    "label": "Prz.les.embalaže"
+  },
+  {
+    "code": "16.250",
+    "label": "Prz.les.vrat in oken"
+  },
+  {
+    "code": "16.260",
+    "label": "Prz.trdnih goriv iz rastlin.biomase"
+  },
+  {
+    "code": "16.270",
+    "label": "Dodel.lesenih izdelkov"
+  },
+  {
+    "code": "16.280",
+    "label": "Prz.dr.les.,plut.,slam.in pletar.izd."
+  },
+  {
+    "code": "17.110",
+    "label": "Prz.vlaknin"
+  },
+  {
+    "code": "17.120",
+    "label": "Prz.papirja in kartona"
+  },
+  {
+    "code": "17.210",
+    "label": "Prz.val.pap.,kartona,pap.in kart.emb."
+  },
+  {
+    "code": "17.220",
+    "label": "Prz.gosp.,higien.in toalet.potr.iz pap."
+  },
+  {
+    "code": "17.230",
+    "label": "Prz.pisarniških potrebščin iz papirja"
+  },
+  {
+    "code": "17.240",
+    "label": "Prz.tapet"
+  },
+  {
+    "code": "17.250",
+    "label": "Prz.dr.izd.iz papirja in kartona"
+  },
+  {
+    "code": "18.110",
+    "label": "Tiskanje časopisov"
+  },
+  {
+    "code": "18.120",
+    "label": "Dr.tiskanje"
+  },
+  {
+    "code": "18.130",
+    "label": "Priprava za tisk in objavo"
+  },
+  {
+    "code": "18.140",
+    "label": "Knjigoveštvo in sorodne dej."
+  },
+  {
+    "code": "18.200",
+    "label": "Razmnoževanje posnetih nosilcev zapisa"
+  },
+  {
+    "code": "19.100",
+    "label": "Prz.koksa"
+  },
+  {
+    "code": "19.200",
+    "label": "Prz.rafin.naft. prz.in prz.iz fosil.goriv"
+  },
+  {
+    "code": "20.110",
+    "label": "Prz.tehničnih plinov"
+  },
+  {
+    "code": "20.120",
+    "label": "Prz.barvil in pigmentov"
+  },
+  {
+    "code": "20.130",
+    "label": "Prz.dr.anorganskih osnovnih kemik."
+  },
+  {
+    "code": "20.140",
+    "label": "Prz.dr.organskih osnovnih kemik."
+  },
+  {
+    "code": "20.150",
+    "label": "Prz.gnojil in dušikovih spojin"
+  },
+  {
+    "code": "20.160",
+    "label": "Prz.plastike v primarni obliki"
+  },
+  {
+    "code": "20.170",
+    "label": "Prz.sint.kavčuka v primarni obliki"
+  },
+  {
+    "code": "20.200",
+    "label": "Prz.pesticidov,razkužil idr.agrokem.izd."
+  },
+  {
+    "code": "20.300",
+    "label": "Prz.barv,lakov ipd.,tisk.barv in kitov"
+  },
+  {
+    "code": "20.410",
+    "label": "Prz.mil,pral.,čist.in pol.sred."
+  },
+  {
+    "code": "20.420",
+    "label": "Prz.parfumov in toal.sred."
+  },
+  {
+    "code": "20.510",
+    "label": "Prz.tekoč.biogoriv"
+  },
+  {
+    "code": "20.590",
+    "label": "Prz.dr.kemičnih izd.,d.n."
+  },
+  {
+    "code": "20.600",
+    "label": "Prz.umetnih vlaken"
+  },
+  {
+    "code": "21.100",
+    "label": "Prz.farmacevtskih surovin"
+  },
+  {
+    "code": "21.200",
+    "label": "Prz.farmacevtskih preparatov"
+  },
+  {
+    "code": "22.110",
+    "label": "Prz.,obnav.zrač. za voz.in prz.gum.plašč."
+  },
+  {
+    "code": "22.120",
+    "label": "Prz.dr.gumenih izd."
+  },
+  {
+    "code": "22.210",
+    "label": "Prz.plast.plošč,folij,cevi,profilov"
+  },
+  {
+    "code": "22.220",
+    "label": "Prz.plast.embalaže"
+  },
+  {
+    "code": "22.230",
+    "label": "Prz.plast.vrat in oken"
+  },
+  {
+    "code": "22.240",
+    "label": "Prz.plast.izd.za gradbeništvo"
+  },
+  {
+    "code": "22.250",
+    "label": "Pred.in dodel.plast.izdelkov"
+  },
+  {
+    "code": "22.260",
+    "label": "Prz.dr.plast.izd."
+  },
+  {
+    "code": "23.110",
+    "label": "Prz.ravnega stekla"
+  },
+  {
+    "code": "23.120",
+    "label": "Oblikovanje in obdelava ravnega stekla"
+  },
+  {
+    "code": "23.130",
+    "label": "Prz.votlega stekla"
+  },
+  {
+    "code": "23.140",
+    "label": "Prz.steklenih vlaken"
+  },
+  {
+    "code": "23.150",
+    "label": "Prz.in obl..dr.vrst stekl.,tehn.stekl.izd"
+  },
+  {
+    "code": "23.200",
+    "label": "Prz.ognjevzdržne keramike"
+  },
+  {
+    "code": "23.310",
+    "label": "Prz.keramičnih ploščic in oblog"
+  },
+  {
+    "code": "23.320",
+    "label": "Prz.streš.,opeke,dr.grad.izd.iz žg.gline"
+  },
+  {
+    "code": "23.410",
+    "label": "Prz.gospodinjske in okrasne keramike"
+  },
+  {
+    "code": "23.420",
+    "label": "Prz.sanitarne keramike"
+  },
+  {
+    "code": "23.430",
+    "label": "Prz.izolatorjev in izol.elem.iz keramike"
+  },
+  {
+    "code": "23.440",
+    "label": "Prz.dr.tehnične keramike"
+  },
+  {
+    "code": "23.450",
+    "label": "Prz.dr.keramičnih izd."
+  },
+  {
+    "code": "23.510",
+    "label": "Prz.cementa"
+  },
+  {
+    "code": "23.520",
+    "label": "Prz.apna in mavca"
+  },
+  {
+    "code": "23.610",
+    "label": "Prz.betonskih izd.za gradbeništvo"
+  },
+  {
+    "code": "23.620",
+    "label": "Prz.izd.iz mavca za gradbeništvo"
+  },
+  {
+    "code": "23.630",
+    "label": "Prz.sveže betonske mešanice"
+  },
+  {
+    "code": "23.640",
+    "label": "Prz.malte"
+  },
+  {
+    "code": "23.650",
+    "label": "Prz.izd.iz vlaknatega cementa"
+  },
+  {
+    "code": "23.660",
+    "label": "Prz.dr.izd.iz betona,cementa,mavca"
+  },
+  {
+    "code": "23.700",
+    "label": "Obdelava naravnega kamna"
+  },
+  {
+    "code": "23.910",
+    "label": "Prz.brusilnih sredstev"
+  },
+  {
+    "code": "23.990",
+    "label": "Prz.dr.nekovinskih mineralnih izd.,d.n."
+  },
+  {
+    "code": "24.100",
+    "label": "Prz.surovega železa,jekla,ferozlitin"
+  },
+  {
+    "code": "24.200",
+    "label": "Prz.jek.cevi,votlih profilov in fiting."
+  },
+  {
+    "code": "24.310",
+    "label": "Hladno vlečenje profilov"
+  },
+  {
+    "code": "24.320",
+    "label": "Hladno valjanje traku"
+  },
+  {
+    "code": "24.330",
+    "label": "Hladno oblikovanje profilov in pregib."
+  },
+  {
+    "code": "24.340",
+    "label": "Hladno vlečenje žice"
+  },
+  {
+    "code": "24.410",
+    "label": "Prz.plemenitih kovin"
+  },
+  {
+    "code": "24.420",
+    "label": "Prz.aluminija"
+  },
+  {
+    "code": "24.430",
+    "label": "Prz.svinca,cinka in kositra"
+  },
+  {
+    "code": "24.440",
+    "label": "Prz.bakra"
+  },
+  {
+    "code": "24.450",
+    "label": "Prz.dr.neželeznih kovin"
+  },
+  {
+    "code": "24.460",
+    "label": "Prz.jedrskega goriva"
+  },
+  {
+    "code": "24.510",
+    "label": "Litje železa"
+  },
+  {
+    "code": "24.520",
+    "label": "Litje jekla"
+  },
+  {
+    "code": "24.530",
+    "label": "Litje lahkih kovin"
+  },
+  {
+    "code": "24.540",
+    "label": "Litje dr.neželeznih kovin"
+  },
+  {
+    "code": "25.110",
+    "label": "Prz.kov.konstrukcij in njihovih delov"
+  },
+  {
+    "code": "25.120",
+    "label": "Prz.kovinskih vrat in oken"
+  },
+  {
+    "code": "25.210",
+    "label": "Prz.radiatorjev in kotlov za cen.ogr."
+  },
+  {
+    "code": "25.220",
+    "label": "Prz.dr.kovinskih rezervoarjev in cistern"
+  },
+  {
+    "code": "25.300",
+    "label": "Prz.orožja in streliva"
+  },
+  {
+    "code": "25.400",
+    "label": "Kovan.,oblikovanje kovin ter praš.met."
+  },
+  {
+    "code": "25.510",
+    "label": "Prekrivanje kovin"
+  },
+  {
+    "code": "25.520",
+    "label": "Toplotna obdelava kovin"
+  },
+  {
+    "code": "25.530",
+    "label": "Mehanska obdelava kovin"
+  },
+  {
+    "code": "25.610",
+    "label": "Prz.rezil in jedilnega pribora"
+  },
+  {
+    "code": "25.620",
+    "label": "Prz.ključavnic, okovja"
+  },
+  {
+    "code": "25.631",
+    "label": "Prz.ročnega orodja"
+  },
+  {
+    "code": "25.632",
+    "label": "Prz.orodja za stroje"
+  },
+  {
+    "code": "25.910",
+    "label": "Prz.jeklenih bobnov, sodov ipd.posod"
+  },
+  {
+    "code": "25.920",
+    "label": "Prz.lahke kovinske embalaže"
+  },
+  {
+    "code": "25.930",
+    "label": "Prz.izd.iz žice,verig in vzmeti"
+  },
+  {
+    "code": "25.940",
+    "label": "Prz.vijačnega materiala,vezi"
+  },
+  {
+    "code": "25.990",
+    "label": "Prz.dr.kovinskih izd.,d.n."
+  },
+  {
+    "code": "26.110",
+    "label": "Prz.elektronskih komponent"
+  },
+  {
+    "code": "26.120",
+    "label": "Prz.elektronskih plošč"
+  },
+  {
+    "code": "26.200",
+    "label": "Prz.računalnikov in perifernih naprav"
+  },
+  {
+    "code": "26.300",
+    "label": "Prz.komunikacijskih naprav"
+  },
+  {
+    "code": "26.400",
+    "label": "Prz.elektronskih naprav za široko rabo"
+  },
+  {
+    "code": "26.510",
+    "label": "Prz.meril.,preiz.,nav.inst.,naprav"
+  },
+  {
+    "code": "26.520",
+    "label": "Prz.ur"
+  },
+  {
+    "code": "26.600",
+    "label": "Prz.sevalnih,elektromed.,elektroter.nap."
+  },
+  {
+    "code": "26.700",
+    "label": "Prz.opt.inst.,magn.opt.nos.zap.,foto.opr."
+  },
+  {
+    "code": "27.110",
+    "label": "Prz.elektromot., generator.in transform."
+  },
+  {
+    "code": "27.120",
+    "label": "Prz.naprav za distrib.in krmiljenje el."
+  },
+  {
+    "code": "27.200",
+    "label": "Prz.baterij in akumulatorjev"
+  },
+  {
+    "code": "27.310",
+    "label": "Prz.kablov iz optičnih vlaken"
+  },
+  {
+    "code": "27.320",
+    "label": "Prz.dr.električnih kablov in žic"
+  },
+  {
+    "code": "27.330",
+    "label": "Prz.vtičnic, stikal idr.nap.za ožičenje"
+  },
+  {
+    "code": "27.400",
+    "label": "Prz.naprav in opreme za razsvetljavo"
+  },
+  {
+    "code": "27.510",
+    "label": "Prz.električnih gospodinjskih naprav"
+  },
+  {
+    "code": "27.520",
+    "label": "Prz.neelektričnih gospodinjskih naprav"
+  },
+  {
+    "code": "27.900",
+    "label": "Prz.dr.električnih naprav"
+  },
+  {
+    "code": "28.110",
+    "label": "Prz.mot.in turbin,rz.za let.in mot.vozila"
+  },
+  {
+    "code": "28.120",
+    "label": "Prz.naprav za fluidno tehniko"
+  },
+  {
+    "code": "28.130",
+    "label": "Prz.črpalk in kompresorjev"
+  },
+  {
+    "code": "28.140",
+    "label": "Prz.pip in ventilov"
+  },
+  {
+    "code": "28.150",
+    "label": "Prz.lež.,zobn.in elem.za meh.prenos en."
+  },
+  {
+    "code": "28.210",
+    "label": "Prz.peči in trajn.gospod.nap.za ogrevanje"
+  },
+  {
+    "code": "28.220",
+    "label": "Prz.dvigalnih in transportnih naprav"
+  },
+  {
+    "code": "28.230",
+    "label": "Prz.pis.strojev,nap.,rz.rač.,perif.nap."
+  },
+  {
+    "code": "28.240",
+    "label": "Prz.ročnih strojev in naprav"
+  },
+  {
+    "code": "28.250",
+    "label": "Prz.klima.nap.,rz.za gospod."
+  },
+  {
+    "code": "28.290",
+    "label": "Prz.dr.strojev in nap.za spl. namene,d.n."
+  },
+  {
+    "code": "28.300",
+    "label": "Prz.kmetijskih in gozdarskih strojev"
+  },
+  {
+    "code": "28.410",
+    "label": "Prz.strojev za oblikovanje in obd.kovin"
+  },
+  {
+    "code": "28.420",
+    "label": "Prz.dr.obdelovalnih strojev"
+  },
+  {
+    "code": "28.910",
+    "label": "Prz.metalurških strojev"
+  },
+  {
+    "code": "28.920",
+    "label": "Prz.rudarskih in gradbenih strojev"
+  },
+  {
+    "code": "28.930",
+    "label": "Prz.strojev za živilsko in tobačno ind."
+  },
+  {
+    "code": "28.940",
+    "label": "Prz.str.za teks.,oblačilno in usn.ind."
+  },
+  {
+    "code": "28.950",
+    "label": "Prz.strojev za ind.papirja in kartona"
+  },
+  {
+    "code": "28.960",
+    "label": "Prz.strojev za plastiko in gumo"
+  },
+  {
+    "code": "28.970",
+    "label": "Prz.strojev za aditivno prz."
+  },
+  {
+    "code": "28.990",
+    "label": "Prz.dr.strojev za posebne namene,d.n."
+  },
+  {
+    "code": "29.100",
+    "label": "Prz.motornih vozil"
+  },
+  {
+    "code": "29.200",
+    "label": "Prz.karos.za mot.voz.,prz.prik.,polprik."
+  },
+  {
+    "code": "29.310",
+    "label": "Prz.el.in elektronske opreme za mot.voz."
+  },
+  {
+    "code": "29.320",
+    "label": "Prz.dr.delov in opreme za motorna vozila"
+  },
+  {
+    "code": "30.110",
+    "label": "Gradnja civil.ladij in plavaj. konstr."
+  },
+  {
+    "code": "30.120",
+    "label": "Gradnja čolnov za razvedrilo in šport"
+  },
+  {
+    "code": "30.130",
+    "label": "Gradnja vojaških ladij in plovil"
+  },
+  {
+    "code": "30.200",
+    "label": "Prz.železniških idr.tirnih vozil"
+  },
+  {
+    "code": "30.310",
+    "label": "Prz.civil.zračnih in vesoljskih plovil"
+  },
+  {
+    "code": "30.320",
+    "label": "Prz.civil.zračnih in vesoljskih plovil"
+  },
+  {
+    "code": "30.400",
+    "label": "Prz.bojnih vozil"
+  },
+  {
+    "code": "30.910",
+    "label": "Prz.motornih koles"
+  },
+  {
+    "code": "30.920",
+    "label": "Prz.koles in invalidskih vozičkov"
+  },
+  {
+    "code": "30.990",
+    "label": "Prz.dr.prevoznih sredstev,d.n."
+  },
+  {
+    "code": "31.000",
+    "label": "Prz.pohištva"
+  },
+  {
+    "code": "32.110",
+    "label": "Kovanje kovancev"
+  },
+  {
+    "code": "32.120",
+    "label": "Prz.nakita ipd.izd."
+  },
+  {
+    "code": "32.130",
+    "label": "Prz.bižuterije"
+  },
+  {
+    "code": "32.200",
+    "label": "Prz.glasbil"
+  },
+  {
+    "code": "32.300",
+    "label": "Prz.športne opreme"
+  },
+  {
+    "code": "32.400",
+    "label": "Prz.iger in igrač"
+  },
+  {
+    "code": "32.500",
+    "label": "Prz.medicinskih inst.,nap.in pripomočkov"
+  },
+  {
+    "code": "32.910",
+    "label": "Prz.metel in krtač"
+  },
+  {
+    "code": "32.990",
+    "label": "Dr.predelovalne dejavnosti,d.n."
+  },
+  {
+    "code": "33.110",
+    "label": "Popravila in vzdrž.kovin.izd."
+  },
+  {
+    "code": "33.120",
+    "label": "Popravila in vzdrž.strojev in naprav"
+  },
+  {
+    "code": "33.130",
+    "label": "Popr. in vzdrž.elektronskih in opt.nap."
+  },
+  {
+    "code": "33.140",
+    "label": "Popravila in vzdrž.električnih naprav"
+  },
+  {
+    "code": "33.150",
+    "label": "Popravila in vzdrž.civil.ladij in čolnov"
+  },
+  {
+    "code": "33.160",
+    "label": "Popr. in vzdrž.civil.zrač.in vesolj.plov."
+  },
+  {
+    "code": "33.170",
+    "label": "Popr. in vzdrž.dr.civil.prevoz.sredstev"
+  },
+  {
+    "code": "33.180",
+    "label": "Popr.,vz.voj.voz.,lad.,čol.,zrač.,ves.pl."
+  },
+  {
+    "code": "33.190",
+    "label": "Popravila in vzdrž.dr.naprav"
+  },
+  {
+    "code": "33.200",
+    "label": "Montaža industrijskih strojev in naprav"
+  },
+  {
+    "code": "35.110",
+    "label": "Prz.el.energije iz neobnovljivih virov"
+  },
+  {
+    "code": "35.120",
+    "label": "Prz.el.energije iz obnovljivih virov"
+  },
+  {
+    "code": "35.130",
+    "label": "Prenos električne energije"
+  },
+  {
+    "code": "35.140",
+    "label": "Distribucija električne energije"
+  },
+  {
+    "code": "35.150",
+    "label": "Trgovanje z električno energijo"
+  },
+  {
+    "code": "35.160",
+    "label": "Shranjevanje električne energije"
+  },
+  {
+    "code": "35.210",
+    "label": "Proizvodnja plina"
+  },
+  {
+    "code": "35.220",
+    "label": "Distribucija plin.goriv po plinov.mreži"
+  },
+  {
+    "code": "35.230",
+    "label": "Trgovanje s plin.gorivi po plinov.mreži"
+  },
+  {
+    "code": "35.240",
+    "label": "Sklad. plina kot del stor.oskrbe omrež."
+  },
+  {
+    "code": "35.300",
+    "label": "Oskrba s paro in hladnim zrakom"
+  },
+  {
+    "code": "35.400",
+    "label": "Dej.posr.in agen. za el.energ.in zem.plin"
+  },
+  {
+    "code": "36.000",
+    "label": "Zbiranje,prečišč.in distribucija vode"
+  },
+  {
+    "code": "37.000",
+    "label": "Ravnanje z odplakami"
+  },
+  {
+    "code": "38.110",
+    "label": "Zbiranje in odvoz nenevarnih odpadkov"
+  },
+  {
+    "code": "38.120",
+    "label": "Zbiranje in odvoz nevarnih odpadkov"
+  },
+  {
+    "code": "38.210",
+    "label": "Pridobivanje sekundarnih surovin"
+  },
+  {
+    "code": "38.220",
+    "label": "Energijska predelava"
+  },
+  {
+    "code": "38.230",
+    "label": "Dr.predelava odpadkov"
+  },
+  {
+    "code": "38.310",
+    "label": "Sežig. odp. brez energijske predelave"
+  },
+  {
+    "code": "38.320",
+    "label": "Odlaganje ali trajno Sklad. odpadkov"
+  },
+  {
+    "code": "38.330",
+    "label": "Dr.odstranjevanje odpadkov"
+  },
+  {
+    "code": "39.000",
+    "label": "Saniranje okolja idr.ravnanje z odpadki"
+  },
+  {
+    "code": "41.000",
+    "label": "Gradnja stanov.in nestanov.stavb"
+  },
+  {
+    "code": "42.110",
+    "label": "Gradnja cest in avtocest"
+  },
+  {
+    "code": "42.120",
+    "label": "Gradnja železnic in podzemnih železnic"
+  },
+  {
+    "code": "42.130",
+    "label": "Gradnja mostov in predorov"
+  },
+  {
+    "code": "42.210",
+    "label": "Grad.obj.oskr.infrast.za tekočine"
+  },
+  {
+    "code": "42.220",
+    "label": "Grad.obj.oskr.infrastru.za el.in telekom."
+  },
+  {
+    "code": "42.910",
+    "label": "Gradnja vodnih objektov"
+  },
+  {
+    "code": "42.990",
+    "label": "Gradnja dr.objektov nizke gradnje,d.n."
+  },
+  {
+    "code": "43.110",
+    "label": "Rušenje objektov"
+  },
+  {
+    "code": "43.120",
+    "label": "Zemeljska pripravljalna dela"
+  },
+  {
+    "code": "43.130",
+    "label": "Testno vrtanje in sondiranje"
+  },
+  {
+    "code": "43.210",
+    "label": "Elektroinštalacije"
+  },
+  {
+    "code": "43.220",
+    "label": "Vodovodne, grelne in hladilne inštalacije"
+  },
+  {
+    "code": "43.230",
+    "label": "Namestitev izolacije"
+  },
+  {
+    "code": "43.240",
+    "label": "Dr.inštalacije pri gradnjah"
+  },
+  {
+    "code": "43.310",
+    "label": "Fasaderska in štukaterska dela"
+  },
+  {
+    "code": "43.320",
+    "label": "Vgrajevanje stavbnega pohištva"
+  },
+  {
+    "code": "43.330",
+    "label": "Oblaganje tal in sten"
+  },
+  {
+    "code": "43.341",
+    "label": "Steklarska dela"
+  },
+  {
+    "code": "43.342",
+    "label": "Pleskarska dela"
+  },
+  {
+    "code": "43.350",
+    "label": "Dr.zaključna gradbena dela"
+  },
+  {
+    "code": "43.410",
+    "label": "Postavljanje ostrešij in krovska dela"
+  },
+  {
+    "code": "43.420",
+    "label": "Dr.specializ.gradb.dela pri gradnji stavb"
+  },
+  {
+    "code": "43.500",
+    "label": "Special.gradb.dela pri gradnji inž.obj."
+  },
+  {
+    "code": "43.600",
+    "label": "Posred. dej.za special. gradb.stor."
+  },
+  {
+    "code": "43.910",
+    "label": "Zidarstvo"
+  },
+  {
+    "code": "43.990",
+    "label": "Dr.specializirana gradbena dela,d.n."
+  },
+  {
+    "code": "46.110",
+    "label": "Posr.db.km.sur.,živ.živ.,teks.sur.,poliz."
+  },
+  {
+    "code": "46.120",
+    "label": "Posr.db.goriv,rud,kovin,teh.kemik."
+  },
+  {
+    "code": "46.130",
+    "label": "Posr.db.lesa in gradb.materiala"
+  },
+  {
+    "code": "46.140",
+    "label": "Posr.db.strojev,ind.opreme,ladij,letal"
+  },
+  {
+    "code": "46.150",
+    "label": "Posr.db.poh.,predm.nap.za gosp.in železn."
+  },
+  {
+    "code": "46.160",
+    "label": "Posr.db.teks.,oblač.,krzn.,obut.,usn.izd."
+  },
+  {
+    "code": "46.170",
+    "label": "Posr.db.živil,pijač,tobač.izd."
+  },
+  {
+    "code": "46.180",
+    "label": "Posr.db.dr.spec.izd."
+  },
+  {
+    "code": "46.190",
+    "label": "Posr.pri nespec.prod.na db."
+  },
+  {
+    "code": "46.210",
+    "label": "Trg.db.z žiti,tobakom,semeni in krmo"
+  },
+  {
+    "code": "46.220",
+    "label": "Trg.db.s cvetjem in rastlinami"
+  },
+  {
+    "code": "46.230",
+    "label": "Trg.db.z živimi živalmi"
+  },
+  {
+    "code": "46.240",
+    "label": "Trg.db.s kožami,usnjem"
+  },
+  {
+    "code": "46.310",
+    "label": "Trg.db.s sadjem in zelenjavo"
+  },
+  {
+    "code": "46.320",
+    "label": "Trg.db.z mes.,mes.izd.,ribami in rib.izd."
+  },
+  {
+    "code": "46.330",
+    "label": "Trg.db.z mlek.,mleč.izd.,jajci,olji,mašč."
+  },
+  {
+    "code": "46.340",
+    "label": "Trg.db.s pijačami"
+  },
+  {
+    "code": "46.350",
+    "label": "Trg.db.s tobačnimi izd."
+  },
+  {
+    "code": "46.360",
+    "label": "Trg.db.s sladk.,čokolado,sladkor.izd."
+  },
+  {
+    "code": "46.370",
+    "label": "Trg.db.s kavo,čajem,kakavom,začimbami"
+  },
+  {
+    "code": "46.380",
+    "label": "Trg.db.z dr.živili"
+  },
+  {
+    "code": "46.390",
+    "label": "Nespec.trg.db.z živili,pijačami,tob.izd."
+  },
+  {
+    "code": "46.410",
+    "label": "Trg.db.s tekstilom"
+  },
+  {
+    "code": "46.420",
+    "label": "Trg.db.z oblačili in obutvijo"
+  },
+  {
+    "code": "46.430",
+    "label": "Trg.db.z el.gospodinjskimi napravami"
+  },
+  {
+    "code": "46.440",
+    "label": "Trg.db.s porcelanom,steklenino,čistili"
+  },
+  {
+    "code": "46.450",
+    "label": "Trg.db.s parfumi in kozmetiko"
+  },
+  {
+    "code": "46.460",
+    "label": "Trg.db.s farm.in med.izd."
+  },
+  {
+    "code": "46.470",
+    "label": "Trg.db.s poh.,prep.,sv.za dom,pisar.,trg."
+  },
+  {
+    "code": "46.480",
+    "label": "Trg.db.z urami in nakitom"
+  },
+  {
+    "code": "46.490",
+    "label": "Trg.db.z dr.izd.široke porabe"
+  },
+  {
+    "code": "46.500",
+    "label": "Trg.db.z nap.za inf.-komunik.tehnol."
+  },
+  {
+    "code": "46.610",
+    "label": "Trg.db.s kmet.stroji,priključki,opremo"
+  },
+  {
+    "code": "46.620",
+    "label": "Trg.db.z obdelovalnimi stroji"
+  },
+  {
+    "code": "46.630",
+    "label": "Trg.db.z rudarskimi in gradb.stroji"
+  },
+  {
+    "code": "46.640",
+    "label": "Trg.db.z dr.napravami in opremo"
+  },
+  {
+    "code": "46.710",
+    "label": "Trg.db.z motornimi vozili"
+  },
+  {
+    "code": "46.720",
+    "label": "Trg.db.z deli in opremo za motorna vozila"
+  },
+  {
+    "code": "46.730",
+    "label": "Trg.db.z motor.kolesi,deli in opr. zanje"
+  },
+  {
+    "code": "46.810",
+    "label": "Trg.db.s trd.,tek.,plin.gor.,povez.proiz."
+  },
+  {
+    "code": "46.820",
+    "label": "Trg.db.s kovinami in rudami"
+  },
+  {
+    "code": "46.830",
+    "label": "Trg.db.z lesom,gradb.mat.in san.opremo"
+  },
+  {
+    "code": "46.840",
+    "label": "Trg.db.s kov.proiz.,inšt.mat.,nap.za ogr."
+  },
+  {
+    "code": "46.850",
+    "label": "Trg.db.s kemičnimi izd."
+  },
+  {
+    "code": "46.860",
+    "label": "Trg.db.z dr.polizdelki"
+  },
+  {
+    "code": "46.870",
+    "label": "Trg.db.z ostanki in odpadki"
+  },
+  {
+    "code": "46.890",
+    "label": "Dr.specializirana trg.db.,d.n."
+  },
+  {
+    "code": "46.900",
+    "label": "Nespecializirana trg.db."
+  },
+  {
+    "code": "47.110",
+    "label": "Nespec.trg.dr.,pred.živ., pijač.,tob.izd."
+  },
+  {
+    "code": "47.120",
+    "label": "Dr.nespec.trg.dr."
+  },
+  {
+    "code": "47.210",
+    "label": "Trg.dr.s sadjem in zelenjavo"
+  },
+  {
+    "code": "47.220",
+    "label": "Trg.dr.z mesom in mesnimi izd."
+  },
+  {
+    "code": "47.230",
+    "label": "Trg.dr.z ribami,raki,mehkužci"
+  },
+  {
+    "code": "47.240",
+    "label": "Trg.dr.s kruhom,pecivom in slaščicami"
+  },
+  {
+    "code": "47.250",
+    "label": "Trg.dr.s pijačami"
+  },
+  {
+    "code": "47.260",
+    "label": "Trg.dr.s tobačnimi izd."
+  },
+  {
+    "code": "47.270",
+    "label": "Trg.dr.z dr.živili"
+  },
+  {
+    "code": "47.301",
+    "label": "Trg.dr.z lastnimi motornimi gorivi"
+  },
+  {
+    "code": "47.302",
+    "label": "Posr.pri prodaji mot.goriv na drobno"
+  },
+  {
+    "code": "47.400",
+    "label": "Trg.dr.z rač.in komunik.nap."
+  },
+  {
+    "code": "47.510",
+    "label": "Trg.dr.s tekstilom"
+  },
+  {
+    "code": "47.520",
+    "label": "Trg.dr.s kov.izd.,gr.mat.,barv.,stkl."
+  },
+  {
+    "code": "47.530",
+    "label": "Trg.dr.s preprog.,tal. in sten.oblog."
+  },
+  {
+    "code": "47.540",
+    "label": "Trg.dr.z el.gospodinjskimi napravami"
+  },
+  {
+    "code": "47.550",
+    "label": "Trg.dr.s poh.,sv.,nam.pos.,dr.gosp.izd."
+  },
+  {
+    "code": "47.610",
+    "label": "Trg.dr.s knjigami"
+  },
+  {
+    "code": "47.621",
+    "label": "Trg.dr.s časopisi in revijami"
+  },
+  {
+    "code": "47.622",
+    "label": "Trg.dr.s papirjem in pisalnimi potr."
+  },
+  {
+    "code": "47.630",
+    "label": "Trg.dr.s športno opremo"
+  },
+  {
+    "code": "47.640",
+    "label": "Trg.dr.z igrami in igračami"
+  },
+  {
+    "code": "47.690",
+    "label": "Trg.dr.z izd.za kult.,šport in zab.,d.n."
+  },
+  {
+    "code": "47.710",
+    "label": "Trg.dr.z oblačili"
+  },
+  {
+    "code": "47.720",
+    "label": "Trg.dr.z obutvijo in usnjenimi izd."
+  },
+  {
+    "code": "47.730",
+    "label": "Trg.dr.s farmacevtskimi izd."
+  },
+  {
+    "code": "47.740",
+    "label": "Trg.dr.z med.in ortopedskimi izd."
+  },
+  {
+    "code": "47.750",
+    "label": "Trg.dr.s kozm.in toaletnimi izd."
+  },
+  {
+    "code": "47.761",
+    "label": "Trg.dr.v cvetličarnah"
+  },
+  {
+    "code": "47.762",
+    "label": "Trg.dr.z vrtnar.opremo in hiš.živalmi"
+  },
+  {
+    "code": "47.770",
+    "label": "Trg.dr.z urami in nakitom"
+  },
+  {
+    "code": "47.780",
+    "label": "Trg.dr.z dr.novim blagom"
+  },
+  {
+    "code": "47.790",
+    "label": "Trg.dr.z rabljenim blagom"
+  },
+  {
+    "code": "47.810",
+    "label": "Trg.dr.z motornimi vozili"
+  },
+  {
+    "code": "47.820",
+    "label": "Trg.dr.z rez.deli in opremo za mot.vozila"
+  },
+  {
+    "code": "47.830",
+    "label": "Trg.dr.z mot.kolesi ter deli in opr. zan."
+  },
+  {
+    "code": "47.910",
+    "label": "Posr.dej.za nespecializ.prodajo na drobno"
+  },
+  {
+    "code": "47.920",
+    "label": "Posr.dej.za specializ.prodajo na drobno"
+  },
+  {
+    "code": "49.110",
+    "label": "Težek železniški potniški prevoz"
+  },
+  {
+    "code": "49.120",
+    "label": "Drug železniški potniški prevoz"
+  },
+  {
+    "code": "49.200",
+    "label": "Železniški tovorni prevoz"
+  },
+  {
+    "code": "49.310",
+    "label": "Linijski cestni potniški prevoz"
+  },
+  {
+    "code": "49.320",
+    "label": "Posebni cestni potniški prevoz"
+  },
+  {
+    "code": "49.330",
+    "label": "Stor.potn.prev. na zaht. z voz.z voznikom"
+  },
+  {
+    "code": "49.340",
+    "label": "Potniški prev. z žičnicami in sedežnicami"
+  },
+  {
+    "code": "49.390",
+    "label": "Dr.kopenski potniški prevoz,d.n."
+  },
+  {
+    "code": "49.410",
+    "label": "Cestni tovorni prevoz"
+  },
+  {
+    "code": "49.420",
+    "label": "Selitvena dejavnost"
+  },
+  {
+    "code": "49.500",
+    "label": "Cevovodni transport"
+  },
+  {
+    "code": "50.100",
+    "label": "Pomorski potniški prevoz"
+  },
+  {
+    "code": "50.200",
+    "label": "Pomorski tovorni prevoz"
+  },
+  {
+    "code": "50.300",
+    "label": "Potniški prevoz po celinskih vodah"
+  },
+  {
+    "code": "50.400",
+    "label": "Tovorni prevoz po celinskih vodah"
+  },
+  {
+    "code": "51.100",
+    "label": "Potniški zračni prevoz"
+  },
+  {
+    "code": "51.210",
+    "label": "Tovorni zračni prevoz"
+  },
+  {
+    "code": "51.220",
+    "label": "Vesoljski prevoz"
+  },
+  {
+    "code": "52.100",
+    "label": "Skladiščenje"
+  },
+  {
+    "code": "52.210",
+    "label": "Spremljaj.stor.dej.v kopenskem prevozu"
+  },
+  {
+    "code": "52.220",
+    "label": "Spremljaj.stor.dej.v vodnem prevozu"
+  },
+  {
+    "code": "52.230",
+    "label": "Spremljaj.stor.dej.v zračnem prevozu"
+  },
+  {
+    "code": "52.240",
+    "label": "Pretovarjanje"
+  },
+  {
+    "code": "52.250",
+    "label": "Logistične storitve"
+  },
+  {
+    "code": "52.260",
+    "label": "Dr.spremljaj.prevozne dejavnosti"
+  },
+  {
+    "code": "52.310",
+    "label": "Posredniške dej.za tovorni prevoz"
+  },
+  {
+    "code": "52.320",
+    "label": "Posredniške dej.za potniški prevoz"
+  },
+  {
+    "code": "53.100",
+    "label": "Izvajanje univerzalne poštne stor."
+  },
+  {
+    "code": "53.200",
+    "label": "Dr.poštna in kurirska dej."
+  },
+  {
+    "code": "53.300",
+    "label": "Posred. stor.za poštno in kurirsko dej."
+  },
+  {
+    "code": "55.100",
+    "label": "Dej.hotelov ipd.nastanitvenih obratov"
+  },
+  {
+    "code": "55.201",
+    "label": "Počitniški domovi in letovišča"
+  },
+  {
+    "code": "55.202",
+    "label": "Turistične kmetije s sobami"
+  },
+  {
+    "code": "55.203",
+    "label": "Oddajanje zasebnih sob gostom"
+  },
+  {
+    "code": "55.204",
+    "label": "Planinski domovi in mladinska prenočišča"
+  },
+  {
+    "code": "55.209",
+    "label": "Dr.nastanitve za krajši čas"
+  },
+  {
+    "code": "55.300",
+    "label": "Dej.avtokampov"
+  },
+  {
+    "code": "55.400",
+    "label": "Posredniške nastanitvene stor."
+  },
+  {
+    "code": "55.900",
+    "label": "Dr.nastanitvene dej."
+  },
+  {
+    "code": "56.111",
+    "label": "Gostilne in restavracije"
+  },
+  {
+    "code": "56.112",
+    "label": "Okrepčevalnice ipd.obrati"
+  },
+  {
+    "code": "56.113",
+    "label": "Slaščičarne in kavarne"
+  },
+  {
+    "code": "56.114",
+    "label": "Turistične kmetije brez sob"
+  },
+  {
+    "code": "56.120",
+    "label": "Mobilna strežba hrane"
+  },
+  {
+    "code": "56.210",
+    "label": "Priložnostna priprava in dostava hrane"
+  },
+  {
+    "code": "56.220",
+    "label": "Pogodb.pripr.,dostava hr.,dr.oskrb.s hr."
+  },
+  {
+    "code": "56.300",
+    "label": "Strežba pijač"
+  },
+  {
+    "code": "56.400",
+    "label": "Posred.stor.za dej.strežbe hrane in pijač"
+  },
+  {
+    "code": "58.110",
+    "label": "Izdajanje knjig"
+  },
+  {
+    "code": "58.120",
+    "label": "Izdajanje časopisov"
+  },
+  {
+    "code": "58.130",
+    "label": "Izdajanje revij in druge periodike"
+  },
+  {
+    "code": "58.190",
+    "label": "Dr.založništvo, rz.izdaj.program.opreme"
+  },
+  {
+    "code": "58.210",
+    "label": "Izdajanje videoiger"
+  },
+  {
+    "code": "58.290",
+    "label": "Dr.izdajanje programske opreme"
+  },
+  {
+    "code": "59.110",
+    "label": "Produkcija filmov, videofilmov, tv.oddaj"
+  },
+  {
+    "code": "59.120",
+    "label": "Postpr.dej.pri izd.film.,videof.,tv.odd."
+  },
+  {
+    "code": "59.130",
+    "label": "Distribucija filmov in videofilmov"
+  },
+  {
+    "code": "59.140",
+    "label": "Kinematografska dej."
+  },
+  {
+    "code": "59.200",
+    "label": "Snemanje in izdaj.zvočn.zap.in muzik."
+  },
+  {
+    "code": "60.100",
+    "label": "Radijska dej.in distribucija zvoka"
+  },
+  {
+    "code": "60.200",
+    "label": "Tv.dej.in distribucija videoposnetkov"
+  },
+  {
+    "code": "60.310",
+    "label": "Dej.tiskovnih agencij"
+  },
+  {
+    "code": "60.390",
+    "label": "Dr.dej.distribucije vsebin"
+  },
+  {
+    "code": "61.100",
+    "label": "Telek.dej.po vodih,brezž.,sat.telek.dej."
+  },
+  {
+    "code": "61.200",
+    "label": "Preprod.telek.stor.in posr.stor.s telek."
+  },
+  {
+    "code": "61.900",
+    "label": "Dr.telekomunikacijske dej."
+  },
+  {
+    "code": "62.100",
+    "label": "Računalniško programiranje"
+  },
+  {
+    "code": "62.200",
+    "label": "Svet.o rač.nap.,pr.,upr.rač.nap.in sist."
+  },
+  {
+    "code": "62.900",
+    "label": "Dr.z inf.tehnol.in rač.stor.pov.dej."
+  },
+  {
+    "code": "63.100",
+    "label": "Dej.z rač.infr.,obd.pod.,gos.,pov.dej."
+  },
+  {
+    "code": "63.910",
+    "label": "Dej.spletnih iskalnikov"
+  },
+  {
+    "code": "63.920",
+    "label": "Dr.informacijske dejavnosti"
+  },
+  {
+    "code": "64.110",
+    "label": "Centralno bančništvo"
+  },
+  {
+    "code": "64.190",
+    "label": "Dr.denarno posredništvo"
+  },
+  {
+    "code": "64.210",
+    "label": "Dej.holdingov"
+  },
+  {
+    "code": "64.220",
+    "label": "Dej.prehodnih struktur financiranja"
+  },
+  {
+    "code": "64.310",
+    "label": "Dej.invest.skladov denar.in nedenar.trgov"
+  },
+  {
+    "code": "64.320",
+    "label": "Dej.rač. sklad.,nepremič.in agenc.rač."
+  },
+  {
+    "code": "64.910",
+    "label": "Dej.finančnega zakupa"
+  },
+  {
+    "code": "64.920",
+    "label": "Dr.kreditiranje"
+  },
+  {
+    "code": "64.990",
+    "label": "Dr.dej.fin.stor.,rz.z.in dej.pok.sk.,d.n."
+  },
+  {
+    "code": "65.110",
+    "label": "Dej.življenjskega zavarovanja"
+  },
+  {
+    "code": "65.120",
+    "label": "Dej.zavarovanja, razen življenjskega"
+  },
+  {
+    "code": "65.200",
+    "label": "Dej.pozavarovanja"
+  },
+  {
+    "code": "65.300",
+    "label": "Dej.pokojninskih skladov"
+  },
+  {
+    "code": "66.110",
+    "label": "Upravljanje finančnih trgov"
+  },
+  {
+    "code": "66.120",
+    "label": "posr.pri trgov.z vrednost.pap.in borz.bl."
+  },
+  {
+    "code": "66.190",
+    "label": "Dr.pom.dej.za fin.stor., rz.z.in pok.skl."
+  },
+  {
+    "code": "66.210",
+    "label": "Vrednotenje tveganja in škode"
+  },
+  {
+    "code": "66.220",
+    "label": "Dej.zavarovalniških agentov"
+  },
+  {
+    "code": "66.290",
+    "label": "Pom.dej.za zavarov.in pok.sklade,d.n."
+  },
+  {
+    "code": "66.300",
+    "label": "Upravljanje finančnih skladov"
+  },
+  {
+    "code": "68.110",
+    "label": "Trgovanje z lastnimi nepremičninami"
+  },
+  {
+    "code": "68.120",
+    "label": "Organizacija izvedbe gradb.projektov"
+  },
+  {
+    "code": "68.200",
+    "label": "Odd.in obrat.lastnih ali najetih neprem."
+  },
+  {
+    "code": "68.310",
+    "label": "Posred.stor.za posl.z nepremičninami"
+  },
+  {
+    "code": "68.320",
+    "label": "Dr.poslov.z nepr.za plačilo ali po pog."
+  },
+  {
+    "code": "69.101",
+    "label": "Odvetništvo"
+  },
+  {
+    "code": "69.102",
+    "label": "Notariat"
+  },
+  {
+    "code": "69.103",
+    "label": "Izvršitelji, arbitri in sodni izvedenci"
+  },
+  {
+    "code": "69.109",
+    "label": "Dr.pravne dejavnosti"
+  },
+  {
+    "code": "69.200",
+    "label": "Računov.,knjigov.in reviz.dej., dav.svet."
+  },
+  {
+    "code": "70.100",
+    "label": "Dej.uprav podjetij"
+  },
+  {
+    "code": "70.200",
+    "label": "Dr.podjetniško in poslovno svetovanje"
+  },
+  {
+    "code": "71.111",
+    "label": "Arhitekturno projektiranje"
+  },
+  {
+    "code": "71.112",
+    "label": "Krajinsko arhit.,urban.in dr.proj."
+  },
+  {
+    "code": "71.121",
+    "label": "Geofizikalne meritve, geodetska dej."
+  },
+  {
+    "code": "71.129",
+    "label": "Dr.inženirske deja.in tehnično svetovanje"
+  },
+  {
+    "code": "71.200",
+    "label": "Tehnično preizkušanje in analiziranje"
+  },
+  {
+    "code": "72.100",
+    "label": "Raz.-razv.dej.v naravoslovja in tehnol."
+  },
+  {
+    "code": "72.200",
+    "label": "Raz.-razv.dej.v družbos.in humanistiki"
+  },
+  {
+    "code": "73.110",
+    "label": "Dej.oglaševalskih agencij"
+  },
+  {
+    "code": "73.120",
+    "label": "Posredovanje oglaševalskega prostora"
+  },
+  {
+    "code": "73.200",
+    "label": "Raziskovanje trga in javnega mnenja"
+  },
+  {
+    "code": "73.300",
+    "label": "Dejavnost stikov z javnostjo"
+  },
+  {
+    "code": "74.110",
+    "label": "Oblikovanje industr.izd.in modno oblik."
+  },
+  {
+    "code": "74.120",
+    "label": "Grafično oblikovanje in vizualno komun."
+  },
+  {
+    "code": "74.130",
+    "label": "Notranje oblikovanje"
+  },
+  {
+    "code": "74.140",
+    "label": "Dr.specializirano oblikovanje"
+  },
+  {
+    "code": "74.200",
+    "label": "Fotografska dejavnost"
+  },
+  {
+    "code": "74.300",
+    "label": "Prevajanje in tolmačenje"
+  },
+  {
+    "code": "74.910",
+    "label": "Storitve patentnega posred. in trženja"
+  },
+  {
+    "code": "74.990",
+    "label": "Vse dr.strok.,znanstv.in tehn.dej., d.n."
+  },
+  {
+    "code": "75.000",
+    "label": "Veterinarstvo"
+  },
+  {
+    "code": "77.110",
+    "label": "Dajanje lahkih mot.vozil v najem in zakup"
+  },
+  {
+    "code": "77.120",
+    "label": "Dajanje tovornjakov v najem in zakup"
+  },
+  {
+    "code": "77.210",
+    "label": "Dajanje športne opreme v najem in zakup"
+  },
+  {
+    "code": "77.220",
+    "label": "Daj. dr.izd.za širok.rabo v naj. in zak."
+  },
+  {
+    "code": "77.310",
+    "label": "Dajanje km.str.in opreme v najem in zakup"
+  },
+  {
+    "code": "77.320",
+    "label": "Dajanje gr.str.in opreme v najem in zakup"
+  },
+  {
+    "code": "77.330",
+    "label": "Daj. pis.op.in rač.nap.v najem in zakup"
+  },
+  {
+    "code": "77.340",
+    "label": "Dajanje vodnih plovil v najem in zakup"
+  },
+  {
+    "code": "77.350",
+    "label": "Dajanje zračnih plovil v najem in zakup"
+  },
+  {
+    "code": "77.390",
+    "label": "Daj.dr.str.,nap.,op.sr.,d.n.,v naj.in z."
+  },
+  {
+    "code": "77.400",
+    "label": "Daj.intelekt.last.v zakup,rz.avt.zašč.del"
+  },
+  {
+    "code": "77.510",
+    "label": "Posr.avto.,avtodomov,prik. v naj.in zak."
+  },
+  {
+    "code": "77.520",
+    "label": "Posr.dr.op.in nef.neop.sred.v naj.in zak."
+  },
+  {
+    "code": "78.100",
+    "label": "Dej.pri iskanju zaposlitve"
+  },
+  {
+    "code": "78.200",
+    "label": "Posr.začas.del.sile idr.Osk. s člov.viri"
+  },
+  {
+    "code": "79.110",
+    "label": "Dej.potovalnih agencij"
+  },
+  {
+    "code": "79.120",
+    "label": "Dej.organizatorjev potovanj"
+  },
+  {
+    "code": "79.900",
+    "label": "Dr.stor.rez. idr.s potovanji povez.dej."
+  },
+  {
+    "code": "80.011",
+    "label": "Detektivske dejavnosti"
+  },
+  {
+    "code": "80.012",
+    "label": "Zasebno varovanje"
+  },
+  {
+    "code": "80.019",
+    "label": "Druge preiskovalne dejavnosti"
+  },
+  {
+    "code": "80.090",
+    "label": "Varovanje,d.n."
+  },
+  {
+    "code": "81.100",
+    "label": "Vzdrževanje objektov in hišniška dej."
+  },
+  {
+    "code": "81.210",
+    "label": "Splošno čiščenje stavb"
+  },
+  {
+    "code": "81.220",
+    "label": "Dr.čiščenje stavb,ind.naprav in opreme"
+  },
+  {
+    "code": "81.230",
+    "label": "Dr.čiščenje"
+  },
+  {
+    "code": "81.300",
+    "label": "Urej.in vzdrž.zelenih površin in okolice"
+  },
+  {
+    "code": "82.100",
+    "label": "Pisarniške dejavnosti"
+  },
+  {
+    "code": "82.200",
+    "label": "Dej.klicnih centrov"
+  },
+  {
+    "code": "82.300",
+    "label": "Organiziranje razstav, sejmov, srečanj"
+  },
+  {
+    "code": "82.400",
+    "label": "posr.za spremljajoče posl.stor.dej.,d.n."
+  },
+  {
+    "code": "82.910",
+    "label": "Izterjava in ocen.kredit.sposob."
+  },
+  {
+    "code": "82.920",
+    "label": "Pakiranje"
+  },
+  {
+    "code": "82.990",
+    "label": "Dr.spremljajoče posl.stor.dej.,d.n."
+  },
+  {
+    "code": "84.110",
+    "label": "Splošna dej.javne uprave"
+  },
+  {
+    "code": "84.120",
+    "label": "Urej.zdr.,izob.,kult.idr.soc.storitev"
+  },
+  {
+    "code": "84.130",
+    "label": "Urej.gosp.podr.za učinkov.poslovanje"
+  },
+  {
+    "code": "84.210",
+    "label": "Urejanje zunanjih zadev"
+  },
+  {
+    "code": "84.220",
+    "label": "Obramba"
+  },
+  {
+    "code": "84.230",
+    "label": "Sodstvo"
+  },
+  {
+    "code": "84.240",
+    "label": "Dej.za javni red in varnost"
+  },
+  {
+    "code": "84.250",
+    "label": "Zaščita in rešev.pri požarih in nesreč."
+  },
+  {
+    "code": "84.300",
+    "label": "Dej.obvezne socialne varnosti"
+  },
+  {
+    "code": "85.100",
+    "label": "Predprimarna vzgoja in izobraževanje"
+  },
+  {
+    "code": "85.200",
+    "label": "Primarno izobraževanje"
+  },
+  {
+    "code": "85.310",
+    "label": "Splošno sekundarno izobraževanje"
+  },
+  {
+    "code": "85.320",
+    "label": "Poklicno sekundarno izobraževanje"
+  },
+  {
+    "code": "85.330",
+    "label": "Posekundarno neterciarno izobraževanje"
+  },
+  {
+    "code": "85.401",
+    "label": "Višješolsko izobraževanje"
+  },
+  {
+    "code": "85.402",
+    "label": "Visokošolsko izobraževanje"
+  },
+  {
+    "code": "85.510",
+    "label": "Izob.,izpop.usposab.na podr.špor.,rekr."
+  },
+  {
+    "code": "85.520",
+    "label": "Izob.,izpop.,usposab.na podr.kult.,umet."
+  },
+  {
+    "code": "85.530",
+    "label": "Dej.vozniških šol"
+  },
+  {
+    "code": "85.590",
+    "label": "Dr.izob.,izpop.,usposab.,d.n."
+  },
+  {
+    "code": "85.610",
+    "label": "Posredniške dej.za tečaje in inštruiranje"
+  },
+  {
+    "code": "85.690",
+    "label": "Pomožne dej.za izobraževanje,d.n."
+  },
+  {
+    "code": "86.100",
+    "label": "Bolnišnična zdravstvena dej."
+  },
+  {
+    "code": "86.210",
+    "label": "Splošna zunajboln.zdravs.dej."
+  },
+  {
+    "code": "86.220",
+    "label": "Specializirana zdravstvena dej."
+  },
+  {
+    "code": "86.230",
+    "label": "Zobozdravstvena dej."
+  },
+  {
+    "code": "86.910",
+    "label": "Stor.diagn.slikanja in dej.med.lab."
+  },
+  {
+    "code": "86.920",
+    "label": "Prevoz bolnikov z reševalnim vozilom"
+  },
+  {
+    "code": "86.930",
+    "label": "Dej.psihologov in psihoterap.,rz.zdrav."
+  },
+  {
+    "code": "86.940",
+    "label": "Zdravstvena in babiška nega"
+  },
+  {
+    "code": "86.950",
+    "label": "Fizioterapija"
+  },
+  {
+    "code": "86.960",
+    "label": "Dej.tradic.,dopolnilne ali altern.med."
+  },
+  {
+    "code": "86.970",
+    "label": "Posr.pri zdrav.,zobozdr.st.idr.zdr.stor."
+  },
+  {
+    "code": "86.990",
+    "label": "Dr.dej.za zdravje,d.n."
+  },
+  {
+    "code": "87.100",
+    "label": "Dej.nast.ustanov za bolniško nego"
+  },
+  {
+    "code": "87.200",
+    "label": "Dej.nast.ust.za osk.os. z duš.mot.,zasv."
+  },
+  {
+    "code": "87.300",
+    "label": "Dej.nast.ust.za oskrbo star.ali invalidov"
+  },
+  {
+    "code": "87.910",
+    "label": "Posred.stor.za soc.varstvo z nastanitvijo"
+  },
+  {
+    "code": "87.990",
+    "label": "Dr.socialno varstvo z nastanitvijo, d. n."
+  },
+  {
+    "code": "88.101",
+    "label": "Dejavnost invalidskih podjetij"
+  },
+  {
+    "code": "88.109",
+    "label": "Dr.soc.var.brez nast.za star. ali inval."
+  },
+  {
+    "code": "88.910",
+    "label": "Dnevno varstvo otrok"
+  },
+  {
+    "code": "88.991",
+    "label": "Dej.humanitarnih in dobrodelnih org."
+  },
+  {
+    "code": "88.999",
+    "label": "Dr.d.n.socialno varstvo brez nastanitve"
+  },
+  {
+    "code": "90.111",
+    "label": "Literarno ustvarjanje"
+  },
+  {
+    "code": "90.112",
+    "label": "Komponiranje glasbe"
+  },
+  {
+    "code": "90.120",
+    "label": "Vizualna umetnost"
+  },
+  {
+    "code": "90.130",
+    "label": "Drugo umetniško ustvarjanje"
+  },
+  {
+    "code": "90.200",
+    "label": "Uprizoritvene umetnosti"
+  },
+  {
+    "code": "90.310",
+    "label": "Obratovanje obj.za kulturne prireditve"
+  },
+  {
+    "code": "90.390",
+    "label": "Dr.pom.dej.za umet.ustvar.in upriz.umet."
+  },
+  {
+    "code": "91.110",
+    "label": "Dej.knjižnic"
+  },
+  {
+    "code": "91.120",
+    "label": "Dej.arhivov"
+  },
+  {
+    "code": "91.210",
+    "label": "Dej.muzejev in dej.v zvezi z zbirkami"
+  },
+  {
+    "code": "91.220",
+    "label": "Dej.v zvezi z zgod.znamenit.in spomeniki"
+  },
+  {
+    "code": "91.300",
+    "label": "Konser.,rest.idr.pom.dej.za ohr.kult.ded."
+  },
+  {
+    "code": "91.410",
+    "label": "Dej.botaničnih in živalskih vrtov"
+  },
+  {
+    "code": "91.420",
+    "label": "Varstvo naravnih vrednot"
+  },
+  {
+    "code": "92.001",
+    "label": "Dej.igralnic"
+  },
+  {
+    "code": "92.002",
+    "label": "Prirejanje iger na srečo, rz.v igraln."
+  },
+  {
+    "code": "93.110",
+    "label": "Obratovanje športnih objektov"
+  },
+  {
+    "code": "93.120",
+    "label": "Dej.športnih klubov"
+  },
+  {
+    "code": "93.130",
+    "label": "Dej.fitnes centrov"
+  },
+  {
+    "code": "93.190",
+    "label": "Športne dej.,d.n."
+  },
+  {
+    "code": "93.210",
+    "label": "Dej.zabaviščnih parkov"
+  },
+  {
+    "code": "93.291",
+    "label": "Dej.marin"
+  },
+  {
+    "code": "93.299",
+    "label": "D.n.dej.za prosti čas"
+  },
+  {
+    "code": "94.110",
+    "label": "Dej.poslovnih in delodajalskih združenj"
+  },
+  {
+    "code": "94.120",
+    "label": "Dej.strokovnih združenj"
+  },
+  {
+    "code": "94.200",
+    "label": "Dej.sindikatov"
+  },
+  {
+    "code": "94.910",
+    "label": "Dej.verskih organizacij"
+  },
+  {
+    "code": "94.920",
+    "label": "Dej.političnih organizacij"
+  },
+  {
+    "code": "94.991",
+    "label": "Dej.invalidskih organizacij"
+  },
+  {
+    "code": "94.999",
+    "label": "Dej.d.n.članskih organizacij"
+  },
+  {
+    "code": "95.100",
+    "label": "Popr.in vz.računalnikov in komunik.naprav"
+  },
+  {
+    "code": "95.210",
+    "label": "Popr.in vz.elektron.naprav za široko rabo"
+  },
+  {
+    "code": "95.220",
+    "label": "Popr.in vz.gosp.nap.,opreme za dom in vrt"
+  },
+  {
+    "code": "95.230",
+    "label": "Popr.in vz.obutve in usnjene galanterije"
+  },
+  {
+    "code": "95.240",
+    "label": "Popr.in vzdrž.pohištva"
+  },
+  {
+    "code": "95.250",
+    "label": "Popr.in vzdrž.ur in nakita"
+  },
+  {
+    "code": "95.290",
+    "label": "Popr.in vzdrž.izd. za široko rabo,d n."
+  },
+  {
+    "code": "95.310",
+    "label": "Popr.in vzdrž.motornih vozil"
+  },
+  {
+    "code": "95.320",
+    "label": "Popr.in vzdrž.motornih koles"
+  },
+  {
+    "code": "95.400",
+    "label": "Posr.pop.,vz.rač.,izd.šir.ra.,m.voz.,kol."
+  },
+  {
+    "code": "96.100",
+    "label": "Dej.pralnic in kemičnih čistilnic"
+  },
+  {
+    "code": "96.210",
+    "label": "Frizerska in brivska dej."
+  },
+  {
+    "code": "96.220",
+    "label": "Kozmetična in pedikerska dej."
+  },
+  {
+    "code": "96.230",
+    "label": "Zdraviliška dej.,savne in parne kopeli"
+  },
+  {
+    "code": "96.300",
+    "label": "Pogrebna dej."
+  },
+  {
+    "code": "96.400",
+    "label": "Posredniške dej.za osebne storitve"
+  },
+  {
+    "code": "96.910",
+    "label": "Osebne storitve na domu"
+  },
+  {
+    "code": "96.991",
+    "label": "Tetoviranje in pirsing"
+  },
+  {
+    "code": "96.999",
+    "label": "Dr.d.n.osebne storitve"
+  },
+  {
+    "code": "97.000",
+    "label": "Dej.gospod.z zaposlenim hiš.os."
+  },
+  {
+    "code": "98.100",
+    "label": "Rznv.pz.dobrin v gospod.za lastno rabo"
+  },
+  {
+    "code": "98.200",
+    "label": "Rznv.prz.stor.v gospod.za lastno rabo"
+  },
+  {
+    "code": "99.000",
+    "label": "Dej.eksteritorialnih org.in teles"
+  }
+]

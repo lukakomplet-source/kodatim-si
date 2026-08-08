@@ -94,7 +94,14 @@ export default function DashboardShell({
         </div>
       </aside>
 
-      <div className="flex-1">
+      {/*
+        min-w-0 is load-bearing: a flex item defaults to min-width:auto, so it
+        refuses to shrink below its content. A wide table inside then stretched
+        this whole column past the viewport and the PAGE scrolled sideways,
+        carrying the cards and their buttons off-screen. With it, the column
+        stays viewport-width and wide content scrolls inside its own box.
+      */}
+      <div className="min-w-0 flex-1">
         <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 sm:hidden">
           <span className="text-base font-semibold text-zinc-900">
             KodaTim<span className="text-accent">.si</span>
