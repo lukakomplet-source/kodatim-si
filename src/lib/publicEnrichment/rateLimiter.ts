@@ -115,23 +115,36 @@ function sleep(ms: number): Promise<void> {
  * by IP, not by worker.
  */
 /**
- * A rate limit protects one server. "website" is not a server — it is every
- * company's own site — so throttling them as one queue serialised whole
- * batches: five companies looked up in parallel spent their time waiting on
- * each other's unrelated hosts. Splitting the bucket by host keeps the
- * protection where it belongs and lets independent sites proceed at once.
+ * A rate limit protects one server, seen from one IP address. Two things
+ * therefore split a bucket:
+ *
+ *   host   "website" is not a server — it is every company's own site — so
+ *          throttling them as one queue serialised whole batches: five
+ *          companies looked up in parallel spent their time waiting on each
+ *          other's unrelated hosts.
+ *   proxy  a provider rate-limits per IP, so requests going out through
+ *          DIFFERENT proxies are not competing for the same budget. Keying the
+ *          bucket only by provider made the proxy pool useless: rotating IPs
+ *          still queued behind one shared interval, so N proxies bought
+ *          nothing. With this, throughput scales with the number of proxies —
+ *          which was the entire point of having them.
  */
-function bucketFor(provider: ProviderId, url?: string): string {
-  if (provider !== "website" || !url) return provider;
-  try {
-    return `website:${new URL(url).hostname}`;
-  } catch {
-    return provider;
-  }
+function bucketFor(provider: ProviderId, url?: string, proxyId?: string): string {
+  const base =
+    provider === "website" && url
+      ? (() => {
+          try {
+            return `website:${new URL(url).hostname}`;
+          } catch {
+            return provider as string;
+          }
+        })()
+      : (provider as string);
+  return proxyId ? `${base}@${proxyId}` : base;
 }
 
-export async function acquireSlot(provider: ProviderId, url?: string): Promise<void> {
-  const s = stateFor(bucketFor(provider, url), provider);
+export async function acquireSlot(provider: ProviderId, url?: string, proxyId?: string): Promise<void> {
+  const s = stateFor(bucketFor(provider, url, proxyId), provider);
   const mine = s.queueTail.then(async () => {
     const waitMs = Math.max(0, s.lastRequestAt + s.intervalMs - Date.now());
     if (waitMs > 0) await sleep(waitMs);
@@ -151,9 +164,10 @@ export function recordOutcome(
   provider: ProviderId,
   outcome: RequestOutcome,
   retryAfterMs?: number,
-  url?: string
+  url?: string,
+  proxyId?: string
 ): void {
-  const s = stateFor(bucketFor(provider, url), provider);
+  const s = stateFor(bucketFor(provider, url, proxyId), provider);
   const { config } = s;
 
   if (outcome === "success") {

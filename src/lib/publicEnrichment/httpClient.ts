@@ -57,9 +57,13 @@ export async function providerFetch(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    await acquireSlot(provider, url);
-
+    // The proxy is chosen BEFORE the slot, because which proxy is used decides
+    // which rate-limit bucket this request belongs to. Acquiring first and
+    // rotating after put every proxy in one queue, so a pool of N addresses
+    // ran no faster than a single IP.
     const lease = nextProxy();
+    await acquireSlot(provider, url, lease?.id);
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), perRequestTimeout);
 
@@ -73,7 +77,7 @@ export async function providerFetch(
       });
 
       if (response.status === 429) {
-        recordOutcome(provider, "rate_limited", parseRetryAfterMs(response), url);
+        recordOutcome(provider, "rate_limited", parseRetryAfterMs(response), url, lease?.id);
         if (attempt < attempts) continue;
         return response;
       }
@@ -81,14 +85,14 @@ export async function providerFetch(
       if (response.status === 403) {
         // Most likely an IP block. Park this proxy so the next attempt goes
         // out through a different address.
-        recordOutcome(provider, "blocked", undefined, url);
+        recordOutcome(provider, "blocked", undefined, url, lease?.id);
         if (lease) penalizeProxy(lease.url);
         if (attempt < attempts) continue;
         return response;
       }
 
       if (RETRYABLE_STATUS.has(response.status)) {
-        recordOutcome(provider, "error", undefined, url);
+        recordOutcome(provider, "error", undefined, url, lease?.id);
         if (attempt < attempts) {
           await sleep(Math.min(30_000, 1000 * 2 ** (attempt - 1)));
           continue;
@@ -96,12 +100,12 @@ export async function providerFetch(
         return response;
       }
 
-      recordOutcome(provider, "success", undefined, url);
+      recordOutcome(provider, "success", undefined, url, lease?.id);
       return response;
     } catch (err) {
       lastError = err;
       const isTimeout = err instanceof Error && err.name === "AbortError";
-      recordOutcome(provider, isTimeout ? "timeout" : "error", undefined, url);
+      recordOutcome(provider, isTimeout ? "timeout" : "error", undefined, url, lease?.id);
       // A connection-level failure through a proxy usually means the proxy is
       // bad, not the target — rotate away from it.
       if (lease && !isTimeout) penalizeProxy(lease.url);

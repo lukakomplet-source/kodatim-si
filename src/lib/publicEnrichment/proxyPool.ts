@@ -17,11 +17,18 @@ import { ProxyAgent } from "undici";
 
 export type ProxyLease = {
   url: string;
+  /**
+   * Short, credential-free label ("p1", "p2"). The rate limiter keys a bucket
+   * per proxy, and those keys end up in logs and stats — the URL carries a
+   * username and password and must never travel there.
+   */
+  id: string;
   dispatcher: ProxyAgent;
 };
 
 type Entry = {
   url: string;
+  id: string;
   dispatcher: ProxyAgent;
   cooldownUntil: number;
   failures: number;
@@ -46,7 +53,13 @@ function load(): Entry[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((url) => ({ url, dispatcher: new ProxyAgent(url), cooldownUntil: 0, failures: 0 }));
+    .map((url, i) => ({
+      url,
+      id: `p${i + 1}`,
+      dispatcher: new ProxyAgent(url),
+      cooldownUntil: 0,
+      failures: 0,
+    }));
   return entries;
 }
 
@@ -73,7 +86,7 @@ export function nextProxy(): ProxyLease | null {
     const entry = pool[cursor % pool.length];
     cursor = (cursor + 1) % pool.length;
     if (entry.cooldownUntil <= now) {
-      return { url: entry.url, dispatcher: entry.dispatcher };
+      return { url: entry.url, id: entry.id, dispatcher: entry.dispatcher };
     }
   }
   return null;

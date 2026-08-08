@@ -2,7 +2,7 @@ import { isFirecrawlUnavailable } from "@/lib/firecrawl";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { providerFetch } from "./httpClient";
 import { searchForWebsite } from "./websiteSearch";
-import { ajpesProvider } from "./providers/ajpes";
+import { ajpesProvider, ajpesSkipReason } from "./providers/ajpes";
 import { companyWallProvider, PEOPLE_SEPARATOR } from "./providers/companywall";
 import { biziProvider } from "./providers/bizi";
 import { websiteProvider } from "./providers/website";
@@ -401,8 +401,18 @@ export async function quickComplete(
   // names the other two search by. CompanyWall and Bizi then run together —
   // neither depends on the other, and running them in sequence meant waiting
   // out both providers' rate limits back to back instead of side by side.
-  const ajpesResult = await runProvider(ajpesProvider);
-  if (ajpesResult) absorb(ajpesProvider, ajpesResult);
+  //
+  // In a bulk run the identity is already known (the Lead skrejp search
+  // returned davčna and matična for every row), and AJPES is the slowest link
+  // in the chain — so the worker is allowed to skip it. Off by default here.
+  const skipAjpes = ajpesSkipReason(working as unknown as IntelLead);
+  if (skipAjpes) {
+    providerNotes.push({ label: ajpesProvider.label, note: skipAjpes });
+    report(ajpesProvider.label, skipAjpes, "info");
+  } else {
+    const ajpesResult = await runProvider(ajpesProvider);
+    if (ajpesResult) absorb(ajpesProvider, ajpesResult);
+  }
 
   const [companyWallResult, biziResult] = await Promise.all([
     runProvider(companyWallProvider),

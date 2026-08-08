@@ -17,6 +17,8 @@ import {
   Plus,
   Check,
   ChevronUp,
+  Server,
+  Copy,
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
@@ -381,6 +383,46 @@ export default function LeadScrapeClient() {
       return next.join(", ");
     });
   }
+
+  /**
+   * State of the background queue. Polled only while there is something in it,
+   * so an idle screen makes no requests.
+   */
+  const [queueCounts, setQueueCounts] = useState<{
+    pending: number;
+    running: number;
+    done: number;
+    failed: number;
+  } | null>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/admin/enrichment-queue");
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setQueueError(json?.error ?? "Vrste ni bilo mogoče prebrati.");
+          return;
+        }
+        setQueueError(null);
+        setQueueCounts(json.counts);
+      } catch {
+        // Offline or mid-navigation; the next tick tries again.
+      }
+    };
+    void load();
+    const timer = setInterval(load, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const queueBusy = (queueCounts?.pending ?? 0) + (queueCounts?.running ?? 0) > 0;
 
   async function askAiForSkd() {
     const q = skdQuery.trim();
@@ -1518,6 +1560,76 @@ export default function LeadScrapeClient() {
               <div ref={logEndRef} />
             </div>
           </div>
+        </div>
+      )}
+
+      {/*
+        The background queue. Scraping thousands of companies in this tab is
+        days of work that stops the moment the tab closes — and worse, every
+        batch is a fresh server call, so the adaptive rate limiter restarts at
+        its slowest setting and never learns it can go faster. One long-lived
+        local process keeps the AJPES session and lets that limiter converge.
+      */}
+      {(queueError || (queueCounts && queueCounts.pending + queueCounts.running + queueCounts.done + queueCounts.failed > 0)) && (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+            <Server className="h-4 w-4 text-accent" />
+            Obdelava v ozadju
+          </p>
+
+          {queueError ? (
+            <p className="mt-2 text-xs text-amber-700">
+              {queueError} — najverjetneje še ni pognana migracija{" "}
+              <code>supabase/migration_enrichment_queue.sql</code>.
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 text-xs text-zinc-500">
+                Podjetja, uvožena z gumbom „Uvozi vse in dokončaj v ozadju“, dokonča ločen program
+                pri vas. Zavihek lahko zaprete — vrsta je v bazi, zato se delo nadaljuje tam, kjer
+                se je ustavilo.
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  { label: "Čaka", value: queueCounts!.pending, tone: "text-zinc-900" },
+                  { label: "V teku", value: queueCounts!.running, tone: "text-accent" },
+                  { label: "Končano", value: queueCounts!.done, tone: "text-emerald-600" },
+                  { label: "Napak", value: queueCounts!.failed, tone: "text-red-600" },
+                ].map((c) => (
+                  <div key={c.label} className="rounded-xl bg-zinc-50 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">{c.label}</p>
+                    <p className={`text-lg font-semibold ${c.tone}`}>{c.value.toLocaleString("sl-SI")}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5">
+                <code className="flex-1 font-mono text-xs text-zinc-100">npm run worker</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText("npm run worker");
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "Kopirano" : "Kopiraj"}
+                </button>
+              </div>
+
+              <p className="mt-2 text-xs text-zinc-500">
+                Poženite v mapi <code>kodatim-si</code>. Program lahko kadar koli ustavite s{" "}
+                <kbd className="rounded border border-zinc-300 px-1">Ctrl</kbd>+
+                <kbd className="rounded border border-zinc-300 px-1">C</kbd> — nedokončana podjetja
+                se vrnejo v vrsto. Za več hitrosti dodajte proxyje v <code>ENRICHMENT_PROXIES</code>{" "}
+                (zmogljivost raste sorazmerno z njihovim številom).
+                {queueBusy && " Vrsta trenutno ni prazna."}
+              </p>
+            </>
+          )}
         </div>
       )}
 

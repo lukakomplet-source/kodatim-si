@@ -338,14 +338,42 @@ function findDetailLink(html: string, companyName: string): DetailLinkResult & {
   return { status: "ambiguous", candidateCount: rows.length, rowCount: rows.length, tableFound: true };
 }
 
+/**
+ * Whether AJPES can be skipped for this lead, and why.
+ *
+ * AJPES is by far the most expensive source in a bulk run: its select-then-read
+ * is stateful, so it is serialised globally, and at two requests per company it
+ * sets the floor for the whole job — 5.692 companies is ~16 h of AJPES alone,
+ * which no amount of concurrency shortens.
+ *
+ * When the lead already carries BOTH davčna and matična, the thing AJPES is
+ * primarily there for — proving which company this is — is already done. It
+ * still adds regija, druge registrirane dejavnosti and ustanovitelji, so this
+ * is opt-in per process rather than a blanket rule: the worker turns it on
+ * (thousands of rows, speed decides), while the interactive Lead skrejp table
+ * leaves it off (a few hundred rows you actually read, completeness decides).
+ */
+export function ajpesSkipReason(lead: IntelLead): string | null {
+  if (process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN !== "1") return null;
+  const custom = (lead.custom_fields as Record<string, string> | null) ?? {};
+  const vat = lead.vat_id ?? custom.vat_id;
+  const registration = custom.registration_number;
+  if (!vat?.trim() || !registration?.trim()) return null;
+  return "AJPES preskočen — davčna in matična sta že znani (ENRICHMENT_SKIP_AJPES_WHEN_KNOWN=1). Manjkajo lahko regija, druge registrirane dejavnosti in ustanovitelji.";
+}
+
 export const ajpesProvider: PublicEnrichmentProvider = {
   id: "ajpes",
   label: "AJPES",
   priority: 5,
   possibleFields: AJPES_POSSIBLE_FIELDS,
 
-  shouldRun() {
-    return true;
+  shouldRun(lead: IntelLead) {
+    return !ajpesSkipReason(lead);
+  },
+
+  notRunReason(lead: IntelLead) {
+    return ajpesSkipReason(lead) ?? "Vir ni bil poizvedovan.";
   },
 
   async run(lead: IntelLead): Promise<PublicProviderResult> {

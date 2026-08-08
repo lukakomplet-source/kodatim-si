@@ -20,6 +20,8 @@
  *   ENRICHMENT_REFRESH_DAYS   re-enrich only if older than this (default 30)
  *   ENRICHMENT_MIN_COMPLETION completion % that counts as "already done" (default 40)
  *   ENRICHMENT_MAX_JOBS       stop after N jobs — for testing (default unlimited)
+ *   ENRICHMENT_SKIP_AJPES_WHEN_KNOWN  default 1 HERE (0 in the web app)
+ *   ENRICHMENT_PROXIES        comma-separated proxy URLs; throughput scales with them
  */
 
 import { readFileSync } from "node:fs";
@@ -61,6 +63,23 @@ function loadEnvLocal(): void {
   }
 }
 loadEnvLocal();
+
+/**
+ * Bulk defaults, applied only in this process — the web app keeps its own.
+ *
+ * AJPES is stateful, therefore globally serialised, therefore the floor for the
+ * whole job: two requests per company means ~16 h for 5.692 companies no matter
+ * how many workers run. Every one of those companies already arrived from the
+ * Lead skrejp search with its davčna and matična, so the identity AJPES is
+ * chiefly there to establish is already in hand. Skipping it here is the single
+ * biggest speed-up available; the interactive table still queries it, because
+ * there completeness matters more than the clock.
+ *
+ * Set ENRICHMENT_SKIP_AJPES_WHEN_KNOWN=0 in .env.local to force the full chain.
+ */
+if (process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN === undefined) {
+  process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN = "1";
+}
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -113,6 +132,11 @@ async function main() {
   if (proxyCount() === 0) {
     log("Proxyji niso nastavljeni (ENRICHMENT_PROXIES) — uporabljam lokalni IP z omejevanjem hitrosti.");
   }
+  log(
+    process.env.ENRICHMENT_SKIP_AJPES_WHEN_KNOWN === "1"
+      ? "AJPES se preskoči, kadar sta davčna in matična že znani (hitrejše; brez regije, drugih dejavnosti in ustanoviteljev)."
+      : "AJPES se poizveduje za vsako podjetje (popolneje, a bistveno počasneje)."
+  );
 
   const counts = await queue.queueCounts(admin);
   log(`Stanje vrste: pending=${counts.pending} running=${counts.running} done=${counts.done} failed=${counts.failed}`);
