@@ -41,6 +41,14 @@ export type SearchSlice = {
   municipality?: string;
   /** Street-name prefix. */
   street?: string;
+  /**
+   * Marks a slice the run STARTED from, whose total therefore counts toward
+   * the expected grand total. Needed since area-restricted searches begin at
+   * municipality level: "has no municipality" stopped being a usable
+   * definition of a root, and a municipality produced by splitting a capped
+   * country root must NOT add its total again (the root already did).
+   */
+  isRoot?: boolean;
 };
 
 /** Filters the user typed once, applied to every slice. Never varies mid-run. */
@@ -101,14 +109,25 @@ export async function fetchMunicipalities(): Promise<string[]> {
   return list;
 }
 
-/** The starting slices: one per SKD code the user typed. */
-export function rootSlices(activity: string, status: string): SearchSlice[] {
+/**
+ * The starting slices: one per SKD code the user typed — times one per
+ * municipality when the search is restricted to an area ("Savinjska regija"),
+ * so the run never touches the rest of the country at all.
+ */
+export function rootSlices(activity: string, status: string, municipalities: string[] = []): SearchSlice[] {
   const codes = activity
     .split(/[,;\s]+/)
     .map((c) => c.trim())
     .filter(Boolean);
   const unique = [...new Set(codes)];
-  return (unique.length > 0 ? unique : [""]).map((code) => ({ activity: code, status }));
+  const codeList = unique.length > 0 ? unique : [""];
+
+  if (municipalities.length === 0) {
+    return codeList.map((code) => ({ activity: code, status, isRoot: true }));
+  }
+  return codeList.flatMap((code) =>
+    municipalities.map((municipality) => ({ activity: code, status, municipality, isRoot: true }))
+  );
 }
 
 /**
@@ -119,10 +138,13 @@ export function rootSlices(activity: string, status: string): SearchSlice[] {
  * need the street axis underneath.
  */
 function childrenOf(slice: SearchSlice, municipalities: string[]): SearchSlice[] {
-  if (!slice.municipality) return municipalities.map((m) => ({ ...slice, municipality: m }));
+  // Children never inherit isRoot: their parent's total already counted, and a
+  // spread copying the flag would add every municipality's share on top of it.
+  const base = { ...slice, isRoot: undefined };
+  if (!slice.municipality) return municipalities.map((m) => ({ ...base, municipality: m }));
   const prefix = slice.street ?? "";
   if (prefix.length >= MAX_STREET_PREFIX) return [];
-  return STREET_INITIALS.map((ch) => ({ ...slice, street: prefix + ch }));
+  return STREET_INITIALS.map((ch) => ({ ...base, street: prefix + ch }));
 }
 
 /**

@@ -88,6 +88,8 @@ type SearchSlice = {
   status: string;
   municipality?: string;
   street?: string;
+  /** Set on the slices a run starts from — their totals form the expected sum. */
+  isRoot?: boolean;
 };
 
 /** Everything worth surviving a closed tab. */
@@ -107,6 +109,9 @@ type SkrejpSession = {
   expectedTotal?: number | null;
   /** Which columns the table shows. Undefined (an older session) means all. */
   visibleColumns?: string[];
+  /** The area as typed ("Savinjska regija") and the municipalities it resolved to. */
+  area?: string;
+  municipalities?: string[];
 };
 
 /**
@@ -297,6 +302,45 @@ export default function LeadScrapeClient() {
   const [town, setTown] = useState("");
   const [status, setStatus] = useState("1");
 
+  /**
+   * An area instead of a single place: "Savinjska regija" resolves (via the
+   * resolve-area endpoint, validated against the official register) into the
+   * municipalities the search is then restricted to.
+   */
+  const [area, setArea] = useState("");
+  const [municipalities, setMunicipalities] = useState<string[]>([]);
+  const [areaBusy, setAreaBusy] = useState(false);
+  const [areaNote, setAreaNote] = useState<string | null>(null);
+
+  async function resolveArea() {
+    const query = area.trim();
+    if (!query) return;
+    setAreaBusy(true);
+    setAreaNote(null);
+    try {
+      const res = await fetch("/api/admin/lead-skrejp/resolve-area", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ area: query }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAreaNote(json?.error ?? "Območja ni bilo mogoče razrešiti.");
+        return;
+      }
+      setMunicipalities(json.municipalities ?? []);
+      setAreaNote(
+        (json.municipalities?.length ?? 0) > 0
+          ? `${json.municipalities.length} občin${json.note ? ` — ${json.note}` : ""}`
+          : json.note ?? "Ni najdenih občin."
+      );
+    } catch {
+      setAreaNote("Prišlo je do napake pri razreševanju območja.");
+    } finally {
+      setAreaBusy(false);
+    }
+  }
+
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchNote, setSearchNote] = useState<string | null>(null);
@@ -486,6 +530,8 @@ export default function LeadScrapeClient() {
     setLog(saved.log ?? []);
     setPendingSlices(saved.pendingSlices ?? []);
     setExpectedTotal(saved.expectedTotal ?? null);
+    setArea(saved.area ?? "");
+    setMunicipalities(saved.municipalities ?? []);
     // Drop keys from columns that no longer exist, and fall back to everything
     // for a session saved before the picker existed.
     if (saved.visibleColumns?.length) {
@@ -506,6 +552,8 @@ export default function LeadScrapeClient() {
     pendingSlices,
     expectedTotal,
     visibleColumns,
+    area,
+    municipalities,
   };
   useAutoSave("lead-skrejp", session, sessionLoaded);
 
@@ -667,7 +715,7 @@ export default function LeadScrapeClient() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({ activity, name, postalCode, town, status, slices: queue }),
+          body: JSON.stringify({ activity, name, postalCode, town, status, municipalities, slices: queue }),
         });
 
         if (!res.ok || !res.body) {
@@ -1025,6 +1073,9 @@ export default function LeadScrapeClient() {
     setImportMessage(null);
     setPendingSlices([]);
     setExpectedTotal(null);
+    setArea("");
+    setMunicipalities([]);
+    setAreaNote(null);
     void clearSavedState("lead-skrejp");
     // The reload is the point: it guarantees no loop, stream or timer
     // survives — exactly the manual refresh this button replaces.
@@ -1259,6 +1310,33 @@ export default function LeadScrapeClient() {
             />
           </label>
           <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Območje (regija ali okolica)
+            <span className="mt-1 flex gap-2">
+              <input
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void resolveArea();
+                  }
+                }}
+                placeholder="npr. Savinjska regija, Celje okolica"
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-zinc-900 focus:border-accent/50 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={resolveArea}
+                disabled={areaBusy || !area.trim()}
+                title="AI iz uradnega seznama 212 občin izbere tiste, ki spadajo v opisano območje"
+                className="flex shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {areaBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                Najdi občine
+              </button>
+            </span>
+          </label>
+          <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
             Status
             <select
               value={status}
@@ -1286,6 +1364,40 @@ export default function LeadScrapeClient() {
             </select>
           </label>
         </div>
+
+        {(municipalities.length > 0 || areaNote) && (
+          <div className="mt-3">
+            {areaNote && <p className="text-xs text-zinc-500">{areaNote}</p>}
+            {municipalities.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-zinc-700">
+                  Iskanje omejeno na {municipalities.length} občin:
+                </span>
+                {municipalities.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMunicipalities((prev) => prev.filter((x) => x !== m))}
+                    title="Odstrani občino iz iskanja"
+                    className="rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-semibold text-accent hover:bg-accent/20"
+                  >
+                    {m} ×
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMunicipalities([]);
+                    setAreaNote(null);
+                  }}
+                  className="text-[11px] font-semibold text-zinc-500 underline hover:text-zinc-900"
+                >
+                  odstrani omejitev
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {showSkdFinder && (
           <div className="mt-4 rounded-2xl border border-accent/20 bg-accent/5 p-4">

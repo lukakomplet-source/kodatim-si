@@ -37,6 +37,7 @@ function parseSlices(value: unknown): SearchSlice[] {
       status: str("status") ?? "1",
       municipality: str("municipality"),
       street: str("street"),
+      isRoot: r.isRoot === true ? true : undefined,
     });
   }
   return out;
@@ -67,15 +68,25 @@ export async function POST(request: NextRequest) {
     town: text("town") || undefined,
   };
 
+  // The area restriction: municipality names, already validated against the
+  // official list by the resolve-area endpoint. Roots are then built per
+  // municipality, so the run never queries outside the area at all.
+  const municipalities = Array.isArray(body.municipalities)
+    ? (body.municipalities as unknown[])
+        .filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+        .map((m) => m.trim())
+        .slice(0, 250)
+    : [];
+
   const queue = parseSlices(body.slices);
   if (queue.length === 0) {
-    if (!activity && !base.name && !base.postalCode && !base.town) {
+    if (!activity && !base.name && !base.postalCode && !base.town && municipalities.length === 0) {
       return NextResponse.json(
-        { error: "Vnesite vsaj en pogoj iskanja (SKD koda, ime, poštna številka ali kraj)." },
+        { error: "Vnesite vsaj en pogoj iskanja (SKD koda, ime, poštna številka, kraj ali območje)." },
         { status: 400 }
       );
     }
-    queue.push(...rootSlices(activity, status));
+    queue.push(...rootSlices(activity, status, municipalities));
   }
 
   const encoder = new TextEncoder();
@@ -117,9 +128,11 @@ export async function POST(request: NextRequest) {
 
           try {
             const outcome = await runSlice(slice, base);
-            // A root slice's total is the yardstick for the whole run: how many
-            // companies AJPES says exist under this code.
-            const isRoot = !slice.municipality && !slice.street;
+            // A root's total counts toward the run's expected grand total.
+            // The explicit flag matters for area searches, which START at
+            // municipality level; the old shape check stays for queues saved
+            // by clients from before the flag existed.
+            const isRoot = slice.isRoot === true || (!slice.municipality && !slice.street);
 
             // `index` and the child slices themselves go out with every result
             // so the client can rebuild the remaining queue on its own if the
