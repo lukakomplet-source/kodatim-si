@@ -16,6 +16,7 @@ create table if not exists public.ui_state (
 alter table public.ui_state enable row level security;
 
 -- Vsak vidi in ureja samo svoje stanje.
+drop policy if exists "Users manage their own ui state" on public.ui_state;
 create policy "Users manage their own ui state"
   on public.ui_state for all
   using (user_id = auth.uid())

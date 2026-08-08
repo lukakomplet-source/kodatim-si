@@ -93,10 +93,13 @@ export async function POST(request: NextRequest) {
       const knowledge = await searchKnowledge(admin, theme, 5);
       const knowledgeBlock = knowledge.map((k) => `${k.title}: ${k.content}`).join("\n\n").slice(0, 4000);
 
+      // The persona shapes the TEMPLATE; personalisation then only adapts
+      // facts per company and inherits the tone, so one switch covers both.
       const template = await writeCampaignTemplate(
         theme,
         typeof body.senderContext === "string" ? body.senderContext : "",
-        knowledgeBlock
+        knowledgeBlock,
+        { cardone: body.cardone === true }
       );
       const emails = await personaliseEmails(template, theme, leads);
 

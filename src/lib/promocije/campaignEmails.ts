@@ -1,5 +1,6 @@
 import "server-only";
 import { chatJSON } from "@/lib/openai";
+import { CARDONE_PERSONA } from "@/lib/cardonePersona";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
 /**
@@ -51,13 +52,32 @@ Pravila:
 - Kjer sodi ime podjetja, uporabi oznako {{podjetje}}; za kontaktno osebo {{oseba}}.
 - Vse v slovenščini.`;
 
+/**
+ * The persona sharpens the mail, it does not unleash it: bigger claim up
+ * front, a real reason to act NOW, one decisive next step — while the hard
+ * rules (length, vikanje, no invented facts) stay exactly as they are. A cold
+ * mail that shouts is deleted; one that is direct gets answered.
+ */
+const TEMPLATE_PROMPT_CARDONE = `${TEMPLATE_PROMPT}
+
+MISELNOST, s katero pišeš (AI posnemanje javnih načel Granta Cardona):
+${CARDONE_PERSONA}
+
+Za ta e-mail to pomeni:
+- Prva poved: konkretna, velika trditev o koristi za NJIH — brez ogrevanja.
+- Telo: problem, cena neukrepanja (če jo podatki podpirajo), rešitev. Številke pred pridevniki.
+- Resničen razlog, zakaj ZDAJ in ne čez pol leta.
+- Zaključek: en odločen naslednji korak z izbiro termina še ta teden.
+- Ton ostane profesionalen in spoštljiv — energija je v jasnosti, ne v klicajih.`;
+
 export async function writeCampaignTemplate(
   theme: string,
   senderContext: string,
-  knowledge: string
+  knowledge: string,
+  opts: { cardone?: boolean } = {}
 ): Promise<CampaignEmail> {
   const ai = await chatJSON<Partial<CampaignEmail>>(
-    TEMPLATE_PROMPT,
+    opts.cardone ? TEMPLATE_PROMPT_CARDONE : TEMPLATE_PROMPT,
     [
       `Cilj kampanje: ${theme}`,
       senderContext && `O pošiljatelju: ${senderContext}`,

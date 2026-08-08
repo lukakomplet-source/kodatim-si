@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
 
   const campaignId = typeof body.campaignId === "string" ? body.campaignId : null;
   const context = typeof body.context === "string" ? body.context : null;
+  const cardone = body.cardone === true;
 
   const admin = createAdminClient();
 
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
     const result = await coachAnswer(admin, question, {
       style: (settings as { style?: string } | null)?.style ?? null,
       context,
+      cardone,
     });
 
     // The conversation is kept so a campaign's brainstorm can be reopened later.

@@ -1,6 +1,7 @@
 import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { chatJSON } from "@/lib/openai";
+import { CARDONE_PERSONA } from "./cardonePersona";
 import { KNOWLEDGE_KIND_LABELS, type CoachAnswer, type KnowledgeEntry } from "./salesCoachTypes";
 
 /**
@@ -89,14 +90,45 @@ Pravila:
 - Ne izmišljuj si podatkov o strankah, cenah ali rezultatih, ki jih v zapisih ni.
 - Vse v slovenščini, vikanje.`;
 
+/**
+ * "Grant Cardone mode" changes the CONTRACT, not just the tone. The base coach
+ * refuses to answer past the knowledge base, because generic sales advice is
+ * available anywhere. With the persona on, the whole point is the mindset —
+ * so the base stays the source of FACTS (scripts, prices, cases, and the
+ * usedIds citations), while questions the base does not cover get answered
+ * from the persona's principles instead of a refusal. outOfScope still gets
+ * set, so the UI can keep nudging the user to grow the base.
+ */
+function cardonePrompt(): string {
+  return `Si prodajni coach za slovenski trg.
+
+${CARDONE_PERSONA}
+
+Odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
+"answer" (niz), "usedIds" (polje nizov — id-ji zapisov iz baze, ki si jih uporabil), "outOfScope" (true/false).
+
+Pravila:
+- Priloženi zapisi iz uporabnikove baze znanja so tvoj VIR DEJSTEV: skripte, cene, primeri,
+  ugovori z odgovori. Kadar pokrivajo vprašanje, gradi na njih in jih navedi v "usedIds".
+- Kadar baza vprašanja NE pokriva, vseeno odgovori — iz zgornje miselnosti, konkretno in
+  akcijsko. Takrat nastavi "outOfScope": true in v ENI povedi omeni, kateri zapis bi bilo
+  vredno dodati v bazo.
+- NIKOLI si ne izmišljuj podatkov o strankah, cenah, rezultatih ali obljubah, ki jih ni v zapisih.
+- Vse v slovenščini. Do uporabnika neposredno in energično, brez mehčanja; predlagana
+  komunikacija do strank vedno z vikanjem in spoštljiva.
+- Vsak odgovor zaključi z enim konkretnim korakom za ŠE DANES.`;
+}
+
 export async function coachAnswer(
   admin: AdminClient,
   question: string,
-  opts: { style?: string | null; context?: string | null } = {}
+  opts: { style?: string | null; context?: string | null; cardone?: boolean } = {}
 ): Promise<CoachAnswer> {
   const entries = await searchKnowledge(admin, question);
 
-  if (entries.length === 0) {
+  // Without the persona, an empty base means there is nothing to answer FROM.
+  // With it, the persona itself is the answer's backbone, so keep going.
+  if (entries.length === 0 && !opts.cardone) {
     return {
       answer:
         "V vaši bazi znanja ni še nič, kar bi pokrivalo to vprašanje. Dodajte skripto, ugovor z odgovorom ali primer iz prakse, pa bom odgovarjal iz tega.",
@@ -105,12 +137,15 @@ export async function coachAnswer(
     };
   }
 
-  const knowledgeBlock = entries
-    .map((e) => `id: ${e.id}\nnaslov: ${e.title}\nvrsta: ${KNOWLEDGE_KIND_LABELS[e.kind] ?? e.kind}\n${e.content}`)
-    .join("\n\n---\n\n");
+  const knowledgeBlock =
+    entries.length === 0
+      ? "(Baza znanja je še prazna.)"
+      : entries
+          .map((e) => `id: ${e.id}\nnaslov: ${e.title}\nvrsta: ${KNOWLEDGE_KIND_LABELS[e.kind] ?? e.kind}\n${e.content}`)
+          .join("\n\n---\n\n");
 
   const ai = await chatJSON<{ answer?: string; usedIds?: string[]; outOfScope?: boolean }>(
-    COACH_PROMPT,
+    opts.cardone ? cardonePrompt() : COACH_PROMPT,
     [
       opts.style && `Slog prodaje, ki ga želi uporabnik: ${opts.style}`,
       opts.context && `Kontekst (kampanja): ${opts.context}`,

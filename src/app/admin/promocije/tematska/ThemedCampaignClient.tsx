@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare } from "lucide-react";
+import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare, Flame } from "lucide-react";
 import { createThemedCampaign } from "./actions";
 import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
 
@@ -54,6 +54,8 @@ type WizardSession = {
   emails: Email[];
   campaignName: string;
   chat: { role: "user" | "assistant"; text: string; used?: string[] }[];
+  /** "Grant Cardone način" — mindset for the brainstorm AND the written mails. */
+  cardone?: boolean;
 };
 
 const CARD = "rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm";
@@ -80,6 +82,7 @@ export default function ThemedCampaignClient() {
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<{ role: "user" | "assistant"; text: string; used?: string[] }[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
+  const [cardone, setCardone] = useState(false);
 
   /**
    * The wizard can take several minutes and several AI steps; losing it to a
@@ -97,6 +100,7 @@ export default function ThemedCampaignClient() {
     setEmails(saved.emails ?? []);
     setCampaignName(saved.campaignName ?? "");
     setChat(saved.chat ?? []);
+    setCardone(Boolean(saved.cardone));
   });
 
   useAutoSave(
@@ -112,6 +116,7 @@ export default function ThemedCampaignClient() {
       emails,
       campaignName,
       chat,
+      cardone,
     } satisfies WizardSession,
     sessionLoaded
   );
@@ -123,7 +128,7 @@ export default function ThemedCampaignClient() {
       const res = await fetch("/api/admin/promocije/tematska", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step, theme, senderContext, ...extra }),
+        body: JSON.stringify({ step, theme, senderContext, cardone, ...extra }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -203,7 +208,7 @@ export default function ThemedCampaignClient() {
       const res = await fetch("/api/admin/sales-coach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text, context: theme }),
+        body: JSON.stringify({ question: text, context: theme, cardone }),
       });
       const json = await res.json();
       setChat((prev) => [
@@ -496,6 +501,27 @@ export default function ThemedCampaignClient() {
         <p className="mt-1 text-xs text-zinc-500">
           Kako to prodati tej panogi. Odgovarja iz vaše baze znanja — kar ni v njej, pove, da ni.
         </p>
+
+        {/* One switch drives both the brainstorm and the written mails. */}
+        <button
+          type="button"
+          onClick={() => setCardone((v) => !v)}
+          className={`mt-3 flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition ${
+            cardone
+              ? "border-amber-400 bg-amber-50 text-amber-900"
+              : "border-zinc-200 bg-white text-zinc-600 hover:border-amber-300 hover:bg-amber-50/50"
+          }`}
+          title="AI posnemanje javnih načel Granta Cardona — ni Grant Cardone osebno"
+        >
+          <Flame className={`h-4 w-4 shrink-0 ${cardone ? "text-amber-500" : "text-zinc-400"}`} />
+          <span>
+            <span className="font-semibold">Grant Cardone način {cardone ? "— VKLOPLJEN" : ""}</span>
+            <span className="block text-[11px] opacity-80">
+              Velja za brainstorm IN za napisane maile: 10X pristop, jasen razlog za zdaj, en
+              odločen naslednji korak.
+            </span>
+          </span>
+        </button>
 
         <div className="mt-4 max-h-[26rem] space-y-3 overflow-y-auto">
           {chat.length === 0 && (

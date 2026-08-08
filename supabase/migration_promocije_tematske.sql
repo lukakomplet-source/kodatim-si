@@ -1,5 +1,8 @@
 -- KodaTim.si — Tematske kampanje + prodajni coach.
--- Poženite enkrat v Supabase SQL Editorju, PO migration_promocije.sql.
+-- Poženite v Supabase SQL Editorju, PO migration_promocije.sql.
+-- Ponovljiva: varno jo je pognati večkrat (create table if not exists,
+-- politike se pred ustvarjanjem odstranijo). Postgres pri "create policy"
+-- ne pozna "if not exists", zato je brez "drop" ponovni zagon padel z 42710.
 
 -- ---------------------------------------------------------------------------
 -- 1. Tematska kampanja
@@ -39,6 +42,7 @@ create table if not exists public.sales_knowledge (
 
 alter table public.sales_knowledge enable row level security;
 
+drop policy if exists "Admins can manage sales knowledge" on public.sales_knowledge;
 create policy "Admins can manage sales knowledge"
   on public.sales_knowledge for all
   using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
@@ -72,6 +76,7 @@ create table if not exists public.sales_chat_messages (
 
 alter table public.sales_chat_messages enable row level security;
 
+drop policy if exists "Admins can manage sales chat" on public.sales_chat_messages;
 create policy "Admins can manage sales chat"
   on public.sales_chat_messages for all
   using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
@@ -89,6 +94,7 @@ create table if not exists public.sales_coach_settings (
 
 alter table public.sales_coach_settings enable row level security;
 
+drop policy if exists "Admins can manage coach settings" on public.sales_coach_settings;
 create policy "Admins can manage coach settings"
   on public.sales_coach_settings for all
   using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))

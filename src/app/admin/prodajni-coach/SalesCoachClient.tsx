@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Trash2, MessageSquare, BookOpen, Save } from "lucide-react";
+import { Loader2, Plus, Trash2, MessageSquare, BookOpen, Save, Flame } from "lucide-react";
 import { saveKnowledge, deleteKnowledge, saveCoachStyle, type KnowledgeResult } from "./actions";
 import { KNOWLEDGE_KIND_LABELS, KNOWLEDGE_KINDS, type KnowledgeEntry } from "@/lib/salesCoachTypes";
 import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
@@ -39,9 +39,25 @@ export default function SalesCoachClient({
   >([]);
   const [chatBusy, setChatBusy] = useState(false);
 
+  /**
+   * "Grant Cardone način": the coach answers with his publicly documented
+   * mindset (10X goals, relentless follow-up, always-agree, closing) layered
+   * over the knowledge base. Clearly an AI emulation of published principles.
+   */
+  const [cardone, setCardone] = useState(false);
+
   // The conversation is the work here — it should still be there tomorrow.
-  const { loaded: chatLoaded } = useRestoreOnce<typeof chat>("prodajni-coach", (saved) => setChat(saved));
-  useAutoSave("prodajni-coach", chat, chatLoaded);
+  // Older sessions saved the chat array alone; accept both shapes.
+  type SavedCoach = typeof chat | { chat: typeof chat; cardone?: boolean };
+  const { loaded: chatLoaded } = useRestoreOnce<SavedCoach>("prodajni-coach", (saved) => {
+    if (Array.isArray(saved)) {
+      setChat(saved);
+    } else {
+      setChat(saved.chat ?? []);
+      setCardone(Boolean(saved.cardone));
+    }
+  });
+  useAutoSave("prodajni-coach", { chat, cardone }, chatLoaded);
 
   if (state.success && showForm) {
     // The action revalidated the page; close the form and pick up fresh data.
@@ -60,7 +76,7 @@ export default function SalesCoachClient({
       const res = await fetch("/api/admin/sales-coach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, cardone }),
       });
       const json = await res.json();
       setChat((prev) => [
@@ -258,6 +274,26 @@ export default function SalesCoachClient({
         <p className="mt-1 text-xs text-zinc-500">
           Vsak odgovor pove, na katere vaše zapise se opira. Če jih ni, to pove — in ne izmisli nasveta.
         </p>
+
+        <button
+          type="button"
+          onClick={() => setCardone((v) => !v)}
+          className={`mt-3 flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition ${
+            cardone
+              ? "border-amber-400 bg-amber-50 text-amber-900"
+              : "border-zinc-200 bg-white text-zinc-600 hover:border-amber-300 hover:bg-amber-50/50"
+          }`}
+          title="AI posnemanje javnih načel Granta Cardona — ni Grant Cardone osebno"
+        >
+          <Flame className={`h-4 w-4 shrink-0 ${cardone ? "text-amber-500" : "text-zinc-400"}`} />
+          <span>
+            <span className="font-semibold">Grant Cardone način {cardone ? "— VKLOPLJEN" : ""}</span>
+            <span className="block text-[11px] opacity-80">
+              10X cilji, follow-up brez izgovorov, vedno se strinjaj, zaključuj danes. Vaša baza
+              ostane vir dejstev; to je AI posnemanje njegovih javnih načel.
+            </span>
+          </span>
+        </button>
 
         <div className="mt-4 max-h-[32rem] space-y-3 overflow-y-auto">
           {chat.length === 0 && (
