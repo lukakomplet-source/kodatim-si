@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Sparkles, Users, Mail, Rocket, Loader2, Copy, Check, MessageSquare, Flame, Trash2 } from "lucide-react";
 import { createThemedCampaign } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
-import { invalidSkdCodes } from "@/lib/skd";
+import { invalidSkdCodes, skdByCode } from "@/lib/skd";
 // Type-only: erased at compile time, so the server-only module never reaches
 // the client bundle.
 import type { ChannelStrategy } from "@/lib/promocije/channelStrategy";
@@ -492,6 +492,24 @@ export default function ThemedCampaignClient() {
                       key === "skdCodes" && badSkd.length > 0 ? "border-red-300 focus:border-red-400" : ""
                     }`}
                   />
+                  {/* Hover a code to see what trade it actually is. */}
+                  {key === "skdCodes" && profile.skdCodes.some((c) => skdByCode(c)) && (
+                    <span className="mt-1.5 flex flex-wrap gap-1 font-normal normal-case tracking-normal">
+                      {profile.skdCodes.map((c) => {
+                        const entry = skdByCode(c);
+                        if (!entry) return null;
+                        return (
+                          <span
+                            key={c}
+                            title={`${entry.code} — ${entry.label}`}
+                            className="cursor-help rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-600"
+                          >
+                            {c}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  )}
                   {key === "skdCodes" &&
                     badSkd.map(({ code, suggestions }) => (
                       <div key={code} className="mt-1.5 text-[11px] font-normal normal-case tracking-normal">

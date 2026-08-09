@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
-import { searchSkd, invalidSkdCodes, SKD_CODES, type SkdEntry } from "@/lib/skd";
+import { searchSkd, invalidSkdCodes, skdByCode, SKD_CODES, type SkdEntry } from "@/lib/skd";
 
 /**
  * "Lead skrejp" — bulk discovery + enrichment with a spreadsheet at the end.
@@ -1291,6 +1291,24 @@ export default function LeadScrapeClient() {
                   : "border-zinc-200 focus:border-accent/50"
               }`}
             />
+            {/* Hover a code to see what trade it actually is. */}
+            {[...chosenCodes].some((c) => skdByCode(c)) && (
+              <span className="mt-1.5 flex flex-wrap gap-1 font-normal normal-case tracking-normal">
+                {[...chosenCodes].map((c) => {
+                  const entry = skdByCode(c);
+                  if (!entry) return null;
+                  return (
+                    <span
+                      key={c}
+                      title={`${entry.code} — ${entry.label}`}
+                      className="cursor-help rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-600"
+                    >
+                      {c}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
             {invalidCodes.map(({ code, suggestions }) => (
               <div key={code} className="mt-1.5 text-[11px] font-normal normal-case tracking-normal">
                 <span className="font-semibold text-red-600">
@@ -2015,6 +2033,12 @@ export default function LeadScrapeClient() {
                         const isStatus = c.key === "company_status";
                         const isWhy = c.key === "why_missing";
                         const pinned = i === 0 && c.key === "company_name";
+                        // The SKD cell's tooltip explains the code instead of
+                        // repeating it — the code alone says nothing on hover.
+                        const cellTitle =
+                          c.key === "skd_code" && value && skdByCode(value)
+                            ? `${value} — ${skdByCode(value)!.label}`
+                            : value;
                         const tone = isStatus && row.result?.bankrupt
                           ? "font-semibold text-red-600"
                           : isWhy
@@ -2028,7 +2052,7 @@ export default function LeadScrapeClient() {
                             className={`${isWhy || c.key === "description" ? "max-w-[320px]" : "max-w-[220px]"} truncate px-3 py-2 align-top ${tone} ${
                               pinned ? `sticky left-[6rem] z-10 ${rowBg}` : ""
                             }`}
-                            title={value}
+                            title={cellTitle}
                           >
                             {value}
                           </td>
