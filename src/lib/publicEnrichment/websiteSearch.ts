@@ -122,6 +122,21 @@ function pageBelongsToCompany(
 const MAX_CANDIDATES = 2;
 const SEARCH_DEADLINE_MS = 12_000;
 
+/**
+ * Circuit breaker for the search engine itself.
+ *
+ * When DuckDuckGo decides to 403 us, it 403s EVERY request for a while — and
+ * before this, every single company still paid the full retry-and-backoff bill
+ * (~40 s each, observed live) to learn the same fact again. After a few
+ * consecutive engine failures the search steps aside for a cooldown and each
+ * company gets its honest note immediately; one probe after the cooldown
+ * decides whether the engine is back.
+ */
+const ENGINE_TRIP_AFTER = 2;
+const ENGINE_COOLDOWN_MS = 10 * 60 * 1000;
+let engineFailures = 0;
+let engineBlockedUntil = 0;
+
 export async function searchForWebsite(
   companyName: string,
   opts: {
@@ -147,17 +162,31 @@ export async function searchForWebsite(
     return { website: null, note: "iz imena podjetja ni bilo mogoče sestaviti iskalnega niza" };
   }
 
+  if (Date.now() < engineBlockedUntil) {
+    return {
+      website: null,
+      note: `spletno iskanje začasno preskočeno — iskalnik blokira zahtevke (403); nov poskus čez ${Math.ceil((engineBlockedUntil - Date.now()) / 60_000)} min`,
+    };
+  }
+
   const query = [searchName, opts.city].filter(Boolean).join(" ");
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
   let html: string;
   try {
-    const res = await providerFetch("google", searchUrl, { headers: HEADERS });
+    // One attempt: an engine-level 403 does not heal seconds later, and the
+    // built-in retry/backoff is what turned each failure into ~40 s.
+    const res = await providerFetch("google", searchUrl, { headers: HEADERS, maxAttempts: 1 });
     if (!res.ok) {
+      engineFailures += 1;
+      if (engineFailures >= ENGINE_TRIP_AFTER) engineBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS;
       return { website: null, note: `spletno iskanje ni uspelo (HTTP ${res.status})` };
     }
+    engineFailures = 0;
     html = await res.text();
   } catch (err) {
+    engineFailures += 1;
+    if (engineFailures >= ENGINE_TRIP_AFTER) engineBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS;
     const message = err instanceof Error ? err.message : "neznana napaka";
     return { website: null, note: `spletno iskanje ni uspelo — ${message}` };
   }

@@ -126,7 +126,12 @@ const SPEEDS = {
   // zaključil" rows for companies whose data was perfectly available.
   slow: { label: "Počasi in varno", concurrency: 1, batchSize: 2, hint: "1 hkrati — najmanjše tveganje blokade" },
   medium: { label: "Srednje", concurrency: 3, batchSize: 4, hint: "3 hkrati — hitreje, možne blokade" },
-  fast: { label: "Hitro", concurrency: 5, batchSize: 6, hint: "5 hkrati — realno tvegate 429/403" },
+  fast: {
+    label: "Hitro",
+    concurrency: 5,
+    batchSize: 6,
+    hint: "5 hkrati; AJPES detajl se preskoči (brez regije in ustanoviteljev) — največja hitrost",
+  },
 } as const;
 type SpeedKey = keyof typeof SPEEDS;
 
@@ -878,6 +883,10 @@ export default function LeadScrapeClient() {
         signal: controller.signal,
         body: JSON.stringify({
           concurrency: SPEEDS[speed].concurrency,
+          // "Hitro" = maximum speed: AJPES's detail read is the serialised
+          // floor of every batch, and these rows arrived from the AJPES search
+          // with identity already proven.
+          skipAjpesWhenKnown: speed === "fast",
           companies: batch.map(({ row, index }) => ({
             index,
             name: row.name,

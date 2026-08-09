@@ -38,7 +38,22 @@ const PROVIDER_START_MS: Partial<Record<ProviderId, number>> = {
   // or 403 appears (and honours Retry-After), so the ceiling is unchanged —
   // only the optimistic starting guess moved. Override with
   // RATE_COMPANYWALL_START_MS if it ever proves too eager.
+  //
+  // AJPES and Bizi were MEASURED (scripts/probe-rate-limits.ts, 2026-08-09):
+  // both stayed clean down the whole ladder to 750 ms, not one 429 or 403.
+  // CompanyWall, probed the same way, pushed back at even a 5 s gap — its
+  // limit is a volume window, not a spacing, so speeding it up is not a thing
+  // that exists; the adaptive limiter with Retry-After is the only correct
+  // driver for it.
   companywall: 3_000,
+  ajpes: 750,
+  bizi: 750,
+};
+
+/** Measured floors (same probe). The global default floor stays 1000 ms. */
+const PROVIDER_MIN_MS: Partial<Record<ProviderId, number>> = {
+  ajpes: 750,
+  bizi: 750,
 };
 
 function envInt(name: string, fallback: number): number {
@@ -59,7 +74,7 @@ function envFloat(name: string, fallback: number): number {
 function configFor(provider: ProviderId): Config {
   const P = provider.toUpperCase();
   const startMs = envInt(`RATE_${P}_START_MS`, envInt("RATE_START_MS", PROVIDER_START_MS[provider] ?? 5000));
-  const minMs = envInt(`RATE_${P}_MIN_MS`, envInt("RATE_MIN_MS", 1000));
+  const minMs = envInt(`RATE_${P}_MIN_MS`, envInt("RATE_MIN_MS", PROVIDER_MIN_MS[provider] ?? 1000));
   const maxMs = envInt(`RATE_${P}_MAX_MS`, envInt("RATE_MAX_MS", 120_000));
   return {
     startMs,

@@ -283,6 +283,12 @@ export type QuickCompleteOptions = {
   officialName?: string | null;
   /** Called as each step starts and finishes, so the UI can show live progress. */
   onProgress?: (event: ScrapeProgress) => void;
+  /**
+   * Per-request AJPES skip, independent of the env flag: the Lead skrejp
+   * "Hitro" setting passes true. Identity must still be known — without both
+   * numbers, AJPES is the source that establishes them and cannot be skipped.
+   */
+  skipAjpesWhenKnown?: boolean;
 };
 
 export async function quickComplete(
@@ -290,7 +296,7 @@ export async function quickComplete(
   city?: string,
   options: QuickCompleteOptions = {}
 ): Promise<QuickCompleteResult> {
-  const { known, ajpesDetailUrl, officialName, onProgress } = options;
+  const { known, ajpesDetailUrl, officialName, onProgress, skipAjpesWhenKnown } = options;
   const report = (label: string, note: string, state: ScrapeProgress["state"] = "info", ms?: number) =>
     onProgress?.({ label, note, state, ms });
 
@@ -405,7 +411,11 @@ export async function quickComplete(
   // In a bulk run the identity is already known (the Lead skrejp search
   // returned davčna and matična for every row), and AJPES is the slowest link
   // in the chain — so the worker is allowed to skip it. Off by default here.
-  const skipAjpes = ajpesSkipReason(working as unknown as IntelLead);
+  const fastModeSkip =
+    skipAjpesWhenKnown && known?.vat_id?.trim() && known?.registration_number?.trim()
+      ? "AJPES preskočen — nastavitev „Hitro“: davčna in matična sta že znani, detajl (regija, druge dejavnosti, ustanovitelji) se izpusti za hitrost."
+      : null;
+  const skipAjpes = fastModeSkip ?? ajpesSkipReason(working as unknown as IntelLead);
   if (skipAjpes) {
     providerNotes.push({ label: ajpesProvider.label, note: skipAjpes });
     report(ajpesProvider.label, skipAjpes, "info");

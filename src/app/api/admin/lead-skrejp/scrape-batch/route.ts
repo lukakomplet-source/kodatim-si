@@ -75,6 +75,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ni podjetij za skrejp." }, { status: 400 });
   }
   const concurrency = Math.min(Math.max(Number(body.concurrency) || 1, 1), 5);
+  // "Hitro" trades AJPES's detail fields for speed — per request, not env.
+  const skipAjpesWhenKnown = body.skipAjpesWhenKnown === true;
 
   const encoder = new TextEncoder();
   const startedAt = Date.now();
@@ -118,6 +120,7 @@ export async function POST(request: NextRequest) {
               },
               ajpesDetailUrl: company.ajpesDetailUrl,
               officialName: company.name,
+              skipAjpesWhenKnown,
               onProgress: (event) => send({ progress: { ...event, index: company.index, company: company.name } }),
             });
             send({ row: { index: company.index, result, ms: Date.now() - companyStartedAt } });
