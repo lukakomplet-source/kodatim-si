@@ -1,6 +1,7 @@
 import "server-only";
 import { chatJSON } from "@/lib/openai";
 import { CARDONE_PERSONA } from "@/lib/cardonePersona";
+import { CAMPAIGN_KIND_CONTEXT, type CampaignKind } from "./targeting";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
 /**
@@ -70,15 +71,38 @@ Za ta e-mail to pomeni:
 - Zaključek: en odločen naslednji korak z izbiro termina še ta teden.
 - Ton ostane profesionalen in spoštljiv — energija je v jasnosti, ne v klicajih.`;
 
+/**
+ * A subcontractor or partner mail is an INQUIRY, not a pitch — the recipient
+ * is being offered work or cooperation, and the tone flips: less persuading,
+ * more concreteness about what, where and when. The sales rules (short, one
+ * next step, vikanje, no invented facts) stay identical.
+ */
+const KIND_EMAIL_NOTES: Record<CampaignKind, string | null> = {
+  prodaja: null,
+  podizvajalci: `POMEMBNO — to NI prodajni mail, ampak POVPRAŠEVANJE po izvajalcu:
+- Piše naročnik, ki išče podizvajalca za opisano delo. Prejemnik dobi delo, ne kupuje.
+- Povej: kakšno delo, kje (območje), okvirni obseg/termin, in kaj potrebuješ od njih (reference, razpoložljivost, okvirno ceno).
+- Naslednji korak: kratek klic ali ogled, ta teden.`,
+  partnerji: `POMEMBNO — to NI prodajni mail, ampak predlog PARTNERSTVA:
+- Piše podjetje, ki predlaga dolgoročno sodelovanje (napotitve, skupni projekti, dopolnjujoče storitve).
+- Povej, kaj konkretno partner PRIDOBI, in kaj prineseš ti. Enakovreden ton, ne prosjačenje in ne prodaja.
+- Naslednji korak: 15-minutni klic o tem, ali sodelovanje sploh ima smisel.`,
+};
+
 export async function writeCampaignTemplate(
   theme: string,
   senderContext: string,
   knowledge: string,
-  opts: { cardone?: boolean } = {}
+  opts: { cardone?: boolean; kind?: CampaignKind } = {}
 ): Promise<CampaignEmail> {
+  const kind = opts.kind ?? "prodaja";
+  const base = opts.cardone ? TEMPLATE_PROMPT_CARDONE : TEMPLATE_PROMPT;
+  const kindNote = KIND_EMAIL_NOTES[kind];
+
   const ai = await chatJSON<Partial<CampaignEmail>>(
-    opts.cardone ? TEMPLATE_PROMPT_CARDONE : TEMPLATE_PROMPT,
+    kindNote ? `${base}\n\n${kindNote}` : base,
     [
+      CAMPAIGN_KIND_CONTEXT[kind],
       `Cilj kampanje: ${theme}`,
       senderContext && `O pošiljatelju: ${senderContext}`,
       knowledge && `Lastno prodajno znanje, ki ga upoštevaj:\n${knowledge}`,

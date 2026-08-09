@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildTargetProfile, findMatchingLeads, rankCandidates, type TargetProfile } from "@/lib/promocije/targeting";
+import {
+  buildTargetProfile,
+  findMatchingLeads,
+  parseCampaignKind,
+  rankCandidates,
+  type TargetProfile,
+} from "@/lib/promocije/targeting";
 import { writeCampaignTemplate, personaliseEmails, type CampaignEmail } from "@/lib/promocije/campaignEmails";
+import { buildChannelStrategy } from "@/lib/promocije/channelStrategy";
 import { searchKnowledge } from "@/lib/salesCoach";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
@@ -15,7 +22,7 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type Step = "profile" | "targets" | "emails";
+type Step = "profile" | "targets" | "emails" | "strategy";
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,11 +40,23 @@ export async function POST(request: NextRequest) {
 
   const step = body.step as Step;
   const theme = typeof body.theme === "string" ? body.theme.trim() : "";
+  const kind = parseCampaignKind(body.kind);
   if (!theme) return NextResponse.json({ error: "Vnesite cilj kampanje." }, { status: 400 });
 
   try {
     if (step === "profile") {
-      return NextResponse.json({ profile: await buildTargetProfile(theme) });
+      return NextResponse.json({ profile: await buildTargetProfile(theme, kind) });
+    }
+
+    if (step === "strategy") {
+      const admin = createAdminClient();
+      const knowledge = await searchKnowledge(admin, theme, 5);
+      const strategy = await buildChannelStrategy(theme, kind, {
+        senderContext: typeof body.senderContext === "string" ? body.senderContext : "",
+        knowledge: knowledge.map((k) => `${k.title}: ${k.content}`).join("\n\n").slice(0, 4000),
+        cardone: body.cardone === true,
+      });
+      return NextResponse.json({ strategy });
     }
 
     if (step === "targets") {
@@ -45,16 +64,21 @@ export async function POST(request: NextRequest) {
       if (!profile) return NextResponse.json({ error: "Manjka iskalni profil." }, { status: 400 });
 
       const admin = createAdminClient();
-      const leads = await findMatchingLeads(admin, profile);
+      const { leads, excludedNoRevenue } = await findMatchingLeads(admin, profile);
+      const revenueNote =
+        excludedNoRevenue > 0
+          ? ` ${excludedNoRevenue} podjetij je izpuščenih, ker njihov promet še ni znan — skrejpajte jih v Lead skrejpu, da jih filter lahko presodi.`
+          : "";
       if (leads.length === 0) {
         return NextResponse.json({
           candidates: [],
           note:
-            "V bazi ni podjetij, ki bi ustrezala temu profilu. Uporabite Lead skrejp in poiščite podjetja po teh SKD kodah, nato poskusite znova.",
+            "V bazi ni podjetij, ki bi ustrezala temu profilu. Uporabite Lead skrejp in poiščite podjetja po teh SKD kodah, nato poskusite znova." +
+            revenueNote,
           skdCodes: profile.skdCodes,
         });
       }
-      const candidates = await rankCandidates(leads, theme);
+      const candidates = await rankCandidates(leads, theme, kind);
       return NextResponse.json({
         candidates: candidates.map((c) => {
           // Size is what decides whether a lead is worth the call, so revenue
@@ -77,7 +101,7 @@ export async function POST(request: NextRequest) {
             reason: c.reason,
           };
         }),
-        note: `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.`,
+        note: `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.${revenueNote}`,
       });
     }
 
@@ -99,7 +123,7 @@ export async function POST(request: NextRequest) {
         theme,
         typeof body.senderContext === "string" ? body.senderContext : "",
         knowledgeBlock,
-        { cardone: body.cardone === true }
+        { cardone: body.cardone === true, kind }
       );
       const emails = await personaliseEmails(template, theme, leads);
 

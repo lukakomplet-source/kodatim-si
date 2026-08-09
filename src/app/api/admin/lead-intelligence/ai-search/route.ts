@@ -54,14 +54,14 @@ export async function POST(request: NextRequest) {
       note = `Pregledanih vseh ${pool.length} leadov v bazi.`;
     } else {
       const profile = await buildTargetProfile(query);
-      pool = await findMatchingLeads(admin, profile, 200);
+      ({ leads: pool } = await findMatchingLeads(admin, profile, 200));
       note = `Iz ${total} leadov ožje izbranih ${pool.length} (SKD: ${profile.skdCodes.slice(0, 6).join(", ") || "—"}).`;
       if (pool.length === 0) {
         return NextResponse.json({ results: [], note: `${note} Nobeden ne ustreza temu opisu.` });
       }
     }
 
-    const ranked = await rankCandidates(pool, query, 60);
+    const ranked = await rankCandidates(pool, query, "prodaja", 60);
     const results = ranked
       .filter((r) => r.score > 0)
       .slice(0, 30)

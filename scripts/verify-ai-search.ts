@@ -18,7 +18,7 @@ async function main() {
   const leads = (data ?? []) as never[];
   console.log(`Poizvedba: "${query}"  |  ${leads.length} leadov v bazi\n`);
 
-  const ranked = await rankCandidates(leads, query, 60);
+  const ranked = await rankCandidates(leads, query, "prodaja", 60);
   for (const r of ranked.filter((x) => x.score > 0).slice(0, 10)) {
     console.log(`${String(r.score).padStart(3)}  ${r.lead.company_name.slice(0, 55).padEnd(55)}  ${r.reason.slice(0, 90)}`);
   }

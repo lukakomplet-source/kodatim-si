@@ -1049,6 +1049,39 @@ export default function LeadScrapeClient() {
   }
 
   /**
+   * Prefill handed over from a themed campaign: /admin/lead-skrejp?skd=...&obcine=...
+   *
+   * Applied only after the saved session has been restored — the restore would
+   * otherwise overwrite it a moment later — and read from window.location
+   * rather than useSearchParams, which would demand a Suspense boundary around
+   * the whole screen for one mount-time read. The URL is cleaned afterwards so
+   * a reload does not re-apply stale filters over newer work.
+   */
+  const prefillApplied = useRef(false);
+  useEffect(() => {
+    if (!sessionLoaded || prefillApplied.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const skd = params.get("skd");
+    const obcine = params.get("obcine");
+    if (!skd && !obcine) return;
+    prefillApplied.current = true;
+
+    // Deferred a tick: the restore that just finished set state this same
+    // render pass, and stacking more synchronous setState on top of it is the
+    // cascading-render pattern the lint rule exists to catch.
+    queueMicrotask(() => {
+      if (skd) setActivity(skd);
+      if (obcine) {
+        const list = obcine.split("|").map((m) => m.trim()).filter(Boolean);
+        setMunicipalities(list);
+        setAreaNote(`${list.length} občin, prevzetih iz tematske kampanje.`);
+      }
+      addLog("kampanja", "SKD kode in občine prevzete iz tematske kampanje — pritisnite „Poišči in skrejpaj“.", "info");
+    });
+    window.history.replaceState(null, "", "/admin/lead-skrejp");
+  }, [sessionLoaded]);
+
+  /**
    * The clean-slate button: stop everything, wipe everything, reload.
    *
    * State is emptied BEFORE the reload, because leaving the page flushes the

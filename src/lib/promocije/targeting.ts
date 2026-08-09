@@ -18,6 +18,36 @@ import type { IntelLead } from "@/lib/lead-intelligence/types";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/**
+ * A campaign is not always selling. Hunting for subcontractors or partners
+ * uses the same machinery — find companies, judge fit, write to them — but
+ * every prompt has to speak a different language: a subcontractor inquiry that
+ * reads like a sales pitch gets deleted by exactly the people it wants.
+ */
+export type CampaignKind = "prodaja" | "podizvajalci" | "partnerji";
+
+export const CAMPAIGN_KINDS: readonly CampaignKind[] = ["prodaja", "podizvajalci", "partnerji"];
+
+export const CAMPAIGN_KIND_LABELS: Record<CampaignKind, string> = {
+  prodaja: "Prodaja",
+  podizvajalci: "Iskanje podizvajalcev",
+  partnerji: "Iskanje partnerjev",
+};
+
+/** The one paragraph that reframes every downstream prompt. */
+export const CAMPAIGN_KIND_CONTEXT: Record<CampaignKind, string> = {
+  prodaja:
+    "Namen kampanje: PRODAJA. Podjetja s seznama so potencialne STRANKE za opisano rešitev — išče se tiste, ki opisano rešitev potrebujejo.",
+  podizvajalci:
+    "Namen kampanje: NAJEM PODIZVAJALCEV. Podjetja s seznama so potencialni IZVAJALCI, ki bi za naročnika opravljali opisano delo — išče se tiste, ki to delo sami izvajajo (ne tistih, ki bi ga kupovali). SKD kode naj bodo kode te obrti/dejavnosti same.",
+  partnerji:
+    "Namen kampanje: PARTNERSTVO. Podjetja s seznama so potencialni dolgoročni POSLOVNI PARTNERJI (skupni projekti, priporočila, dopolnjujoče storitve) — ne kupci in ne dobavitelji.",
+};
+
+export function parseCampaignKind(value: unknown): CampaignKind {
+  return CAMPAIGN_KINDS.includes(value as CampaignKind) ? (value as CampaignKind) : "prodaja";
+}
+
 /** What the theme means, in terms the database can be queried with. */
 export type TargetProfile = {
   /** SKD activity codes, e.g. ["41.200", "43.110"]. */
@@ -30,6 +60,13 @@ export type TargetProfile = {
   sizes: string[];
   /** One or two sentences on who this campaign is for — shown to the user. */
   summary: string;
+  /** Municipality names (validated upstream against the official list). Empty = anywhere. */
+  municipalities?: string[];
+  /** Yearly revenue bounds in EUR; null/absent = unbounded. */
+  revenueMinEur?: number | null;
+  revenueMaxEur?: number | null;
+  /** Legal form to keep: s.p., d.o.o., or anything. */
+  legalForm?: "sp" | "doo" | null;
 };
 
 export type TargetCandidate = {
@@ -55,10 +92,10 @@ Pravila:
 - "summary" je ena ali dve povedi v slovenščini o tem, komu je kampanja namenjena.
 - Vse v slovenščini.`;
 
-export async function buildTargetProfile(theme: string): Promise<TargetProfile> {
+export async function buildTargetProfile(theme: string, kind: CampaignKind = "prodaja"): Promise<TargetProfile> {
   const ai = await chatJSON<Partial<TargetProfile>>(
     PROFILE_PROMPT,
-    `Uradni šifrant SKD dejavnosti:\n\n${skdCatalogueText()}\n\nCilj kampanje: ${theme}`,
+    `${CAMPAIGN_KIND_CONTEXT[kind]}\n\nUradni šifrant SKD dejavnosti:\n\n${skdCatalogueText()}\n\nCilj kampanje: ${theme}`,
     { temperature: 0.2 }
   );
 
@@ -80,15 +117,23 @@ export async function buildTargetProfile(theme: string): Promise<TargetProfile> 
   };
 }
 
+export type MatchResult = {
+  leads: IntelLead[];
+  /** Rows a revenue bound dropped because their revenue is not known yet. */
+  excludedNoRevenue: number;
+};
+
 /**
- * Everything in the lead base that matches the profile. Pure SQL — no model,
- * no cost, and it runs over the whole table.
+ * Everything in the lead base that matches the profile. Pure SQL for the broad
+ * strokes — no model, no cost, runs over the whole table — with the
+ * custom-field filters (size, municipality, legal form, revenue) applied in
+ * memory, where Slovenian-formatted numbers can actually be parsed.
  */
 export async function findMatchingLeads(
   admin: AdminClient,
   profile: TargetProfile,
   limit = 200
-): Promise<IntelLead[]> {
+): Promise<MatchResult> {
   let query = admin.from("intel_leads").select("*").limit(limit);
 
   // SKD is the strongest signal; fall back to free-text when the theme gave
@@ -111,23 +156,90 @@ export async function findMatchingLeads(
   const { data, error } = await query;
   if (error) throw new Error(`Iskanje ciljev ni uspelo: ${error.message}`);
 
-  const leads = (data ?? []) as unknown as IntelLead[];
-  if (profile.sizes.length === 0) return leads;
+  let leads = (data ?? []) as unknown as IntelLead[];
 
   // Size lives in custom_fields, which cannot be filtered with .in() reliably
   // across shapes — cheap enough to narrow in memory once the SQL filter ran.
-  return leads.filter((lead) => {
-    const size = (lead.custom_fields as Record<string, string> | null)?.company_size;
-    return !size || profile.sizes.some((s) => size.toLowerCase().includes(s.toLowerCase().split(" ")[0]));
-  });
+  if (profile.sizes.length > 0) {
+    leads = leads.filter((lead) => {
+      const size = (lead.custom_fields as Record<string, string> | null)?.company_size;
+      return !size || profile.sizes.some((s) => size.toLowerCase().includes(s.toLowerCase().split(" ")[0]));
+    });
+  }
+
+  // Municipality ≈ the stored town name. Honest approximation: leads carry the
+  // postal town, not the municipality, so villages match through their centre
+  // ("Vojnik" matches, a hamlet inside Vojnik only if the town field says so).
+  if (profile.municipalities && profile.municipalities.length > 0) {
+    const wanted = profile.municipalities.map((m) => normaliseText(m));
+    leads = leads.filter((lead) => {
+      const city = normaliseText(lead.address_city ?? "");
+      if (!city) return false;
+      return wanted.some((w) => city.includes(w) || w.includes(city));
+    });
+  }
+
+  if (profile.legalForm) {
+    leads = leads.filter((lead) => matchesLegalForm(lead, profile.legalForm!));
+  }
+
+  // Revenue bounds only apply where revenue is KNOWN. A company without the
+  // figure cannot be shown to satisfy "pod 50k", so it is excluded here — and
+  // the count of such rows is reported rather than letting them vanish (the
+  // fix is to scrape them, not to guess).
+  let excludedNoRevenue = 0;
+  if (profile.revenueMinEur != null || profile.revenueMaxEur != null) {
+    leads = leads.filter((lead) => {
+      const raw = (lead.custom_fields as Record<string, string> | null)?.revenue_amount;
+      const value = parseSlovenianAmount(raw);
+      if (value === null) {
+        excludedNoRevenue += 1;
+        return false;
+      }
+      if (profile.revenueMinEur != null && value < profile.revenueMinEur) return false;
+      if (profile.revenueMaxEur != null && value > profile.revenueMaxEur) return false;
+      return true;
+    });
+  }
+
+  return { leads, excludedNoRevenue };
 }
 
-const RANK_PROMPT = `Za vsako podjetje s seznama oceni, kako dobro ustreza cilju kampanje.
+function normaliseText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[čć]/g, "c")
+    .replace(/š/g, "s")
+    .replace(/ž/g, "z")
+    .replace(/đ/g, "d")
+    .trim();
+}
+
+/** "260.990,68" -> 260990.68; null when the text holds no readable number. */
+export function parseSlovenianAmount(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(cleaned);
+  return Number.isFinite(n) && cleaned.length > 0 ? n : null;
+}
+
+function matchesLegalForm(lead: IntelLead, form: "sp" | "doo"): boolean {
+  const legal = ((lead.custom_fields as Record<string, string> | null)?.legal_form ?? "").toLowerCase();
+  const name = lead.company_name.toLowerCase();
+  if (form === "sp") {
+    // AJPES writes "Samostojni podjetnik posameznik"; names end in "s.p.".
+    return legal.includes("podjetnik") || /\bs\.\s*p\.?\b/.test(name);
+  }
+  return legal.includes("omejeno odgovornostjo") || name.includes("d.o.o");
+}
+
+const RANK_PROMPT = `Za vsako podjetje s seznama oceni, kako dobro ustreza NAMENU kampanje (opisan spodaj).
 Odgovori IZKLJUČNO z veljavnim JSON objektom s ključem "results": polje objektov
 { "id": "<id podjetja>", "score": <0-100>, "reason": "<ena poved v slovenščini>" }.
 
 Pravila:
-- "score" 0-100: koliko je to podjetje verjetna stranka za opisano rešitev.
+- "score" 0-100: koliko podjetje ustreza namenu — kot stranka, izvajalec ali partner,
+  odvisno od namena kampanje.
 - "reason" pojasni ujemanje iz PODATKOV, ki so navedeni (dejavnost, velikost, lokacija) —
   ne izmišljuj si lastnosti, ki jih ni na seznamu.
 - Vključi vsa podjetja s seznama, tudi tista z nizko oceno.
@@ -141,6 +253,7 @@ Pravila:
 export async function rankCandidates(
   leads: IntelLead[],
   theme: string,
+  kind: CampaignKind = "prodaja",
   max = 60
 ): Promise<TargetCandidate[]> {
   const shortlist = leads.slice(0, max);
@@ -167,7 +280,7 @@ export async function rankCandidates(
 
   const ai = await chatJSON<{ results?: { id?: string; score?: number; reason?: string }[] }>(
     RANK_PROMPT,
-    `Cilj kampanje: ${theme}\n\nPodjetja:\n\n${block}`,
+    `${CAMPAIGN_KIND_CONTEXT[kind]}\n\nCilj kampanje: ${theme}\n\nPodjetja:\n\n${block}`,
     { temperature: 0.2 }
   );
 
