@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
   const concurrency = Math.min(Math.max(Number(body.concurrency) || 1, 1), 5);
   // "Hitro" trades AJPES's detail fields for speed — per request, not env.
   const skipAjpesWhenKnown = body.skipAjpesWhenKnown === true;
+  // "Samo kontakti": only email + phone, skipping the two heaviest steps.
+  const contactsOnly = body.contactsOnly === true;
 
   const encoder = new TextEncoder();
   const startedAt = Date.now();
@@ -121,6 +123,7 @@ export async function POST(request: NextRequest) {
               ajpesDetailUrl: company.ajpesDetailUrl,
               officialName: company.name,
               skipAjpesWhenKnown,
+              contactsOnly,
               onProgress: (event) => send({ progress: { ...event, index: company.index, company: company.name } }),
             });
             send({ row: { index: company.index, result, ms: Date.now() - companyStartedAt } });

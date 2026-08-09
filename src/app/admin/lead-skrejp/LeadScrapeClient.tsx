@@ -100,6 +100,7 @@ type SkrejpSession = {
   town: string;
   status: string;
   speed: SpeedKey;
+  contactsOnly: boolean;
   rows: Row[];
   selected: number[];
   log: LogEntry[];
@@ -387,6 +388,13 @@ export default function LeadScrapeClient() {
   );
 
   const [speed, setSpeed] = useState<SpeedKey>("slow");
+  /**
+   * "Only email + phone" — skips the AJPES detail, the website search and the
+   * page read, which are the slow steps and irrelevant to contacts. A later
+   * full scrape + import then TOPS UP the same leads (import merges, see
+   * importScrapedLeads), so this is the fast first pass in a two-pass workflow.
+   */
+  const [contactsOnly, setContactsOnly] = useState(false);
   const [scraping, setScraping] = useState(false);
   const stopRef = useRef(false);
   // "Ustavi" has to cut the request that is already streaming, not just stop
@@ -529,6 +537,7 @@ export default function LeadScrapeClient() {
     setTown(saved.town ?? "");
     setStatus(saved.status ?? "1");
     if (saved.speed && saved.speed in SPEEDS) setSpeed(saved.speed);
+    setContactsOnly(Boolean(saved.contactsOnly));
     // A row left mid-flight when the tab closed is waiting again, not running.
     setRows((saved.rows ?? []).map((r) => (r.status === "running" ? { ...r, status: "waiting" as const } : r)));
     setSelected(new Set(saved.selected ?? []));
@@ -551,6 +560,7 @@ export default function LeadScrapeClient() {
     town,
     status,
     speed,
+    contactsOnly,
     rows,
     selected: [...selected],
     log: log.slice(-120),
@@ -887,6 +897,7 @@ export default function LeadScrapeClient() {
           // floor of every batch, and these rows arrived from the AJPES search
           // with identity already proven.
           skipAjpesWhenKnown: speed === "fast",
+          contactsOnly,
           companies: batch.map(({ row, index }) => ({
             index,
             name: row.name,
@@ -1219,9 +1230,9 @@ export default function LeadScrapeClient() {
       return;
     }
     setImportMessage(
-      `Uvoženih ${result.inserted} leadov.` +
-        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "") +
-        (result.skipped ? ` Preskočenih ${result.skipped} (že v bazi): ${result.skippedNames?.slice(0, 5).join(", ")}${(result.skippedNames?.length ?? 0) > 5 ? " …" : ""}` : "")
+      `Uvoženih ${result.inserted ?? 0} novih leadov.` +
+        (result.updated ? ` Dopolnjenih ${result.updated} obstoječih (dodani manjkajoči podatki, nič prepisano).` : "") +
+        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "")
     );
   }
 
@@ -1422,6 +1433,25 @@ export default function LeadScrapeClient() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Kaj skrejpat
+            <span className="mt-1 flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 font-normal normal-case tracking-normal">
+              <input
+                type="checkbox"
+                checked={contactsOnly}
+                onChange={(e) => setContactsOnly(e.target.checked)}
+                disabled={scraping}
+                className="h-4 w-4"
+              />
+              <span className="text-sm text-zinc-700">
+                Samo kontakti (email + telefon)
+                <span className="block text-[11px] text-zinc-400">
+                  ~3× hitreje — brez opisa, spletne strani in AJPES detajla. Kasnejši poln skrejp jih
+                  ob uvozu dopolni.
+                </span>
+              </span>
+            </span>
           </label>
         </div>
 

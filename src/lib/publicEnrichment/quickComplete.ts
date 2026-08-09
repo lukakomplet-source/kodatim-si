@@ -289,6 +289,13 @@ export type QuickCompleteOptions = {
    * numbers, AJPES is the source that establishes them and cannot be skipped.
    */
   skipAjpesWhenKnown?: boolean;
+  /**
+   * "Only find email + phone". The two heaviest steps — the AJPES detail read
+   * and the last-resort website search — contribute nothing to a contact-only
+   * scrape, so they are skipped, and Bizi runs only if CompanyWall left a
+   * contact field empty. Roughly a third of the per-company time of a full run.
+   */
+  contactsOnly?: boolean;
 };
 
 export async function quickComplete(
@@ -296,7 +303,7 @@ export async function quickComplete(
   city?: string,
   options: QuickCompleteOptions = {}
 ): Promise<QuickCompleteResult> {
-  const { known, ajpesDetailUrl, officialName, onProgress, skipAjpesWhenKnown } = options;
+  const { known, ajpesDetailUrl, officialName, onProgress, skipAjpesWhenKnown, contactsOnly } = options;
   const report = (label: string, note: string, state: ScrapeProgress["state"] = "info", ms?: number) =>
     onProgress?.({ label, note, state, ms });
 
@@ -411,9 +418,13 @@ export async function quickComplete(
   // In a bulk run the identity is already known (the Lead skrejp search
   // returned davčna and matična for every row), and AJPES is the slowest link
   // in the chain — so the worker is allowed to skip it. Off by default here.
+  // Contacts-only implies the AJPES detail is skippable (its detail fields are
+  // not contacts), on top of the "Hitro" and env skips.
   const fastModeSkip =
-    skipAjpesWhenKnown && known?.vat_id?.trim() && known?.registration_number?.trim()
-      ? "AJPES preskočen — nastavitev „Hitro“: davčna in matična sta že znani, detajl (regija, druge dejavnosti, ustanovitelji) se izpusti za hitrost."
+    (skipAjpesWhenKnown || contactsOnly) && known?.vat_id?.trim() && known?.registration_number?.trim()
+      ? contactsOnly
+        ? "AJPES detajl preskočen — način „samo kontakti“: iščemo le email in telefon."
+        : "AJPES preskočen — nastavitev „Hitro“: davčna in matična sta že znani, detajl (regija, druge dejavnosti, ustanovitelji) se izpusti za hitrost."
       : null;
   const skipAjpes = fastModeSkip ?? ajpesSkipReason(working as unknown as IntelLead);
   if (skipAjpes) {
@@ -424,12 +435,28 @@ export async function quickComplete(
     if (ajpesResult) absorb(ajpesProvider, ajpesResult);
   }
 
-  const [companyWallResult, biziResult] = await Promise.all([
-    runProvider(companyWallProvider),
-    runProvider(biziProvider),
-  ]);
-  if (companyWallResult) absorb(companyWallProvider, companyWallResult);
-  if (biziResult) absorb(biziProvider, biziResult);
+  const haveContact = () => Boolean(fields.email && fields.phone);
+
+  if (contactsOnly) {
+    // CompanyWall is the main contact source; Bizi runs only to fill a gap it
+    // left. Running them in parallel would spend Bizi's request even when
+    // CompanyWall already had both fields.
+    const companyWallResult = await runProvider(companyWallProvider);
+    if (companyWallResult) absorb(companyWallProvider, companyWallResult);
+    if (!haveContact()) {
+      const biziResult = await runProvider(biziProvider);
+      if (biziResult) absorb(biziProvider, biziResult);
+    } else {
+      report(biziProvider.label, "preskočeno — kontakt že najden", "info");
+    }
+  } else {
+    const [companyWallResult, biziResult] = await Promise.all([
+      runProvider(companyWallProvider),
+      runProvider(biziProvider),
+    ]);
+    if (companyWallResult) absorb(companyWallProvider, companyWallResult);
+    if (biziResult) absorb(biziProvider, biziResult);
+  }
 
   const bankrupt = isBankrupt(fields.company_status);
   let websiteNote = website ? "objavljena v registru." : "";
@@ -469,7 +496,12 @@ export async function quickComplete(
   // Still nothing: search the web. Skipped for companies in receivership or
   // liquidation — they no longer run a site, so the requests would only cost
   // time and every hit would be a false positive.
-  if (!website && bankrupt) {
+  if (!website && contactsOnly) {
+    // The web search is the single slowest step and finds a SITE, not a
+    // contact — exactly what contacts-only mode is opting out of.
+    websiteNote = "iskanje spletne strani preskočeno — način „samo kontakti“.";
+    providerNotes.push({ label: "Spletna stran", note: websiteNote });
+  } else if (!website && bankrupt) {
     websiteNote = `iskanje preskočeno — podjetje je ${fields.company_status?.toLowerCase()}, zato spletne strani ne pričakujemo.`;
     providerNotes.push({ label: "Spletna stran", note: websiteNote });
   } else if (!website && !fields.vat_id && !fields.registration_number) {
@@ -499,8 +531,9 @@ export async function quickComplete(
   // Optional final pass: if a website turned up, read it for anything still
   // missing. Plain fetch() first, Firecrawl only for JS-only pages — so a
   // missing Firecrawl balance costs nothing here.
+  // Reading the site is for the description, not for contacts — skip it too.
   let siteDescription: string | null = null;
-  if (website) {
+  if (website && !contactsOnly) {
     const startedAt = Date.now();
     report(websiteProvider.label, `berem ${website} …`, "start");
     try {
