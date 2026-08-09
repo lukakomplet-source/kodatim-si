@@ -114,6 +114,8 @@ type SkrejpSession = {
   /** The area as typed ("Savinjska regija") and the municipalities it resolved to. */
   area?: string;
   municipalities?: string[];
+  /** Page addresses of rows already sent to Lead Intelligence. */
+  importedUrls?: string[];
 };
 
 /**
@@ -470,6 +472,16 @@ export default function LeadScrapeClient() {
 
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  /**
+   * Rows already sent to Lead Intelligence, so importing mid-scrape is a
+   * normal thing to do: take what is finished now, keep scraping, import the
+   * rest later — and the second click sends only the new ones.
+   *
+   * Keyed on the AJPES page address rather than the row index: resuming a
+   * search adds rows and the list is rebuilt from a map, so positions move
+   * while this identity does not.
+   */
+  const [importedUrls, setImportedUrls] = useState<Set<string>>(new Set());
 
   /**
    * The SKD finder. Nobody knows 678 five-digit codes by heart, and typing the
@@ -601,6 +613,7 @@ export default function LeadScrapeClient() {
     setExpectedTotal(saved.expectedTotal ?? null);
     setArea(saved.area ?? "");
     setMunicipalities(saved.municipalities ?? []);
+    setImportedUrls(new Set(saved.importedUrls ?? []));
     // Drop keys from columns that no longer exist, and fall back to everything
     // for a session saved before the picker existed.
     if (saved.visibleColumns?.length) {
@@ -624,6 +637,7 @@ export default function LeadScrapeClient() {
     visibleColumns,
     area,
     municipalities,
+    importedUrls: [...importedUrls],
   };
   useAutoSave("lead-skrejp", session, sessionLoaded);
 
@@ -1211,6 +1225,7 @@ export default function LeadScrapeClient() {
     setArea("");
     setMunicipalities([]);
     setAreaNote(null);
+    setImportedUrls(new Set());
     void clearSavedState("lead-skrejp");
     // The reload is the point: it guarantees no loop, stream or timer
     // survives — exactly the manual refresh this button replaces.
@@ -1265,8 +1280,10 @@ export default function LeadScrapeClient() {
    * gave (name, address, davčna, matična) and are finished with the tab shut.
    */
   async function importSelected(includeUnscraped = false) {
-    const payload: ScrapedLeadInput[] = rows
-      .filter((r, i) => selected.has(i) && (r.status === "done" || includeUnscraped))
+    const chosen = rows.filter(
+      (r, i) => selected.has(i) && !importedUrls.has(r.detailUrl) && (r.status === "done" || includeUnscraped)
+    );
+    const payload: ScrapedLeadInput[] = chosen
       .map((r) => {
         const f = r.result?.fields ?? {};
         const custom: Record<string, string> = {};
@@ -1297,7 +1314,11 @@ export default function LeadScrapeClient() {
 
     if (payload.length === 0) {
       setImportMessage(
-        includeUnscraped ? "Izberite vsaj eno vrstico." : "Izberite vsaj eno vrstico, ki je že skrejpana."
+        importedUrls.size > 0
+          ? "Vse označene končane vrstice so že uvožene. Ko se skrejpajo naslednje, kliknite znova."
+          : includeUnscraped
+            ? "Izberite vsaj eno vrstico."
+            : "Izberite vsaj eno vrstico, ki je že skrejpana."
       );
       return;
     }
@@ -1311,12 +1332,33 @@ export default function LeadScrapeClient() {
       setImportMessage(result.error);
       return;
     }
+
+    // Remember what went over, so the next click only sends what is new.
+    setImportedUrls((prev) => {
+      const next = new Set(prev);
+      for (const r of chosen) next.add(r.detailUrl);
+      return next;
+    });
+
+    const remaining = rows.filter((r, i) => selected.has(i) && !importedUrls.has(r.detailUrl)).length - chosen.length;
     setImportMessage(
       `Uvoženih ${result.inserted ?? 0} novih leadov.` +
         (result.updated ? ` Dopolnjenih ${result.updated} obstoječih (dodani manjkajoči podatki, nič prepisano).` : "") +
-        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "")
+        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "") +
+        (scraping
+          ? ` Skrejp teče naprej — ko se končajo preostale vrstice, kliknite znova in uvozile se bodo samo nove.`
+          : remaining > 0
+            ? ` Še ${remaining} označenih vrstic ni skrejpanih.`
+            : "")
     );
   }
+
+  /** Selected, finished, and not yet sent — what the import button would take. */
+  const importableCount = useMemo(
+    () =>
+      rows.filter((r, i) => selected.has(i) && r.status === "done" && !importedUrls.has(r.detailUrl)).length,
+    [rows, selected, importedUrls]
+  );
 
   function toggleAll() {
     setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((_, i) => i))));
@@ -1860,11 +1902,12 @@ export default function LeadScrapeClient() {
             <button
               type="button"
               onClick={() => importSelected(false)}
-              disabled={importing || doneCount === 0}
+              disabled={importing || importableCount === 0}
+              title="Uvozi končane vrstice, ki še niso bile uvožene. Skrejp med tem teče naprej."
               className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
             >
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              Uvozi v Lead Intelligence
+              Uvozi v Lead Intelligence{importableCount > 0 ? ` (${importableCount})` : ""}
             </button>
             <button
               type="button"
@@ -2155,8 +2198,15 @@ export default function LeadScrapeClient() {
               <tbody className="divide-y divide-zinc-100">
                 {displayRows.map(({ row, index }) => {
                   // Opaque, because a sticky cell with a see-through background
-                  // shows the columns sliding underneath it.
-                  const rowBg = row.status === "error" ? "bg-red-50" : "bg-white";
+                  // shows the columns sliding underneath it. Green marks a row
+                  // already sent to Lead Intelligence, so a mid-scrape import
+                  // is visible at a glance.
+                  const rowBg =
+                    row.status === "error"
+                      ? "bg-red-50"
+                      : importedUrls.has(row.detailUrl)
+                        ? "bg-emerald-50"
+                        : "bg-white";
                   return (
                     <tr key={`${row.detailUrl}-${index}`}>
                       <td className={`sticky left-0 z-10 w-10 px-3 py-2 align-top ${rowBg}`}>
