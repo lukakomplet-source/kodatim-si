@@ -20,6 +20,7 @@ import {
   Server,
   Copy,
   RotateCcw,
+  BarChart3,
 } from "lucide-react";
 import { importScrapedLeads, type ScrapedLeadInput } from "./actions";
 import { useRestoreOnce, useAutoSave, clearSavedState } from "@/lib/useSavedState";
@@ -290,6 +291,60 @@ function SkdRow({
         {note && <span className="block text-[11px] text-zinc-500">{note}</span>}
       </span>
     </button>
+  );
+}
+
+/**
+ * One number from the scrape, with its share of the scraped rows drawn as a
+ * bar. `total` is omitted for counts that are not a share of anything (how many
+ * companies the search found).
+ */
+function StatTile({
+  label,
+  value,
+  total,
+  tone,
+  highlight,
+}: {
+  label: string;
+  value: number;
+  total?: number;
+  tone: "zinc" | "accent" | "emerald" | "red";
+  highlight?: boolean;
+}) {
+  const percent = total && total > 0 ? Math.round((value / total) * 100) : null;
+  const bar = {
+    zinc: "bg-zinc-400",
+    accent: "bg-accent",
+    emerald: "bg-emerald-500",
+    red: "bg-red-500",
+  }[tone];
+  const text = {
+    zinc: "text-zinc-900",
+    accent: "text-accent",
+    emerald: "text-emerald-600",
+    red: "text-red-600",
+  }[tone];
+
+  return (
+    <div
+      className={`rounded-xl px-3.5 py-3 ${
+        highlight ? "bg-emerald-50 ring-1 ring-emerald-200" : "bg-zinc-50"
+      }`}
+    >
+      <p className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</p>
+      <p className="mt-0.5 flex items-baseline gap-1.5">
+        <span className={`text-2xl font-semibold tabular-nums ${text}`}>
+          {value.toLocaleString("sl-SI")}
+        </span>
+        {percent !== null && <span className="text-xs font-medium text-zinc-500">{percent} %</span>}
+      </p>
+      {percent !== null && (
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+          <div className={`h-full rounded-full transition-all duration-500 ${bar}`} style={{ width: `${percent}%` }} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -627,6 +682,33 @@ export default function LeadScrapeClient() {
       return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
     });
   }
+
+  /**
+   * What the scrape actually produced — the numbers that decide whether this
+   * batch was worth running. Percentages are of the SCRAPED rows, not of all
+   * found: a row nobody has looked at yet cannot be counted as "no email", and
+   * dividing by the total would make every run look like a failure until the
+   * very end.
+   */
+  const stats = useMemo(() => {
+    const scraped = rows.filter((r) => r.status === "done");
+    const has = (fn: (r: Row) => boolean) => scraped.filter(fn).length;
+    const email = has((r) => Boolean(r.result?.fields.email));
+    const phone = has((r) => Boolean(r.result?.fields.phone));
+    const website = has((r) => Boolean(r.result?.website));
+    return {
+      found: rows.length,
+      scraped: scraped.length,
+      email,
+      phone,
+      website,
+      person: has((r) => (r.result?.contactPersons.length ?? 0) > 0),
+      revenue: has((r) => Boolean(r.result?.fields.revenue_amount)),
+      bankrupt: has((r) => Boolean(r.result?.bankrupt)),
+      // The one number that matters: rows you can actually reach someone at.
+      reachable: has((r) => Boolean(r.result?.fields.email || r.result?.fields.phone || r.result?.website)),
+    };
+  }, [rows]);
 
   const doneCount = rows.filter((r) => r.status === "done").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
@@ -1856,7 +1938,41 @@ export default function LeadScrapeClient() {
         its slowest setting and never learns it can go faster. One long-lived
         local process keeps the AJPES session and lets that limiter converge.
       */}
-      {(queueError || (queueCounts && queueCounts.pending + queueCounts.running + queueCounts.done + queueCounts.failed > 0)) && (
+      {/* What the scrape produced, at a glance. */}
+      {rows.length > 0 && (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+              <BarChart3 className="h-4 w-4 text-accent" />
+              Statistika skrejpa
+            </p>
+            <p className="text-xs text-zinc-500">
+              {stats.scraped.toLocaleString("sl-SI")} od {stats.found.toLocaleString("sl-SI")} skrejpanih ·
+              odstotki so od skrejpanih
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <StatTile label="Najdenih podjetij" value={stats.found} tone="zinc" />
+            <StatTile label="Skrejpanih" value={stats.scraped} total={stats.found} tone="accent" />
+            <StatTile label="Uporabnih (kontakt)" value={stats.reachable} total={stats.scraped} tone="emerald" highlight />
+            <StatTile label="Z e-pošto" value={stats.email} total={stats.scraped} tone="emerald" />
+            <StatTile label="S telefonom" value={stats.phone} total={stats.scraped} tone="emerald" />
+            <StatTile label="S spletno stranjo" value={stats.website} total={stats.scraped} tone="accent" />
+            <StatTile label="S kontaktno osebo" value={stats.person} total={stats.scraped} tone="accent" />
+            <StatTile label="S prometom" value={stats.revenue} total={stats.scraped} tone="accent" />
+            {stats.bankrupt > 0 && (
+              <StatTile label="V stečaju" value={stats.bankrupt} total={stats.scraped} tone="red" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/*
+        Shown only while the queue actually has work. A panel that stays behind
+        after everything finished is just noise above the table.
+      */}
+      {(queueError || queueBusy) && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
             <Server className="h-4 w-4 text-accent" />
