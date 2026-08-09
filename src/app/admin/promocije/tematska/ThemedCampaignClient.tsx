@@ -184,9 +184,7 @@ export default function ThemedCampaignClient() {
    * Lead skrejp's "Počisti": nothing ever clears itself, and the server copy
    * goes too, or the old campaign would just walk back in on the next load.
    */
-  function resetWizard() {
-    if (!confirm("Izbrisati trenutno kampanjo (cilj, kandidate, maile, pogovor)? Tega ni mogoče razveljaviti.")) return;
-    void clearSavedState("tematska-kampanja");
+  function blankWizard() {
     setTheme("");
     setSenderContext("");
     setProfile(null);
@@ -198,9 +196,20 @@ export default function ThemedCampaignClient() {
     setCampaignName("");
     setChat([]);
     setQuestion("");
+    setNlQuery("");
+    setStrategy(null);
     setError(null);
     // The mindset toggle is a lasting preference, not campaign content — it
     // survives the wipe on purpose.
+  }
+
+  function resetWizard() {
+    if (!confirm("Izbrisati trenutno kampanjo (cilj, kandidate, maile, pogovor)? Tega ni mogoče razveljaviti.")) return;
+    // Local state first: leaving the page flushes the autosave, and with the
+    // old values still in place that flush would faithfully re-save what was
+    // just deleted.
+    blankWizard();
+    void clearSavedState("tematska-kampanja");
   }
 
   async function call(step: "profile" | "targets" | "emails" | "strategy", extra: Record<string, unknown> = {}) {
@@ -315,7 +324,17 @@ export default function ThemedCampaignClient() {
       setError(result.error);
       return;
     }
-    if (result.campaignId) router.push(`/admin/promocije/${result.campaignId}`);
+    // Saved means finished: the draft has become a real campaign, so the wizard
+    // must not greet the next visit with the same content. Local state is
+    // cleared BEFORE the server copy — navigating away flushes the autosave,
+    // and with the old values still in place that flush would rewrite the row
+    // we just deleted. Nothing is lost either way: everything is in the
+    // campaign now. An unsaved draft still survives, exactly as before.
+    if (result.campaignId) {
+      blankWizard();
+      await clearSavedState("tematska-kampanja");
+      router.push(`/admin/promocije/${result.campaignId}`);
+    }
   }
 
   async function ask() {
