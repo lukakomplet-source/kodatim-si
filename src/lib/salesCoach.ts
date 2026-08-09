@@ -79,9 +79,38 @@ function normalise(value: string): string {
     .trim();
 }
 
+/**
+ * What the user's OWN system can do — so a proposed plan is made of steps that
+ * exist as buttons, not of generic advice ("pripravite seznam podjetij") the
+ * user would have to translate into the app themselves. A plan whose steps are
+ * clickable is a plan that actually gets executed.
+ */
+const APP_CONTEXT = `ORODJA, KI JIH UPORABNIK ŽE IMA (aplikacija KodaTim) — načrte sestavljaj iz teh korakov:
+- Lead skrejp: po SKD kodi in občinah (tudi "regija"/"okolica kraja") najde VSA podjetja v
+  registru in jim skrejpa kontakte (email, telefon, direktor, promet). Zna tudi masovno
+  obdelavo v ozadju ("npm run worker").
+- Tematska kampanja: iz cilja sestavi profil, poišče kandidate v bazi (filtri: SKD, občine,
+  promet, s.p./d.o.o.), AI napiše predlogo maila in različico za vsako podjetje; namen je
+  lahko prodaja, iskanje podizvajalcev ali partnerjev. "Strategija kanalov" pripravi IG/FB/
+  LinkedIn profile, DM predloge in klicno skripto.
+- Lead Intelligence: CRM baza vseh leadov s statusi, oznakami in AI analizo na zahtevo.
+Kadar korak ustreza enemu od teh orodij, ga POIMENUJ (npr. "V Lead skrejp vpišite 43.330 in
+okolico Celja") — ne opisuj ročnega dela, ki ga orodje že opravi.`;
+
+/** How every answer is laid out — the chat renders this subset of Markdown. */
+const FORMAT_RULES = `Oblika odgovora ("answer"):
+- Strukturirano, ne zid besedila: **krepko** za ključne poudarke, oštevilčeni koraki
+  (vsak korak v SVOJI vrstici), alineje z "-" za naštevanje.
+- Vsak korak konkreten in preverljiv (kaj, kje v aplikaciji, koliko, do kdaj).
+- Nove vrstice med odstavki. Brez tabel in brez HTML.`;
+
 const COACH_PROMPT = `Si prodajni coach za slovenski trg. Odgovarjaš IZKLJUČNO na podlagi priloženih zapisov
 iz uporabnikove baze znanja. Odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
 "answer" (niz), "usedIds" (polje nizov — id-ji zapisov, ki si jih uporabil), "outOfScope" (true/false).
+
+${APP_CONTEXT}
+
+${FORMAT_RULES}
 
 Pravila:
 - Če priloženi zapisi vprašanja ne pokrivajo, nastavi "outOfScope": true in v "answer" povej,
@@ -103,6 +132,10 @@ function cardonePrompt(): string {
   return `Si prodajni coach za slovenski trg.
 
 ${CARDONE_PERSONA}
+
+${APP_CONTEXT}
+
+${FORMAT_RULES}
 
 Odgovori IZKLJUČNO z veljavnim JSON objektom s ključi:
 "answer" (niz), "usedIds" (polje nizov — id-ji zapisov iz baze, ki si jih uporabil), "outOfScope" (true/false).

@@ -6,6 +6,7 @@ import { Loader2, Plus, Trash2, MessageSquare, BookOpen, Save, Flame } from "luc
 import { saveKnowledge, deleteKnowledge, saveCoachStyle, type KnowledgeResult } from "./actions";
 import { KNOWLEDGE_KIND_LABELS, KNOWLEDGE_KINDS, type KnowledgeEntry } from "@/lib/salesCoachTypes";
 import { useRestoreOnce, useAutoSave } from "@/lib/useSavedState";
+import FormattedText from "@/components/FormattedText";
 
 /**
  * Two halves of the same idea: on the left the material you decide is true
@@ -312,7 +313,7 @@ export default function SalesCoachClient({
                     : "bg-zinc-50 text-zinc-700"
               }`}
             >
-              <p className="whitespace-pre-wrap">{m.text}</p>
+              {m.role === "assistant" ? <FormattedText text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
               {m.used && m.used.length > 0 && (
                 <p className="mt-1 text-[11px] text-zinc-400">Iz baze: {m.used.join(", ")}</p>
               )}

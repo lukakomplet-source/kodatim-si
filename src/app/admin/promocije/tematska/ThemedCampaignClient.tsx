@@ -10,6 +10,7 @@ import { invalidSkdCodes, skdByCode } from "@/lib/skd";
 // Type-only: erased at compile time, so the server-only module never reaches
 // the client bundle.
 import type { ChannelStrategy } from "@/lib/promocije/channelStrategy";
+import FormattedText from "@/components/FormattedText";
 
 /** Mirrors the server's CampaignKind — a campaign sells, hires or partners. */
 type CampaignKind = "prodaja" | "podizvajalci" | "partnerji";
@@ -1008,7 +1009,7 @@ export default function ThemedCampaignClient() {
                 m.role === "user" ? "bg-accent/10 text-zinc-900" : "bg-zinc-50 text-zinc-700"
               }`}
             >
-              <p className="whitespace-pre-wrap">{m.text}</p>
+              {m.role === "assistant" ? <FormattedText text={m.text} /> : <p className="whitespace-pre-wrap">{m.text}</p>}
               {m.used && m.used.length > 0 && (
                 <p className="mt-1 text-[11px] text-zinc-400">Iz baze: {m.used.join(", ")}</p>
               )}
