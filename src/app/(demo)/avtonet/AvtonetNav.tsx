@@ -3,42 +3,65 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Database, LineChart, Sparkles, TerminalSquare } from "lucide-react";
+import {
+  Bell,
+  Database,
+  Lightbulb,
+  LineChart,
+  Settings,
+  Sparkles,
+  TerminalSquare,
+  UserCog,
+} from "lucide-react";
 
 /**
- * The tab bar, and the one place that decides who sees the development centre.
+ * The tab bar, and the one place that decides who sees what.
  *
- * Admin status is asked of the server rather than read from a cookie here, so
- * the pages themselves stay cacheable — the same trick the research panel uses.
- * A visitor simply never receives the admin tabs; the pages behind them check
- * the role again, because hiding a link is presentation, not protection.
+ * Three audiences. A visitor gets the public analysis — that is the demo you can
+ * show a prospect. A signed-in user additionally gets their own watches and
+ * settings. An admin gets the development surface on top.
+ *
+ * Asked of the server rather than read from a cookie here, so the pages stay
+ * cacheable. Hiding a link is presentation, not protection: every page behind
+ * these tabs checks the role again for itself.
  */
 
-const JAVNI = [
+const JAVNO = [{ href: "/avtonet/analiza", label: "Analiza trga", icon: LineChart }];
+
+const UPORABNIK = [
   { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
-  { href: "/avtonet/analiza", label: "Analiza trga", icon: LineChart },
+  { href: "/avtonet/nastavitve", label: "Nastavitve", icon: Settings },
 ];
+
+/** Same page, different name: for a user it is a suggestion box, for an admin an editor. */
+const PREDLOGI = { href: "/avtonet/urejanje", label: "Predlogi", icon: Lightbulb };
 
 const ADMIN = [
   { href: "/avtonet/baza", label: "Baza oglasov", icon: Database },
   { href: "/avtonet/pregled", label: "Research console", icon: TerminalSquare },
   { href: "/avtonet/urejanje", label: "AI urejanje", icon: Sparkles },
+  { href: "/avtonet/uporabniki", label: "Uporabniki", icon: UserCog },
 ];
 
 export function AvtonetNav() {
   const pathname = usePathname();
-  const [jeAdmin, setJeAdmin] = useState(false);
+  const [dostop, setDostop] = useState<{ jeUporabnik: boolean; jeAdmin: boolean }>({
+    jeUporabnik: false,
+    jeAdmin: false,
+  });
 
   useEffect(() => {
     let ustavljeno = false;
     void (async () => {
       try {
-        const res = await fetch("/api/avtonet/raziskava", { cache: "no-store" });
+        const res = await fetch("/api/avtonet/dostop", { cache: "no-store" });
         if (!res.ok || ustavljeno) return;
-        const data = (await res.json()) as { jeAdmin?: boolean };
-        if (!ustavljeno) setJeAdmin(data.jeAdmin === true);
+        const data = (await res.json()) as { jeUporabnik?: boolean; jeAdmin?: boolean };
+        if (!ustavljeno) {
+          setDostop({ jeUporabnik: data.jeUporabnik === true, jeAdmin: data.jeAdmin === true });
+        }
       } catch {
-        // A failed probe means "no admin tabs", which is the safe default.
+        // A failed probe means the public tabs only, which is the safe default.
       }
     })();
     return () => {
@@ -46,7 +69,12 @@ export function AvtonetNav() {
     };
   }, []);
 
-  const items = jeAdmin ? [...JAVNI, ...ADMIN] : JAVNI;
+  const items = [
+    ...(dostop.jeUporabnik ? UPORABNIK : []),
+    ...JAVNO,
+    ...(dostop.jeUporabnik && !dostop.jeAdmin ? [PREDLOGI] : []),
+    ...(dostop.jeAdmin ? ADMIN : []),
+  ];
 
   // The longest matching href wins, so "/avtonet" does not stay lit on every
   // nested route — the same rule the admin sidebar uses.

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { ArrowLeft, ExternalLink, HelpCircle, TrendingDown } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { naslovVozila, povzetekFiltra, type Spremljanje } from "@/lib/avtonet/spremljanja";
@@ -19,12 +20,21 @@ export const dynamic = "force-dynamic";
 
 export default async function SpremljanjePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const dostop = await preberiDostop();
+  if (!dostop.jeUporabnik) redirect(prijavaZa(`/avtonet/spremljanje/${id}`));
+
   const db = createAdminClient();
 
   const { data, error } = await db.from("avtonet_iskanja").select("*").eq("id", id).maybeSingle();
   if (error?.code === "PGRST205" || !data) notFound();
 
   const s = data as unknown as Spremljanje;
+
+  // Someone else's watch is not merely hidden from the list — it is not
+  // readable by id either. `notFound` rather than a refusal, so the page does
+  // not confirm that the id exists.
+  const lastnik = (data as unknown as { created_by: string | null }).created_by;
+  if (!dostop.jeAdmin && lastnik !== dostop.userId) notFound();
 
   const oglasi = await najdiUjemanja(db, s, 200);
   const novih = oglasi.filter((o) => jeNov(o, s.zadnji_ogled)).length;

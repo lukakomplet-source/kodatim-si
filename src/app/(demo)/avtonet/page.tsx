@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { Bell, Car, Sparkles } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import type { MoznostiFiltrov, Spremljanje } from "@/lib/avtonet/spremljanja";
 import { stejUjemanja } from "@/lib/avtonet/ujemanje";
 import { SpremljanjaClient } from "./SpremljanjaClient";
@@ -14,7 +16,9 @@ import { SpremljanjaClient } from "./SpremljanjaClient";
  * they now live behind the admin tab.
  */
 
-export const revalidate = 60;
+// Per-user from here on: what this page shows depends on who is asking, so it
+// cannot be cached for everyone the way the public analysis pages can.
+export const dynamic = "force-dynamic";
 
 type Kartica = {
   spremljanje: Spremljanje;
@@ -23,10 +27,18 @@ type Kartica = {
 };
 
 export default async function SpremljanjaPage() {
+  const dostop = await preberiDostop();
+  if (!dostop.jeUporabnik) redirect(prijavaZa("/avtonet"));
+
   const db = createAdminClient();
 
+  // Everyone sees their own watches; an admin sees all of them, because the
+  // agency has to be able to support a client who cannot explain their filter.
+  let iskanjaQ = db.from("avtonet_iskanja").select("*").order("created_at", { ascending: false });
+  if (!dostop.jeAdmin) iskanjaQ = iskanjaQ.eq("created_by", dostop.userId);
+
   const [iskanjaRes, oglasiRes, zdravjeRes] = await Promise.all([
-    db.from("avtonet_iskanja").select("*").order("created_at", { ascending: false }),
+    iskanjaQ,
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db.from("avtonet_zdravje").select("zadnji_uspeh").eq("id", "worker").maybeSingle(),
   ]);

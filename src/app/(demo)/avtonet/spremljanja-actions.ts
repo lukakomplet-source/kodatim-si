@@ -1,18 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { preberiDostop } from "@/lib/avtonet/dostop";
 import { preberiObrazec } from "@/lib/avtonet/spremljanja";
 
 /**
  * Creating, editing and switching off a spremljanje.
  *
- * /avtonet is a public demo page, so every action verifies the admin role. The
- * screen hides the controls from visitors as a courtesy; this is the gate.
+ * Every action does two checks, and the second is the one that matters: is this
+ * person allowed into SBN Auto at all, and does this particular watch belong to
+ * them. Without the ownership check, any signed-in user could edit or delete
+ * anyone else's watch just by knowing an id — the screen would never offer it,
+ * but the action is a public endpoint and the screen is not the boundary.
  *
- * A missing table is reported as itself rather than as a generic failure —
- * "poženite migracijo" is actionable, "Napaka pri shranjevanju" is not.
+ * A missing table is reported as itself: "run the migration" is actionable,
+ * "Napaka pri shranjevanju" is not.
  */
 
 export type SpremljanjeResult = { error?: string; success?: boolean };
@@ -27,31 +30,47 @@ function napakaBaze(code: string | undefined, message: string): string {
   return message;
 }
 
+/** Resolves the caller, and whether they may act on this particular watch. */
+async function dovoljenje(id?: string): Promise<
+  { napaka: string } | { userId: string; jeAdmin: boolean; db: ReturnType<typeof createAdminClient> }
+> {
+  const dostop = await preberiDostop();
+  if (!dostop.jeUporabnik || !dostop.userId) return { napaka: "Niste prijavljeni." };
+
+  const db = createAdminClient();
+
+  if (id) {
+    const { data } = await db.from("avtonet_iskanja").select("created_by").eq("id", id).maybeSingle();
+    if (!data) return { napaka: "Spremljanje ne obstaja." };
+    const lastnik = (data as { created_by: string | null }).created_by;
+    if (!dostop.jeAdmin && lastnik !== dostop.userId) {
+      return { napaka: "To spremljanje ni vaše." };
+    }
+  }
+
+  return { userId: dostop.userId, jeAdmin: dostop.jeAdmin, db };
+}
+
 export async function shraniSpremljanje(
   _prev: SpremljanjeResult,
   formData: FormData
 ): Promise<SpremljanjeResult> {
-  let user;
-  try {
-    user = await requireAdmin();
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Napaka." };
-  }
+  const id = formData.get("id");
+  const obstojeci = typeof id === "string" && id !== "" ? id : null;
+
+  const d = await dovoljenje(obstojeci ?? undefined);
+  if ("napaka" in d) return { error: d.napaka };
 
   const prebrano = preberiObrazec(formData);
   if ("napaka" in prebrano) return { error: prebrano.napaka };
 
-  const db = createAdminClient();
-  const id = formData.get("id");
-  const obstojeci = typeof id === "string" && id !== "" ? id : null;
-
   if (obstojeci) {
-    const { error } = await db.from("avtonet_iskanja").update(prebrano.vnos).eq("id", obstojeci);
+    const { error } = await d.db.from("avtonet_iskanja").update(prebrano.vnos).eq("id", obstojeci);
     if (error) return { error: napakaBaze(error.code, `Shranjevanje ni uspelo: ${error.message}`) };
   } else {
-    const { error } = await db
+    const { error } = await d.db
       .from("avtonet_iskanja")
-      .insert({ ...prebrano.vnos, created_by: user.id, aktivno: true });
+      .insert({ ...prebrano.vnos, created_by: d.userId, aktivno: true });
     if (error) return { error: napakaBaze(error.code, `Shranjevanje ni uspelo: ${error.message}`) };
   }
 
@@ -60,14 +79,10 @@ export async function shraniSpremljanje(
 }
 
 export async function preklopiSpremljanje(id: string, aktivno: boolean): Promise<SpremljanjeResult> {
-  try {
-    await requireAdmin();
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Napaka." };
-  }
+  const d = await dovoljenje(id);
+  if ("napaka" in d) return { error: d.napaka };
 
-  const db = createAdminClient();
-  const { error } = await db.from("avtonet_iskanja").update({ aktivno }).eq("id", id);
+  const { error } = await d.db.from("avtonet_iskanja").update({ aktivno }).eq("id", id);
   if (error) return { error: `Sprememba ni uspela: ${error.message}` };
 
   revalidatePath("/avtonet");
@@ -75,14 +90,10 @@ export async function preklopiSpremljanje(id: string, aktivno: boolean): Promise
 }
 
 export async function izbrisiSpremljanje(id: string): Promise<SpremljanjeResult> {
-  try {
-    await requireAdmin();
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Napaka." };
-  }
+  const d = await dovoljenje(id);
+  if ("napaka" in d) return { error: d.napaka };
 
-  const db = createAdminClient();
-  const { error } = await db.from("avtonet_iskanja").delete().eq("id", id);
+  const { error } = await d.db.from("avtonet_iskanja").delete().eq("id", id);
   if (error) return { error: `Brisanje ni uspelo: ${error.message}` };
 
   revalidatePath("/avtonet");
@@ -92,20 +103,15 @@ export async function izbrisiSpremljanje(id: string): Promise<SpremljanjeResult>
 /**
  * Marks the spremljanje as seen, which is what clears the "N novih" badge.
  *
- * Kept separate from reading the listings so the count is cleared by an
- * explicit action rather than as a side effect of rendering — a page that
- * silently marks things read on every prefetch would lose the badge before the
- * user ever saw it.
+ * Kept separate from reading the listings so the count is cleared by an explicit
+ * action rather than as a side effect of rendering — a page that silently marks
+ * things read on every prefetch would lose the badge before the user saw it.
  */
 export async function oznaciKotVideno(id: string): Promise<SpremljanjeResult> {
-  try {
-    await requireAdmin();
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Napaka." };
-  }
+  const d = await dovoljenje(id);
+  if ("napaka" in d) return { error: d.napaka };
 
-  const db = createAdminClient();
-  const { error } = await db
+  const { error } = await d.db
     .from("avtonet_iskanja")
     .update({ zadnji_ogled: new Date().toISOString() })
     .eq("id", id);
