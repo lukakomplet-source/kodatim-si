@@ -116,27 +116,62 @@ export async function fetchResultsPage(browser: Browser, url: string): Promise<P
 }
 
 /**
- * Walks pages until one comes back empty or the cap is reached, pausing
- * between. Reports the page count too — a run that suddenly reads one page
- * instead of three is a signal worth seeing on the dashboard.
+ * Walks the result pages of one search, from page 1 until the market runs out.
+ *
+ * `maxPages = 0` means "the whole thing", which is the normal mode: a full
+ * sweep of the passenger-car market is roughly 1,100 pages, and at the ten
+ * second crawl delay that is about three hours. That is affordable precisely
+ * because the sweep runs a couple of times a day rather than hourly — so the
+ * site's own requested pace never has to be argued with.
+ *
+ * Only result pages are fetched. Each row already carries model, year,
+ * mileage, power, fuel, gearbox and price, so opening a detail page per advert
+ * would multiply the request count by thirty for nothing.
+ *
+ * @param onPage Called after every page so a long sweep can report progress
+ * and be interrupted (return false to stop early).
  */
 export async function collectAll(
   browser: Browser,
   base: Parameters<typeof buildResultsUrl>[0],
-  maxPages = 5
-): Promise<{ rows: ParsedRow[]; pages: number }> {
+  maxPages = 0,
+  onPage?: (info: { page: number; rows: number; total: number }) => boolean | void
+): Promise<{ rows: ParsedRow[]; pages: number; complete: boolean }> {
   const all = new Map<string, ParsedRow>();
   let pages = 0;
+  // `complete` means the sweep reached the actual end of the listings rather
+  // than stopping at a limit. Callers need this to decide whether absence is
+  // evidence: in a truncated sweep, "not seen" says nothing about a listing.
+  let complete = false;
 
-  for (let stran = 1; stran <= maxPages; stran++) {
+  // A hard ceiling even in "unlimited" mode: if the site ever answers a
+  // too-high page number with page 1 again, an unbounded loop would sweep
+  // forever. The duplicate check below catches that first, but a ceiling
+  // means the worst case is still finite.
+  const ceiling = maxPages > 0 ? maxPages : 3000;
+
+  for (let stran = 1; stran <= ceiling; stran++) {
     const rows = await fetchResultsPage(browser, buildResultsUrl({ ...base, stran }));
     pages += 1;
-    if (rows.length === 0) break;
-    for (const r of rows) all.set(r.avtonetId, r);
 
-    // The site asked for ten seconds; it gets ten seconds — including before
-    // we decide there is nothing more to read.
-    if (stran < maxPages) await sleep(CRAWL_DELAY_MS);
+    if (rows.length === 0) {
+      complete = true;
+      break;
+    }
+
+    // Nothing new on a full page means the site is repeating itself rather
+    // than paging — the real end of the list, whatever the page number says.
+    const before = all.size;
+    for (const r of rows) all.set(r.avtonetId, r);
+    if (all.size === before) {
+      complete = true;
+      break;
+    }
+
+    if (onPage && onPage({ page: stran, rows: rows.length, total: all.size }) === false) break;
+
+    // The site asked for ten seconds; it gets ten seconds.
+    if (stran < ceiling) await sleep(CRAWL_DELAY_MS);
   }
-  return { rows: [...all.values()], pages };
+  return { rows: [...all.values()], pages, complete };
 }
