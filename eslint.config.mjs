@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // A standalone Node/Playwright project with its own tsconfig and its own
+    // toolchain — linting it with the Next.js rules reports nothing useful.
+    "worker-avtonet/**",
   ]),
 ]);
 

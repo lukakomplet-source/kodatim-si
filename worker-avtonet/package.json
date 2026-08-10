@@ -1,0 +1,22 @@
+{
+  "name": "sbn-avtonet-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SBN Auto — zbiralnik oglasov z avto.net. Teče ločeno od KodaTim aplikacije.",
+  "scripts": {
+    "once": "tsx src/index.ts --once",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}
