@@ -162,12 +162,25 @@ export async function runResearch(
 
       const before = seenIds.size;
       for (const r of rows) seenIds.add(r.avtonetId);
-      // Nothing new on a full page means the site is repeating itself rather
-      // than paging: the real end of the list, whatever the page number says.
+      // A FULL page with nothing new on it does not mean the market ended. It
+      // means the source stopped paging — avto.net serves at most 1,000 results
+      // per query and then repeats the last page, which is why an unfiltered
+      // sweep stops at 1,000 however many cars are actually for sale.
+      //
+      // The distinction matters more than it looks: treating this as the end of
+      // the list marks it a COMPLETE sweep, and a complete sweep is licence to
+      // declare every unseen advert gone. That is exactly what happened on the
+      // first real run — 26 healthy adverts were marked as disappeared because
+      // the market had not ended, we had simply hit the cap.
       if (seenIds.size === before) {
-        p.pregled_popoln = true;
-        log("info", "stran ne prinasa novih oglasov - konec", { stran });
-        dnevnik.zapisi("info", `Stran ${stran} ponavlja že videne oglase — konec seznama`, { stran });
+        p.pregled_popoln = false;
+        p.zadnja_napaka = `Vir je pri strani ${stran} nehal vračati nove oglase (omejitev ~${seenIds.size} rezultatov na poizvedbo).`;
+        log("warn", "vir je dosegel mejo rezultatov", { stran, oglasov: seenIds.size });
+        dnevnik.zapisi(
+          "napaka",
+          `Stran ${stran} ponavlja že videne oglase — vir ne da več kot ${seenIds.size} rezultatov na poizvedbo. Pregled NI popoln, izginotja se ne bodo beležila.`,
+          { stran, oglasov: seenIds.size }
+        );
         break;
       }
 
