@@ -2,6 +2,7 @@ import "dotenv/config";
 import { BlockedError, collectAll, openBrowser } from "./collector.js";
 import { connect, markDisappeared, reportHealth, upsertListings } from "./db.js";
 import { current, startHealthServer, update, type WorkerState } from "./health.js";
+import { buildDailyReport, sendDailyReport } from "./report.js";
 
 /**
  * SBN Auto collector — the long-running production process.
@@ -177,12 +178,37 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  // The daily report runs on its own clock, not on the collection cycle: once
+  // per calendar day, after a pass, so it summarises the freshest data. Its
+  // failure is never allowed to touch the collector.
+  let lastReportDay: string | null = null;
+  const maybeSendReport = async (): Promise<void> => {
+    const today = new Date().toISOString().slice(0, 10);
+    const hour = new Date().getHours();
+    const reportHour = Number(process.env.REPORT_HOUR ?? 7);
+    if (lastReportDay === today || hour < reportHour) return;
+    try {
+      const report = await buildDailyReport(connect());
+      const outcome = await sendDailyReport(report);
+      lastReportDay = today;
+      log("info", "dnevno porocilo", { ...report, najhitrejsi: report.najhitrejsi.length, posiljanje: outcome });
+      if (outcome === "preskoceno") {
+        log("info", "porocilo ni bilo poslano - RESEND_API_KEY / REPORT_EMAIL_TO / REPORT_EMAIL_FROM niso nastavljeni");
+      }
+    } catch (err) {
+      log("warn", "dnevnega porocila ni bilo mogoce sestaviti", {
+        napaka: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   for (;;) {
     await runOnce();
     if (once) {
       server?.close();
       return;
     }
+    await maybeSendReport();
     const failures = current().consecutiveFailures;
     const wait = nextDelayMs(failures);
     if (failures > 0) log("warn", "čakam pred ponovnim poskusom", { minut: Math.round(wait / 60000), zaporednihNapak: failures });

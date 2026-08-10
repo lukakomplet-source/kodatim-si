@@ -18,16 +18,36 @@ opozori na koncu.
 `npm run once` naredi en krog in konča. `npm start` teče naprej in se sam
 razporeja.
 
-## Produkcija
+## Produkcija — Railway (priporočeno)
 
-Repozitorij vsebuje pripravljeni konfiguraciji, tako da hosting po povezavi
-sam zgradi in zažene worker:
+Konfiguracija je v `worker-avtonet/railway.json`; Railway po povezavi
+repozitorija sam zgradi Dockerfile in ob vsakem pushu na `main` objavi novo
+različico.
 
-- **Render** — `render.yaml` v korenu repozitorija (Blueprint)
-- **Railway** — `worker-avtonet/railway.json`
+**Zakaj Railway in ne Render:** preverjeno v Renderjevi dokumentaciji —
+brezplačne spletne storitve **zaspijo po 15 minutah brez prometa**, delavci v
+ozadju pa so izključno plačljivi. Zaspana storitev pomeni ustavljen
+razporejevalnik, torej nič zbiranja; ravno tisto, kar ta worker mora početi
+sam. Railway takega ugašanja nima, je Docker-native in ima preprost vnos
+skrivnosti.
+
+`render.yaml` v korenu repozitorija ostaja kot delujoča druga možnost — a
+samo na plačljivem paketu, kjer storitve ne zaspijo.
 
 Obakrat je treba vnesti le dve skrivnosti (`SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`) v nastavitve gostovanja. V repozitorij ne gresta.
+
+## Testi
+
+```
+npm run test:parse     # razčlenjevalnik na resničnem besedilu strani (brez omrežja)
+npm run test:collect   # živi zajem ene strani z avto.net (brez baze)
+npm run test:health    # pogodba health endpointa (200 pri opozorilu, 503 pri ustavljenem)
+npm run typecheck
+```
+
+`test:collect` je najbolj poveden: če se struktura strani spremeni, pade tam
+in ne šele v produkciji.
 
 ## Kako se obnaša do vira
 
