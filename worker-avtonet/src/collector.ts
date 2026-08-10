@@ -42,7 +42,9 @@ export function buildResultsUrl(opts: {
   model?: string;
   letnikMin?: number;
   letnikMax?: number;
+  kmMin?: number;
   kmMax?: number;
+  cenaMin?: number;
   cenaMax?: number;
   stran?: number;
 }): string {
@@ -53,14 +55,14 @@ export function buildResultsUrl(opts: {
     tip: "0",
     znamka2: "", model2: "", tip2: "0",
     znamka3: "", model3: "", tip3: "0",
-    cenaMin: "0",
+    cenaMin: String(opts.cenaMin ?? 0),
     cenaMax: String(opts.cenaMax ?? 999999),
     letnikMin: String(opts.letnikMin ?? 0),
     letnikMax: String(opts.letnikMax ?? 2090),
     bencin: "0", starost2: "999", oblika: "0",
     ccmMin: "0", ccmMax: "99999",
     mocMin: "0", mocMax: "999999",
-    kmMin: "0",
+    kmMin: String(opts.kmMin ?? 0),
     kmMax: String(opts.kmMax ?? 9999999),
     kwMin: "0", kwMax: "999",
     motortakt: "0", motorvalji: "0", lokacija: "0", sirina: "0",
