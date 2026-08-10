@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDownToLine, Eraser, Terminal } from "lucide-react";
+import { ArrowDownToLine, Eraser, Maximize2, Minimize2, Terminal } from "lucide-react";
 
 /**
  * The live log panel.
@@ -55,6 +55,7 @@ export function ResearchConsole({ tece }: { tece: boolean }) {
   const [dogodki, setDogodki] = useState<Dogodek[]>([]);
   const [stanje, setStanje] = useState<{ migracijaManjka?: boolean; napaka?: string }>({});
   const [samodejnoDrsenje, setSamodejnoDrsenje] = useState(true);
+  const [celozaslonsko, setCelozaslonsko] = useState(false);
   const zadnjiId = useRef(0);
   const okno = useRef<HTMLDivElement | null>(null);
 
@@ -107,7 +108,13 @@ export function ResearchConsole({ tece }: { tece: boolean }) {
   };
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+    <div
+      className={
+        celozaslonsko
+          ? "fixed inset-3 z-50 flex flex-col rounded-2xl border border-zinc-200 bg-white shadow-2xl sm:inset-6"
+          : "rounded-2xl border border-zinc-200 bg-white shadow-sm"
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
         <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
           <Terminal className="h-4 w-4 text-accent" />
@@ -135,6 +142,15 @@ export function ResearchConsole({ tece }: { tece: boolean }) {
             <Eraser className="h-3.5 w-3.5" />
             Počisti
           </button>
+          <button
+            type="button"
+            onClick={() => setCelozaslonsko((v) => !v)}
+            title={celozaslonsko ? "Pomanjšaj" : "Razširi čez celo stran"}
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-50"
+          >
+            {celozaslonsko ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {celozaslonsko ? "Pomanjšaj" : "Razširi"}
+          </button>
         </div>
       </div>
 
@@ -149,10 +165,18 @@ export function ResearchConsole({ tece }: { tece: boolean }) {
         </p>
       )}
 
+      {/* `resize-y` gives the native drag handle in the bottom corner, so the
+          panel can be pulled to whatever height suits the moment; the button
+          above takes it to the whole page. In full-screen the handle would fight
+          the fixed layout, so there the log simply fills what is left. */}
       <div
         ref={okno}
         onScroll={naDrsenje}
-        className="h-[26rem] overflow-y-auto rounded-b-2xl bg-zinc-950 px-4 py-3 font-mono text-[12px] leading-relaxed"
+        className={`overflow-y-auto bg-zinc-950 px-4 py-3 font-mono text-[12px] leading-relaxed ${
+          celozaslonsko
+            ? "flex-1 rounded-b-2xl"
+            : "h-[26rem] min-h-40 resize-y rounded-b-2xl"
+        }`}
       >
         {dogodki.length === 0 ? (
           <p className="text-zinc-500">

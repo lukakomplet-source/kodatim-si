@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, LineChart, Sparkles, TerminalSquare } from "lucide-react";
+import { Bell, Database, LineChart, Sparkles, TerminalSquare } from "lucide-react";
 
 /**
  * The tab bar, and the one place that decides who sees the development centre.
@@ -20,6 +20,7 @@ const JAVNI = [
 ];
 
 const ADMIN = [
+  { href: "/avtonet/baza", label: "Baza oglasov", icon: Database },
   { href: "/avtonet/pregled", label: "Research console", icon: TerminalSquare },
   { href: "/avtonet/urejanje", label: "AI urejanje", icon: Sparkles },
 ];
