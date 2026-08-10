@@ -12,6 +12,7 @@ import {
   Target,
   DatabaseZap,
   GraduationCap,
+  Globe,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -92,6 +93,12 @@ const NAV_ITEMS: {
     label: "Vloge",
     icon: <ShieldCheck className={ICON_CLASS} />,
     permission: "roles.manage",
+  },
+  {
+    href: "/admin/demo-strani",
+    label: "Spletne strani in aplikacije",
+    icon: <Globe className={ICON_CLASS} />,
+    permission: "crm.view",
   },
 ];
 
