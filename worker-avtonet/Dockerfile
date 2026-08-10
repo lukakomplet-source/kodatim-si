@@ -16,7 +16,12 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Dependencies first, so a code change does not reinstall the browser.
+# `tsx` is a real runtime dependency here, not a dev tool: the worker starts with
+# `tsx src/index.ts` and runs its TypeScript directly. With NODE_ENV=production
+# set above, npm skips devDependencies — so while it lived there, the image built
+# fine and then failed at startup with `tsx: not found`. Declaring it as a
+# dependency is the fix; moving NODE_ENV lower would instead have baked the
+# compiler and type packages into the image for nothing.
 COPY package.json package-lock.json* ./
 RUN npm install --omit=optional --no-audit --no-fund
 
