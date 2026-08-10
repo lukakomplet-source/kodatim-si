@@ -136,10 +136,32 @@ export async function markDisappeared(db: Db, seenIds: string[], scopeIds: strin
   return missing.length;
 }
 
-/** Heartbeat, so a silent failure cannot stay silent for three weeks. */
+/**
+ * Heartbeat, so a silent failure cannot stay silent for three weeks.
+ *
+ * Never allowed to throw: if the collector worked but this write failed, the
+ * run still succeeded, and taking down a healthy pass over a status update
+ * would be the tail wagging the dog. A failed heartbeat shows up on its own —
+ * the dashboard sees a stale timestamp.
+ */
 export async function reportHealth(
   db: Db,
-  patch: { zadnji_zagon?: string; zadnji_uspeh?: string; zadnja_napaka?: string | null; najdenih_zadnjic?: number; novih_zadnjic?: number }
+  patch: {
+    zadnji_zagon?: string;
+    zadnji_uspeh?: string;
+    zadnja_napaka?: string | null;
+    najdenih_zadnjic?: number;
+    novih_zadnjic?: number;
+    zaporednih_napak?: number;
+    strani_zadnjic?: number;
+    stanje?: string;
+    heartbeat?: string;
+  }
 ): Promise<void> {
-  await db.from("avtonet_zdravje").update(patch).eq("id", "worker");
+  try {
+    const { error } = await db.from("avtonet_zdravje").update(patch).eq("id", "worker");
+    if (error) console.error(`[zdravje] zapis ni uspel: ${error.message}`);
+  } catch (err) {
+    console.error(`[zdravje] zapis ni uspel: ${err instanceof Error ? err.message : err}`);
+  }
 }

@@ -1,0 +1,69 @@
+# SBN Auto — zbiralnik
+
+Bere oglase z Avto.net, jih shranjuje v Supabase in vodi zgodovino trga.
+Teče ločeno od spletne strani: KodaTim ostane na Vercelu, ta proces pa
+kjerkoli, kjer lahko teče 24/7.
+
+## Lokalno (za test)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+npm run once
+```
+
+`setup.ps1` namesti pakete, prenese Chromium in pripravi `.env`. Edino, česar
+ne more narediti, sta dve vrednosti iz Supabase (Settings → API) — nanju vas
+opozori na koncu.
+
+`npm run once` naredi en krog in konča. `npm start` teče naprej in se sam
+razporeja.
+
+## Produkcija
+
+Repozitorij vsebuje pripravljeni konfiguraciji, tako da hosting po povezavi
+sam zgradi in zažene worker:
+
+- **Render** — `render.yaml` v korenu repozitorija (Blueprint)
+- **Railway** — `worker-avtonet/railway.json`
+
+Obakrat je treba vnesti le dve skrivnosti (`SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`) v nastavitve gostovanja. V repozitorij ne gresta.
+
+## Kako se obnaša do vira
+
+Avto.netov `robots.txt` ne prepoveduje ničesar in prosi za `Crawl-delay: 10`.
+Zbiralnik ta razmik spoštuje med vsako stranjo. Ob **403 ali 429** krog
+**ustavi** in zapiše razlog — brez proxyjev, brez menjave IP-jev, brez
+obhajanja zaščit. Če vir reče ne, je odgovor počakati.
+
+## Zdravje
+
+Worker odgovarja na `GET /` (privzeto port 8080) s svojim stanjem, isto pa
+zapisuje v tabelo `avtonet_zdravje`, ki jo bere nadzorna plošča
+`kodatim.si/avtonet`.
+
+| Stanje | Pomen | HTTP |
+|---|---|---|
+| `ok` | zadnji krog uspel | 200 |
+| `opozorilo` | krog ni uspel, poskuša naprej z daljšim premorom | 200 |
+| `ustavljeno` | več zaporednih neuspehov | 503 |
+
+Opozorilo namenoma ostane 200: gostitelj, ki bi vsebnik ponovno zagnal ob
+prvem neuspehu, bi začasno blokado na viru spremenil v neskončno vrtenje —
+in prav to je način, kako trajna okvara ostane skrita. Šele `ustavljeno`
+pomeni, da je ponovni zagon smiseln.
+
+Premor med poskusi se ob napakah podvaja do največ 6 ur.
+
+## Nastavitve
+
+| Spremenljivka | Privzeto | Kaj pomeni |
+|---|---|---|
+| `SUPABASE_URL` | — | **skrivnost**, iz Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | **skrivnost**, iz Supabase |
+| `AVTONET_ZNAMKE` | `BMW` | znamke, ločene z vejico |
+| `AVTONET_INTERVAL_MIN` | `60` | minute med krogi |
+| `AVTONET_MAX_PAGES` | `3` | strani rezultatov na znamko |
+| `AVTONET_CRAWL_DELAY_MS` | `10000` | razmik med zahtevki — **ne nižajte** |
+| `AVTONET_MAX_FAILURES` | `5` | zaporednih neuspehov do `ustavljeno` |
+| `PORT` | `8080` | port za health |

@@ -48,33 +48,65 @@ export function RelativeTime({ iso }: { iso: string | null }) {
 export function WorkerHealth({
   zadnjiUspeh,
   napaka,
+  stanje,
+  zaporednihNapak,
+  strani,
+  najdenih,
+  novih,
 }: {
   zadnjiUspeh: string | null;
   napaka: string | null;
+  stanje: string;
+  zaporednihNapak: number;
+  strani: number | null;
+  najdenih: number | null;
+  novih: number | null;
 }) {
   const now = useNow();
 
   const nikoli = !zadnjiUspeh;
   // Three hours without a successful pass means something is wrong — long
   // enough not to cry over one failed attempt, short enough that a dead
-  // collector is noticed the same day rather than three weeks later.
+  // collector is noticed the same day rather than three weeks later. This is
+  // the check the worker itself cannot make: a process that is not running
+  // reports nothing at all, so the silence has to be read from the outside.
   const zastalo = now !== null && zadnjiUspeh !== null && now - new Date(zadnjiUspeh).getTime() > 3 * 60 * 60 * 1000;
-  const tezava = nikoli || zastalo || Boolean(napaka);
+
+  const hudo = stanje === "ustavljeno";
+  const tezava = hudo || nikoli || zastalo || stanje === "opozorilo";
+
+  const tone = hudo
+    ? "bg-red-50 text-red-800 ring-red-200"
+    : tezava
+      ? "bg-amber-50 text-amber-800 ring-amber-200"
+      : "bg-emerald-50 text-emerald-800 ring-emerald-200";
+
+  const label = hudo
+    ? "Zbiralnik ustavljen"
+    : nikoli
+      ? "Zbiralnik še ni tekel"
+      : zastalo
+        ? "Zbiralnik ne javlja"
+        : stanje === "opozorilo"
+          ? "Zbiralnik opozarja"
+          : "Zbiralnik deluje";
 
   return (
-    <div
-      className={`rounded-xl px-4 py-3 text-xs ring-1 ${
-        tezava ? "bg-amber-50 text-amber-800 ring-amber-200" : "bg-emerald-50 text-emerald-800 ring-emerald-200"
-      }`}
-    >
+    <div className={`min-w-[15rem] rounded-xl px-4 py-3 text-xs ring-1 ${tone}`}>
       <p className="flex items-center gap-1.5 font-semibold">
         {tezava ? <AlertTriangle className="h-3.5 w-3.5" /> : <Activity className="h-3.5 w-3.5" />}
-        Zbiralnik
+        {label}
       </p>
       <p className="mt-1">
         Zadnji uspešen zajem: <RelativeTime iso={zadnjiUspeh} />
       </p>
-      {napaka && <p className="mt-1 max-w-xs">Napaka: {napaka}</p>}
+      {(strani !== null || najdenih !== null) && (
+        <p className="mt-0.5 opacity-90">
+          Zadnjič: {strani ?? 0} strani · {najdenih ?? 0} oglasov · {novih ?? 0} novih
+        </p>
+      )}
+      {zaporednihNapak > 0 && <p className="mt-0.5">Zaporednih neuspehov: {zaporednihNapak}</p>}
+      {napaka && <p className="mt-1 max-w-xs break-words">Napaka: {napaka}</p>}
     </div>
   );
 }

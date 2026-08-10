@@ -162,6 +162,16 @@ create table if not exists public.avtonet_zdravje (
   updated_at timestamptz not null default now()
 );
 
+-- Dodano kasneje; ločeno, da migracija ostane varna za ponoven zagon.
+alter table public.avtonet_zdravje
+  add column if not exists zaporednih_napak integer not null default 0,
+  add column if not exists strani_zadnjic integer,
+  /* ok | opozorilo | ustavljeno — samodejni ponovni zagon ne sme skriti
+     trajne okvare, zato se stanje po več zaporednih neuspehih zapiše sem
+     in ostane vidno na nadzorni plošči. */
+  add column if not exists stanje text not null default 'ok',
+  add column if not exists heartbeat timestamptz;
+
 alter table public.avtonet_zdravje enable row level security;
 
 drop policy if exists "Admins manage avtonet zdravje" on public.avtonet_zdravje;

@@ -115,16 +115,22 @@ export async function fetchResultsPage(browser: Browser, url: string): Promise<P
   }
 }
 
-/** Walks pages until one comes back empty or the cap is reached, pausing between. */
+/**
+ * Walks pages until one comes back empty or the cap is reached, pausing
+ * between. Reports the page count too — a run that suddenly reads one page
+ * instead of three is a signal worth seeing on the dashboard.
+ */
 export async function collectAll(
   browser: Browser,
   base: Parameters<typeof buildResultsUrl>[0],
   maxPages = 5
-): Promise<ParsedRow[]> {
+): Promise<{ rows: ParsedRow[]; pages: number }> {
   const all = new Map<string, ParsedRow>();
+  let pages = 0;
 
   for (let stran = 1; stran <= maxPages; stran++) {
     const rows = await fetchResultsPage(browser, buildResultsUrl({ ...base, stran }));
+    pages += 1;
     if (rows.length === 0) break;
     for (const r of rows) all.set(r.avtonetId, r);
 
@@ -132,5 +138,5 @@ export async function collectAll(
     // we decide there is nothing more to read.
     if (stran < maxPages) await sleep(CRAWL_DELAY_MS);
   }
-  return [...all.values()];
+  return { rows: [...all.values()], pages };
 }

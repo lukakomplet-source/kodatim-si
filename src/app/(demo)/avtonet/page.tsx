@@ -33,6 +33,9 @@ type Zdravje = {
   zadnja_napaka: string | null;
   najdenih_zadnjic: number | null;
   novih_zadnjic: number | null;
+  zaporednih_napak: number | null;
+  strani_zadnjic: number | null;
+  stanje: string | null;
 };
 
 function eur(value: number | null): string {
@@ -94,6 +97,11 @@ export default async function AvtonetPage() {
         <WorkerHealth
           zadnjiUspeh={zdravje?.zadnji_uspeh ?? null}
           napaka={zdravje?.zadnja_napaka ?? null}
+          stanje={zdravje?.stanje ?? "ok"}
+          zaporednihNapak={zdravje?.zaporednih_napak ?? 0}
+          strani={zdravje?.strani_zadnjic ?? null}
+          najdenih={zdravje?.najdenih_zadnjic ?? null}
+          novih={zdravje?.novih_zadnjic ?? null}
         />
       </header>
 

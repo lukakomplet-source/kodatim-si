@@ -1,0 +1,35 @@
+# Blueprint for the SBN Auto collector.
+#
+# Point Render at this repository and it builds and runs the worker on its own
+# — no shell, no SSH, no Playwright install by hand. The Next.js site is NOT
+# described here: it stays on Vercel, and this file only ever touches the
+# worker in worker-avtonet/.
+#
+# Secrets are declared but deliberately left empty (`sync: false`): they are
+# typed once into the host's dashboard and never live in the repository.
+services:
+  - type: web
+    name: sbn-avtonet-worker
+    runtime: docker
+    dockerfilePath: ./worker-avtonet/Dockerfile
+    dockerContext: ./worker-avtonet
+    plan: starter
+    region: frankfurt
+    autoDeploy: true
+    # The worker answers here with its own status; the platform restarts the
+    # container only when it reports that it has genuinely given up.
+    healthCheckPath: /
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AVTONET_ZNAMKE
+        value: BMW
+      - key: AVTONET_INTERVAL_MIN
+        value: "60"
+      - key: AVTONET_MAX_PAGES
+        value: "3"
+      # The one promise made to the source. Do not lower it.
+      - key: AVTONET_CRAWL_DELAY_MS
+        value: "10000"
