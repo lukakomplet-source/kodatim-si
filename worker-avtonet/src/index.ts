@@ -223,6 +223,7 @@ async function runJob(db: Db, job: Job): Promise<void> {
   try {
     progress = await runResearch(db, {
       startFromPage: job.zadnja_stran + 1,
+      raziskavaId: job.id,
       log,
       shouldStop: () => cancelled || stopping,
       onProgress: async (p) => {

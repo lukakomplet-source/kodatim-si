@@ -17,12 +17,25 @@ export type Iskanje = {
   model: string | null;
   letnik_min: number | null;
   letnik_max: number | null;
+  km_min: number | null;
   km_max: number | null;
   moc_min: number | null;
+  moc_max: number | null;
+  cena_min: number | null;
   cena_max: number | null;
+  gorivo: string | null;
+  menjalnik: string | null;
+  /** vsi | dealer | zasebnik */
+  prodajalec_filter: "vsi" | "dealer" | "zasebnik" | null;
   samo_dealerji: boolean;
   email_obvestila: string | null;
 };
+
+/** The seller condition, tolerating rows written before the column existed. */
+function prodajalecPogoj(iskanje: Iskanje): "vsi" | "dealer" | "zasebnik" {
+  if (iskanje.prodajalec_filter) return iskanje.prodajalec_filter;
+  return iskanje.samo_dealerji ? "dealer" : "vsi";
+}
 
 export type Zadetek = {
   id: string;
@@ -34,6 +47,8 @@ export type Zadetek = {
   km_moci: number | null;
   cena_eur: number | null;
   prodajalec: string | null;
+  /** null until the advert's own page has been read — and sometimes after. */
+  je_dealer: boolean | null;
   url: string;
 };
 
@@ -54,7 +69,7 @@ export type AlertOutcome = {
 export async function findMatches(db: Db, iskanje: Iskanje, limit = 25): Promise<Zadetek[]> {
   let q = db
     .from("avtonet_oglasi")
-    .select("id, avtonet_id, naziv, znamka, letnik, km, km_moci, cena_eur, prodajalec, url")
+    .select("id, avtonet_id, naziv, znamka, letnik, km, km_moci, cena_eur, prodajalec, je_dealer, url")
     .eq("status", "aktiven")
     .order("first_seen", { ascending: false })
     .limit(limit * 4);
@@ -63,15 +78,28 @@ export async function findMatches(db: Db, iskanje: Iskanje, limit = 25): Promise
   if (iskanje.model) q = q.ilike("naziv", `%${iskanje.model}%`);
   if (iskanje.letnik_min !== null) q = q.gte("letnik", iskanje.letnik_min);
   if (iskanje.letnik_max !== null) q = q.lte("letnik", iskanje.letnik_max);
+  if (iskanje.km_min !== null) q = q.gte("km", iskanje.km_min);
   if (iskanje.km_max !== null) q = q.lte("km", iskanje.km_max);
   if (iskanje.moc_min !== null) q = q.gte("km_moci", iskanje.moc_min);
+  if (iskanje.moc_max !== null) q = q.lte("km_moci", iskanje.moc_max);
+  if (iskanje.cena_min !== null) q = q.gte("cena_eur", iskanje.cena_min);
   if (iskanje.cena_max !== null) q = q.lte("cena_eur", iskanje.cena_max);
+  // Stored as the single lowercase word the results row carries — "diesel",
+  // "bencinski", "hibridni" — so a prefix match is what fits the data.
+  if (iskanje.gorivo) q = q.ilike("gorivo", `${iskanje.gorivo}%`);
+  if (iskanje.menjalnik) q = q.ilike("menjalnik", `${iskanje.menjalnik}%`);
 
-  // "Dealers only" is deliberately NOT applied as a filter yet. Seller type is
-  // not readable from the results row (the logo is a placeholder on every
-  // advert), so filtering on it would silently drop good matches on a value we
-  // never populate. Instead the email says the seller could not be verified —
-  // an honest note beats an empty inbox.
+  // The seller condition is applied, but only where the seller is actually
+  // known. Seller type is not readable from the results row — it exists on the
+  // advert's own page, and even there not always — so a plain `eq` would
+  // silently discard every match whose detail page has not been read yet.
+  // Instead the unknowns are KEPT and the notification says the seller could
+  // not be verified. An honest note beats a filter that quietly hides most of
+  // the market.
+  const pogoj = prodajalecPogoj(iskanje);
+  if (pogoj !== "vsi") {
+    q = pogoj === "dealer" ? q.or("je_dealer.is.true,je_dealer.is.null") : q.or("je_dealer.is.false,je_dealer.is.null");
+  }
 
   const { data, error } = await q;
   if (error) throw new Error(`Iskanje zadetkov ni uspelo: ${error.message}`);
@@ -94,7 +122,8 @@ function eur(v: number | null): string {
 }
 
 export function renderAlertHtml(iskanje: Iskanje, zadetki: Zadetek[]): string {
-  const neznanProdajalec = iskanje.samo_dealerji && zadetki.some((z) => !z.prodajalec);
+  const neznanProdajalec =
+    prodajalecPogoj(iskanje) !== "vsi" && zadetki.some((z) => z.je_dealer === null && !z.prodajalec);
 
   const rows = zadetki
     .map(
@@ -117,7 +146,7 @@ export function renderAlertHtml(iskanje: Iskanje, zadetki: Zadetek[]): string {
 </table>
 ${
   neznanProdajalec
-    ? `<p style="color:#a16207;font-size:13px;margin-top:16px">Opomba: iskali ste samo pri trgovcih, vrsta prodajalca pa na seznamu oglasov ni objavljena, zato je ni bilo mogoče preveriti. Preverite v samem oglasu.</p>`
+    ? `<p style="color:#a16207;font-size:13px;margin-top:16px">Opomba: pri nekaterih oglasih vrsta prodajalca še ni znana (na seznamu oglasov ni objavljena). Teh nismo izpustili — preverite v samem oglasu.</p>`
     : ""
 }
 <p style="color:#a1a1aa;font-size:12px;margin-top:20px">SBN Auto - KodaTim.si</p>

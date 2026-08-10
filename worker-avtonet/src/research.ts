@@ -16,6 +16,7 @@ import {
   type Db,
 } from "./db.js";
 import { runSavedSearches } from "./alerts.js";
+import { odpriDnevnik, opisOglasa, type EventSink } from "./events.js";
 
 /**
  * One research run: a full sweep of the market, then the detail pass.
@@ -86,10 +87,17 @@ export async function runResearch(
     shouldStop?: () => boolean;
     /** Tests set this: alerts leave the building as email, and a test must not. */
     preskociIskanja?: boolean;
+    /**
+     * The research row this run belongs to. Given one, every page and every
+     * advert is written to the event log the console reads; without one the
+     * events are dropped.
+     */
+    raziskavaId?: string | null;
   }
 ): Promise<Progress> {
   const { onProgress, log } = opts;
   const { crawlDelayMs, pageCeiling, detailLimit } = nastavitve();
+  const dnevnik: EventSink = odpriDnevnik(db, opts.raziskavaId ?? null);
 
   const p: Progress = {
     faza: 1,
@@ -116,14 +124,20 @@ export async function runResearch(
 
   try {
     // ---------- Phase 1: the whole market ----------
+    dnevnik.zapisi("faza", `1. faza — pregled trga, začenjam na strani ${opts.startFromPage}`, {
+      odStrani: opts.startFromPage,
+    });
+
     for (let stran = opts.startFromPage; stran <= pageCeiling; stran++) {
       if (opts.shouldStop?.()) {
         log("warn", "raziskava ustavljena na zahtevo", { stran });
+        dnevnik.zapisi("info", `Ustavljeno na zahtevo pri strani ${stran}`, { stran });
         break;
       }
 
       let rows: ParsedRow[];
       try {
+        dnevnik.zapisi("stran", `Odpiram stran ${stran}`, { stran });
         rows = await fetchResultsPage(browser, buildResultsUrl({ stran }));
       } catch (err) {
         if (err instanceof BlockedError) throw err;
@@ -133,6 +147,7 @@ export async function runResearch(
         p.napak += 1;
         p.zadnja_napaka = err instanceof Error ? err.message : String(err);
         log("warn", "stran ni bila prebrana", { stran, napaka: p.zadnja_napaka });
+        dnevnik.zapisi("napaka", `Strani ${stran} ni bilo mogoče prebrati: ${p.zadnja_napaka}`, { stran });
         await onProgress(p);
         await sleep(crawlDelayMs);
         continue;
@@ -141,6 +156,7 @@ export async function runResearch(
       if (rows.length === 0) {
         p.pregled_popoln = true;
         log("info", "konec seznama", { stran });
+        dnevnik.zapisi("info", `Stran ${stran} je prazna — konec seznama`, { stran });
         break;
       }
 
@@ -151,7 +167,21 @@ export async function runResearch(
       if (seenIds.size === before) {
         p.pregled_popoln = true;
         log("info", "stran ne prinasa novih oglasov - konec", { stran });
+        dnevnik.zapisi("info", `Stran ${stran} ponavlja že videne oglase — konec seznama`, { stran });
         break;
+      }
+
+      dnevnik.zapisi("stran", `Najdenih ${rows.length} oglasov na strani ${stran}`, {
+        stran,
+        oglasov: rows.length,
+      });
+      for (const r of rows) {
+        dnevnik.zapisi("oglas", opisOglasa(r), {
+          avtonet_id: r.avtonetId,
+          cena: r.cenaEur,
+          letnik: r.letnik,
+          km: r.km,
+        });
       }
 
       const outcome = await upsertListings(db, rows);
@@ -163,6 +193,20 @@ export async function runResearch(
       p.zadnja_stran = stran;
       await onProgress(p);
 
+      dnevnik.zapisi(
+        "konec_strani",
+        `Stran ${stran} končana — ${outcome.novi.length} novih, ${rows.length - outcome.novi.length} posodobljenih` +
+          (outcome.spremembeCene.length > 0 ? `, ${outcome.spremembeCene.length} sprememb cene` : ""),
+        { stran, novih: outcome.novi.length, spremembCene: outcome.spremembeCene.length }
+      );
+      for (const sc of outcome.spremembeCene) {
+        dnevnik.zapisi(
+          "oglas",
+          `Cena spremenjena: ${(sc.row.naziv ?? sc.row.avtonetId).slice(0, 50)} — ${Math.round(sc.staraCena).toLocaleString("sl-SI")} € → ${Math.round(sc.novaCena).toLocaleString("sl-SI")} €`,
+          { avtonet_id: sc.row.avtonetId, staraCena: sc.staraCena, novaCena: sc.novaCena }
+        );
+      }
+
       if (stran % 10 === 0 || outcome.novi.length > 0) {
         log("info", "napredek 1. faze", {
           stran,
@@ -172,6 +216,9 @@ export async function runResearch(
         });
       }
 
+      dnevnik.zapisi("info", `Čakam ${Math.round(crawlDelayMs / 1000)} s, nato stran ${stran + 1}`, {
+        stran: stran + 1,
+      });
       await sleep(crawlDelayMs);
     }
 
@@ -183,8 +230,15 @@ export async function runResearch(
       const { data: scope } = await db.from("avtonet_oglasi").select("avtonet_id").eq("status", "aktiven");
       p.izginulih = await markDisappeared(db, [...seenIds], (scope ?? []).map((s) => s.avtonet_id as string));
       log("info", "izginuli oglasi zabelezeni", { izginilo: p.izginulih });
+      dnevnik.zapisi("info", `Pregled popoln — ${p.izginulih} oglasov ni več na oglasniku`, {
+        izginilo: p.izginulih,
+      });
     } else {
       log("warn", "pregled ni bil popoln - izginotja se ne belezijo");
+      dnevnik.zapisi(
+        "info",
+        "Pregled ni dosegel konca seznama — izginotja se namenoma ne beležijo (odsotnost ni dokaz)"
+      );
     }
     await onProgress(p);
 
@@ -194,23 +248,34 @@ export async function runResearch(
     p.detajlov_skupaj = queue.length;
     await onProgress(p);
     log("info", "zacenjam 2. fazo", { zaObdelavo: queue.length });
+    dnevnik.zapisi("faza", `2. faza — podatki oglasov, v vrsti ${queue.length}`, { zaObdelavo: queue.length });
 
     for (const item of queue) {
       if (opts.shouldStop?.()) {
         log("warn", "2. faza ustavljena na zahtevo", { obdelanih: p.detajlov_obdelanih });
+        dnevnik.zapisi("info", `Ustavljeno na zahtevo po ${p.detajlov_obdelanih} obdelanih oglasih`);
         break;
       }
 
       await sleep(crawlDelayMs);
       try {
         const raw = await fetchDetailPage(browser, detailUrl(item.avtonet_id));
-        await saveDetail(db, item.id, parseDetail(raw));
+        const detail = parseDetail(raw);
+        await saveDetail(db, item.id, detail);
         p.detajlov_obdelanih += 1;
+        dnevnik.zapisi(
+          "oglas",
+          `Podrobnosti ${item.avtonet_id}: ${[detail.verzija, detail.karoserija, detail.lokacija].filter(Boolean).join(" · ") || "brez dodatnih podatkov"}`,
+          { avtonet_id: item.avtonet_id }
+        );
       } catch (err) {
         if (err instanceof BlockedError) throw err;
         p.napak += 1;
         p.zadnja_napaka = err instanceof Error ? err.message : String(err);
         log("warn", "podrobnosti niso bile prebrane", { oglas: item.avtonet_id, napaka: p.zadnja_napaka });
+        dnevnik.zapisi("napaka", `Oglas ${item.avtonet_id}: ${p.zadnja_napaka}`, {
+          avtonet_id: item.avtonet_id,
+        });
       }
 
       if (p.detajlov_obdelanih % 10 === 0) {
@@ -231,8 +296,16 @@ export async function runResearch(
       }
     }
 
+    dnevnik.zapisi(
+      "faza",
+      `Raziskava končana — ${p.strani_pregledanih} strani, ${p.oglasov_najdenih} oglasov, ${p.novih} novih, ${p.detajlov_obdelanih} podrobnosti, ${p.napak} napak`
+    );
     return p;
   } finally {
+    // Flushed here rather than after the return, so the last lines reach the
+    // console even when the run ends by throwing — a crash is exactly when the
+    // final log lines matter most.
+    await dnevnik.zakljuci();
     await browser.close();
   }
 }
