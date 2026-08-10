@@ -115,6 +115,53 @@ export async function upsertListings(db: Db, rows: ParsedRow[]): Promise<UpsertO
 }
 
 /**
+ * Phase 2's write: the fields that only exist on the advert's own page.
+ *
+ * `detajl_zajet` is set even when every field came back null — the page was
+ * opened and that is the fact being recorded. Leaving it null on an advert that
+ * genuinely publishes nothing extra would put it back in the work queue on
+ * every future research, and it would be re-fetched forever.
+ */
+export async function saveDetail(
+  db: Db,
+  oglasId: string,
+  detail: {
+    verzija: string | null;
+    pogon: string | null;
+    karoserija: string | null;
+    barva: string | null;
+    lokacija: string | null;
+    prodajalec_naziv: string | null;
+    je_dealer: boolean | null;
+    oprema: string | null;
+    opis: string | null;
+    dodatni_podatki: Record<string, string>;
+  }
+): Promise<void> {
+  const { error } = await db
+    .from("avtonet_oglasi")
+    .update({ ...detail, detajl_zajet: new Date().toISOString() })
+    .eq("id", oglasId);
+  if (error) throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
+}
+
+/** Listings whose detail page has never been opened — phase 2's work queue. */
+export async function listingsMissingDetail(
+  db: Db,
+  limit: number
+): Promise<{ id: string; avtonet_id: string }[]> {
+  const { data, error } = await db
+    .from("avtonet_oglasi")
+    .select("id, avtonet_id")
+    .is("detajl_zajet", null)
+    .eq("status", "aktiven")
+    .order("first_seen", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Branje oglasov brez podrobnosti ni uspelo: ${error.message}`);
+  return (data ?? []) as { id: string; avtonet_id: string }[];
+}
+
+/**
  * Marks listings that were in the searched set before but are not now.
  *
  * Deliberately scoped to the ids this run actually looked at: marking every
@@ -123,7 +170,8 @@ export async function upsertListings(db: Db, rows: ParsedRow[]): Promise<UpsertO
  */
 export async function markDisappeared(db: Db, seenIds: string[], scopeIds: string[]): Promise<number> {
   if (scopeIds.length === 0) return 0;
-  const missing = scopeIds.filter((id) => !seenIds.includes(id));
+  const seen = new Set(seenIds);
+  const missing = scopeIds.filter((id) => !seen.has(id));
   if (missing.length === 0) return 0;
 
   const now = new Date().toISOString();

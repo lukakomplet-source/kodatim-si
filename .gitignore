@@ -32,6 +32,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which holds only placeholders and is the one thing
+# setup.ps1 needs on a fresh clone. Without this line `.env*` swallowed it and
+# the automated setup broke on a machine that had never seen the file. The
+# pattern has no slash and matches the exact name, so real secrets — .env,
+# .env.local, .env.production — stay ignored.
+!.env.example
 
 # vercel
 .vercel

@@ -1,25 +1,31 @@
 import "dotenv/config";
 import { BlockedError, collectAll, openBrowser } from "./collector.js";
-import { connect, markDisappeared, reportHealth, upsertListings } from "./db.js";
+import { connect, markDisappeared, reportHealth, upsertListings, type Db } from "./db.js";
 import { current, startHealthServer, update, type WorkerState } from "./health.js";
 import { buildDailyReport, sendDailyReport } from "./report.js";
 import { runSavedSearches } from "./alerts.js";
+import { claimResearch, finishResearch, saveProgress, type Job } from "./jobs.js";
+import { runResearch, type Progress } from "./research.js";
 
 /**
  * SBN Auto collector — the long-running production process.
  *
  * The shape of the job decided the shape of the program. This is not a monitor
- * that pokes the site every minute; it is a few full sweeps of the market per
- * day. One sweep walks every page of passenger-car results, updates what it
- * already knows, records what is new, and appends a snapshot for each — so the
- * value accumulates as history rather than as a fresh photograph each hour.
+ * that pokes the site every minute; it is a full sweep of the market, started
+ * by hand from the dashboard. One sweep walks every page of passenger-car
+ * results, opens each advert's own page, updates what it already knows, records
+ * what is new, and appends a snapshot for each — so the value accumulates as
+ * history rather than as a fresh photograph each hour.
  *
- * That schedule is also what makes politeness free. avto.net's robots.txt
- * permits everything and asks for a ten-second crawl delay; the whole market
- * is roughly 1,100 result pages, so a sweep takes about three hours and the
- * requested pace never has to be argued with. Detail pages are not opened at
- * all — the result row already carries model, year, mileage, power, fuel,
- * gearbox and price.
+ * The default mode is therefore to WAIT: the worker polls for a research
+ * requested from the web app and runs it. Nothing happens on its own until the
+ * manual path is proven end to end; the timed schedule still exists but only
+ * switches on with AVTONET_URNIK=1.
+ *
+ * That pace is also what makes politeness free. avto.net's robots.txt permits
+ * everything and asks for a ten-second crawl delay; the whole market is roughly
+ * 1,100 result pages, so a sweep takes hours and the requested pace never has
+ * to be argued with.
  *
  * Failures are counted, never hidden: past a threshold the worker enters a
  * visible `ustavljeno` state and backs off, instead of crashing so the
@@ -30,6 +36,10 @@ const PORT = Number(process.env.PORT ?? 8080);
 const FAILURES_BEFORE_STOP = Number(process.env.AVTONET_MAX_FAILURES ?? 5);
 /** 0 = the whole market. A small number is for testing. */
 const MAX_PAGES = Number(process.env.AVTONET_MAX_PAGES ?? 0);
+/** How often to look for a research requested from the dashboard. */
+const POLL_MS = Number(process.env.AVTONET_POLL_MS ?? 15_000);
+/** Timed sweeps, off by default: the manual button is the only trigger for now. */
+const URNIK = /^(1|true|da|yes)$/i.test(process.env.AVTONET_URNIK ?? "");
 
 /** Hours of the day at which a sweep starts, e.g. "6,18" for twice daily. */
 function researchHours(): number[] {
@@ -182,6 +192,111 @@ async function runOnce(): Promise<void> {
   }
 }
 
+/**
+ * Set when the platform asks us to stop. The research reads it at every page
+ * boundary and returns, leaving the job row as `tece` with its checkpoint — so
+ * a redeploy costs one page, and the next worker resumes where this one stood.
+ */
+let stopping = false;
+
+/**
+ * Runs one research requested from the dashboard, reporting into its row.
+ *
+ * The two ways this can end other than finishing are both handled as normal
+ * outcomes rather than crashes: the user cancels (detected by the progress write
+ * finding no row of ours), or the source pushes back with 403/429 (recorded as
+ * an error, with the checkpoint intact so a later attempt continues instead of
+ * starting the hours again).
+ */
+async function runJob(db: Db, job: Job): Promise<void> {
+  const startedAt = new Date().toISOString();
+  update({ lastRunAt: startedAt });
+  await reportHealth(db, { zadnji_zagon: startedAt, heartbeat: startedAt, stanje: "ok" });
+  log("info", job.nadaljevanje ? "nadaljujem raziskavo" : "zacenjam raziskavo", {
+    raziskava: job.id,
+    odStrani: job.zadnja_stran + 1,
+  });
+
+  let cancelled = false;
+  let progress: Progress | null = null;
+
+  try {
+    progress = await runResearch(db, {
+      startFromPage: job.zadnja_stran + 1,
+      log,
+      shouldStop: () => cancelled || stopping,
+      onProgress: async (p) => {
+        if (!(await saveProgress(db, job.id, p))) {
+          cancelled = true;
+          log("warn", "raziskava je bila preklicana", { raziskava: job.id });
+        }
+        await reportHealth(db, { heartbeat: new Date().toISOString(), strani_zadnjic: p.zadnja_stran });
+      },
+    });
+
+    if (cancelled) {
+      // The status is already whatever the user set; finishing is guarded on
+      // `tece`, so this call simply does nothing and their decision stands.
+      await finishResearch(db, job.id, "preklicano", progress);
+    } else if (stopping) {
+      log("warn", "raziskava prekinjena zaradi zaustavitve - ostane za nadaljevanje", {
+        raziskava: job.id,
+        zadnjaStran: progress.zadnja_stran,
+      });
+      return; // Left as `tece`: the next worker picks it up from the checkpoint.
+    } else {
+      await finishResearch(db, job.id, "koncano", progress);
+      update({
+        lastSuccessAt: new Date().toISOString(),
+        lastError: null,
+        consecutiveFailures: 0,
+        state: "ok",
+        lastPages: progress.strani_pregledanih,
+        lastFound: progress.oglasov_najdenih,
+        lastNew: progress.novih,
+      });
+      await reportHealth(db, {
+        zadnji_uspeh: new Date().toISOString(),
+        heartbeat: new Date().toISOString(),
+        zadnja_napaka: null,
+        zaporednih_napak: 0,
+        stanje: "ok",
+        strani_zadnjic: progress.strani_pregledanih,
+        najdenih_zadnjic: progress.oglasov_najdenih,
+        novih_zadnjic: progress.novih,
+      });
+      log("info", "raziskava koncana", {
+        raziskava: job.id,
+        strani: progress.strani_pregledanih,
+        oglasov: progress.oglasov_najdenih,
+        novih: progress.novih,
+        detajlov: progress.detajlov_obdelanih,
+        napak: progress.napak,
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const blocked = err instanceof BlockedError;
+    const failures = current().consecutiveFailures + 1;
+    const state: WorkerState = failures >= FAILURES_BEFORE_STOP ? "ustavljeno" : "opozorilo";
+
+    update({ lastError: message, consecutiveFailures: failures, state });
+    await finishResearch(db, job.id, "napaka", progress, message);
+    await reportHealth(db, {
+      zadnja_napaka: message,
+      zaporednih_napak: failures,
+      stanje: state,
+      heartbeat: new Date().toISOString(),
+    });
+    log(blocked ? "warn" : "error", blocked ? "vir je zavrnil zahtevek" : "napaka med raziskavo", {
+      raziskava: job.id,
+      napaka: message,
+      zaporednihNapak: failures,
+      stanje: state,
+    });
+  }
+}
+
 /** Milliseconds until the next scheduled hour. */
 function msUntilNextRun(hours: number[]): { ms: number; at: Date } {
   const now = new Date();
@@ -229,15 +344,24 @@ async function main(): Promise<void> {
     return;
   }
   log("info", "zbiralnik zagnan", {
+    nacin: URNIK ? "urnik + rocne zahteve" : "caka na rocne zahteve",
     cilj: brands().length > 0 ? brands() : "vsa osebna vozila",
-    pregledOb: hours,
+    pregledOb: URNIK ? hours : "brez urnika",
     maxStrani: MAX_PAGES === 0 ? "brez omejitve" : MAX_PAGES,
   });
 
+  // A stop request does not kill a running sweep outright: the flag lets it
+  // finish the page it is on and leave a usable checkpoint. The hard exit after
+  // a grace period is there because the platform will kill us anyway — but by
+  // then the job row already says where to resume.
   const shutdown = () => {
-    log("info", "zaustavljam");
-    server?.close();
-    process.exit(0);
+    if (stopping) process.exit(0);
+    stopping = true;
+    log("info", "zaustavljam - koncujem tekoco stran");
+    setTimeout(() => {
+      server?.close();
+      process.exit(0);
+    }, 20_000).unref();
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -276,6 +400,40 @@ async function main(): Promise<void> {
     }
   }
 
+  // Mode 1: wait for the dashboard. The normal mode, and the only one until the
+  // manual research is proven end to end.
+  if (!URNIK) {
+    const db = connect();
+    log("info", "cakam na zahteve iz nadzorne plosce", { vsakihSekund: Math.round(POLL_MS / 1000) });
+
+    while (!stopping) {
+      let job: Job | null = null;
+      try {
+        job = await claimResearch(db);
+      } catch (err) {
+        // Not being able to READ the queue is a database problem, not a
+        // collecting problem: it must not put the worker into the failure
+        // back-off that exists for the source pushing back.
+        log("warn", "vrste zahtev ni bilo mogoce prebrati", {
+          napaka: err instanceof Error ? err.message : String(err),
+        });
+        await reportHealth(db, { heartbeat: new Date().toISOString() });
+      }
+
+      if (job) {
+        await runJob(db, job);
+        await maybeSendReport();
+        continue; // Another request may already be waiting.
+      }
+
+      await reportHealth(db, { heartbeat: new Date().toISOString() });
+      await sleep(POLL_MS);
+    }
+    server?.close();
+    return;
+  }
+
+  // Mode 2: timed sweeps. Off unless AVTONET_URNIK is set.
   for (;;) {
     const failures = current().consecutiveFailures;
     if (failures > 0) {

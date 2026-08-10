@@ -1,5 +1,6 @@
 import { chromium, type Browser } from "playwright";
 import { parseRowText, type ParsedRow } from "./parse.js";
+import type { DetailRaw } from "./detail.js";
 
 /**
  * Reads avto.net results pages with a real browser.
@@ -79,6 +80,48 @@ export function buildResultsUrl(opts: {
 
 export async function openBrowser(): Promise<Browser> {
   return chromium.launch({ args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+}
+
+/**
+ * One advert's own page, harvested for phase 2.
+ *
+ * Extraction runs inside the page rather than over raw HTML, the same choice
+ * the results parser already makes: the browser has done the rendering, so
+ * `textContent` is clean and no HTML parser has to be maintained.
+ *
+ * Every two-cell table row becomes a label/value pair. The length guards
+ * matter: without them a prose block that happens to sit in a two-cell row
+ * would land in the specification bag and drown the real fields.
+ */
+export async function fetchDetailPage(browser: Browser, url: string): Promise<DetailRaw> {
+  const context = await browser.newContext({
+    locale: "sl-SI",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  });
+  const page = await context.newPage();
+
+  try {
+    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+    const status = response?.status() ?? 0;
+    if (status === 403 || status === 429) throw new BlockedError(status);
+
+    return await page.evaluate(() => {
+      const pairs: Record<string, string> = {};
+      for (const tr of Array.from(document.querySelectorAll("table tr"))) {
+        const cells = Array.from(tr.querySelectorAll("td,th")).map((c) =>
+          (c.textContent ?? "").replace(/\s+/g, " ").trim()
+        );
+        if (cells.length !== 2) continue;
+        const label = cells[0].replace(/:\s*$/, "").trim();
+        if (!label || label.length > 40 || cells[1].length > 200) continue;
+        if (cells[1]) pairs[label] = cells[1];
+      }
+      return { pairs, text: (document.body.innerText ?? "").replace(/\r/g, "") };
+    });
+  } finally {
+    await context.close();
+  }
 }
 
 /** One results page, parsed. Throws BlockedError on 403/429 so the caller stops. */

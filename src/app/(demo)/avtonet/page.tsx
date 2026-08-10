@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Activity, Car, Clock, TrendingDown } from "lucide-react";
 import { RelativeTime, WorkerHealth } from "./Freshness";
+import { ResearchPanel } from "./ResearchPanel";
 
 /**
  * SBN Auto — the client-facing dashboard for the avto.net market tracker.
@@ -104,6 +105,11 @@ export default async function AvtonetPage() {
           novih={zdravje?.novih_zadnjic ?? null}
         />
       </header>
+
+      {/* Renders only for admins — it asks the server who is looking, so the
+          page itself stays cacheable and visitors see the demo without any
+          controls. */}
+      <ResearchPanel />
 
       {nikoliZbrano && (
         <p className="mt-6 rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
