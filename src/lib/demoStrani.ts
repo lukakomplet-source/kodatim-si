@@ -53,11 +53,47 @@ export type DemoStran = {
 };
 
 /**
+ * Demos that exist as real routes in this repository rather than as rows in the
+ * database.
+ *
+ * They are listed here so the admin screen can always link to them. Relying on
+ * somebody remembering to add a matching row by hand is how a finished app ends
+ * up with no way to reach it — which is exactly what happened to SBN Auto: the
+ * page was live at /avtonet and there was no click-path to it anywhere.
+ *
+ * Being code and not data, they cannot be edited or deleted from the screen.
+ * Adding one is a line here, next to the route it describes.
+ */
+export type VgrajenaDemoStran = {
+  slug: string;
+  naziv: string;
+  stranka: string | null;
+  vrsta: DemoVrsta;
+  opis: string;
+};
+
+export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
+  {
+    slug: "avtonet",
+    naziv: "SBN Auto — spremljanje trga vozil",
+    stranka: "SBN Auto",
+    vrsta: "aplikacija",
+    opis:
+      "Nadzorna plošča nad oglasi z Avto.net: zgodovina trga, spremembe cen in gumb za zagon raziskave (viden samo adminu).",
+  },
+];
+
+/**
  * Paths the public site already owns. A demo on one of these would shadow a
  * real page — "kodatim.si/cenik" must stay the price list — so they are
  * refused before anything reaches the database.
+ *
+ * The built-in demos above belong here too: their slug is already taken by a
+ * route in the repository, so a database row with the same slug would never be
+ * reachable.
  */
 export const REZERVIRANI_SLUGI = [
+  ...VGRAJENE_DEMO_STRANI.map((d) => d.slug),
   "admin",
   "api",
   "auth",

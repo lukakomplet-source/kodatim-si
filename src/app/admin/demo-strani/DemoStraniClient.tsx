@@ -242,7 +242,7 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
         <div className={CARD}>
           <p className="text-sm text-zinc-500">
             {items.length === 0
-              ? "Še ni nobene strani. Dodajte prvo z gumbom „Nova stran“ — potem mi v klepetu recite, za koga naj zgradim demo."
+              ? "Poleg vgrajenih ni dodane še nobene strani. Dodajte prvo z gumbom „Nova stran“ — potem mi v klepetu recite, za koga naj zgradim demo."
               : "V tem statusu ni nobene strani."}
           </p>
         </div>
