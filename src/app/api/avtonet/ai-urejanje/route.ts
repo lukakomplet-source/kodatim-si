@@ -30,8 +30,13 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-/** A build takes a minute; locally there is no platform timeout to respect. */
-export const maxDuration = 600;
+
+// No `maxDuration` on purpose. A typecheck-lint-build cycle takes minutes, which
+// tempted a long timeout — but Vercel validates the value at BUILD time against
+// the plan's ceiling (300 s on Hobby), so 600 failed the deploy of the whole
+// site. And the number would have been meaningless anyway: this route refuses to
+// run on Vercel at all. Locally `next dev` imposes no timeout, so the long
+// request it actually serves needs no declaration.
 
 const NAJVEC_POPRAVKOV = 2;
 /** Guards the prompt: a whole file tree would drown the request. */
