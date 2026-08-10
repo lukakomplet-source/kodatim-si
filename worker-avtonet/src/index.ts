@@ -202,17 +202,32 @@ function msUntilNextRun(hours: number[]): { ms: number; at: Date } {
 async function main(): Promise<void> {
   const once = process.argv.includes("--once");
   const runNow = once || process.argv.includes("--now");
-
-  // Missing configuration is fatal on purpose: exiting makes the host show a
-  // failed deploy, which is honest. Running on with no database would look
-  // healthy and collect nothing.
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    log("error", "Manjkata SUPABASE_URL in SUPABASE_SERVICE_ROLE_KEY. Glej .env.example.");
-    process.exit(1);
-  }
-
   const hours = researchHours();
+
+  // The health server comes up FIRST, before anything can go wrong, so that a
+  // broken start can explain itself.
+  //
+  // It used to exit on missing configuration. The platform then reported a
+  // bare "Healthcheck failure" with no cause, because the process was gone
+  // before it could serve anything — the deploy was correctly marked failed
+  // and told nobody why. Now the reason is in the health response and in the
+  // logs, and the endpoint answers 503, so the platform still knows the
+  // service is not fit to run.
   const server = once ? null : startHealthServer(PORT);
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const razlog =
+      "Manjkata SUPABASE_URL in SUPABASE_SERVICE_ROLE_KEY. Vpisite ju med spremenljivke okolja (Railway: Variables).";
+    update({ state: "ustavljeno", lastError: razlog });
+    log("error", razlog);
+    if (once) {
+      server?.close();
+      process.exit(1);
+    }
+    // Stay up so the reason remains readable instead of vanishing with the
+    // process; the 503 keeps the platform honest about the service's state.
+    return;
+  }
   log("info", "zbiralnik zagnan", {
     cilj: brands().length > 0 ? brands() : "vsa osebna vozila",
     pregledOb: hours,

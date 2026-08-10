@@ -12,7 +12,8 @@
     "test:health": "tsx src/test-health.ts",
     "typecheck": "tsc --noEmit",
     "test:db": "tsx src/test-db.ts",
-    "cleanup:testdata": "tsx src/test-cleanup.ts"
+    "cleanup:testdata": "tsx src/test-cleanup.ts",
+    "test:misconfig": "tsx src/test-misconfig.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
