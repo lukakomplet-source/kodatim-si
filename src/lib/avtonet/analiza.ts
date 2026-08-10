@@ -214,3 +214,16 @@ export function eur(value: number | null): string {
 export function mejaObdobja(dni: number): string {
   return new Date(Date.now() - dni * 86_400_000).toISOString();
 }
+
+/**
+ * How long something ran. An open end means "until now", which is why this also
+ * lives outside a component — reading the clock during render is the impurity
+ * the React rules reject.
+ */
+export function trajanje(od: string | null, do_: string | null): string {
+  if (!od) return "—";
+  const konec = do_ ? new Date(do_).getTime() : Date.now();
+  const min = Math.round((konec - new Date(od).getTime()) / 60_000);
+  if (min < 1) return "manj kot minuto";
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+}

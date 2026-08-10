@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, Play, RefreshCw, Square } from "lucide-react";
 import { prekliciRaziskavo, zazeniRaziskavo } from "./actions";
@@ -316,6 +317,10 @@ function Zgodovina({ vrstice, now }: { vrstice: Raziskava[]; now: number }) {
   return (
     <div className="mt-6">
       <h3 className="text-sm font-semibold text-zinc-900">Pretekle raziskave</h3>
+      <p className="mt-0.5 text-xs text-zinc-400">
+        Kliknite na datum, da odprete raziskavo — vsi podatki, zajeti oglasi z linki, dnevnik, izvoz in
+        brisanje.
+      </p>
       <div className="mt-2 overflow-x-auto rounded-xl border border-zinc-200">
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-xs text-zinc-500">
@@ -332,14 +337,19 @@ function Zgodovina({ vrstice, now }: { vrstice: Raziskava[]; now: number }) {
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {vrstice.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className="group transition hover:bg-zinc-50">
                 <td className="whitespace-nowrap px-3 py-2 text-zinc-600">
-                  {new Date(r.zacetek ?? r.zahtevano_ob).toLocaleString("sl-SI", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  <Link
+                    href={`/avtonet/raziskava/${r.id}`}
+                    className="font-medium group-hover:text-accent"
+                  >
+                    {new Date(r.zacetek ?? r.zahtevano_ob).toLocaleString("sl-SI", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Link>
                 </td>
                 <td className="px-3 py-2">
                   <span

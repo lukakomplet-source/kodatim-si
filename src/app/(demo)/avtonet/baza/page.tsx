@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Database, ExternalLink, Search, TrendingDown } from "lucide-react";
+import { Database, Download, ExternalLink, Search, TrendingDown } from "lucide-react";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { eur } from "@/lib/avtonet/analiza";
@@ -108,15 +108,24 @@ export default async function BazaPage({
 
   return (
     <div>
-      <header>
-        <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-zinc-900 sm:text-3xl">
-          <Database className="h-6 w-6 text-accent" />
-          Baza oglasov
-        </h1>
-        <p className="mt-2 max-w-2xl text-[15px] text-zinc-500">
-          Vsi zbrani oglasi, kakršni so v bazi. Klik na vozilo odpre izvirni oglas na Avto.netu — tako
-          je vsako številko iz analize mogoče preveriti pri viru.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-zinc-900 sm:text-3xl">
+            <Database className="h-6 w-6 text-accent" />
+            Baza oglasov
+          </h1>
+          <p className="mt-2 max-w-2xl text-[15px] text-zinc-500">
+            Vsi zbrani oglasi, kakršni so v bazi. Klik na vozilo odpre izvirni oglas na Avto.netu — tako
+            je vsako številko iz analize mogoče preveriti pri viru.
+          </p>
+        </div>
+        <a
+          href="/api/avtonet/izvoz"
+          className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+        >
+          <Download className="h-4 w-4" />
+          Izvozi vse (CSV)
+        </a>
       </header>
 
       <form className="mt-6 flex flex-wrap items-end gap-2">

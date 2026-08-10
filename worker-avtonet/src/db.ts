@@ -35,7 +35,11 @@ export type UpsertOutcome = {
  * was this on the market" and "did the price drop before it vanished"
  * answerable in six months. Without it we would only ever know the present.
  */
-export async function upsertListings(db: Db, rows: ParsedRow[]): Promise<UpsertOutcome> {
+export async function upsertListings(
+  db: Db,
+  rows: ParsedRow[],
+  raziskavaId?: string | null
+): Promise<UpsertOutcome> {
   const out: UpsertOutcome = { novi: [], spremembeCene: [], skupaj: rows.length };
   if (rows.length === 0) return out;
 
@@ -103,6 +107,9 @@ export async function upsertListings(db: Db, rows: ParsedRow[]): Promise<UpsertO
 
     const { error: snapErr } = await db.from("avtonet_posnetki").insert({
       oglas_id: oglasId,
+      // Which sweep saw it, so a research can later show exactly what it
+      // collected instead of guessing from a time window.
+      raziskava_id: raziskavaId ?? null,
       cena_eur: row.cenaEur,
       km: row.km,
       status,

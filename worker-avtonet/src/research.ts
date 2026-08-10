@@ -197,7 +197,7 @@ export async function runResearch(
         });
       }
 
-      const outcome = await upsertListings(db, rows);
+      const outcome = await upsertListings(db, rows, opts.raziskavaId ?? null);
       p.strani_pregledanih += 1;
       p.oglasov_najdenih += rows.length;
       p.novih += outcome.novi.length;
