@@ -4,6 +4,7 @@ import { Database, Download, ExternalLink, Search, TrendingDown } from "lucide-r
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { eur } from "@/lib/avtonet/analiza";
+import { KakoDeluje } from "../KakoDeluje";
 
 /**
  * The whole collected database, one row per advert, with a link to each.
@@ -127,6 +128,81 @@ export default async function BazaPage({
           Izvozi vse (CSV)
         </a>
       </header>
+
+      <KakoDeluje
+        naslov="Kaj je v tej tabeli"
+        uvod={
+          <>
+            Ena vrstica = en oglas na Avto.netu, v stanju, kot smo ga videli ob zadnjem pregledu.
+            Ključ je ID oglasa pri viru, zato isti avto nikoli ne nastopa dvakrat, tudi če ga pregled
+            sreča v več rezinah trga.
+          </>
+        }
+        koraki={[
+          {
+            naslov: "Od kod so podatki v stolpcih",
+            besedilo: (
+              <>
+                Vozilo, letnik, kilometri, moč, gorivo, menjalnik in cena so s <strong>strani z
+                rezultati</strong> — te dobimo pri vsakem pregledu. Prodajalec, kraj, oprema,
+                karoserija in barva pa so s <strong>strani posameznega oglasa</strong>, ki jo odpremo
+                samo enkrat, ko oglas prvič srečamo.
+              </>
+            ),
+          },
+          {
+            naslov: "„Podrobnosti še ne zajete“",
+            besedilo: (
+              <>
+                Pomeni, da smo oglas videli na seznamu, njegove strani pa še nismo odprli. Osnovni
+                podatki so točni; oprema in prodajalec pridejo, ko na vrsto pride 2. faza pregleda.
+              </>
+            ),
+          },
+          {
+            naslov: "Prečrtana cena",
+            besedilo: (
+              <>
+                Pomeni, da je trenutna cena nižja od prve, ki smo jo videli. Prva videna cena se
+                nikoli ne prepiše, zato je padec razviden tudi čez več mesecev.
+              </>
+            ),
+          },
+          {
+            naslov: "Statusi",
+            besedilo: (
+              <>
+                <strong>Aktiven</strong> — bil je na oglasniku ob zadnjem pregledu.{" "}
+                <strong>Izginil</strong> — ob zadnjem popolnem pregledu ga ni bilo več.{" "}
+                <strong>Prodano</strong> — samo če je vir sam tako označil.
+              </>
+            ),
+          },
+          {
+            naslov: "Kam gre naprej",
+            besedilo: (
+              <>
+                Klik na vozilo odpre izvirni oglas pri viru — tako je vsako številko iz Analize trga
+                mogoče preveriti. „Izvozi vse (CSV)“ da isto tabelo za Excel.
+              </>
+            ),
+          },
+        ]}
+        omejitve={[
+          <>
+            <strong>Znamka se bere iz prve besede naslova.</strong> Zato sta „Land Rover“ in „Alfa
+            Romeo“ v tabeli kot <code>Land</code> in <code>Alfa</code>.
+          </>,
+          <>
+            <strong>Prazno polje pomeni, da podatka ni bilo</strong>, ne da je vrednost nič. Ničesar
+            ne ugibamo — če prodajalec česa ni objavil, ostane prazno.
+          </>,
+          <>
+            Tabela kaže <strong>zadnje znano stanje</strong>. Zgodovina cen je shranjena ločeno kot
+            posnetki ob vsakem pregledu in se vidi v Analizi trga.
+          </>,
+        ]}
+      />
 
       <form className="mt-6 flex flex-wrap items-end gap-2">
         <label className="min-w-[14rem] flex-1">

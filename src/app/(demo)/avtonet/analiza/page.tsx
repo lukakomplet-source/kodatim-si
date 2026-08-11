@@ -10,6 +10,7 @@ import {
   statistikaPoModelih,
   type ZakljucenOglas,
 } from "@/lib/avtonet/analiza";
+import { KakoDeluje } from "../KakoDeluje";
 
 /**
  * Analiza trga — how quickly cars leave the Slovenian advertising board.
@@ -188,6 +189,99 @@ function Ovoj({ children }: { children: React.ReactNode }) {
         Analiza zgodovine oglasov na slovenskem trgu. Merimo, koliko dni je oglas na oglasniku in kdaj
         z njega izgine — ne pa prodaje, ker vir te ne pove.
       </p>
+
+      <KakoDeluje
+        odprto
+        naslov="Kako nastane ta lestvica"
+        uvod={
+          <>
+            Vsak pregled trga zapiše, kateri oglasi so trenutno na Avto.netu. Ko oglas ob naslednjem
+            popolnem pregledu izgine, izračunamo, koliko dni je bil zgoraj. Lestvica je mediana teh
+            dni po modelih.
+          </>
+        }
+        koraki={[
+          {
+            naslov: "Kaj se zabeleži ob prvem srečanju",
+            besedilo: (
+              <>
+                Ko oglas prvič vidimo, shranimo <code>first_seen</code> (datum in ura) ter takratno
+                ceno kot <em>prvo videno ceno</em>. Ta dva podatka se pozneje nikoli ne prepišeta —
+                zato je iz njiju mogoče računati.
+              </>
+            ),
+          },
+          {
+            naslov: "Kaj se posodablja ob vsakem naslednjem pregledu",
+            besedilo: (
+              <>
+                Osveži se <code>last_seen</code>, trenutna cena in kilometri. Vsak pregled zapiše tudi
+                svoj posnetek oglasa, tako da je zgodovina cene shranjena in ne le zadnje stanje.
+              </>
+            ),
+          },
+          {
+            naslov: "Kdaj oglas velja za izginulega",
+            besedilo: (
+              <>
+                Samo takrat, ko je bil pregled <strong>popoln čez vse rezine trga</strong>. Takrat
+                oglasom, ki jih ni bilo več, zapišemo status <code>izginil</code> in čas te ugotovitve.
+                Če je bil pregled kjerkoli nepopoln, se ne označi nič.
+              </>
+            ),
+          },
+          {
+            naslov: "Kako se izračuna število dni",
+            besedilo: (
+              <>
+                Dnevi na oglasniku = čas izginotja − <code>first_seen</code>. V lestvico gredo samo
+                oglasi, ki so oglasnik že zapustili; aktivni oglasi na mediano ne vplivajo.
+              </>
+            ),
+          },
+          {
+            naslov: "Kaj vidiš v tabeli",
+            besedilo: (
+              <>
+                <strong>Mediana dni</strong> je sredinska vrednost (polovica oglasov je šla hitreje,
+                polovica počasneje) — ne povprečje, ker enega samega dolgega oglasa ne sme potegniti
+                navzgor. <strong>≤ 7 in ≤ 14 dni</strong> sta deleža oglasov, ki so izginili v tem
+                času. <strong>Vzorec</strong> je število zaključenih oglasov, na katerih to stoji.
+              </>
+            ),
+          },
+          {
+            naslov: "Kam gre naprej",
+            besedilo: (
+              <>
+                Klik na vrstico odpre model s porazdelitvijo, trendom po mesecih in cenami. Iz Baze
+                oglasov lahko vsak posamezen oglas odpreš pri viru in številko preveriš.
+              </>
+            ),
+          },
+        ]}
+        omejitve={[
+          <>
+            <strong>„Izginil&ldquo; ni „prodan&ldquo;.</strong> Oglas je lahko potekel ali ga je
+            prodajalec umaknil. Kot prodano šteje samo tisto, kar vir sam izrecno označi.
+          </>,
+          <>
+            <strong>Modeli se združujejo samo po znamki in modelu.</strong> BMW X5 za 20.000 € in za
+            70.000 € sta trenutno v istem povprečju — letnik, kilometri, cena in oprema pri
+            razvrščanju v skupine še niso upoštevani.
+          </>,
+          <>
+            <strong>Natančnost je odvisna od pogostosti pregledov.</strong> Zabeleži se čas, ko smo
+            izginotje <em>opazili</em>, ne čas, ko se je zgodilo. Ob treh pregledih dnevno je
+            ločljivost nekaj ur; če zbiralnik dva dni ne teče, bo oglas videti za toliko daljši.
+          </>,
+          <>
+            Prikazani so samo modeli z vsaj {MIN_VZOREC} zaključenimi oglasi. Pod tem pragom je
+            mediana šum, ki izgleda kot vpogled.
+          </>,
+        ]}
+      />
+
       {children}
     </div>
   );

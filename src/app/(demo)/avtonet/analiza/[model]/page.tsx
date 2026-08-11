@@ -11,6 +11,7 @@ import {
   type ZakljucenOglas,
 } from "@/lib/avtonet/analiza";
 import { GrafPorazdelitve, GrafTrenda } from "../Grafi";
+import { KakoDeluje } from "../../KakoDeluje";
 
 /**
  * One model's history on the board.
@@ -70,6 +71,78 @@ export default async function ModelPage({
       <p className="mt-1.5 text-sm text-zinc-500">
         Zadnjih {dni} dni · {vrstice.length} zaključenih oglasov
       </p>
+
+      <KakoDeluje
+        naslov="Kako brati te številke"
+        uvod={
+          <>
+            Vse na tej strani je izračunano iz oglasov tega modela, ki so v izbranem obdobju
+            <strong> zapustili oglasnik</strong>. Aktivni oglasi v izračun ne gredo — dokler je oglas
+            zgoraj, ne vemo, koliko časa bo tam.
+          </>
+        }
+        koraki={[
+          {
+            naslov: "Mediana časa na oglasu",
+            besedilo: (
+              <>
+                Sredinska vrednost: polovica oglasov je izginila hitreje, polovica počasneje.
+                Namenoma ne povprečje — en oglas, ki je stal pol leta, bi povprečje popačil.
+              </>
+            ),
+          },
+          {
+            naslov: "Izginilo v ≤ 7 dneh",
+            besedilo: (
+              <>
+                Delež oglasov tega modela, ki jih po sedmih dneh ni bilo več. Pove drugo stvar kot
+                mediana: model ima lahko visoko mediano in vseeno velik delež hitrih.
+              </>
+            ),
+          },
+          {
+            naslov: "Porazdelitev",
+            besedilo: (
+              <>
+                Koliko oglasov je bilo v katerem časovnem razredu. Če je porazdelitev razpotegnjena,
+                mediana sama ne pove dovolj — model se prodaja neenakomerno.
+              </>
+            ),
+          },
+          {
+            naslov: "Trend",
+            besedilo: (
+              <>
+                Mediana po mesecu, v katerem je oglas izginil. Za smiseln trend sta potrebna vsaj dva
+                meseca podatkov; pri enem se graf ne izriše.
+              </>
+            ),
+          },
+          {
+            naslov: "Cene",
+            besedilo: (
+              <>
+                „Prva videna cena“ je cena ob prvem srečanju, „zadnja znana“ pa ob zadnjem pregledu
+                pred izginotjem. Razlika pokaže, koliko se je pri tem modelu spuščalo.
+              </>
+            ),
+          },
+        ]}
+        omejitve={[
+          <>
+            <strong>Zadnja znana cena ni prodajna cena.</strong> Za koliko je bil avto res prodan,
+            vir ne objavi in tega ne vemo.
+          </>,
+          <>
+            <strong>Skupina je samo znamka + model.</strong> Različni letniki, motorizacije in
+            oprema so tu sešteti skupaj, zato je številka povprečje čez precej različne avte.
+          </>,
+          <>
+            Če je vzorec majhen, je to izrecno napisano nad številkami. Pod {MIN_VZOREC} zaključenimi
+            oglasi model tudi ne pride na glavno lestvico.
+          </>,
+        ]}
+      />
 
       {s.vzorec === 0 ? (
         <div className="mt-8 rounded-2xl border border-zinc-200 bg-white px-6 py-12 text-center">

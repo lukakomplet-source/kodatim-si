@@ -7,6 +7,7 @@ import { naslovVozila, povzetekFiltra, type Spremljanje } from "@/lib/avtonet/sp
 import { jeNov, najdiUjemanja, prodajalecNeznan } from "@/lib/avtonet/ujemanje";
 import { eur } from "@/lib/avtonet/analiza";
 import { OznaciVideno } from "./OznaciVideno";
+import { KakoDeluje } from "../../KakoDeluje";
 
 /**
  * The listings behind one spremljanje.
@@ -61,6 +62,58 @@ export default async function SpremljanjePage({ params }: { params: Promise<{ id
         </div>
         {novih > 0 && <OznaciVideno id={s.id} />}
       </header>
+
+      <KakoDeluje
+        naslov="Kaj je na tem seznamu"
+        uvod={
+          <>
+            Vsi <strong>trenutno aktivni</strong> oglasi, ki ustrezajo pogojem tega spremljanja.
+            Oglasi, ki so oglasnik že zapustili, se tu ne prikazujejo — ta seznam odgovarja na
+            vprašanje „kaj lahko zdaj kupim“.
+          </>
+        }
+        koraki={[
+          {
+            naslov: "Oznaka NOVO",
+            besedilo: (
+              <>
+                Oglas smo prvič videli po tem, ko si to spremljanje nazadnje odprl. Ni nujno, da je
+                bil oglas objavljen ravno takrat — je pa nov <em>za nas in zate</em>.
+              </>
+            ),
+          },
+          {
+            naslov: "Prečrtana cena",
+            besedilo: <>Trenutna cena je nižja od tiste, ki smo jo pri tem oglasu videli prvič.</>,
+          },
+          {
+            naslov: "Vrstica o prodajalcu",
+            besedilo: (
+              <>
+                „avtohiša“ ali „fizična oseba“ zapišemo le, če je bilo to razvidno s strani oglasa.
+                Sicer piše „prodajalec ni znan“ — kar pomeni, da še nismo odprli strani ali da podatka
+                ni bilo.
+              </>
+            ),
+          },
+          {
+            naslov: "Kam gre naprej",
+            besedilo: (
+              <>
+                Klik na oglas odpre izvirni oglas na Avto.netu. „Označi kot pregledano“ počisti značko
+                novih na prejšnji strani.
+              </>
+            ),
+          },
+        ]}
+        omejitve={[
+          <>
+            Seznam je posnetek zadnjega pregleda. Oglas je lahko medtem izginil, kot je lahko nov
+            oglas že objavljen, mi pa ga bomo videli šele ob naslednjem pregledu.
+          </>,
+          <>Prikazanih je največ 200 najnovejših zadetkov.</>,
+        ]}
+      />
 
       {s.prodajalec_filter !== "vsi" && neznanih > 0 && (
         <p className="mt-5 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">

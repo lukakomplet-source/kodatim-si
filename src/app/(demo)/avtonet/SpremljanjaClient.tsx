@@ -31,6 +31,7 @@ import {
   shraniSpremljanje,
   type SpremljanjeResult,
 } from "./spremljanja-actions";
+import { KakoDeluje } from "./KakoDeluje";
 
 /**
  * The watch list.
@@ -143,6 +144,84 @@ export function SpremljanjaClient({
           {napaka}
         </p>
       )}
+
+      <KakoDeluje
+        naslov="Kako deluje spremljanje"
+        uvod={
+          <>
+            Spremljanje je nabor pogojev. Ob vsakem pregledu trga preverimo, ali je prišel oglas, ki
+            jim ustreza, in ga označimo kot nov. Nič ne kupujemo in nič ne pošiljamo prodajalcu — samo
+            povemo ti.
+          </>
+        }
+        koraki={[
+          {
+            naslov: "Kaj pomenijo pogoji",
+            besedilo: (
+              <>
+                Prazno polje ne omejuje ničesar. Izpolnjena polja veljajo hkrati (vsi pogoji morajo
+                biti izpolnjeni). Pri letniku, kilometrih, moči in ceni delujeta obe meji; če vpišeš
+                samo eno, druga ostane odprta.
+              </>
+            ),
+          },
+          {
+            naslov: "Kdaj se preverja",
+            besedilo: (
+              <>
+                Ob vsakem pregledu trga — privzeto ob 5.00, 10.00 in 22.00, in vsakič, ko research
+                zaženeš ročno. Preverjanje se izvede <strong>takoj po pregledu seznama</strong>, ne
+                šele po zbiranju podrobnosti, da je obvestilo pravočasno.
+              </>
+            ),
+          },
+          {
+            naslov: "Kaj pomeni značka „N novih“",
+            besedilo: (
+              <>
+                Toliko ustreznih oglasov se je pojavilo, odkar si to spremljanje nazadnje odprl.
+                Šteje se datum, ko smo oglas <em>prvič videli</em>. Značko počistiš z gumbom „Označi
+                kot pregledano“ na seznamu oglasov.
+              </>
+            ),
+          },
+          {
+            naslov: "Obvestila po e-pošti",
+            besedilo: (
+              <>
+                Če vpišeš e-naslov, dobiš sporočilo z novimi zadetki. Isti oglas se pri istem
+                spremljanju pošlje samo enkrat, tudi če se pregled ponovi.
+              </>
+            ),
+          },
+          {
+            naslov: "Kam gre naprej",
+            besedilo: (
+              <>
+                „Prikaži oglase“ odpre vse trenutne zadetke; novi so označeni z <strong>NOVO</strong>.
+                Klik na oglas te odpelje na izvirni oglas na Avto.netu.
+              </>
+            ),
+          },
+        ]}
+        omejitve={[
+          <>
+            <strong>Filter prodajalca je delno slep.</strong> Vrsta prodajalca ni na seznamu oglasov —
+            preberemo jo šele na strani posameznega oglasa in tudi tam ne vedno. Oglasov z neznanim
+            prodajalcem zato ne izpustimo, ampak jih označimo.
+          </>,
+          <>
+            <strong>Model se išče po besedilu naslova.</strong> Če vpišeš „M340i“, iščemo ta niz v
+            nazivu oglasa — prodajalec, ki modela ni napisal enako, ne bo najden.
+          </>,
+          <>
+            Spremljanje najde samo oglase, ki so bili <strong>zajeti v pregledu</strong>. Če je
+            zbiralnik ugasnjen, ne najde ničesar novega — na vrhu strani vidiš, kdaj je bil zadnji
+            pregled.
+          </>,
+        ]}
+      />
+
 
       {obrazec.open && (
         <Obrazec
