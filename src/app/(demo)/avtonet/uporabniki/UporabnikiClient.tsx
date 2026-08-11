@@ -15,6 +15,7 @@ import {
 import {
   dodajUporabnika,
   odstraniUporabnika,
+  posljiVabiloZnova,
   preklopiDostop,
   spremeniVlogo,
   type UporabnikResult,
@@ -165,6 +166,16 @@ export function UporabnikiClient({
                   <option value="stranka">Stranka</option>
                   <option value="admin">Skrbnik</option>
                 </select>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  title="Pošlje e-pošto s povezavo za nastavitev gesla in prijavo"
+                  onClick={() => uporabi(() => posljiVabiloZnova(v.id))}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  Pošlji povezavo za prijavo
+                </button>
                 <button
                   type="button"
                   disabled={isPending}

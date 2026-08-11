@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 import { povezavaZaVabilo } from "@/lib/javniNaslov";
@@ -121,6 +122,79 @@ export async function preklopiDostop(id: string, aktiven: boolean): Promise<Upor
 
   revalidatePath("/avtonet/uporabniki");
   return { success: aktiven ? "Dostop vrnjen." : "Dostop odvzet." };
+}
+
+/**
+ * Sends the person a fresh link to get in.
+ *
+ * Two things make this more than a one-liner.
+ *
+ * `inviteUserByEmail` refuses an address that already exists, which is exactly
+ * the case here — the account was created by the first invite. The working path
+ * for "let them in again" is a password-reset mail, which for someone who never
+ * set one is simply a set-your-password link.
+ *
+ * And it checks BEFORE sending. Supabase validates `redirectTo` against its own
+ * allow-list and silently substitutes its Site URL when the address is not
+ * listed; that is how an invited user ended up with a link to localhost. An
+ * invite is single-use, so sending a second broken one costs the person another
+ * failed attempt. `generateLink` renders the same URL without emailing anybody,
+ * so the redirect can be read first and the send refused with an actionable
+ * message instead.
+ */
+export async function posljiVabiloZnova(id: string): Promise<UporabnikResult> {
+  const kdo = await zahtevajAdmina();
+  if ("napaka" in kdo) return { error: kdo.napaka };
+
+  const admin = createAdminClient();
+
+  const { data: vrstica } = await admin
+    .from("avtonet_uporabniki")
+    .select("uporabnik, profiles:uporabnik (email)")
+    .eq("id", id)
+    .maybeSingle();
+
+  const email = (vrstica as { profiles: { email: string | null } | null } | null)?.profiles?.email;
+  if (!email) return { error: "Za tega uporabnika ni znanega e-naslova." };
+
+  const cilj = povezavaZaVabilo("/nastavi-geslo");
+
+  // Dry run: what URL would the mail actually carry?
+  const { data: preizkus, error: napakaPreizkusa } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: cilj },
+  });
+  if (napakaPreizkusa) {
+    return { error: `Povezave ni bilo mogoče pripraviti: ${napakaPreizkusa.message}` };
+  }
+
+  const povezava = preizkus?.properties?.action_link ?? "";
+  const kamVodi = (() => {
+    try {
+      return new URL(povezava).searchParams.get("redirect_to") ?? "";
+    } catch {
+      return "";
+    }
+  })();
+
+  if (/localhost|127\.0\.0\.1/.test(kamVodi)) {
+    return {
+      error:
+        "Nisem poslal — Supabase bi povezavo še vedno preusmeril na localhost, ki je prejemnikov lasten računalnik. V Supabase → Authentication → URL Configuration nastavite Site URL na https://www.kodatim.si in med Redirect URLs dodajte https://www.kodatim.si/** . Nato poskusite znova.",
+    };
+  }
+
+  // Config is sound — now actually send.
+  const anon = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false } }
+  );
+  const { error } = await anon.auth.resetPasswordForEmail(email, { redirectTo: cilj });
+  if (error) return { error: `Pošiljanje ni uspelo: ${error.message}` };
+
+  return { success: `Povezava za prijavo poslana na ${email}.` };
 }
 
 /**
