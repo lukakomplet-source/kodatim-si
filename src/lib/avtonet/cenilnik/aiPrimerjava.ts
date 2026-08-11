@@ -1,7 +1,7 @@
 import "server-only";
 import { chatJSON } from "@/lib/openai";
 import { oznakaZnacilke, opisVozila, type Vozilo } from "./vozilo";
-import type { Cenitev, Primerljiv } from "./cenitev";
+import { skupnaPodobnost, type Cenitev, type Primerljiv } from "./cenitev";
 
 /**
  * Where AI is allowed to touch the valuation — and where it is not.
@@ -46,67 +46,82 @@ PRAVILA:
  * Re-ranks the shortlist. The algorithm already did the heavy filtering; this
  * only corrects the cases where wording hides a real match (or a real
  * difference) that string comparison cannot see.
+ *
+ * The default covers the WHOLE shortlist (which cenitev caps at 40), and that
+ * is not generosity — it is consistency. The first live run judged only the
+ * top 20, and the un-judged bottom half stayed in the statistics with their
+ * algorithmic scores: an RS5 and an A7 that the AI would have thrown out kept
+ * feeding the quartiles. Everything that counts toward the numbers gets
+ * judged, or the judging is theatre.
  */
 export async function aiPreveriUjemanje(
   cilj: Vozilo,
   primerljivi: Primerljiv[],
-  najvec = 20
+  najvec = 40
 ): Promise<Primerljiv[]> {
   const podmnozica = primerljivi.slice(0, najvec);
   if (podmnozica.length === 0) return primerljivi;
 
-  const kandidati: AiKandidat[] = podmnozica.map((p, i) => ({
-    i,
-    naziv: [p.znamka, p.model, p.verzija].filter(Boolean).join(" ").slice(0, 90),
-    letnik: p.letnik,
-    km: p.km,
-    kw: p.kw,
-    oprema: p.znacilke.slice(0, 14).map(oznakaZnacilke).join(", "),
-  }));
+  // Judged in chunks of 10, in parallel — not one call with 40. Observed live:
+  // given all 40 at once, the model started sliding ("Oba sta Audi A1 30 TFSI"
+  // for an A1 candidate against an A3 target — it forgot the target mid-list)
+  // and dropped true matches it had accepted in a smaller batch. Small chunks
+  // keep the target in focus, and a failed chunk costs its ten candidates their
+  // commentary, not the whole pass.
+  const VELIKOST = 10;
+  const kosi: { odmik: number; kandidati: AiKandidat[] }[] = [];
+  for (let od = 0; od < podmnozica.length; od += VELIKOST) {
+    kosi.push({
+      odmik: od,
+      kandidati: podmnozica.slice(od, od + VELIKOST).map((p, i) => ({
+        i: od + i,
+        naziv: [p.znamka, p.model, p.verzija].filter(Boolean).join(" ").slice(0, 90),
+        letnik: p.letnik,
+        km: p.km,
+        kw: p.kw,
+        oprema: p.znacilke.slice(0, 14).map(oznakaZnacilke).join(", "),
+      })),
+    });
+  }
 
-  const uporabnik = [
+  const glavaCilja = [
     `CILJNO VOZILO: ${opisVozila(cilj)}`,
     `Oprema cilja: ${cilj.znacilke.map(oznakaZnacilke).join(", ") || "ni podatka"}`,
-    "",
-    "KANDIDATI:",
-    JSON.stringify(kandidati),
   ].join("\n");
 
-  try {
-    const odgovor = await chatJSON<{ ocene?: { i: number; podobnost: number; razlog: string }[] }>(
-      SISTEM_UJEMANJE,
-      uporabnik,
-      { temperature: 0 }
-    );
-
-    const poIndeksu = new Map<number, { podobnost: number; razlog: string }>();
-    for (const o of odgovor.ocene ?? []) {
-      if (typeof o?.i === "number" && Number.isFinite(o.podobnost)) {
-        poIndeksu.set(o.i, {
-          podobnost: Math.max(0, Math.min(100, Math.round(o.podobnost))),
-          razlog: typeof o.razlog === "string" ? o.razlog.slice(0, 200) : "",
-        });
+  const poIndeksu = new Map<number, { podobnost: number; razlog: string }>();
+  await Promise.all(
+    kosi.map(async (kos) => {
+      try {
+        const odgovor = await chatJSON<{ ocene?: { i: number; podobnost: number; razlog: string }[] }>(
+          SISTEM_UJEMANJE,
+          `${glavaCilja}\n\nKANDIDATI:\n${JSON.stringify(kos.kandidati)}`,
+          { temperature: 0 }
+        );
+        for (const o of odgovor.ocene ?? []) {
+          if (typeof o?.i === "number" && Number.isFinite(o.podobnost)) {
+            poIndeksu.set(o.i, {
+              podobnost: Math.max(0, Math.min(100, Math.round(o.podobnost))),
+              razlog: typeof o.razlog === "string" ? o.razlog.slice(0, 200) : "",
+            });
+          }
+        }
+      } catch {
+        // This chunk keeps its algorithmic scores; the others still count.
       }
-    }
+    })
+  );
 
-    const posodobljeni = primerljivi.map((p, i) => {
-      const ai = poIndeksu.get(i);
-      if (!ai) return p;
-      return { ...p, aiPodobnost: ai.podobnost, aiRazlog: ai.razlog || null };
-    });
+  const posodobljeni = primerljivi.map((p, i) => {
+    const ai = poIndeksu.get(i);
+    if (!ai) return p;
+    return { ...p, aiPodobnost: ai.podobnost, aiRazlog: ai.razlog || null };
+  });
 
-    // The two opinions are averaged rather than the AI's replacing ours: the
-    // algorithmic score is grounded in measured fields, the AI's in wording.
-    // Letting either one alone decide throws away what the other knows.
-    return [...posodobljeni].sort((a, b) => zdruzena(b) - zdruzena(a));
-  } catch {
-    // No commentary is fine; a broken valuation is not.
-    return primerljivi;
-  }
-}
-
-function zdruzena(p: Primerljiv): number {
-  return p.aiPodobnost === null ? p.podobnost : Math.round((p.podobnost + p.aiPodobnost) / 2);
+  // The two opinions are averaged rather than the AI's replacing ours: the
+  // algorithmic score is grounded in measured fields, the AI's in wording.
+  // Letting either one alone decide throws away what the other knows.
+  return [...posodobljeni].sort((a, b) => skupnaPodobnost(b) - skupnaPodobnost(a));
 }
 
 const SISTEM_RAZLAGA = `Si slovenski avtomobilski analitik. Razložiš že izračunano oceno vrednosti.
@@ -116,9 +131,12 @@ PRAVILA — ta so absolutna:
 1. NE izračunavaj in NE spreminjaj nobene cene. Vse številke so ti dane; uporabi jih točno take.
 2. Ne trdi, da je bilo vozilo prodano. Oglas, ki je izginil, ni dokaz o prodaji.
    Govori o "času na oglasniku" in "zadnji ceni pred izginotjem".
-3. "povzetek" naj bo 2–3 povedi, v slovenščini, za trgovca z avtomobili.
-4. "dejavniki" so 3–5 kratkih alinej, ki povedo, KAJ je vplivalo na oceno.
-5. "opozorilo" izpolni samo, če je vzorec majhen ali podatki šibki; sicer null.`;
+3. CILJNO vozilo NI oglas iz naše baze in NIMA statusa — ne pripoveduj, ali je
+   aktivno ali izginilo. Statusi obstajajo samo za primerjave.
+4. Ne opisuj ničesar, česar ni v danih podatkih. Prazno polje pomeni "ni podatka".
+5. "povzetek" naj bo 2–3 povedi, v slovenščini, za trgovca z avtomobili.
+6. "dejavniki" so 3–5 kratkih alinej, ki povedo, KAJ je vplivalo na oceno.
+7. "opozorilo" izpolni samo, če je vzorec majhen ali podatki šibki; sicer null.`;
 
 export type AiRazlaga = {
   povzetek: string;

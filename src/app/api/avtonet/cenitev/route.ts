@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 import { preberiIzBesedila, preberiIzPovezave, preberiIzSlik } from "@/lib/avtonet/cenilnik/branje";
-import { oceniVozilo } from "@/lib/avtonet/cenilnik/cenitev";
+import { oceniVozilo, preracunajPoPreverbi } from "@/lib/avtonet/cenilnik/cenitev";
 import { aiPreveriUjemanje, aiRazlozi } from "@/lib/avtonet/cenilnik/aiPrimerjava";
 import {
   normalizirajGorivo,
@@ -121,11 +121,17 @@ export async function POST(request: NextRequest) {
     }
 
     // ---- 2. Database + algorithm ---------------------------------------
-    const cenitev = await oceniVozilo(branje.vozilo);
+    let cenitev = await oceniVozilo(branje.vozilo);
 
     // ---- 3. AI, on the short list only ---------------------------------
+    // After the AI pass every figure is RECOMPUTED from the survivors. The
+    // first live test showed why: the AI correctly threw out other models, but
+    // the estimate had already been fixed from the polluted set and came out
+    // thousands too high. A judgment that arrives after the verdict is not a
+    // judgment.
     if (!telo.brezAi && cenitev.primerljivi.length > 0) {
       cenitev.primerljivi = await aiPreveriUjemanje(branje.vozilo, cenitev.primerljivi);
+      cenitev = preracunajPoPreverbi(cenitev);
     }
     const razlaga = telo.brezAi ? null : await aiRazlozi(cenitev);
 

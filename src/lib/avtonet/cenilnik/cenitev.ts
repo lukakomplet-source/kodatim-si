@@ -184,9 +184,23 @@ function utezenaMediana(tocke: { vrednost: number; teza: number }[]): number | n
   return urejene[urejene.length - 1].vrednost;
 }
 
+/**
+ * One number for "how comparable", combining both judges when both have spoken:
+ * the algorithm's score is grounded in measured fields, the AI's in wording.
+ */
+export function skupnaPodobnost(p: Primerljiv): number {
+  return p.aiPodobnost === null ? p.podobnost : Math.round((p.podobnost + p.aiPodobnost) / 2);
+}
+
+type MetaIskanja = {
+  pregledanih: number;
+  oknoLetnika: number | null;
+  brezModela: boolean;
+  opomba: string;
+};
+
 export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): Promise<Cenitev> {
   const iskanje = await najdiKandidate(cilj);
-  const opozorila: string[] = [];
 
   const ocenjeni = iskanje.vrstice
     .map((r: KandidatVrstica) => {
@@ -222,6 +236,53 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
     .sort((a, b) => b.podobnost - a.podobnost)
     .slice(0, NAJVEC_PRIMERLJIVIH);
 
+  return sestaviCenitev(cilj, ocenjeni, {
+    pregledanih: iskanje.vrstice.length,
+    oknoLetnika: iskanje.oknoLetnika,
+    brezModela: iskanje.brezModela,
+    opomba: iskanje.opomba,
+  });
+}
+
+/**
+ * Recomputes every figure after the AI similarity pass.
+ *
+ * This exists because of a real mis-valuation, not hygiene: on the first live
+ * mobile.de test the statistics were computed once, before the AI pass. The AI
+ * then correctly threw out the A4s, A5s, Q3s and stronger engines ("To je Audi
+ * A4, ne A3" — 0 %), but the estimate had already been fixed from the polluted
+ * set, and came out ~4,000 € above what the true peers ask. Judging and THEN
+ * ignoring the judgment is worse than not judging at all — so after the AI
+ * speaks, everything is recomputed from the survivors.
+ */
+export function preracunajPoPreverbi(cenitev: Cenitev): Cenitev {
+  const preracunano = sestaviCenitev(cenitev.cilj, cenitev.primerljivi, {
+    pregledanih: cenitev.pregledanih,
+    oknoLetnika: cenitev.oknoLetnika,
+    brezModela: cenitev.brezModela,
+    opomba: cenitev.opomba,
+  });
+
+  const izlocil = cenitev.primerljivi.length - preracunano.primerljivi.length;
+  if (izlocil > 0) {
+    preracunano.opozorila.push(
+      `AI preverba je iz izračuna izločila ${izlocil} vozil, ki so drug model ali motor (ostanejo vidna na dnu seznama).`
+    );
+  }
+  return preracunano;
+}
+
+function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIskanja): Cenitev {
+  const opozorila: string[] = [];
+
+  // The numbers come only from cars still comparable under the COMBINED score —
+  // after the AI pass, an algorithmically-similar A4 with AI 0 % falls out here.
+  // The full list is kept for the screen, sorted best-first, so the user can
+  // see what was excluded and why.
+  const ocenjeni = kandidatiVsi
+    .filter((p) => skupnaPodobnost(p) >= PRAG_PODOBNOSTI)
+    .sort((a, b) => skupnaPodobnost(b) - skupnaPodobnost(a));
+
   // Current market: what comparable cars are asking right now.
   const aktivniZCeno = ocenjeni.filter((p) => p.status === "aktiven" && p.cena !== null && p.cena > 0);
   const aktivni = cenovnaStatistika(aktivniZCeno.map((p) => p.cena as number));
@@ -237,7 +298,10 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
   // The estimate is built on the live market, because that is what a seller
   // will actually be competing against today.
   const osnova = utezenaMediana(
-    aktivniZCeno.map((p) => ({ vrednost: p.cena as number, teza: Math.max(1, p.podobnost - PRAG_PODOBNOSTI) }))
+    aktivniZCeno.map((p) => ({
+      vrednost: p.cena as number,
+      teza: Math.max(1, skupnaPodobnost(p) - PRAG_PODOBNOSTI),
+    }))
   );
 
   const popravek =
@@ -268,7 +332,7 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
   })();
 
   const povprecnaPodobnost =
-    ocenjeni.length > 0 ? ocenjeni.reduce((a, p) => a + p.podobnost, 0) / ocenjeni.length : 0;
+    ocenjeni.length > 0 ? ocenjeni.reduce((a, p) => a + skupnaPodobnost(p), 0) / ocenjeni.length : 0;
 
   if (aktivniZCeno.length === 0) {
     opozorila.push(
@@ -279,7 +343,7 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
       `Ocena temelji na samo ${aktivniZCeno.length} primerljivih vozilih z objavljeno ceno — vzemite jo kot grob obseg, ne kot točno številko.`
     );
   }
-  if (iskanje.brezModela) {
+  if (meta.brezModela) {
     opozorila.push("Modela ni bilo mogoče uskladiti z bazo, zato so primerjave iz iste znamke, a drugih modelov.");
   }
   if (cas.vzorec === 0) {
@@ -313,11 +377,13 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
     popravekKm: popravek
       ? { eur: popravek.eur, medianaKmPrimerljivih: popravek.medianaKm, razlaga: popravek.razlaga }
       : null,
-    primerljivi: ocenjeni,
-    pregledanih: iskanje.vrstice.length,
-    oknoLetnika: iskanje.oknoLetnika,
-    brezModela: iskanje.brezModela,
+    // The FULL list, excluded rows included, sorted best-first — the screen
+    // shows what was thrown out and why, the numbers above ignore it.
+    primerljivi: [...kandidatiVsi].sort((a, b) => skupnaPodobnost(b) - skupnaPodobnost(a)),
+    pregledanih: meta.pregledanih,
+    oknoLetnika: meta.oknoLetnika,
+    brezModela: meta.brezModela,
     opozorila,
-    opomba: iskanje.opomba,
+    opomba: meta.opomba,
   };
 }
