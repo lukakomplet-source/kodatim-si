@@ -15,7 +15,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-const STOLPCI = [
+/** Columns that exist before migration_avtonet_detajl_v2.sql. */
+const STOLPCI_OSNOVA = [
   "avtonet_id",
   "naziv",
   "znamka",
@@ -37,6 +38,33 @@ const STOLPCI = [
   "first_seen",
   "last_seen",
   "url",
+] as const;
+
+/**
+ * Everything, once the detail pass has somewhere to put it.
+ *
+ * The export exists to make the data usable outside the app, and without these
+ * the file cannot answer the question the detail pass was added for — which
+ * configuration sells fastest.
+ */
+const STOLPCI = [
+  ...STOLPCI_OSNOVA,
+  "verzija",
+  "pogon",
+  "pogonski_sklop",
+  "notranjost",
+  "stevilo_vrat",
+  "stevilo_sedezev",
+  "lastnikov",
+  "leto_proizvodnje",
+  "emisijski_razred",
+  "co2_g_km",
+  "poraba_l_100km",
+  "oprema_znacilke",
+  "oprema",
+  "opis",
+  "status_spremenjen",
+  "detajl_zajet",
 ] as const;
 
 /**
@@ -80,16 +108,41 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  let q = db.from("avtonet_oglasi").select(STOLPCI.join(", ")).order("first_seen", { ascending: false });
-  if (idji) q = q.in("id", idji);
+  // PostgREST caps a response at its own max-rows (1,000 by default) no matter
+  // what `.limit()` asks for, so a single select silently truncated the export:
+  // the "whole database" file arrived with exactly 1,000 of 53,717 adverts and
+  // nothing said so. Paging with .range() is the only way to get past it.
+  const STRAN = 1000;
+  const vrstice: Record<string, unknown>[] = [];
+  // Falls back to the pre-v2 column set if the migration has not been run, so
+  // the export keeps working instead of returning a 500 nobody can interpret.
+  let stolpci: readonly string[] = STOLPCI;
 
-  const { data, error } = await q.limit(50_000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  for (let od = 0; od < 200_000; od += STRAN) {
+    const beri = async () => {
+      let q = db
+        .from("avtonet_oglasi")
+        .select(stolpci.join(", "))
+        .order("first_seen", { ascending: false })
+        .range(od, od + STRAN - 1);
+      if (idji) q = q.in("id", idji);
+      return q;
+    };
 
-  const vrstice = (data ?? []) as unknown as Record<string, unknown>[];
+    let { data, error } = await beri();
+    if (error?.code === "42703" && stolpci !== STOLPCI_OSNOVA) {
+      stolpci = STOLPCI_OSNOVA;
+      ({ data, error } = await beri());
+    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const kos = (data ?? []) as unknown as Record<string, unknown>[];
+    vrstice.push(...kos);
+    if (kos.length < STRAN) break;
+  }
   const csv = [
-    STOLPCI.join(";"),
-    ...vrstice.map((v) => STOLPCI.map((s) => polje(v[s])).join(";")),
+    stolpci.join(";"),
+    ...vrstice.map((v) => stolpci.map((s) => polje(v[s])).join(";")),
   ].join("\r\n");
 
   const ime = raziskava ? `sbn-auto-raziskava-${raziskava.slice(0, 8)}.csv` : "sbn-auto-baza.csv";

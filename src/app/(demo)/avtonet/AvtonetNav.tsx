@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  Calculator,
   Database,
   Lightbulb,
   LineChart,
@@ -29,7 +30,14 @@ const JAVNO = [{ href: "/avtonet/analiza", label: "Analiza trga", icon: LineChar
 
 // Nastavitve is deliberately absent: account controls sit top right in the
 // header, so the tabs hold only the places you actually work in.
-const UPORABNIK = [{ href: "/avtonet", label: "Moja spremljanja", icon: Bell }];
+//
+// Oceni vozilo leads, because it is the question the product exists to answer
+// ("what is this car worth here") — the watches and the market analysis are the
+// data underneath it.
+const UPORABNIK = [
+  { href: "/avtonet/cenilnik", label: "Oceni vozilo", icon: Calculator },
+  { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
+];
 
 /** Same page, different name: for a user it is a suggestion box, for an admin an editor. */
 const PREDLOGI = { href: "/avtonet/urejanje", label: "Predlogi", icon: Lightbulb };
