@@ -1,6 +1,7 @@
 import { isFirecrawlUnavailable } from "@/lib/firecrawl";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { providerFetch } from "./httpClient";
+import { msUntilNextSlot } from "./rateLimiter";
 import { searchForWebsite } from "./websiteSearch";
 import { ajpesProvider, ajpesSkipReason } from "./providers/ajpes";
 import { companyWallProvider, PEOPLE_SEPARATOR } from "./providers/companywall";
@@ -253,6 +254,8 @@ export type QuickCompleteResult = {
   source: string;
   /** Set only when nothing at all could be found — the UI shows it in amber, never red. */
   warning?: string;
+  /** CompanyWall was skipped this pass because it was throttled; re-run later to fill its fields. */
+  companyWallDeferred?: boolean;
 };
 
 /** A single readable line about what the scrape is doing right now. */
@@ -313,6 +316,10 @@ export async function quickComplete(
   const providerNotes: { label: string; note: string }[] = [];
   let website: string | null = null;
   let description: string | null = null;
+  // Set when CompanyWall was skipped because it was throttled — the company's
+  // CompanyWall-only fields (financials, credit rating, extra people) are simply
+  // not filled this pass and a later run will pick them up.
+  let companyWallDeferred = false;
 
   // Mutable working lead so each provider sees what the previous one resolved
   // (CompanyWall's official name is what lets Bizi build the right URL).
@@ -435,28 +442,47 @@ export async function quickComplete(
     if (ajpesResult) absorb(ajpesProvider, ajpesResult);
   }
 
-  const haveContact = () => Boolean(fields.email && fields.phone);
+  // Bizi first, CompanyWall on a leash.
+  //
+  // CompanyWall was the whole bottleneck: it rate-limits by volume, answers a
+  // burst with Retry-After: 60, and once backed off costs ~200 s per company —
+  // and because the company was not "done" until it finished, that 200 s was
+  // paid even when Bizi already had the contact in under a second. So Bizi (fast
+  // and measured clean) runs first, and CompanyWall is skipped for THIS company
+  // whenever its next slot is more than a few seconds away. Skipped companies
+  // are flagged; re-running the scrape later fills their CompanyWall fields once
+  // the limiter has recovered. Nothing is lost, the bulk goes fast.
+  //
+  // Absorb order stays CompanyWall-before-Bizi regardless of run order, so
+  // CompanyWall keeps its authority on the fields both publish when it does run.
+  const cwCap = Number(process.env.COMPANYWALL_MAX_WAIT_MS ?? 8_000);
+  const cwWait = msUntilNextSlot("companywall");
+  let companyWallResult: PublicProviderResult | null = null;
 
-  if (contactsOnly) {
-    // CompanyWall is the main contact source; Bizi runs only to fill a gap it
-    // left. Running them in parallel would spend Bizi's request even when
-    // CompanyWall already had both fields.
-    const companyWallResult = await runProvider(companyWallProvider);
-    if (companyWallResult) absorb(companyWallProvider, companyWallResult);
-    if (!haveContact()) {
-      const biziResult = await runProvider(biziProvider);
-      if (biziResult) absorb(biziProvider, biziResult);
-    } else {
-      report(biziProvider.label, "preskočeno — kontakt že najden", "info");
-    }
+  const biziResult = await runProvider(biziProvider);
+
+  const preskociZaKontakt = contactsOnly && (() => {
+    // In contacts-only mode, a full contact from Bizi means CompanyWall has
+    // nothing left to add — don't spend it. Check against Bizi's result, since
+    // it is not absorbed yet.
+    const biziEmail = biziResult?.fields?.email?.value;
+    const biziPhone = biziResult?.fields?.phone?.value;
+    return Boolean((fields.email || biziEmail) && (fields.phone || biziPhone));
+  })();
+
+  if (preskociZaKontakt) {
+    report(companyWallProvider.label, "preskočeno — kontakt že najden (Bizi)", "info");
+  } else if (cwWait > cwCap) {
+    companyWallDeferred = true;
+    const note = `preskočeno za zdaj — vir je trenutno omejen (naslednji termin čez ~${Math.round(cwWait / 1000)} s). Podjetje bo dopolnjeno ob naslednjem krogu.`;
+    providerNotes.push({ label: companyWallProvider.label, note });
+    report(companyWallProvider.label, note, "info");
   } else {
-    const [companyWallResult, biziResult] = await Promise.all([
-      runProvider(companyWallProvider),
-      runProvider(biziProvider),
-    ]);
-    if (companyWallResult) absorb(companyWallProvider, companyWallResult);
-    if (biziResult) absorb(biziProvider, biziResult);
+    companyWallResult = await runProvider(companyWallProvider);
   }
+
+  if (companyWallResult) absorb(companyWallProvider, companyWallResult);
+  if (biziResult) absorb(biziProvider, biziResult);
 
   const bankrupt = isBankrupt(fields.company_status);
   let websiteNote = website ? "objavljena v registru." : "";
@@ -610,5 +636,6 @@ export async function quickComplete(
     bankrupt,
     description: composeDescription(fields, description, siteDescription, website, websiteNote) ?? description,
     source: providerNotes.map((p) => p.label).join(" + "),
+    companyWallDeferred,
   };
 }

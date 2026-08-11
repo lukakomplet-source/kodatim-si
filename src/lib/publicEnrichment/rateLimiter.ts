@@ -158,6 +158,27 @@ function bucketFor(provider: ProviderId, url?: string, proxyId?: string): string
   return proxyId ? `${base}@${proxyId}` : base;
 }
 
+/**
+ * How long until this provider's next slot is free, right now, in ms.
+ *
+ * Measured as time-until-due, not the steady interval, and that distinction is
+ * load-bearing. CompanyWall answers a burst with `Retry-After: 60`, which sends
+ * the interval to 60 s at once. A caller that skipped on the interval alone
+ * would skip forever — with nothing hitting CompanyWall there would be no
+ * successes to recover from, and it would never come back down. Time-until-due
+ * instead falls to zero as the interval elapses, so exactly one request per
+ * interval still gets through: enough to let the provider recover (or repeat its
+ * Retry-After), while no single company ever waits the full 60 s on it.
+ *
+ * It ignores others already queued, which is fine precisely because callers use
+ * this to AVOID queueing behind a throttled provider — so the queue stays short
+ * and the estimate stays close.
+ */
+export function msUntilNextSlot(provider: ProviderId, url?: string, proxyId?: string): number {
+  const s = stateFor(bucketFor(provider, url, proxyId), provider);
+  return Math.max(0, s.lastRequestAt + s.intervalMs - Date.now());
+}
+
 export async function acquireSlot(provider: ProviderId, url?: string, proxyId?: string): Promise<void> {
   const s = stateFor(bucketFor(provider, url, proxyId), provider);
   const mine = s.queueTail.then(async () => {
