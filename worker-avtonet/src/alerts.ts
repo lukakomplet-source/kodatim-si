@@ -29,7 +29,51 @@ export type Iskanje = {
   prodajalec_filter: "vsi" | "dealer" | "zasebnik" | null;
   samo_dealerji: boolean;
   email_obvestila: string | null;
+  /** Who created the search — the link to their account-level settings. */
+  created_by?: string | null;
 };
+
+/**
+ * Where a search's notifications go.
+ *
+ * Three places are consulted, most specific first: an address typed into this
+ * particular search, then the one the owner set under Nastavitve, then the
+ * address they sign in with. The point is that setting it once in Nastavitve is
+ * enough — a person should not have to repeat their email on every watch they
+ * create — while a single watch can still be pointed somewhere else.
+ *
+ * Never throws: a search whose owner cannot be resolved simply has no recipient,
+ * and the sweep carries on.
+ */
+export async function prejemnik(
+  db: Db,
+  iskanje: Iskanje
+): Promise<{ email: string | null; vir: "spremljanje" | "nastavitve" | "prijava" | "ni" }> {
+  if (iskanje.email_obvestila) return { email: iskanje.email_obvestila, vir: "spremljanje" };
+  if (!iskanje.created_by) return { email: null, vir: "ni" };
+
+  try {
+    const { data: vpis } = await db
+      .from("avtonet_uporabniki")
+      .select("obvestila_email")
+      .eq("uporabnik", iskanje.created_by)
+      .maybeSingle();
+    const nastavljen = (vpis as { obvestila_email: string | null } | null)?.obvestila_email;
+    if (nastavljen) return { email: nastavljen, vir: "nastavitve" };
+
+    const { data: profil } = await db
+      .from("profiles")
+      .select("email")
+      .eq("id", iskanje.created_by)
+      .maybeSingle();
+    const prijavni = (profil as { email: string | null } | null)?.email;
+    if (prijavni) return { email: prijavni, vir: "prijava" };
+  } catch {
+    // Treated as "no recipient": a lookup failure must not stop the sweep.
+  }
+
+  return { email: null, vir: "ni" };
+}
 
 /** The seller condition, tolerating rows written before the column existed. */
 function prodajalecPogoj(iskanje: Iskanje): "vsi" | "dealer" | "zasebnik" {
@@ -154,10 +198,9 @@ ${
 }
 
 /** Never throws: an email problem must not fail a sweep that collected fine. */
-async function sendAlert(iskanje: Iskanje, zadetki: Zadetek[]): Promise<boolean> {
+async function sendAlert(iskanje: Iskanje, zadetki: Zadetek[], to: string | null): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.REPORT_EMAIL_FROM;
-  const to = iskanje.email_obvestila;
   if (!key || !from || !to) return false;
 
   try {
@@ -202,16 +245,19 @@ export async function runSavedSearches(db: Db): Promise<AlertOutcome[]> {
       zadetki.map((z) => ({ iskanje_id: raw.id, oglas_id: z.id }))
     );
 
-    const poslano = await sendAlert(raw, zadetki);
+    const { email, vir } = await prejemnik(db, raw);
+    const poslano = await sendAlert(raw, zadetki, email);
     outcomes.push({
       iskanje: raw.naziv,
       zadetkov: zadetki.length,
       poslano,
+      // The reason names WHERE the address came from, because "not delivered"
+      // and "nobody has set an address anywhere" need different fixes.
       razlog: poslano
-        ? undefined
-        : raw.email_obvestila
+        ? `poslano na ${email} (vir: ${vir})`
+        : email
           ? "posiljanje ni uspelo ali RESEND ni nastavljen"
-          : "iskanje nima nastavljenega e-naslova",
+          : "ne spremljanje ne uporabnik nimata nastavljenega e-naslova",
     });
   }
 

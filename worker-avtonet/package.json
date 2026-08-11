@@ -20,6 +20,7 @@
     "test:detail": "tsx src/test-detail.ts",
     "test:research": "tsx src/test-research.ts",
     "test:obvestilo": "tsx src/test-obvestilo.ts",
+    "test:prejemnik": "tsx src/test-prejemnik.ts",
     "test:rezine": "tsx src/test-rezine.ts"
   },
   "dependencies": {

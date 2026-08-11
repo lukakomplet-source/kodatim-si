@@ -189,8 +189,10 @@ export function SpremljanjaClient({
             naslov: "Obvestila po e-pošti",
             besedilo: (
               <>
-                Če vpišeš e-naslov, dobiš sporočilo z novimi zadetki. Isti oglas se pri istem
-                spremljanju pošlje samo enkrat, tudi če se pregled ponovi.
+                Naslov se poišče po vrsti: kar je vpisano <strong>pri tem spremljanju</strong>, sicer
+                naslov iz <strong>Nastavitev</strong>, sicer tvoj prijavni e-naslov. Pošiljatelj je{" "}
+                <strong>security@kompletko.com</strong>. Isti oglas se pri istem spremljanju pošlje
+                samo enkrat, tudi če se pregled ponovi.
               </>
             ),
           },
@@ -534,9 +536,13 @@ function Obrazec({
               name="email_obvestila"
               type="email"
               defaultValue={urejam?.email_obvestila ?? ""}
-              placeholder="neobvezno"
+              placeholder="privzeto iz Nastavitev"
               className={INPUT}
             />
+            <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-zinc-400">
+              Pustite prazno in obvestila gredo na naslov iz Nastavitev. Vpišite drugega samo, če
+              želite prav to spremljanje drugam.
+            </span>
           </label>
         </div>
 

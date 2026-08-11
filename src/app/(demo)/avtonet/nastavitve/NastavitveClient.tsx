@@ -64,8 +64,14 @@ export function NastavitveClient({
             Kam naj pošiljamo obvestila
           </h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Sem prihajajo obvestila o novih oglasih po vaših spremljanjih. Pustite prazno, če jih ne
-            želite prejemati.
+            Sem prihajajo obvestila o novih oglasih za <strong>vsa vaša spremljanja</strong> — nastavite
+            enkrat tukaj in vam ga ni treba vpisovati pri vsakem spremljanju posebej. Če pri
+            posameznem spremljanju vpišete drug naslov, ima ta prednost. Prazno pomeni, da obvestil ne
+            prejemate.
+          </p>
+          <p className="mt-1 text-xs text-zinc-400">
+            Pošiljatelj bo <strong>security@kompletko.com</strong> — dodajte ga med varne
+            pošiljatelje, da obvestilo ne pade med neželeno pošto.
           </p>
           <label className={`${LABEL} mt-3`}>
             E-naslov za obvestila
