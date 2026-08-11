@@ -216,6 +216,24 @@ export async function runResearch(
       p.napak = prej.napak ?? 0;
     }
 
+    // The row is not always trustworthy: a resume that happened before this
+    // carry-over existed wrote zeros over real totals, and every later resume
+    // then inherited the zeros. The slice records cannot be zeroed that way —
+    // each one stores what it found when it was swept — so they are the better
+    // witness, and the larger of the two is taken.
+    const { data: rezineVsote } = await db
+      .from("avtonet_rezine")
+      .select("najdenih, strani_pregledanih")
+      .eq("raziskava_id", raziskavaId)
+      .eq("status", "koncano");
+    if (rezineVsote && rezineVsote.length > 0) {
+      const vrstice = rezineVsote as { najdenih: number | null; strani_pregledanih: number | null }[];
+      const oglasov = vrstice.reduce((n, v) => n + (v.najdenih ?? 0), 0);
+      const strani = vrstice.reduce((n, v) => n + (v.strani_pregledanih ?? 0), 0);
+      p.oglasov_najdenih = Math.max(p.oglasov_najdenih, oglasov);
+      p.strani_pregledanih = Math.max(p.strani_pregledanih, strani);
+    }
+
     for (let od = 0; ; od += 1000) {
       const { data } = await db
         .from("avtonet_posnetki")
@@ -598,9 +616,29 @@ async function detailPhase(
 
       try {
         const raw = await fetchDetailPage(browser, detailUrl(item.avtonet_id));
-        await saveDetail(db, item.id, parseDetail(raw));
+        const detail = parseDetail(raw);
+        await saveDetail(db, item.id, detail);
         p.detajlov_obdelanih += 1;
         p.detajlov_v_vrsti = Math.max(0, p.detajlov_skupaj - p.detajlov_obdelanih - p.napak);
+
+        // The console has to show movement. Rewriting this phase as a worker
+        // pool dropped the per-advert log line, and the result was a research
+        // that worked for hours while the screen showed nothing since the phase
+        // header — indistinguishable from a dead worker. Every 25th advert
+        // rather than every one: at ~33 adverts a minute, one line per advert
+        // would be 50,000 rows of noise for a single fill.
+        if (p.detajlov_obdelanih % 25 === 0) {
+          const opis =
+            [detail.verzija, detail.karoserija, detail.lokacija].filter(Boolean).join(" · ") ||
+            "brez dodatnih podatkov";
+          const odstotek =
+            p.detajlov_skupaj > 0 ? Math.round((p.detajlov_obdelanih / p.detajlov_skupaj) * 100) : 0;
+          dnevnik.zapisi(
+            "oglas",
+            `Podrobnosti ${p.detajlov_obdelanih} / ${p.detajlov_skupaj} (${odstotek}%) — zadnji: ${opis}`,
+            { avtonet_id: item.avtonet_id, obdelanih: p.detajlov_obdelanih }
+          );
+        }
         // A good response is evidence the source is not pushing back; let the
         // spacing relax back toward the configured value.
         if (stanje.delayMs > ctx.delayMs) stanje.delayMs = Math.max(ctx.delayMs, stanje.delayMs / 2);

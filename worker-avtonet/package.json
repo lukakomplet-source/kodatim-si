@@ -15,6 +15,7 @@
     "cleanup:testdata": "tsx src/test-cleanup.ts",
     "popravi:izginule": "tsx src/popravi-izginule.ts",
     "meritve": "tsx src/meritve.ts",
+    "stanje": "tsx src/stanje.ts",
     "test:misconfig": "tsx src/test-misconfig.ts",
     "test:detail": "tsx src/test-detail.ts",
     "test:research": "tsx src/test-research.ts",
