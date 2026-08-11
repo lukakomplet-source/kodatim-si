@@ -19,6 +19,7 @@
     "test:misconfig": "tsx src/test-misconfig.ts",
     "test:detail": "tsx src/test-detail.ts",
     "test:research": "tsx src/test-research.ts",
+    "test:obvestilo": "tsx src/test-obvestilo.ts",
     "test:rezine": "tsx src/test-rezine.ts"
   },
   "dependencies": {
