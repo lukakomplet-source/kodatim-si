@@ -177,7 +177,13 @@ export async function upsertListings(
     });
   }
   if (posnetki.length > 0) {
-    const { error: snapErr } = await db.from("avtonet_posnetki").insert(posnetki);
+    // `razlog` arrives with the v2 migration. Snapshots are the history this
+    // whole system exists to build, so losing a round of them because one
+    // column is missing is not an acceptable failure mode.
+    const zaVpis = (await imaV2(db))
+      ? posnetki
+      : posnetki.map(({ razlog: _razlog, ...p }) => p);
+    const { error: snapErr } = await db.from("avtonet_posnetki").insert(zaVpis);
     if (snapErr) throw new Error(`Zapis posnetkov ni uspel: ${snapErr.message}`);
   }
 
@@ -239,6 +245,41 @@ export type DetailZapis = {
   cena_na_poziv: boolean;
 };
 
+/** Columns that only exist after migration_avtonet_detajl_v2.sql. */
+const POLJA_V2 = [
+  "oprema_kategorije", "oprema_znacilke", "notranjost", "pogonski_sklop", "stevilo_vrat",
+  "stevilo_sedezev", "lastnikov", "leto_proizvodnje", "registracija_mesec", "emisijski_razred",
+  "co2_g_km", "poraba_l_100km", "starost", "prodajalec_naslov", "prodajalec_registriran_od",
+  "cena_na_poziv", "detajl_verzija",
+] as const;
+
+/**
+ * Whether the v2 migration has been applied. Probed once, then cached.
+ *
+ * Asked directly rather than inferred from a failed write, because the error
+ * shape is not reliable: a `head: true` count against a missing column comes
+ * back as HTTP 400 with an EMPTY body — no code, no message — since a HEAD
+ * response carries none. Code that switched on `error.code === "42703"` worked
+ * for selects and silently did nothing for counts. One cheap probe answers it
+ * for every caller.
+ */
+let v2NaVoljo: boolean | null = null;
+let opozorilPovedano = false;
+
+async function imaV2(db: Db): Promise<boolean> {
+  if (v2NaVoljo !== null) return v2NaVoljo;
+  const { error } = await db.from("avtonet_oglasi").select("detajl_verzija").limit(1);
+  v2NaVoljo = !error;
+  if (!v2NaVoljo && !opozorilPovedano) {
+    opozorilPovedano = true;
+    console.warn(
+      "[detajl] Baza še nima stolpcev iz migration_avtonet_detajl_v2.sql. " +
+        "Zbiram naprej brez novih polj; ko migracijo poženete, se ti oglasi samodejno ponovno obdelajo."
+    );
+  }
+  return v2NaVoljo;
+}
+
 export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): Promise<void> {
   const { naslov, znamka, model, ...ostalo } = detail;
 
@@ -254,6 +295,16 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
   if (naslov) patch.naziv = naslov;
   if (znamka) patch.znamka = znamka;
   if (model) patch.model = model;
+
+  // Running the migration is a manual step, and a worker started before it was
+  // done would otherwise fail on every single advert — turning a 20-hour
+  // unattended run into 20 hours of identical errors. Instead the write drops
+  // the v2 fields, says so once, and keeps collecting everything the old schema
+  // can hold. detajl_verzija stays 0 in that case, so once the migration lands,
+  // phase 2 picks these adverts up again on its own.
+  if (!(await imaV2(db))) {
+    for (const k of POLJA_V2) delete patch[k];
+  }
 
   const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
   if (error) throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
@@ -271,24 +322,26 @@ export async function listingsMissingDetail(
   db: Db,
   limit: number
 ): Promise<{ id: string; avtonet_id: string }[]> {
-  const { data, error } = await db
-    .from("avtonet_oglasi")
-    .select("id, avtonet_id")
-    .lt("detajl_verzija", DETAJL_VERZIJA)
-    .eq("status", "aktiven")
+  const zVerzijo = await imaV2(db);
+  const q = db.from("avtonet_oglasi").select("id, avtonet_id").eq("status", "aktiven");
+  const { data, error } = await (zVerzijo
+    ? q.lt("detajl_verzija", DETAJL_VERZIJA)
+    : q.is("detajl_zajet", null))
     .order("detajl_zajet", { ascending: true, nullsFirst: true })
     .limit(limit);
+
   if (error) throw new Error(`Branje oglasov brez podrobnosti ni uspelo: ${error.message}`);
   return (data ?? []) as { id: string; avtonet_id: string }[];
 }
 
 /** How many adverts still need a detail pass — sized with a COUNT, never a read. */
 export async function countMissingDetail(db: Db): Promise<number> {
-  const { count, error } = await db
-    .from("avtonet_oglasi")
-    .select("*", { count: "exact", head: true })
-    .lt("detajl_verzija", DETAJL_VERZIJA)
-    .eq("status", "aktiven");
+  const zVerzijo = await imaV2(db);
+  const q = db.from("avtonet_oglasi").select("*", { count: "exact", head: true }).eq("status", "aktiven");
+  const { count, error } = await (zVerzijo
+    ? q.lt("detajl_verzija", DETAJL_VERZIJA)
+    : q.is("detajl_zajet", null));
+
   if (error) throw new Error(`Štetje oglasov brez podrobnosti ni uspelo: ${error.message}`);
   return count ?? 0;
 }

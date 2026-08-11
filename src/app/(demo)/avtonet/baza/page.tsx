@@ -307,18 +307,27 @@ export default async function BazaPage({
                     return (
                       <tr key={o.id} className="align-top transition hover:bg-zinc-50">
                         <td className="max-w-[24rem] px-4 py-3">
-                          <a
-                            href={o.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-start gap-1.5 font-medium text-zinc-900 hover:text-accent"
+                          {/* Our own page first: it shows everything collected,
+                              which the source's page cannot (price history,
+                              time on the board). The original is one click on. */}
+                          <Link
+                            href={`/avtonet/oglas/${o.avtonet_id}`}
+                            className="font-medium text-zinc-900 hover:text-accent"
                           >
                             <span className="line-clamp-2">{o.naziv ?? o.avtonet_id}</span>
-                            <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-300" />
-                          </a>
+                          </Link>
                           <p className="mt-0.5 text-[11px] text-zinc-400">
                             {[o.gorivo, o.menjalnik, o.lokacija].filter(Boolean).join(" · ") || "—"}
                             {o.detajl_zajet === null && " · podrobnosti še ne zajete"}
+                            {" · "}
+                            <a
+                              href={o.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-0.5 text-zinc-400 hover:text-zinc-700"
+                            >
+                              original <ExternalLink className="h-3 w-3" />
+                            </a>
                           </p>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-600">

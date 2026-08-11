@@ -30,6 +30,7 @@
     "prostor": "tsx src/prostor.ts",
     "test:nazivi": "tsx src/test-nazivi.ts",
     "test:detajli": "tsx src/test-detajli.ts",
+    "test:brez-migracije": "tsx src/test-brez-migracije.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {
