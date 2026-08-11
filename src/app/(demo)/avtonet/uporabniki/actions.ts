@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { preberiDostop } from "@/lib/avtonet/dostop";
+import { povezavaZaVabilo } from "@/lib/javniNaslov";
 
 /**
  * Granting and revoking access to SBN Auto.
@@ -53,7 +54,12 @@ export async function dodajUporabnika(
   let povabljen = false;
 
   if (!userId) {
-    const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email);
+    // The redirect must be explicit and public. Without it Supabase falls back
+    // to its project Site URL, which is localhost in this project — an invited
+    // user then receives a link to their OWN machine and cannot get in.
+    const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: povezavaZaVabilo("/nastavi-geslo"),
+    });
     if (inviteError || !invited?.user) {
       return { error: `Vabila ni bilo mogoče poslati: ${inviteError?.message ?? "neznana napaka"}` };
     }

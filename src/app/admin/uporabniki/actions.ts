@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requirePermission } from "@/lib/permissions/require-permission";
 import { writeAuditLog } from "@/lib/permissions/audit";
+import { povezavaZaVabilo } from "@/lib/javniNaslov";
 import type { PermissionKey } from "@/lib/permissions/registry";
 import type { UserStatus } from "./types";
 
@@ -58,10 +59,12 @@ export async function createUser(
     }
     userId = created.user.id;
   } else {
-    const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-      email,
-      { redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/nastavi-geslo` }
-    );
+    // Not NEXT_PUBLIC_SITE_URL directly: that is localhost during development,
+    // and an invite sent from the local app then links the recipient to their
+    // own machine. `povezavaZaVabilo` refuses localhost and uses the public site.
+    const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: povezavaZaVabilo("/nastavi-geslo"),
+    });
     if (inviteError || !invited.user) {
       return { error: inviteError?.message ?? "Povabila ni bilo mogoče poslati." };
     }
