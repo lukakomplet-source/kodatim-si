@@ -268,6 +268,11 @@ export async function runResearch(
         raziskavaId,
         delayListMs: cfg.delayListMs,
         pageCeiling: cfg.pageCeiling,
+        // What the source itself said the slice holds. This is what lets the
+        // sweep recognise a legitimate end: avto.net never serves an empty
+        // page, it repeats the last one, so "done" must be judged against the
+        // announced count rather than waiting for a blank that never comes.
+        pricakovano: velikost.vrsta === "tocno" ? velikost.koliko : null,
         p,
         seenIds,
         dnevnik,
@@ -349,9 +354,17 @@ export async function runResearch(
 /**
  * Walks every page of one slice, upserting as it goes.
  *
- * `popolna` is the honest end signal: true when the slice ran out of pages
- * (empty page), false when it hit a repeated page — meaning even this narrowed
- * query is over the cap and its tail was not seen.
+ * `popolna` is the honest end signal, and what counts as the end was learned
+ * from the source's behaviour, not assumed: avto.net does not serve an empty
+ * page past the last one, it REPEATS the last page. So a repetition is the
+ * normal end of any finished listing — the first version read every repetition
+ * as "cap hit, incomplete" and thereby declared every slice incomplete, which
+ * would have blocked disappearance-marking forever.
+ *
+ * The announced count is the referee. The slice is complete when it has
+ * collected what the source said it holds (with a small tolerance, because the
+ * market moves between the sizing probe and the sweep). A repetition long
+ * before that count means truncation and is reported as such.
  */
 async function sweepRezina(
   browser: Browser,
@@ -361,6 +374,8 @@ async function sweepRezina(
     raziskavaId: string | null;
     delayListMs: number;
     pageCeiling: number;
+    /** The count the source announced, or null when it only said "over 1000". */
+    pricakovano: number | null;
     p: Progress;
     seenIds: Set<string>;
     dnevnik: EventSink;
@@ -373,6 +388,11 @@ async function sweepRezina(
   let strani = 0;
   let popolna = false;
   const videneVRezini = new Set<string>();
+
+  // "Seen enough" — the announced count minus tolerance for adverts that were
+  // withdrawn between the probe and this sweep.
+  const dovolj = (): boolean =>
+    ctx.pricakovano !== null && videneVRezini.size >= Math.floor(ctx.pricakovano * 0.9);
 
   for (let stran = 1; stran <= ctx.pageCeiling; stran++) {
     if (ctx.shouldStop?.()) break;
@@ -397,8 +417,15 @@ async function sweepRezina(
     const before = videneVRezini.size;
     for (const row of rows) videneVRezini.add(row.avtonetId);
     if (videneVRezini.size === before) {
-      // Repeated page: this slice is itself over the cap. Not complete.
-      dnevnik.zapisi("napaka", `"${r.oznaka}" ponavlja oglase pri strani ${stran} — rezina ni popolna`);
+      // The source is repeating itself: the listing has no more pages. Whether
+      // that is a clean end or a truncation depends on how much it promised.
+      popolna = dovolj();
+      if (!popolna) {
+        dnevnik.zapisi(
+          "napaka",
+          `"${r.oznaka}" ponavlja oglase pri strani ${stran} (${videneVRezini.size}${ctx.pricakovano ? ` od napovedanih ${ctx.pricakovano}` : ""}) — rezina ni popolna`
+        );
+      }
       break;
     }
 
@@ -428,6 +455,13 @@ async function sweepRezina(
       for (const nov of outcome.novi.slice(0, 8)) dnevnik.zapisi("oglas", `NOV: ${opisOglasa(nov)}`);
     }
     log("info", "sweep napredek", { rezina: r.oznaka, stran, oglasov: p.oglasov_najdenih, novih: p.novih });
+
+    // Collected everything the source announced? Then this was the last page —
+    // stop here instead of paying one more request just to watch it repeat.
+    if (ctx.pricakovano !== null && videneVRezini.size >= ctx.pricakovano) {
+      popolna = true;
+      break;
+    }
 
     await sleep(ctx.delayListMs);
   }
