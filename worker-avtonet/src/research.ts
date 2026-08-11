@@ -173,17 +173,65 @@ export async function runResearch(
     }
   };
 
-  // Which slice signatures are already done, for resume.
-  const zeKoncane = new Set<string>();
+  // Slices already recorded for this research, for resume after a crash or
+  // redeploy. The status matters: a "razdeljeno" slice must still EXPAND on
+  // resume (its children are the real work), and a "koncano" slice that was not
+  // complete must poison the completeness verdict again.
+  const zeKoncane = new Map<string, { status: string; popolna: boolean }>();
   if (raziskavaId) {
     const { data } = await db
       .from("avtonet_rezine")
-      .select("filtri, status")
+      .select("filtri, status, popolna")
       .eq("raziskava_id", raziskavaId)
       .in("status", ["koncano", "razdeljeno"]);
-    for (const row of (data ?? []) as { filtri: Rezina["filtri"]; status: string }[]) {
-      zeKoncane.add(podpis({ oznaka: "", filtri: row.filtri, globina: 0 }));
+    for (const row of (data ?? []) as { filtri: Rezina["filtri"]; status: string; popolna: boolean }[]) {
+      zeKoncane.set(podpis({ oznaka: "", filtri: row.filtri, globina: 0 }), {
+        status: row.status,
+        popolna: row.popolna,
+      });
     }
+  }
+
+  // On resume the previous process's seenIds are gone with it — and an empty
+  // seen-set combined with "all slices complete" would declare EVERY advert
+  // disappeared. The set is rebuilt from the snapshots this research already
+  // wrote, which is exactly what "seen in this research" means. Paged reads,
+  // because the API caps a single select at 1,000 rows.
+  if (raziskavaId && zeKoncane.size > 0) {
+    // The interrupted attempt's counters carry over, so the research row does
+    // not end its life claiming "0 adverts" about a run that collected fifty
+    // thousand before the restart.
+    const { data: prejsnjiP } = await db
+      .from("avtonet_raziskave")
+      .select("strani_pregledanih, oglasov_najdenih, novih, posodobljenih, spremembe_cen, napak")
+      .eq("id", raziskavaId)
+      .maybeSingle();
+    if (prejsnjiP) {
+      const prej = prejsnjiP as Record<string, number>;
+      p.strani_pregledanih = prej.strani_pregledanih ?? 0;
+      p.oglasov_najdenih = prej.oglasov_najdenih ?? 0;
+      p.novih = prej.novih ?? 0;
+      p.posodobljenih = prej.posodobljenih ?? 0;
+      p.spremembe_cen = prej.spremembe_cen ?? 0;
+      p.napak = prej.napak ?? 0;
+    }
+
+    for (let od = 0; ; od += 1000) {
+      const { data } = await db
+        .from("avtonet_posnetki")
+        .select("avtonet_oglasi(avtonet_id)")
+        .eq("raziskava_id", raziskavaId)
+        .range(od, od + 999);
+      const vrstice = (data ?? []) as unknown as { avtonet_oglasi: { avtonet_id: string } | null }[];
+      for (const v of vrstice) {
+        if (v.avtonet_oglasi?.avtonet_id) seenIds.add(v.avtonet_oglasi.avtonet_id);
+      }
+      if (vrstice.length < 1000) break;
+    }
+    dnevnik.zapisi(
+      "info",
+      `Nadaljevanje: ${zeKoncane.size} rezin že obdelanih, ${seenIds.size} oglasov že videnih v tej raziskavi`
+    );
   }
 
   try {
@@ -210,7 +258,22 @@ export async function runResearch(
       }
 
       const r = sklad.pop()!;
-      if (zeKoncane.has(podpis(r))) continue;
+      const prejsnja = zeKoncane.get(podpis(r));
+      if (prejsnja) {
+        // Already handled in the interrupted attempt. A split slice still has
+        // to expand — skipping it whole would orphan every child and end the
+        // sweep with an empty seen-set, which the disappearance step would then
+        // read as "everything vanished".
+        if (prejsnja.status === "razdeljeno") {
+          const otroci = razdeli(r, znamke);
+          if (otroci) for (const o of otroci) sklad.push(o);
+          p.poizvedb_razdeljenih += 1;
+        } else {
+          if (!prejsnja.popolna) vseRezinePopolne = false;
+          p.poizvedb_koncanih += 1;
+        }
+        continue;
+      }
 
       p.trenutna_rezina = r.oznaka;
       p.poizvedb_skupaj = p.poizvedb_koncanih + p.poizvedb_razdeljenih + sklad.length + 1;
@@ -305,40 +368,63 @@ export async function runResearch(
     }
     await onProgress(p);
 
-    // ---------------- PHASE 2: detail, only where needed ----------------
-    p.faza = 2;
-    const queue = await listingsMissingDetail(db, cfg.detailLimit > 0 ? cfg.detailLimit : 100_000);
-    p.detajlov_skupaj = queue.length;
-    p.detajlov_v_vrsti = queue.length;
-    await onProgress(p);
-    log("info", "zacenjam 2. fazo", { zaObdelavo: queue.length });
-    dnevnik.zapisi(
-      "faza",
-      `2. faza — podrobnosti samo za nove/brez podatkov: ${queue.length} v vrsti, ${cfg.detailConcurrency} vzporedno`
-    );
-
-    await detailPhase(browser, db, queue, {
-      concurrency: cfg.detailConcurrency,
-      delayMs: cfg.delayDetailMs,
-      maxBlokad: cfg.maxBlokad,
-      p,
-      dnevnik,
-      log,
-      onProgress,
-      shouldStop: opts.shouldStop,
-    });
-    await onProgress(p);
-
-    // The second use of the same data. Its failure is not the research's.
+    // Alerts go out HERE, after the listing sweep, not after the detail pass.
+    // The listing rows already carry everything a saved search matches on, and
+    // phase 2 can run for many hours on a first fill — an alert about a new car
+    // is only useful while the car can still be called about.
     if (!opts.preskociIskanja) {
       try {
         for (const o of await runSavedSearches(db)) log("info", "shranjeno iskanje", { ...o });
+        dnevnik.zapisi("info", "Obvestila za shranjena iskanja preverjena po 1. fazi");
       } catch (err) {
         log("warn", "shranjenih iskanj ni bilo mogoce obdelati", {
           napaka: err instanceof Error ? err.message : String(err),
         });
       }
     }
+
+    // ---------------- PHASE 2: detail, only where needed ----------------
+    p.faza = 2;
+
+    // The size of the backlog comes from a COUNT, not from a select: the API
+    // caps any one select at 1,000 rows, and using its length as the total made
+    // a 52,000-advert backlog look like a day's work. The work itself is then
+    // pulled in batches of up to 1,000 until the queue is genuinely empty.
+    const { count: manjka } = await db
+      .from("avtonet_oglasi")
+      .select("id", { count: "exact", head: true })
+      .is("detajl_zajet", null)
+      .eq("status", "aktiven");
+    p.detajlov_skupaj = cfg.detailLimit > 0 ? Math.min(manjka ?? 0, cfg.detailLimit) : (manjka ?? 0);
+    p.detajlov_v_vrsti = p.detajlov_skupaj;
+    await onProgress(p);
+    log("info", "zacenjam 2. fazo", { zaObdelavo: p.detajlov_skupaj });
+    dnevnik.zapisi(
+      "faza",
+      `2. faza — podrobnosti samo za nove/brez podatkov: ${p.detajlov_skupaj} manjkajočih, ${cfg.detailConcurrency} vzporedno`
+    );
+
+    while (p.detajlov_obdelanih < p.detajlov_skupaj) {
+      if (opts.shouldStop?.()) break;
+      const batch = await listingsMissingDetail(
+        db,
+        Math.min(1000, p.detajlov_skupaj - p.detajlov_obdelanih)
+      );
+      if (batch.length === 0) break;
+
+      await detailPhase(browser, db, batch, {
+        concurrency: cfg.detailConcurrency,
+        delayMs: cfg.delayDetailMs,
+        maxBlokad: cfg.maxBlokad,
+        p,
+        dnevnik,
+        log,
+        onProgress,
+        shouldStop: opts.shouldStop,
+      });
+      await onProgress(p);
+    }
+    await onProgress(p);
 
     dnevnik.zapisi(
       "faza",
@@ -514,7 +600,7 @@ async function detailPhase(
         const raw = await fetchDetailPage(browser, detailUrl(item.avtonet_id));
         await saveDetail(db, item.id, parseDetail(raw));
         p.detajlov_obdelanih += 1;
-        p.detajlov_v_vrsti = Math.max(0, queue.length - p.detajlov_obdelanih - p.napak);
+        p.detajlov_v_vrsti = Math.max(0, p.detajlov_skupaj - p.detajlov_obdelanih - p.napak);
         // A good response is evidence the source is not pushing back; let the
         // spacing relax back toward the configured value.
         if (stanje.delayMs > ctx.delayMs) stanje.delayMs = Math.max(ctx.delayMs, stanje.delayMs / 2);
@@ -538,7 +624,7 @@ async function detailPhase(
         }
         p.napak += 1;
         p.zadnja_napaka = err instanceof Error ? err.message : String(err);
-        p.detajlov_v_vrsti = Math.max(0, queue.length - p.detajlov_obdelanih - p.napak);
+        p.detajlov_v_vrsti = Math.max(0, p.detajlov_skupaj - p.detajlov_obdelanih - p.napak);
         dnevnik.zapisi("napaka", `Podrobnosti ${item.avtonet_id}: ${p.zadnja_napaka}`);
       }
 
