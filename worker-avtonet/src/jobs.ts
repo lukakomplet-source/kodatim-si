@@ -127,7 +127,12 @@ export async function saveProgress(db: Db, id: string, p: Progress): Promise<boo
         izginulih: p.izginulih,
         detajlov_obdelanih: p.detajlov_obdelanih,
         detajlov_skupaj: p.detajlov_skupaj,
+        detajlov_v_vrsti: p.detajlov_v_vrsti,
         napak: p.napak,
+        poizvedb_koncanih: p.poizvedb_koncanih,
+        poizvedb_razdeljenih: p.poizvedb_razdeljenih,
+        poizvedb_skupaj: p.poizvedb_skupaj,
+        trenutna_rezina: p.trenutna_rezina,
         zadnja_stran: p.zadnja_stran,
         pregled_popoln: p.pregled_popoln,
         zadnja_napaka: p.zadnja_napaka,
@@ -175,7 +180,12 @@ export async function finishResearch(
     patch.izginulih = p.izginulih;
     patch.detajlov_obdelanih = p.detajlov_obdelanih;
     patch.detajlov_skupaj = p.detajlov_skupaj;
+    patch.detajlov_v_vrsti = p.detajlov_v_vrsti;
     patch.napak = p.napak;
+    patch.poizvedb_koncanih = p.poizvedb_koncanih;
+    patch.poizvedb_razdeljenih = p.poizvedb_razdeljenih;
+    patch.poizvedb_skupaj = p.poizvedb_skupaj;
+    patch.trenutna_rezina = p.trenutna_rezina;
     patch.zadnja_stran = p.zadnja_stran;
     patch.pregled_popoln = p.pregled_popoln;
   }

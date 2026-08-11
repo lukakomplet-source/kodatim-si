@@ -65,8 +65,10 @@ const LETNIKI: [number, number][] = [
   [0, 2004],
 ];
 
+const ODPRTA_CENA = 999_999;
+
 function denar(n: number): string {
-  return n >= 999_999 ? "več" : `${(n / 1000).toLocaleString("sl-SI")}k`;
+  return `${(n / 1000).toLocaleString("sl-SI", { maximumFractionDigits: 1 })}k`;
 }
 
 export function opisiRezino(f: Filtri): string {
@@ -74,8 +76,12 @@ export function opisiRezino(f: Filtri): string {
   if (f.znamka) deli.push(f.znamka);
   else deli.push("vse znamke");
 
-  if (f.cenaMin !== undefined || f.cenaMax !== undefined) {
-    deli.push(`${denar(f.cenaMin ?? 0)}–${denar(f.cenaMax ?? 999_999)} €`);
+  const cenaMin = f.cenaMin;
+  const cenaMax = f.cenaMax;
+  if (cenaMin !== undefined || cenaMax !== undefined) {
+    if ((cenaMax ?? ODPRTA_CENA) >= ODPRTA_CENA) deli.push(`nad ${denar(cenaMin ?? 0)} €`);
+    else if ((cenaMin ?? 0) === 0) deli.push(`do ${denar(cenaMax!)} €`);
+    else deli.push(`${denar(cenaMin!)}–${denar(cenaMax!)} €`);
   }
   if (f.letnikMin !== undefined || f.letnikMax !== undefined) {
     const do_ = f.letnikMax === undefined || f.letnikMax >= 2100 ? "danes" : String(f.letnikMax);
@@ -110,12 +116,17 @@ export function razdeli(r: Rezina, znamke: string[]): Rezina[] | null {
     return znamke.map((z) => rezina({ ...f, znamka: z }, r.globina + 1));
   }
 
-  // 2. A brand splits by price band.
+  // 2. A brand splits by price band. The last band stays open-ended
+  //    (cenaMax = 999999) so nothing above the top threshold is lost.
   if (f.cenaMin === undefined && f.cenaMax === undefined) {
     const out: Rezina[] = [];
     for (let i = 0; i < CENOVNI_PRAGOVI.length - 1; i++) {
+      const zadnji = i === CENOVNI_PRAGOVI.length - 2;
       out.push(
-        rezina({ ...f, cenaMin: CENOVNI_PRAGOVI[i], cenaMax: CENOVNI_PRAGOVI[i + 1] - 1 }, r.globina + 1)
+        rezina(
+          { ...f, cenaMin: CENOVNI_PRAGOVI[i], cenaMax: zadnji ? ODPRTA_CENA : CENOVNI_PRAGOVI[i + 1] - 1 },
+          r.globina + 1
+        )
       );
     }
     return out;

@@ -214,7 +214,6 @@ async function runJob(db: Db, job: Job): Promise<void> {
   await reportHealth(db, { zadnji_zagon: startedAt, heartbeat: startedAt, stanje: "ok" });
   log("info", job.nadaljevanje ? "nadaljujem raziskavo" : "zacenjam raziskavo", {
     raziskava: job.id,
-    odStrani: job.zadnja_stran + 1,
   });
 
   let cancelled = false;
@@ -222,7 +221,9 @@ async function runJob(db: Db, job: Job): Promise<void> {
 
   try {
     progress = await runResearch(db, {
-      startFromPage: job.zadnja_stran + 1,
+      // Resume is by slice now, not by page: runResearch reads which slices are
+      // already recorded for this research and skips them, so a re-claimed job
+      // continues at the next unfinished slice on its own.
       raziskavaId: job.id,
       log,
       shouldStop: () => cancelled || stopping,

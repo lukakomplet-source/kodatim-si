@@ -17,7 +17,8 @@
     "meritve": "tsx src/meritve.ts",
     "test:misconfig": "tsx src/test-misconfig.ts",
     "test:detail": "tsx src/test-detail.ts",
-    "test:research": "tsx src/test-research.ts"
+    "test:research": "tsx src/test-research.ts",
+    "test:rezine": "tsx src/test-rezine.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

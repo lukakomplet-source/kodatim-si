@@ -43,79 +43,114 @@ export async function upsertListings(
   const out: UpsertOutcome = { novi: [], spremembeCene: [], skupaj: rows.length };
   if (rows.length === 0) return out;
 
+  // One page used to cost ~96 round trips: a read, then per advert an
+  // insert-or-update and a snapshot insert, all sequential. On a full sweep that
+  // was ~10 of the 23 seconds a page took — our latency, not the source's. Now
+  // the page is four batched statements regardless of how many adverts it holds:
+  // read existing, insert new, update known, insert all snapshots.
   const ids = rows.map((r) => r.avtonetId);
   const { data: existing, error } = await db
     .from("avtonet_oglasi")
-    .select("id, avtonet_id, cena_eur, cena_prvotna_eur")
+    .select("id, avtonet_id, cena_eur")
     .in("avtonet_id", ids);
   if (error) throw new Error(`Branje obstoječih oglasov ni uspelo: ${error.message}`);
 
   const known = new Map((existing ?? []).map((e) => [e.avtonet_id as string, e]));
   const now = new Date().toISOString();
 
-  for (const row of rows) {
-    const prev = known.get(row.avtonetId);
+  // A page can legitimately list the same advert twice around a boundary; keep
+  // the last and dedupe, so a batch insert cannot trip the unique constraint on
+  // itself.
+  const enkratni = new Map<string, ParsedRow>();
+  for (const r of rows) enkratni.set(r.avtonetId, r);
+
+  const zaVstavitev: Record<string, unknown>[] = [];
+  const zaPosodobitev: { id: string; row: ParsedRow; status: string }[] = [];
+
+  for (const row of enkratni.values()) {
     const { znamka, model } = splitZnamkaModel(row.naziv);
     const status = row.prodano ? "prodano" : "aktiven";
-
-    let oglasId: string;
+    const prev = known.get(row.avtonetId);
 
     if (!prev) {
-      const { data, error: insErr } = await db
-        .from("avtonet_oglasi")
-        .insert({
-          avtonet_id: row.avtonetId,
-          url: row.url,
-          znamka,
-          model,
-          naziv: row.naziv,
-          letnik: row.letnik,
-          km: row.km,
-          ccm: row.ccm,
-          kw: row.kw,
-          km_moci: row.kmMoci,
-          gorivo: row.gorivo,
-          menjalnik: row.menjalnik,
-          cena_eur: row.cenaEur,
-          cena_prvotna_eur: row.cenaEur,
-          first_seen: now,
-          last_seen: now,
-          status,
-        })
-        .select("id")
-        .single();
-      if (insErr) {
-        // A duplicate here means another run inserted it a moment ago — not an
-        // error worth stopping the whole batch for.
-        if (insErr.code !== "23505") throw new Error(`Vstavljanje oglasa ni uspelo: ${insErr.message}`);
-        continue;
-      }
-      oglasId = data!.id as string;
+      zaVstavitev.push({
+        avtonet_id: row.avtonetId,
+        url: row.url,
+        znamka,
+        model,
+        naziv: row.naziv,
+        letnik: row.letnik,
+        km: row.km,
+        ccm: row.ccm,
+        kw: row.kw,
+        km_moci: row.kmMoci,
+        gorivo: row.gorivo,
+        menjalnik: row.menjalnik,
+        cena_eur: row.cenaEur,
+        cena_prvotna_eur: row.cenaEur,
+        first_seen: now,
+        last_seen: now,
+        status,
+      });
       out.novi.push(row);
     } else {
-      oglasId = prev.id as string;
       const staraCena = prev.cena_eur === null ? null : Number(prev.cena_eur);
       if (staraCena !== null && row.cenaEur !== null && staraCena !== row.cenaEur) {
         out.spremembeCene.push({ row, staraCena, novaCena: row.cenaEur });
       }
-      const { error: updErr } = await db
-        .from("avtonet_oglasi")
-        .update({ last_seen: now, cena_eur: row.cenaEur, km: row.km, status })
-        .eq("id", oglasId);
-      if (updErr) throw new Error(`Posodobitev oglasa ni uspela: ${updErr.message}`);
+      zaPosodobitev.push({ id: prev.id as string, row, status });
     }
+  }
 
-    const { error: snapErr } = await db.from("avtonet_posnetki").insert({
+  // New adverts in one insert. A duplicate (another run inserted it a moment
+  // ago) is not worth failing the batch for; ignoreDuplicates lets it pass.
+  const idPoAvtonet = new Map<string, string>();
+  if (zaVstavitev.length > 0) {
+    const { data: vstavljeni, error: insErr } = await db
+      .from("avtonet_oglasi")
+      .upsert(zaVstavitev, { onConflict: "avtonet_id", ignoreDuplicates: true })
+      .select("id, avtonet_id");
+    if (insErr) throw new Error(`Vstavljanje oglasov ni uspelo: ${insErr.message}`);
+    for (const v of vstavljeni ?? []) idPoAvtonet.set(v.avtonet_id as string, v.id as string);
+  }
+
+  // Known adverts refreshed. Supabase has no batch "different values per row"
+  // update, so these run in parallel rather than in sequence — the round trips
+  // overlap instead of stacking, which is what cost the time.
+  if (zaPosodobitev.length > 0) {
+    const results = await Promise.all(
+      zaPosodobitev.map((u) =>
+        db
+          .from("avtonet_oglasi")
+          .update({ last_seen: now, cena_eur: u.row.cenaEur, km: u.row.km, status: u.status })
+          .eq("id", u.id)
+      )
+    );
+    const napaka = results.find((r) => r.error);
+    if (napaka?.error) throw new Error(`Posodobitev oglasa ni uspela: ${napaka.error.message}`);
+  }
+
+  // A snapshot for every advert seen, in one insert. This is the history the
+  // whole system exists to build, so a listing with no resolvable id (a race on
+  // insert) is skipped rather than allowed to break the batch.
+  const posnetki: Record<string, unknown>[] = [];
+  for (const row of enkratni.values()) {
+    const status = row.prodano ? "prodano" : "aktiven";
+    const oglasId =
+      known.get(row.avtonetId)?.id ?? idPoAvtonet.get(row.avtonetId) ?? null;
+    if (!oglasId) continue;
+    posnetki.push({
       oglas_id: oglasId,
-      // Which sweep saw it, so a research can later show exactly what it
-      // collected instead of guessing from a time window.
       raziskava_id: raziskavaId ?? null,
       cena_eur: row.cenaEur,
       km: row.km,
       status,
       surovo: row.surovo,
     });
-    if (snapErr) throw new Error(`Zapis posnetka ni uspel: ${snapErr.message}`);
+  }
+  if (posnetki.length > 0) {
+    const { error: snapErr } = await db.from("avtonet_posnetki").insert(posnetki);
+    if (snapErr) throw new Error(`Zapis posnetkov ni uspel: ${snapErr.message}`);
   }
 
   return out;
