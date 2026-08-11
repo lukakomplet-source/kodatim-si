@@ -8,7 +8,6 @@ import {
   Database,
   Lightbulb,
   LineChart,
-  Settings,
   Sparkles,
   TerminalSquare,
   UserCog,
@@ -28,10 +27,9 @@ import {
 
 const JAVNO = [{ href: "/avtonet/analiza", label: "Analiza trga", icon: LineChart }];
 
-const UPORABNIK = [
-  { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
-  { href: "/avtonet/nastavitve", label: "Nastavitve", icon: Settings },
-];
+// Nastavitve is deliberately absent: account controls sit top right in the
+// header, so the tabs hold only the places you actually work in.
+const UPORABNIK = [{ href: "/avtonet", label: "Moja spremljanja", icon: Bell }];
 
 /** Same page, different name: for a user it is a suggestion box, for an admin an editor. */
 const PREDLOGI = { href: "/avtonet/urejanje", label: "Predlogi", icon: Lightbulb };

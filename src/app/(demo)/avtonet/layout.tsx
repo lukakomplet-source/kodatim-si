@@ -1,5 +1,6 @@
 import { Car } from "lucide-react";
 import { AvtonetNav } from "./AvtonetNav";
+import { UporabnikMeni } from "./UporabnikMeni";
 
 /**
  * The SBN Auto shell: brand, navigation, and the frame every screen sits in.
@@ -29,6 +30,10 @@ export default function AvtonetLayout({ children }: { children: React.ReactNode 
                 <p className="text-[11px] uppercase tracking-wide text-zinc-400">Slovenski trg vozil</p>
               </div>
             </div>
+
+            {/* Account controls live here, not in the tab strip: they are things
+                you reach for once, not places you work in. */}
+            <UporabnikMeni />
           </div>
           <AvtonetNav />
         </div>
