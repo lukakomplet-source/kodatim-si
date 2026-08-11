@@ -18,14 +18,24 @@
  * inferred: a label present but empty (Barva, on many adverts) becomes null.
  */
 
+import { kategorijaIzNaslova, znacilkeIzVrstic, type Kategorija } from "./oprema.js";
+import { razdeliNaziv } from "./parse.js";
+
 export type DetailRaw = {
   /** Every label/value pair found in the specification tables. */
   pairs: Record<string, string>;
+  /** The advert's heading — the authoritative title, not a line guessed out of the body. */
+  naslov?: string;
   /** The page's visible text, for the prose sections. */
   text: string;
 };
 
 export type DetailData = {
+  /** The advert's own heading, kept whole — nothing downstream has to re-derive it. */
+  naslov: string | null;
+  /** Re-split from the detail title, which is cleaner than the results row's text. */
+  znamka: string | null;
+  model: string | null;
   verzija: string | null;
   pogon: string | null;
   karoserija: string | null;
@@ -36,6 +46,27 @@ export type DetailData = {
   oprema: string | null;
   opis: string | null;
   dodatni_podatki: Record<string, string>;
+
+  // --- Added for configuration-level analysis -------------------------------
+  /** The source's own grouping, verbatim. Lossless; slugs are re-derivable from it. */
+  oprema_kategorije: Record<string, string[]>;
+  /** Canonical slugs — the filterable, comparable form. */
+  oprema_znacilke: string[];
+  notranjost: string | null;
+  pogonski_sklop: string | null;
+  stevilo_vrat: number | null;
+  stevilo_sedezev: number | null;
+  lastnikov: number | null;
+  leto_proizvodnje: number | null;
+  registracija_mesec: number | null;
+  emisijski_razred: string | null;
+  co2_g_km: number | null;
+  poraba_l_100km: number | null;
+  starost: string | null;
+  prodajalec_naslov: string | null;
+  prodajalec_registriran_od: string | null;
+  /** True when the advert says "Pokličite za ceno!" — no price is a fact, not a gap. */
+  cena_na_poziv: boolean;
 };
 
 /** avto.net's detail URL for a listing id. */
@@ -70,57 +101,138 @@ function pick(pairs: Record<string, string>, ...labels: string[]): string | null
   return null;
 }
 
+/** First integer in a value, or null. Used for "4 vr.", "157 g / km", "149500". */
+function num(value: string | null): number | null {
+  if (!value) return null;
+  const m = value.replace(/\./g, "").match(/-?\d+/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Decimal with a Slovenian comma: "od 6,7 lit. / 100 km" -> 6.7 */
+function dec(value: string | null): number | null {
+  if (!value) return null;
+  const m = value.match(/(\d+),(\d+)/) ?? value.match(/(\d+)\.(\d+)/);
+  if (m) {
+    const n = Number(`${m[1]}.${m[2]}`);
+    return Number.isFinite(n) ? n : null;
+  }
+  return num(value);
+}
+
 /**
- * The block between the equipment heading and the seller block, split into the
- * equipment list and the seller's free-text description.
+ * The header strip prints facts as a label line followed by a value line
+ * ("Lastnikov" / "1"), which is the only place the owner count appears — it is
+ * not one of the labelled table pairs.
+ */
+function labelValue(all: string[], label: RegExp): string | null {
+  const i = all.findIndex((l) => label.test(l));
+  if (i === -1) return null;
+  for (let j = i + 1; j < Math.min(all.length, i + 4); j++) {
+    const v = clean(all[j]);
+    if (v) return v;
+  }
+  return null;
+}
+
+/**
+ * A line of seller prose rather than a catalogue entry.
+ *
+ * avto.net gives the two NO markup to tell them apart — the seller's own text
+ * simply follows the last catalogue item inside the same block. They are told
+ * apart by shape, and the shapes were read off real adverts:
+ *
+ *   catalogue  "sistem za opozarjanje na mrtvi kot", "klimatska naprava: 4 conska"
+ *              — short, mixed case, no sentence ending
+ *   prose      "IZREDNO LEPO OHRANJEN, GARANCIJA NA PREVOŽENE KILOMETRE,"
+ *              — long, or shouted in caps, or a finished sentence
+ *
+ * The caps test earns its place: that real line is 56 characters and ends in a
+ * comma, so a length-and-full-stop rule alone filed a sales pitch under
+ * equipment.
+ */
+function jeProza(vrstica: string): boolean {
+  if (vrstica.length > 60) return true;
+  const crke = vrstica.replace(/[^\p{L}]/gu, "");
+  if (crke.length > 12) {
+    const velike = vrstica.replace(/[^\p{Lu}]/gu, "").length;
+    if (velike / crke.length > 0.8) return true;
+  }
+  return /[.!?]$/.test(vrstica) && vrstica.length > 25;
+}
+
+export type OpremaBlok = {
+  kategorije: Record<string, string[]>;
+  vrstice: string[];
+  opis: string | null;
+};
+
+/**
+ * The block between the equipment heading and the seller block, split into
+ * equipment (grouped as the source groups it) and the seller's free text.
  *
  * The real headings had to be read off a live page: the section is called
  * "Oprema in ostali podatki o ponudbi" — not "OPREMA VOZILA", which the first
  * version guessed and which matched nothing, so both fields came back null on
  * every advert.
  *
- * Inside that block avto.net mixes two different things: grouped equipment
- * items ("Podvozje:", "ABS zavorni sistem", "lahka - ALU platišča") and the
- * seller's own prose ("M Sport paket, xDrive (4x4), avtomatski menjalnik."").
- * They are separated by shape rather than by markup, because the page gives no
- * markup to separate them: a long line, or one that ends in a sentence stop, is
- * prose; the short catalogue entries are equipment.
+ * Inside it, avto.net prints its own category headings ("Podvozje:",
+ * "Varnost:", "Multimedia:") followed by that category's items. Using those
+ * headings rather than inventing our own grouping means the structure comes
+ * from the source: a category the site adds later is captured automatically.
+ * A heading is a line ENDING in a colon — items contain colons too ("sedeži:
+ * gretje spredaj"), just never at the end.
  */
-function extractOpremaInOpis(text: string): { oprema: string | null; opis: string | null } {
+export function extractOpremaBlok(text: string): OpremaBlok {
   const all = lines(text);
   const start = all.findIndex((l) => /^Oprema in ostali podatki|^OPREMA VOZILA|^DODATNA OPREMA/i.test(l));
-  if (start === -1) return { oprema: null, opis: null };
+  if (start === -1) return { kategorije: {}, vrstice: [], opis: null };
 
-  let end = all.findIndex((l, i) => i > start && /^(Prodajalec|Dodatne mo|Oglejte si tudi|Kupujte varno)/i.test(l));
-  if (end === -1) end = Math.min(all.length, start + 200);
+  let end = all.findIndex(
+    (l, i) =>
+      i > start &&
+      /^(Prodajalec|Cena:|Pokličite za ceno|Dodatne mo|Oglejte si tudi|Kupujte varno|Najnovejši oglasi)/i.test(l)
+  );
+  if (end === -1) end = Math.min(all.length, start + 300);
 
   const block = all.slice(start + 1, end).filter(Boolean);
-  const oprema: string[] = [];
+
+  const kategorije: Record<string, string[]> = {};
+  const vrstice: string[] = [];
   const opis: string[] = [];
+  let trenutna: Kategorija = "ostalo";
+  // Sellers write a paragraph, not one stray sentence: once prose starts, the
+  // rest of the block is prose. Without this, a short line of the pitch
+  // ("garažiran, 1. lastnik") landed back in the equipment list.
+  let vProzi = false;
 
   for (const line of block) {
     // Prices belong to their own column and are not part of either field.
     if (/^\d[\d.\s]*€$/.test(line)) continue;
-    const isProse = line.length > 80 || (/[.!?]$/.test(line) && line.length > 25);
-    (isProse ? opis : oprema).push(line);
+
+    if (!vProzi && /:$/.test(line) && line.length < 40) {
+      trenutna = kategorijaIzNaslova(line.replace(/:$/, ""));
+      continue;
+    }
+
+    if (vProzi || jeProza(line)) {
+      vProzi = true;
+      opis.push(line);
+      continue;
+    }
+
+    (kategorije[trenutna] ??= []).push(line);
+    vrstice.push(line);
   }
 
   return {
-    oprema: clean(oprema.join("; ").slice(0, 4000)),
+    kategorije,
+    vrstice,
     opis: clean(opis.join(" ").slice(0, 4000)),
   };
 }
 
-/**
- * The seller block, which on avto.net is a heading followed by a phone number
- * and sometimes a registration note.
- *
- * `je_dealer` is only decided when the page says something that decides it.
- * "Registrirani uporabnik avto.net od <date>" marks a private registered
- * account rather than a dealer shopfront; absent that marker the value stays
- * null. Guessing dealer status from a phone number or a logo would put an
- * invented fact in a column that a saved search then filters on.
- */
 /**
  * Legal-form markers in a Slovenian company name.
  *
@@ -139,8 +251,17 @@ const PRAVNE_OBLIKE =
  * say. Absence of a marker is NOT evidence of a private seller — plenty of
  * dealers trade under a bare brand name — so the unknown case stays null and the
  * UI shows it as unknown rather than inventing an answer.
+ *
+ * `trgovec` is the source's own words ("Registriran kot trgovec"), which beats
+ * every inference below it — the previous version did not read that line at all
+ * and fell back to guessing from the company name.
  */
-export function oceniDealerja(naziv: string | null, registriranUporabnik: boolean): boolean | null {
+export function oceniDealerja(
+  naziv: string | null,
+  registriranUporabnik: boolean,
+  trgovec = false
+): boolean | null {
+  if (trgovec) return true;
   if (naziv && PRAVNE_OBLIKE.test(naziv)) return true;
   // "Registrirani uporabnik avto.net od <date>" marks a private account.
   if (registriranUporabnik) return false;
@@ -149,22 +270,26 @@ export function oceniDealerja(naziv: string | null, registriranUporabnik: boolea
 
 /** Lines in the seller block that are not the seller's name. */
 const NI_NAZIV =
-  /^(TELEFON|Registrirani uporabnik|Zadnja sprememba|Ogledov|Pošlji e-mail|Dodatne možnosti|Oglejte si tudi|Kupujte varno|Vprašaj|Kontakt|Lokacija|Naslov)/i;
+  /^(TELEFON|Registrirani uporabnik|Registriran kot|Zadnja sprememba|Ogledov|Pošlji e-mail|Dodatne možnosti|Oglejte si tudi|Kupujte varno|Vprašaj|Kontakt|Lokacija|Naslov|Delovni čas|E-mail|Naročnik objave|www\.|https?:)/i;
 
 /** A street address rather than a name: "HRUŠEVEC 72, 8351 STRAŽA". */
-const JE_NASLOV = /\d{4}\s+\p{Lu}/u;
+const JE_NASLOV = /\d{4}\s+\p{Lu}|^\p{Lu}[\p{Lu}\s.]+\s\d+$/u;
 
 function extractProdajalec(text: string): {
   naziv: string | null;
   jeDealer: boolean | null;
   naslov: string | null;
+  registriranOd: string | null;
 } {
   const all = lines(text);
   const idx = all.findIndex((l) => /^Prodajalec$/i.test(l));
-  if (idx === -1) return { naziv: null, jeDealer: null, naslov: null };
+  if (idx === -1) return { naziv: null, jeDealer: null, naslov: null, registriranOd: null };
 
-  const window = all.slice(idx + 1, idx + 12).filter(Boolean);
+  const window = all.slice(idx + 1, idx + 20).filter(Boolean);
   const registriran = window.some((l) => /^Registrirani uporabnik avto\.net/i.test(l));
+  const trgovec = window.some((l) => /Registriran kot trgovec/i.test(l));
+  const registriranOd =
+    window.map((l) => l.match(/avto\.net od\s+([\d.]+)/i)?.[1]).find(Boolean) ?? null;
 
   const uporabne = window.filter(
     (l) =>
@@ -184,8 +309,9 @@ function extractProdajalec(text: string): {
 
   return {
     naziv: clean(naziv),
-    jeDealer: oceniDealerja(clean(naziv), registriran),
+    jeDealer: oceniDealerja(clean(naziv), registriran, trgovec),
     naslov: clean(naslov),
+    registriranOd: clean(registriranOd),
   };
 }
 
@@ -197,28 +323,48 @@ function extractPogon(pairs: Record<string, string>, text: string): string | nul
   const labelled = pick(pairs, "Pogon");
   if (labelled) return labelled;
   const m = text.match(/pogon\s+(4x4\s*\/?\s*4WD|4x4|4WD|na\s+\w+\s+kolesa|sprednji|zadnji)/i);
-  return m ? clean(m[0]) : null;
+  if (m) return clean(m[0]);
+  // The equipment catalogue says it in its own words on many adverts.
+  if (/štirikolesni pogon|4x4|4WD/i.test(text)) return "4x4";
+  return null;
 }
 
 /**
- * The version/trim: what follows the model in the title.
- * "BMW serija X5: 3.0 Avt. INDIVIDUAL-LUFT-PANO 23.500 €" -> "3.0 Avt. INDIVIDUAL-LUFT-PANO"
+ * The advert's title.
+ *
+ * Prefers the harvested heading. The body-text fallback exists only for records
+ * captured before the heading was harvested, and it is deliberately narrow:
+ * "the first line containing a colon" used to match the first specification row
+ * on any advert whose title has no colon, which stored "rabljeno" as the
+ * version. Now the fallback demands a line that actually looks like a title.
  */
-function extractVerzija(text: string): string | null {
-  const firstLine = text.split("\n").find((l) => l.includes(":") && l.trim().length > 5);
-  if (!firstLine) return null;
-  const afterColon = firstLine.slice(firstLine.indexOf(":") + 1);
-  // The title carries the price too, and that is already a column of its own.
-  return clean(afterColon.replace(/\s*\d[\d.\s]*€.*$/, ""));
+function extractNaslov(naslov: string | undefined, text: string): string | null {
+  const iz = clean(naslov);
+  if (iz) return iz;
+  const kandidat = lines(text).find(
+    (l) => l.length > 8 && l.length < 160 && /[A-Za-zČŠŽ]/.test(l) && !/:$/.test(l) && !/\t/.test(l)
+  );
+  return clean(kandidat);
 }
 
 export function parseDetail(raw: DetailRaw): DetailData {
   const { pairs, text } = raw;
-  const { oprema, opis } = extractOpremaInOpis(text);
+  const blok = extractOpremaBlok(text);
   const prodajalec = extractProdajalec(text);
+  const all = lines(text);
+
+  // "2019 / 6" — year and month of first registration.
+  const prvaReg = pick(pairs, "Prva registracija");
+  const regMesec = prvaReg?.match(/\d{4}\s*\/\s*(\d{1,2})/)?.[1];
+
+  const naslov = extractNaslov(raw.naslov, text);
+  const razdeljen = razdeliNaziv(naslov);
 
   return {
-    verzija: extractVerzija(text),
+    naslov,
+    znamka: razdeljen.znamka,
+    model: razdeljen.model,
+    verzija: razdeljen.verzija,
     pogon: extractPogon(pairs, text),
     karoserija: pick(pairs, "Oblika", "Karoserija"),
     barva: pick(pairs, "Barva", "Barva zunanjosti"),
@@ -228,8 +374,28 @@ export function parseDetail(raw: DetailRaw): DetailData {
     lokacija: pick(pairs, "Kraj ogleda", "Lokacija", "Kraj") ?? prodajalec.naslov,
     prodajalec_naziv: prodajalec.naziv ?? pick(pairs, "Prodajalec", "Ponudnik", "Trgovec"),
     je_dealer: prodajalec.jeDealer,
-    oprema,
-    opis,
+    // The flat text stays exactly as it was, so nothing downstream that already
+    // reads `oprema` has to change.
+    oprema: clean(blok.vrstice.join("; ").slice(0, 4000)),
+    opis: blok.opis,
     dodatni_podatki: pairs,
+
+    oprema_kategorije: blok.kategorije,
+    oprema_znacilke: znacilkeIzVrstic(blok.vrstice),
+    notranjost: pick(pairs, "Notranjost"),
+    pogonski_sklop: pick(pairs, "Pogonski sklop"),
+    stevilo_vrat: num(pick(pairs, "Št.vrat", "Stvrat", "Število vrat")),
+    // Seat count is an equipment line ("štev. sedežev: 5"), not a table pair.
+    stevilo_sedezev: num(blok.vrstice.find((v) => /štev\. sedežev/i.test(v)) ?? null),
+    lastnikov: num(labelValue(all, /^Lastnikov$/i)),
+    leto_proizvodnje: num(pick(pairs, "Leto proizvodnje")),
+    registracija_mesec: regMesec ? Number(regMesec) : null,
+    emisijski_razred: pick(pairs, "Emisijski razred"),
+    co2_g_km: num(pick(pairs, "Emisija CO2")),
+    poraba_l_100km: dec(pick(pairs, "Kombinirana vožnja")),
+    starost: pick(pairs, "Starost"),
+    prodajalec_naslov: prodajalec.naslov,
+    prodajalec_registriran_od: prodajalec.registriranOd,
+    cena_na_poziv: /Pokličite za ceno/i.test(text),
   };
 }

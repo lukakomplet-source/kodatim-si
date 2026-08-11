@@ -25,6 +25,7 @@
     "test:obvestilo": "tsx src/test-obvestilo.ts",
     "test:prejemnik": "tsx src/test-prejemnik.ts",
     "test:rezine": "tsx src/test-rezine.ts",
+    "dump:detail": "tsx src/dump-detail.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {

@@ -211,7 +211,13 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
         if (!label || label.length > 40 || cells[1].length > 200) continue;
         if (cells[1]) pairs[label] = cells[1];
       }
-      return { pairs, text: (document.body.innerText ?? "").replace(/\r/g, "") };
+      // The title is taken from the heading rather than guessed out of the body
+      // text. Guessing cost real data: the old rule took "the first line with a
+      // colon", which on an advert whose title has no colon matched the first
+      // spec row instead and stored "rabljeno" as the version.
+      const h1 = document.querySelector("h1")?.textContent ?? "";
+      const naslov = (h1 || document.title || "").replace(/\s+/g, " ").trim();
+      return { pairs, naslov, text: (document.body.innerText ?? "").replace(/\r/g, "") };
     });
   } finally {
     await context.close();
