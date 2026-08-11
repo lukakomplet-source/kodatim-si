@@ -24,7 +24,8 @@
     "test:research": "tsx src/test-research.ts",
     "test:obvestilo": "tsx src/test-obvestilo.ts",
     "test:prejemnik": "tsx src/test-prejemnik.ts",
-    "test:rezine": "tsx src/test-rezine.ts"
+    "test:rezine": "tsx src/test-rezine.ts",
+    "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

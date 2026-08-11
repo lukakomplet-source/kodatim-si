@@ -59,9 +59,30 @@ export async function GET() {
     });
   }
 
+  // Cumulative totals over the whole database, not just this run.
+  //
+  // The research row counts what the CURRENT run has done, and recomputes how
+  // many are still missing when it starts. After a restart that reads as "back
+  // to zero" — 5,680 of 46,205 became 20 of 40,520 — even though the 13,000
+  // already-captured adverts were correctly skipped. Reporting the standing
+  // totals alongside makes the real progress visible and a restart obviously
+  // harmless.
+  const [aktivnihRes, zDetajliRes] = await Promise.all([
+    db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
+    db
+      .from("avtonet_oglasi")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "aktiven")
+      .not("detajl_zajet", "is", null),
+  ]);
+
   return NextResponse.json({
     jeAdmin: true,
     aktivna: aktivnaRes.data ?? null,
     zgodovina: zgodovinaRes.data ?? [],
+    skupno: {
+      aktivnih: aktivnihRes.count ?? 0,
+      zDetajli: zDetajliRes.count ?? 0,
+    },
   });
 }

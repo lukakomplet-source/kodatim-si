@@ -41,6 +41,15 @@ if "!EXITCODE!"=="0" (
   goto end
 )
 
+rem Exit code 3 = another worker already holds the port. Retrying cannot help:
+rem the other instance is the one doing the work. Without this the loop produced
+rem an endless wall of EADDRINUSE stack traces every ten seconds.
+if "!EXITCODE!"=="3" (
+  echo.
+  echo Zbiralnik ze tece v drugem oknu. To okno lahko zaprete.
+  goto end
+)
+
 set /a ATTEMPT+=1
 set /a WAIT=ATTEMPT*10
 if !WAIT! GTR 120 set WAIT=120

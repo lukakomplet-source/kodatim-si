@@ -58,6 +58,9 @@ export function update(patch: Partial<HealthSnapshot>): HealthSnapshot {
  * the deliberate `ustavljeno` state — many consecutive failures — reports
  * unhealthy, because by then restarting is the right thing to try.
  */
+/** Exit code for "another worker already holds the port" — the launcher reads it. */
+export const KODA_ZE_TECE = 3;
+
 export function startHealthServer(port: number): Server {
   const server = createServer((req, res) => {
     const snap = current();
@@ -65,6 +68,25 @@ export function startHealthServer(port: number): Server {
     res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ ok: healthy, ...snap }, null, 2));
   });
+
+  // A taken port means another worker is already running, which is a reason to
+  // stand down — not a fault to retry. Unhandled, the 'error' event threw a
+  // stack trace and the launcher's restart loop tried again every ten seconds
+  // forever, so two instances produced an endless wall of EADDRINUSE instead of
+  // one sentence. Exits with a distinct code the launcher recognises.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\n  Zbiralnik ze tece (vrata ${port} so zasedena).\n` +
+          `  Odprt imate drugo okno workerja — uporabite tisto.\n` +
+          `  Ce ste prepricani, da ne tece, zaprite vsa okna in poskusite znova.\n`
+      );
+      process.exit(KODA_ZE_TECE);
+    }
+    console.error(`Health streznik ni uspel: ${err.message}`);
+    process.exit(1);
+  });
+
   server.listen(port, () => {
     console.log(JSON.stringify({ t: new Date().toISOString(), lvl: "info", msg: `health na portu ${port}` }));
   });

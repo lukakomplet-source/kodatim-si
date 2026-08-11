@@ -42,11 +42,14 @@ type Raziskava = {
   updated_at: string;
 };
 
+type Skupno = { aktivnih: number; zDetajli: number };
+
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
   aktivna: Raziskava | null;
   zgodovina: Raziskava[];
+  skupno?: Skupno;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -222,7 +225,7 @@ export function ResearchPanel() {
         </p>
       )}
 
-      {aktivna && <Napredek r={aktivna} now={now} />}
+      {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} />}
 
       {odziv.zgodovina.length > 0 && <Zgodovina vrstice={odziv.zgodovina} now={now} />}
     </section>
@@ -230,18 +233,32 @@ export function ResearchPanel() {
 }
 
 /** The live view of a run: which phase, how far, how long, and what went wrong. */
-function Napredek({ r, now }: { r: Raziskava; now: number }) {
+function Napredek({ r, now, skupno }: { r: Raziskava; now: number; skupno?: Skupno }) {
   const caka = r.status === "zahtevano";
   // A request nobody has picked up within two minutes almost always means the
   // worker is not running. Saying so beats a spinner that spins for an hour.
   const cakaPredolgo = caka && now > 0 && now - new Date(r.zahtevano_ob).getTime() > 2 * 60_000;
 
+  // Progress is shown against the WHOLE database, not against this run. The run
+  // counts only what it has done itself and re-counts what is missing when it
+  // starts, so a restart used to look like starting over — 5,680 of 46,205
+  // became 20 of 40,520 — while the adverts already captured were correctly
+  // skipped. The standing totals cannot go backwards.
+  const skupajVseh = skupno?.aktivnih ?? 0;
+  const skupajZDetajli = skupno?.zDetajli ?? 0;
   const detajliOdstotek =
-    r.detajlov_skupaj > 0 ? Math.min(100, Math.round((r.detajlov_obdelanih / r.detajlov_skupaj) * 100)) : 0;
-  const preostaloDetajlov = Math.max(0, r.detajlov_skupaj - r.detajlov_obdelanih);
-  // At ten seconds per advert the remaining time is arithmetic, not a guess —
-  // worth showing when the number is hours.
-  const oceneMinut = Math.round((preostaloDetajlov * 10) / 60);
+    skupajVseh > 0 ? Math.min(100, Math.round((skupajZDetajli / skupajVseh) * 100)) : 0;
+  const preostaloDetajlov = Math.max(0, skupajVseh - skupajZDetajli);
+
+  // ETA from the rate this run is actually achieving, not from a fixed guess.
+  // The old version assumed ten seconds per advert — the delay before the worker
+  // was sped up — and so announced 112 hours for work that takes about twenty.
+  const tecelMs = r.zacetek ? now - new Date(r.zacetek).getTime() : 0;
+  const naMinuto =
+    r.detajlov_obdelanih >= 10 && tecelMs > 60_000
+      ? r.detajlov_obdelanih / (tecelMs / 60_000)
+      : null;
+  const oceneMinut = naMinuto !== null ? Math.round(preostaloDetajlov / naMinuto) : null;
 
   return (
     <div className="mt-5 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
@@ -272,18 +289,34 @@ function Napredek({ r, now }: { r: Raziskava; now: number }) {
         <Stat label="Oglasov" value={stevilo(r.oglasov_najdenih)} />
         <Stat label="Novih" value={stevilo(r.novih)} tone="emerald" />
         <Stat label="Sprememb cen" value={stevilo(r.spremembe_cen)} tone="amber" />
-        <Stat label="Podrobnosti" value={`${stevilo(r.detajlov_obdelanih)} / ${stevilo(r.detajlov_skupaj)}`} />
+        <Stat
+          label="Podrobnosti v bazi"
+          value={skupajVseh > 0 ? `${stevilo(skupajZDetajli)} / ${stevilo(skupajVseh)}` : "—"}
+        />
         <Stat label="Napak" value={stevilo(r.napak)} tone={r.napak > 0 ? "red" : "zinc"} />
       </div>
 
-      {r.faza === 2 && r.detajlov_skupaj > 0 && (
+      {r.faza === 2 && skupajVseh > 0 && (
         <div className="mt-4">
           <div className="h-2 overflow-hidden rounded-full bg-zinc-200">
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${detajliOdstotek}%` }} />
           </div>
           <p className="mt-1.5 text-xs text-zinc-500">
-            {detajliOdstotek}% · preostalo {stevilo(preostaloDetajlov)} oglasov ≈{" "}
-            {oceneMinut >= 60 ? `${Math.floor(oceneMinut / 60)} h ${oceneMinut % 60} min` : `${oceneMinut} min`}
+            {detajliOdstotek}% vseh oglasov ima podrobnosti · preostalo{" "}
+            {stevilo(preostaloDetajlov)}
+            {oceneMinut !== null && (
+              <>
+                {" ≈ "}
+                {oceneMinut >= 60
+                  ? `${Math.floor(oceneMinut / 60)} h ${oceneMinut % 60} min`
+                  : `${oceneMinut} min`}
+              </>
+            )}
+          </p>
+          <p className="mt-1 text-[11px] text-zinc-400">
+            V tem krogu obdelanih {stevilo(r.detajlov_obdelanih)}
+            {naMinuto !== null && ` · ${Math.round(naMinuto)} oglasov/min`}. Ob ponovnem zagonu se
+            obdelani oglasi preskočijo — odstotek zgoraj se nikoli ne vrne nazaj.
           </p>
         </div>
       )}
