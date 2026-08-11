@@ -198,6 +198,47 @@ export async function posljiVabiloZnova(id: string): Promise<UporabnikResult> {
 }
 
 /**
+ * Sets a password for someone who already has an account.
+ *
+ * The reason this exists: an invite link both authenticates and redirects, so a
+ * person whose redirect was misconfigured ends up with a confirmed account, a
+ * consumed invite, and no password — able to be "signed in" once and never able
+ * to log in again. Re-sending a link cannot fix that while the redirect is still
+ * wrong, and this can, without touching any dashboard.
+ *
+ * The password is chosen and typed by the admin, never generated or shown by us,
+ * and it is not written to any log or return value. `email_confirm` is set at the
+ * same time so a half-finished invite cannot leave the account unusable.
+ */
+export async function nastaviGeslo(id: string, geslo: string): Promise<UporabnikResult> {
+  const kdo = await zahtevajAdmina();
+  if ("napaka" in kdo) return { error: kdo.napaka };
+
+  if (geslo.length < 8) return { error: "Geslo naj ima vsaj 8 znakov." };
+
+  const admin = createAdminClient();
+  const { data: vrstica } = await admin
+    .from("avtonet_uporabniki")
+    .select("uporabnik, profiles:uporabnik (email)")
+    .eq("id", id)
+    .maybeSingle();
+
+  const zapis = vrstica as { uporabnik: string; profiles: { email: string | null } | null } | null;
+  if (!zapis) return { error: "Uporabnik ne obstaja." };
+
+  const { error } = await admin.auth.admin.updateUserById(zapis.uporabnik, {
+    password: geslo,
+    email_confirm: true,
+  });
+  if (error) return { error: `Gesla ni bilo mogoče nastaviti: ${error.message}` };
+
+  revalidatePath("/avtonet/uporabniki");
+  return {
+    success: `Geslo nastavljeno za ${zapis.profiles?.email ?? "uporabnika"}. Sporočite mu ga po varni poti — mi ga nikjer ne shranimo in ga ne moremo znova prikazati.`,
+  };
+}
+
+/**
  * Removes the SBN Auto access row. The person's KodaTim account stays — this
  * screen manages access to one product, not the existence of an account.
  */

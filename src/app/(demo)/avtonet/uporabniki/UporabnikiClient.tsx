@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  KeyRound,
   Loader2,
   Mail,
   ShieldCheck,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   dodajUporabnika,
+  nastaviGeslo,
   odstraniUporabnika,
   posljiVabiloZnova,
   preklopiDostop,
@@ -57,6 +59,8 @@ export function UporabnikiClient({
   const [stanje, akcija, tece] = useActionState<UporabnikResult, FormData>(dodajUporabnika, {});
   const [isPending, start] = useTransition();
   const [sporocilo, setSporocilo] = useState<UporabnikResult | null>(null);
+  // Which row has its password field open, and what has been typed into it.
+  const [geslo, setGeslo] = useState<{ id: string; vrednost: string } | null>(null);
 
   const uporabi = (fn: () => Promise<UporabnikResult>) => {
     start(async () => {
@@ -187,6 +191,17 @@ export function UporabnikiClient({
                 <button
                   type="button"
                   disabled={isPending}
+                  onClick={() =>
+                    setGeslo((g) => (g?.id === v.id ? null : { id: v.id, vrednost: "" }))
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Nastavi geslo
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending}
                   title="Odstrani iz SBN Auto"
                   onClick={() => {
                     if (confirm(`Odstraniti ${v.email} iz SBN Auto? Račun v KodaTim ostane.`)) {
@@ -198,6 +213,45 @@ export function UporabnikiClient({
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
+
+              {geslo?.id === v.id && (
+                <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200">
+                  <p className="text-xs text-zinc-600">
+                    Vpišite geslo za <strong>{v.email}</strong> in mu ga sporočite. Deluje takoj, brez
+                    e-pošte — uporabno, kadar povezava iz vabila ne pride skozi. Gesla ne shranimo in ga
+                    ne moremo znova prikazati.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={geslo.vrednost}
+                      onChange={(e) => setGeslo({ id: v.id, vrednost: e.target.value })}
+                      placeholder="vsaj 8 znakov"
+                      autoComplete="off"
+                      className="min-w-[12rem] flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-accent/60 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={isPending || geslo.vrednost.length < 8}
+                      onClick={() => {
+                        const vrednost = geslo.vrednost;
+                        setGeslo(null);
+                        uporabi(() => nastaviGeslo(v.id, vrednost));
+                      }}
+                      className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+                    >
+                      Shrani geslo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGeslo(null)}
+                      className="rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-600 transition hover:bg-white"
+                    >
+                      Prekliči
+                    </button>
+                  </div>
+                </div>
+              )}
             </article>
           ))
         )}
