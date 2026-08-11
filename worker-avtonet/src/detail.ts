@@ -275,6 +275,36 @@ const NI_NAZIV =
 /** A street address rather than a name: "HRUŠEVEC 72, 8351 STRAŽA". */
 const JE_NASLOV = /\d{4}\s+\p{Lu}|^\p{Lu}[\p{Lu}\s.]+\s\d+$/u;
 
+/**
+ * A Slovenian postal address: four-digit postcode followed by a town.
+ * "BREZOVI DOL 20, 1303 ZAGRADEC" — the postcode is what makes it unambiguous.
+ */
+const POSTNA_STEVILKA = /\b\d{4}\s+\p{Lu}[\p{L}\s.-]{2,}/u;
+
+/**
+ * The seller's registered address, taken from the line the page prints for it.
+ *
+ * avto.net ends the advert with "Naročnik objave oglasa: AVTO VIDMAR d.o.o.,
+ * Brezovi Dol 20, 1303 Zagradec, Slovenija, DŠ:SI27732797" — a complete,
+ * labelled address. Reading it beats picking lines out of the seller box by
+ * shape, which is why `lokacija` was filled on only 1 advert in 10: the box
+ * shows the street and the town on separate lines and often omits the postcode
+ * entirely.
+ */
+function extractNarocnik(text: string): { naziv: string | null; naslov: string | null } {
+  const m = text.match(/Naročnik objave oglasa:\s*([^\n]+)/i);
+  if (!m) return { naziv: null, naslov: null };
+
+  const deli = m[1].split(",").map((d) => d.replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (deli.length === 0) return { naziv: null, naslov: null };
+
+  // Drop the tax number and the country; what is left is name, street, town.
+  const uporabni = deli.filter((d) => !/^D[ŠS]\s*:/i.test(d) && !/^Slovenij/i.test(d));
+  const naziv = uporabni[0] ?? null;
+  const naslov = uporabni.slice(1).join(", ") || null;
+  return { naziv: clean(naziv), naslov: clean(naslov) };
+}
+
 function extractProdajalec(text: string): {
   naziv: string | null;
   jeDealer: boolean | null;
@@ -282,10 +312,20 @@ function extractProdajalec(text: string): {
   registriranOd: string | null;
 } {
   const all = lines(text);
+  const narocnik = extractNarocnik(text);
   const idx = all.findIndex((l) => /^Prodajalec$/i.test(l));
-  if (idx === -1) return { naziv: null, jeDealer: null, naslov: null, registriranOd: null };
+  if (idx === -1) {
+    return {
+      naziv: narocnik.naziv,
+      jeDealer: oceniDealerja(narocnik.naziv, false, /Registriran kot trgovec/i.test(text)),
+      naslov: narocnik.naslov,
+      registriranOd: clean(text.match(/avto\.net od\s+([\d.]+)/i)?.[1] ?? null),
+    };
+  }
 
-  const window = all.slice(idx + 1, idx + 20).filter(Boolean);
+  // Wide enough to reach the second seller block, which is the one that carries
+  // the postcode.
+  const window = all.slice(idx + 1, idx + 40).filter(Boolean);
   const registriran = window.some((l) => /^Registrirani uporabnik avto\.net/i.test(l));
   const trgovec = window.some((l) => /Registriran kot trgovec/i.test(l));
   const registriranOd =
@@ -304,8 +344,12 @@ function extractProdajalec(text: string): {
   // STRAŽA" appeared in the prodajalec_naziv column). Now it is recognised and
   // kept separately, which also recovers a location for dealers whose "Kraj
   // ogleda" field the source leaves as a bare comma.
-  const naslov = uporabne.find((l) => JE_NASLOV.test(l)) ?? null;
-  const naziv = uporabne.find((l) => !JE_NASLOV.test(l)) ?? null;
+  //
+  // A line carrying a postcode is preferred over one that merely looks like a
+  // street, because the postcode is what makes a location usable.
+  const zPosto = uporabne.find((l) => POSTNA_STEVILKA.test(l));
+  const naslov = narocnik.naslov ?? zPosto ?? uporabne.find((l) => JE_NASLOV.test(l)) ?? null;
+  const naziv = uporabne.find((l) => !JE_NASLOV.test(l) && !POSTNA_STEVILKA.test(l)) ?? narocnik.naziv;
 
   return {
     naziv: clean(naziv),

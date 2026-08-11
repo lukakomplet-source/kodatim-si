@@ -26,6 +26,10 @@
     "test:prejemnik": "tsx src/test-prejemnik.ts",
     "test:rezine": "tsx src/test-rezine.ts",
     "dump:detail": "tsx src/dump-detail.ts",
+    "dump:modeli": "tsx src/dump-modeli.ts",
+    "prostor": "tsx src/prostor.ts",
+    "test:nazivi": "tsx src/test-nazivi.ts",
+    "test:detajli": "tsx src/test-detajli.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {

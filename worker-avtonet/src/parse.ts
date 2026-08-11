@@ -186,8 +186,15 @@ const DVOBESEDNI_MODEL = /^(serija|razred|klasa|class|serie)$/i;
 export function razdeliNaziv(naziv: string | null): RazdeljenNaziv {
   if (!naziv) return { znamka: null, model: null, verzija: null };
 
-  // The title carries the price on some pages; it has its own column.
-  const cist = naziv.replace(/\s*\d[\d.]*\s*€.*$/, "").replace(/\s+/g, " ").trim();
+  // The heading appends the specification after a comma on many adverts
+  // ("Škoda Kamiq 1.0 TSI Edition DSG, letnik 2023, 45.000 km"), and the price
+  // on others. Both have their own columns; left in, they became part of the
+  // trim ("1.0 TSI Edition DSG, letnik").
+  const cist = naziv
+    .replace(/\s*\d[\d.]*\s*€.*$/, "")
+    .replace(/[,;]?\s*(letnik|1\.\s*registracija|prevoženih|prevozenih)\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cist) return { znamka: null, model: null, verzija: null };
 
   const dvopicje = cist.indexOf(":");
@@ -212,7 +219,9 @@ export function razdeliNaziv(naziv: string | null): RazdeljenNaziv {
         break;
       }
     }
-    ostanek = glava.slice(i).trim();
+    // A separator between brand and model is punctuation, not a model name:
+    // "Rosengart - CV 5" would otherwise yield model "-".
+    ostanek = glava.slice(i).replace(/^[\s\-–—·:.]+/, "").trim();
   }
 
   let model: string | null;

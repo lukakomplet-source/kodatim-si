@@ -8,9 +8,10 @@ import {
   fetchResultsPage,
   openBrowser,
 } from "./collector.js";
-import type { ParsedRow } from "./parse.js";
+import { nastaviZnamke, type ParsedRow } from "./parse.js";
 import { detailUrl, parseDetail } from "./detail.js";
 import {
+  countMissingDetail,
   listingsMissingDetail,
   markDisappeared,
   saveDetail,
@@ -258,6 +259,10 @@ export async function runResearch(
 
     const znamke =
       cfg.samoZnamke.length > 0 ? cfg.samoZnamke : await fetchBrands(browser);
+    // The title splitter needs the live catalogue, not just its committed
+    // snapshot — otherwise a brand added by the source this month is parsed as
+    // part of the model name for the whole run.
+    nastaviZnamke(znamke);
     log("info", "znamke pridobljene", { koliko: znamke.length });
     dnevnik.zapisi("info", `Znamk za pregled: ${znamke.length}`);
 
@@ -408,12 +413,11 @@ export async function runResearch(
     // caps any one select at 1,000 rows, and using its length as the total made
     // a 52,000-advert backlog look like a day's work. The work itself is then
     // pulled in batches of up to 1,000 until the queue is genuinely empty.
-    const { count: manjka } = await db
-      .from("avtonet_oglasi")
-      .select("id", { count: "exact", head: true })
-      .is("detajl_zajet", null)
-      .eq("status", "aktiven");
-    p.detajlov_skupaj = cfg.detailLimit > 0 ? Math.min(manjka ?? 0, cfg.detailLimit) : (manjka ?? 0);
+    // Counts what the queue itself uses, including adverts captured by an older
+    // parser. Duplicating the condition here once meant the phase reported a
+    // backlog that did not match the work it then pulled.
+    const manjka = await countMissingDetail(db);
+    p.detajlov_skupaj = cfg.detailLimit > 0 ? Math.min(manjka, cfg.detailLimit) : manjka;
     p.detajlov_v_vrsti = p.detajlov_skupaj;
     await onProgress(p);
     log("info", "zacenjam 2. fazo", { zaObdelavo: p.detajlov_skupaj });

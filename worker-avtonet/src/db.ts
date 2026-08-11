@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { splitZnamkaModel, type ParsedRow } from "./parse.js";
+import { razdeliNaziv, type ParsedRow } from "./parse.js";
 
 /**
  * Everything that touches the database.
@@ -51,7 +51,9 @@ export async function upsertListings(
   const ids = rows.map((r) => r.avtonetId);
   const { data: existing, error } = await db
     .from("avtonet_oglasi")
-    .select("id, avtonet_id, cena_eur")
+    // km and status join cena here because a snapshot is now written only when
+    // one of the three actually changed, which needs the previous values.
+    .select("id, avtonet_id, cena_eur, km, status")
     .in("avtonet_id", ids);
   if (error) throw new Error(`Branje obstoječih oglasov ni uspelo: ${error.message}`);
 
@@ -68,7 +70,7 @@ export async function upsertListings(
   const zaPosodobitev: { id: string; row: ParsedRow; status: string }[] = [];
 
   for (const row of enkratni.values()) {
-    const { znamka, model } = splitZnamkaModel(row.naziv);
+    const { znamka, model, verzija } = razdeliNaziv(row.naziv);
     const status = row.prodano ? "prodano" : "aktiven";
     const prev = known.get(row.avtonetId);
 
@@ -78,6 +80,7 @@ export async function upsertListings(
         url: row.url,
         znamka,
         model,
+        verzija,
         naziv: row.naziv,
         letnik: row.letnik,
         km: row.km,
@@ -130,22 +133,47 @@ export async function upsertListings(
     if (napaka?.error) throw new Error(`Posodobitev oglasa ni uspela: ${napaka.error.message}`);
   }
 
-  // A snapshot for every advert seen, in one insert. This is the history the
-  // whole system exists to build, so a listing with no resolvable id (a race on
-  // insert) is skipped rather than allowed to break the batch.
+  // A snapshot per advert per round was the original design, and measurement
+  // killed it: 53,717 adverts x ~375 B = ~19 MB every round, ~643 MB over 30
+  // rounds, almost all of it identical rows saying "nothing changed". The fact
+  // "seen again, unchanged" is already carried by `last_seen` on the advert.
+  //
+  // So a snapshot is now written only when the advert is new or when price,
+  // mileage or status actually moved — which is exactly the history the
+  // statistics read. `razlog` records why it exists, so the timeline can be read
+  // without inferring it.
   const posnetki: Record<string, unknown>[] = [];
   for (const row of enkratni.values()) {
     const status = row.prodano ? "prodano" : "aktiven";
-    const oglasId =
-      known.get(row.avtonetId)?.id ?? idPoAvtonet.get(row.avtonetId) ?? null;
+    const prev = known.get(row.avtonetId);
+    const oglasId = prev?.id ?? idPoAvtonet.get(row.avtonetId) ?? null;
     if (!oglasId) continue;
+
+    let razlog: string | null = null;
+    if (!prev) {
+      razlog = "nov";
+    } else {
+      const staraCena = prev.cena_eur === null ? null : Number(prev.cena_eur);
+      const razlogi: string[] = [];
+      if (staraCena !== row.cenaEur) razlogi.push("cena");
+      if ((prev.km ?? null) !== row.km) razlogi.push("km");
+      if (prev.status !== status) razlogi.push("status");
+      razlog = razlogi.length > 0 ? razlogi.join("+") : null;
+    }
+    if (!razlog) continue;
+
     posnetki.push({
       oglas_id: oglasId,
       raziskava_id: raziskavaId ?? null,
       cena_eur: row.cenaEur,
       km: row.km,
       status,
-      surovo: row.surovo,
+      razlog,
+      // The raw row is what lets a better parser be applied to history later,
+      // and it is by far the biggest field. Keeping it on the FIRST snapshot
+      // preserves that ability; repeating it on every price change would not
+      // add anything, since the advert's text does not change with its price.
+      surovo: razlog === "nov" ? row.surovo : null,
     });
   }
   if (posnetki.length > 0) {
@@ -157,6 +185,21 @@ export async function upsertListings(
 }
 
 /**
+ * Which parser produced the stored detail.
+ *
+ * Bump this whenever the detail parser learns to extract something new. Phase 2
+ * then re-opens adverts captured by an older parser, so an improvement reaches
+ * the ~13,000 adverts already collected instead of only new ones — no manual
+ * backfill, no re-scrape script.
+ *
+ *   1  equipment as one flat string
+ *   2  equipment by source category + canonical slugs, plus interior, drivetrain
+ *      type, doors, seats, owners, build year, emissions, consumption, seller
+ *      address and registered-since, and brand/model re-split from the title
+ */
+export const DETAJL_VERZIJA = 2;
+
+/**
  * Phase 2's write: the fields that only exist on the advert's own page.
  *
  * `detajl_zajet` is set even when every field came back null — the page was
@@ -164,30 +207,66 @@ export async function upsertListings(
  * genuinely publishes nothing extra would put it back in the work queue on
  * every future research, and it would be re-fetched forever.
  */
-export async function saveDetail(
-  db: Db,
-  oglasId: string,
-  detail: {
-    verzija: string | null;
-    pogon: string | null;
-    karoserija: string | null;
-    barva: string | null;
-    lokacija: string | null;
-    prodajalec_naziv: string | null;
-    je_dealer: boolean | null;
-    oprema: string | null;
-    opis: string | null;
-    dodatni_podatki: Record<string, string>;
-  }
-): Promise<void> {
-  const { error } = await db
-    .from("avtonet_oglasi")
-    .update({ ...detail, detajl_zajet: new Date().toISOString() })
-    .eq("id", oglasId);
+export type DetailZapis = {
+  naslov: string | null;
+  znamka: string | null;
+  model: string | null;
+  verzija: string | null;
+  pogon: string | null;
+  karoserija: string | null;
+  barva: string | null;
+  lokacija: string | null;
+  prodajalec_naziv: string | null;
+  je_dealer: boolean | null;
+  oprema: string | null;
+  opis: string | null;
+  dodatni_podatki: Record<string, string>;
+  oprema_kategorije: Record<string, string[]>;
+  oprema_znacilke: string[];
+  notranjost: string | null;
+  pogonski_sklop: string | null;
+  stevilo_vrat: number | null;
+  stevilo_sedezev: number | null;
+  lastnikov: number | null;
+  leto_proizvodnje: number | null;
+  registracija_mesec: number | null;
+  emisijski_razred: string | null;
+  co2_g_km: number | null;
+  poraba_l_100km: number | null;
+  starost: string | null;
+  prodajalec_naslov: string | null;
+  prodajalec_registriran_od: string | null;
+  cena_na_poziv: boolean;
+};
+
+export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): Promise<void> {
+  const { naslov, znamka, model, ...ostalo } = detail;
+
+  const patch: Record<string, unknown> = {
+    ...ostalo,
+    detajl_zajet: new Date().toISOString(),
+    detajl_verzija: DETAJL_VERZIJA,
+  };
+
+  // The detail page's heading is a cleaner source for these three than the
+  // results row, so it overwrites them — but only when it actually parsed
+  // something. A null here would otherwise erase a good value from phase 1.
+  if (naslov) patch.naziv = naslov;
+  if (znamka) patch.znamka = znamka;
+  if (model) patch.model = model;
+
+  const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
   if (error) throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
 }
 
-/** Listings whose detail page has never been opened — phase 2's work queue. */
+/**
+ * Phase 2's work queue: adverts with no detail, or with one captured by an
+ * older parser.
+ *
+ * The version check is what makes a parser improvement retroactive. Ordered so
+ * never-captured adverts come first — a new advert with nothing is worth more
+ * than a re-read of one we already have decent data for.
+ */
 export async function listingsMissingDetail(
   db: Db,
   limit: number
@@ -195,12 +274,23 @@ export async function listingsMissingDetail(
   const { data, error } = await db
     .from("avtonet_oglasi")
     .select("id, avtonet_id")
-    .is("detajl_zajet", null)
+    .lt("detajl_verzija", DETAJL_VERZIJA)
     .eq("status", "aktiven")
-    .order("first_seen", { ascending: false })
+    .order("detajl_zajet", { ascending: true, nullsFirst: true })
     .limit(limit);
   if (error) throw new Error(`Branje oglasov brez podrobnosti ni uspelo: ${error.message}`);
   return (data ?? []) as { id: string; avtonet_id: string }[];
+}
+
+/** How many adverts still need a detail pass — sized with a COUNT, never a read. */
+export async function countMissingDetail(db: Db): Promise<number> {
+  const { count, error } = await db
+    .from("avtonet_oglasi")
+    .select("*", { count: "exact", head: true })
+    .lt("detajl_verzija", DETAJL_VERZIJA)
+    .eq("status", "aktiven");
+  if (error) throw new Error(`Štetje oglasov brez podrobnosti ni uspelo: ${error.message}`);
+  return count ?? 0;
 }
 
 /**
