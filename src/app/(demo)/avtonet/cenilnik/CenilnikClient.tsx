@@ -384,13 +384,22 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
               />
               <Stat oznaka="Vzorec" vrednost={`${cenitev.cas.vzorec} vozil`} />
             </div>
+            {cenitev.hitroIzginuli.vzorec > 0 && (
+              <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-xs text-emerald-900 ring-1 ring-emerald-200">
+                <strong>Sodba trga:</strong> {cenitev.hitroIzginuli.vzorec} primerljivih vozil je izginilo
+                v manj kot {cenitev.hitroIzginuli.pragDni} dneh — njihova mediana zadnje cene je{" "}
+                <strong>{eur(cenitev.hitroIzginuli.medianaZadnjeCene)}</strong>. To je najboljši javni
+                približek dejanske prodajne cene in v izračunu šteje več kot zahtevane cene aktivnih
+                oglasov.
+              </p>
+            )}
             <p className="mt-3 text-xs text-zinc-500">
               Merjeno je <strong>trajanje na oglasniku</strong>, ne prodaja. Oglas, ki je izginil, je lahko
               bil tudi umaknjen.
               {cenitev.zakljuceni.vzorec > 0 && (
                 <>
                   {" "}
-                  Mediana zadnje cene pred izginotjem: {eur(cenitev.zakljuceni.mediana)} (
+                  Mediana zadnje cene pred izginotjem (vsi zaključeni): {eur(cenitev.zakljuceni.mediana)} (
                   {cenitev.zakljuceni.vzorec} vozil).
                 </>
               )}

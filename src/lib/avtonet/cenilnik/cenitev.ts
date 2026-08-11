@@ -73,6 +73,19 @@ export type Cenitev = {
   zakljuceni: CenovnaStatistika;
   cas: CasNaTrgu;
 
+  /**
+   * Comparables that left the board within HITRO_DNI — the market's own verdict.
+   * A car that vanished in two weeks was priced at or under what buyers accept,
+   * so its last seen price is the closest thing public data has to a sale
+   * price, and it pulls the estimate harder than any asking price does.
+   */
+  hitroIzginuli: {
+    vzorec: number;
+    medianaZadnjeCene: number | null;
+    medianaDni: number | null;
+    pragDni: number;
+  };
+
   /** Correction applied because the target's mileage differs from the comparables'. */
   popravekKm: { eur: number; medianaKmPrimerljivih: number | null; razlaga: string } | null;
 
@@ -90,6 +103,49 @@ const NAJVEC_PRIMERLJIVIH = 40;
 
 /** Below this similarity a car is not a comparable, whatever the filters said. */
 const PRAG_PODOBNOSTI = 45;
+
+/**
+ * Gone within this many days reads as "the price was right". The number needs
+ * a reason: on the market data collected so far the overall median time on the
+ * board sits around two to three weeks, so three weeks separates "moved
+ * noticeably faster than typical" from merely "eventually left".
+ */
+export const HITRO_DNI = 21;
+
+/** Slower than this before vanishing means the price was NOT what moved it. */
+const POCASI_DNI = 60;
+
+/**
+ * Half-life for aging a finished advert's last price. Used-car prices drift —
+ * a specimen that vanished nine months ago at 16,000 € says something, but not
+ * as much as one that vanished last week, and with a 180-day half-life it
+ * counts about a third as much.
+ */
+const RAZPOLOVNI_CAS_DNI = 180;
+
+/**
+ * How hard one finished advert's last price pulls, relative to an active
+ * asking price of the same similarity.
+ *
+ * The reasoning, stated because the numbers look arbitrary without it: an
+ * asking price is an owner's OPINION of the value; a fast disappearance is the
+ * market ACCEPTING a price, which is strictly better evidence — hence 1.5×.
+ * A slow disappearance is ambiguous (price cut? withdrawn? sold reluctantly?),
+ * so it still counts, but at half weight. In between, linear.
+ *
+ * Everything is then discounted by age. Exported so the tests can pin the
+ * ordering (fast > slow, fresh > stale) instead of trusting the prose.
+ */
+export function utezKoncanega(dniNaTrgu: number, starostDni: number): number {
+  const hitrost =
+    dniNaTrgu <= HITRO_DNI
+      ? 1.5
+      : dniNaTrgu >= POCASI_DNI
+        ? 0.5
+        : 1.5 - ((dniNaTrgu - HITRO_DNI) / (POCASI_DNI - HITRO_DNI)) * 1.0;
+  const staranje = Math.pow(0.5, Math.max(0, starostDni) / RAZPOLOVNI_CAS_DNI);
+  return hitrost * staranje;
+}
 
 /** Minimum comparables before a mileage slope is worth fitting at all. */
 const MIN_ZA_REGRESIJO = 10;
@@ -295,14 +351,46 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
   const dnevi = ocenjeni.map((p) => p.dniNaTrgu).filter((d): d is number => d !== null);
   const cas = casNaTrgu(dnevi);
 
-  // The estimate is built on the live market, because that is what a seller
-  // will actually be competing against today.
-  const osnova = utezenaMediana(
-    aktivniZCeno.map((p) => ({
+  const zdaj = Date.now();
+  const hitri = zakljuceniVrstice.filter(
+    (p) => p.dniNaTrgu !== null && p.dniNaTrgu <= HITRO_DNI
+  );
+  const hitroIzginuli = {
+    vzorec: hitri.length,
+    medianaZadnjeCene: median(hitri.map((p) => p.cena as number)),
+    medianaDni: median(hitri.map((p) => p.dniNaTrgu as number)),
+    pragDni: HITRO_DNI,
+  };
+
+  // The estimate blends two kinds of evidence, and they are not equals.
+  //
+  // An active advert contributes its ASKING price — the owner's opinion. A
+  // finished advert contributes the last price seen before it left the board,
+  // and if it left fast, that is the market ACCEPTING a price: the closest
+  // thing public data has to a transaction. So finished adverts enter the same
+  // weighted median as the actives, scaled by utezKoncanega — fast-gone 1.5×
+  // an equally-similar ask, slow-gone 0.5×, everything discounted by age.
+  //
+  // With no history yet the pool is all asks and the estimate behaves exactly
+  // as before; as research rounds accumulate disappearances, the number
+  // gravitates from "what sellers want" toward "what buyers accepted".
+  const osnova = utezenaMediana([
+    ...aktivniZCeno.map((p) => ({
       vrednost: p.cena as number,
       teza: Math.max(1, skupnaPodobnost(p) - PRAG_PODOBNOSTI),
-    }))
-  );
+    })),
+    ...zakljuceniVrstice
+      .filter((p) => p.dniNaTrgu !== null && p.statusSpremenjen !== null)
+      .map((p) => {
+        const starostDni = (zdaj - new Date(p.statusSpremenjen as string).getTime()) / 86_400_000;
+        return {
+          vrednost: p.cena as number,
+          teza:
+            Math.max(1, skupnaPodobnost(p) - PRAG_PODOBNOSTI) *
+            utezKoncanega(p.dniNaTrgu as number, starostDni),
+        };
+      }),
+  ]);
 
   const popravek =
     osnova !== null
@@ -326,8 +414,16 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
     // Half an interquartile range beyond the quartiles: a genuinely newer or
     // lower-mileage car may be worth more than three quarters of its
     // comparables, but not more than the market it is being compared to.
+    //
+    // The floor additionally admits the fast-disappearance median: when the
+    // market's own verdict sits below every current ask, the estimate is
+    // allowed to follow the verdict rather than being pinned to sellers' hopes.
     const iqr = aktivni.q3 - aktivni.q1;
-    const omejen = Math.max(aktivni.q1 - 0.5 * iqr, Math.min(aktivni.q3 + 0.5 * iqr, surov));
+    const spodnja = Math.min(
+      aktivni.q1 - 0.5 * iqr,
+      hitroIzginuli.medianaZadnjeCene ?? Number.POSITIVE_INFINITY
+    );
+    const omejen = Math.max(spodnja, Math.min(aktivni.q3 + 0.5 * iqr, surov));
     return Math.round(omejen / 50) * 50;
   })();
 
@@ -347,7 +443,9 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
     opozorila.push("Modela ni bilo mogoče uskladiti z bazo, zato so primerjave iz iste znamke, a drugih modelov.");
   }
   if (cas.vzorec === 0) {
-    opozorila.push("Noben primerljiv oglas še ni zaključen, zato časa do prodaje še ni mogoče izmeriti.");
+    opozorila.push(
+      "Noben primerljiv oglas še ni zaključen — ocena zato temelji samo na zahtevanih cenah, ki so praviloma višje od iztrženih. Z vsakim krogom raziskave se to izboljšuje."
+    );
   }
   if (aktivni.izlocenih > 0) {
     opozorila.push(`${aktivni.izlocenih} oglasov z izstopajočo ceno je bilo izločenih iz izračuna.`);
@@ -365,7 +463,7 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
     priporocenaCena: aktivni.q3 === null ? null : Math.round(aktivni.q3 / 50) * 50,
     hitraProdaja: aktivni.q1 === null ? null : Math.round(aktivni.q1 / 50) * 50,
     zanesljivost: zanesljivost({
-      vzorec: aktivniZCeno.length,
+      vzorec: aktivniZCeno.length + hitri.length,
       povprecnaPodobnost,
       mediana: aktivni.mediana,
       q1: aktivni.q1,
@@ -374,6 +472,7 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
     aktivni,
     zakljuceni,
     cas,
+    hitroIzginuli,
     popravekKm: popravek
       ? { eur: popravek.eur, medianaKmPrimerljivih: popravek.medianaKm, razlaga: popravek.razlaga }
       : null,

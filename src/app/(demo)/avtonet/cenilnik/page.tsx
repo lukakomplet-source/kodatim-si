@@ -77,13 +77,15 @@ export default async function CenilnikPage() {
             ),
           },
           {
-            naslov: "4. Robustna statistika",
+            naslov: "4. Robustna statistika — zgodovina šteje več kot želje",
             besedilo: (
               <>
-                Iz cen primerljivih vozil izračunamo mediano, uteženo s podobnostjo. Očitne izstopajoče
-                cene izločimo po pravilu 1,5 × IQR (tipkarska napaka pri ceni tako ne premakne ocene).
-                Če se kilometrina vozila močno razlikuje od mediane primerljivih, oceno popravimo z
-                naklonom, izračunanim iz teh istih oglasov — popravek je omejen na ±25 %.
+                Iz cen primerljivih vozil izračunamo mediano, uteženo s podobnostjo. Aktivni oglasi
+                prispevajo <em>zahtevano</em> ceno (mnenje prodajalca); vozila, ki so z oglasnika{" "}
+                <strong>izginila v manj kot 21 dneh</strong>, pa zadnjo videno ceno — to je trg, ki je
+                ceno sprejel, zato šteje 1,5-krat več. Počasi izginula štejejo pol manj, starejša
+                izginotja pa vse manj (razpolovni čas 180 dni). Očitne izstopajoče cene izločimo po
+                pravilu 1,5 × IQR, popravek za kilometrino pa se izračuna iz teh istih oglasov.
               </>
             ),
           },

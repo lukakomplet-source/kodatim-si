@@ -172,6 +172,10 @@ export async function aiRazlozi(cenitev: Cenitev): Promise<AiRazlaga | null> {
     zakljucenih: cenitev.zakljuceni.vzorec,
     medianaDniNaOglasniku: cenitev.cas.medianaDni === null ? null : Math.round(cenitev.cas.medianaDni),
     delezDo14Dni: cenitev.cas.delez14,
+    // The market's own verdict: last prices of comparables that vanished fast.
+    hitroIzginulih: cenitev.hitroIzginuli.vzorec,
+    hitroIzginuliMedianaZadnjeCene: cenitev.hitroIzginuli.medianaZadnjeCene,
+    hitroIzginuliPragDni: cenitev.hitroIzginuli.pragDni,
     popravekZaradiKilometrov: cenitev.popravekKm?.eur ?? null,
     oknoLetnika: cenitev.oknoLetnika,
     opozorila: cenitev.opozorila,

@@ -104,6 +104,27 @@ async function testStatistike(): Promise<void> {
   preveri(zanesljivost({ vzorec: 0, povprecnaPodobnost: 0, mediana: null, q1: null, q3: null }) === 0, "brez vzorca je 0");
 }
 
+async function testZgodovine(): Promise<void> {
+  console.log("\n--- Utez zgodovine (enote) ---");
+  const { utezKoncanega, HITRO_DNI } = await moduli();
+
+  // The ordering is the contract: the market accepting a price beats an owner
+  // asking one, recent beats stale, and a slow sale is weak evidence.
+  const hiter = utezKoncanega(10, 0);
+  const pocasen = utezKoncanega(90, 0);
+  const vmesni = utezKoncanega(40, 0);
+  preveri(hiter === 1.5, "hitro izginuli steje 1.5x", String(hiter));
+  preveri(pocasen === 0.5, "pocasi izginuli steje 0.5x", String(pocasen));
+  preveri(vmesni > 0.5 && vmesni < 1.5, "vmes je vmes", String(vmesni));
+
+  const svez = utezKoncanega(10, 0);
+  const starPolLeta = utezKoncanega(10, 180);
+  const starLeto = utezKoncanega(10, 365);
+  preveri(Math.abs(starPolLeta - svez / 2) < 0.01, "pol leta star steje pol", String(starPolLeta));
+  preveri(starLeto < starPolLeta, "starejsi steje se manj", String(starLeto));
+  preveri(utezKoncanega(HITRO_DNI, 0) === 1.5, "prag je vkljucen v 'hitro'");
+}
+
 async function testPodobnosti(): Promise<void> {
   console.log("\n--- Podobnost (enote) ---");
   const { oceniPodobnost, PRAZNO_VOZILO } = await moduli();
@@ -264,6 +285,7 @@ async function main(): Promise<void> {
   console.log("=".repeat(64));
 
   await testStatistike();
+  await testZgodovine();
   await testPodobnosti();
   await testCenitve();
 
