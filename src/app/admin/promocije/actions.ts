@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
-import { sendEmail } from "@/lib/resend";
+import { sendEmail } from "@/lib/email";
 import { logActivity } from "@/lib/activity/log";
 import type { LeadFilters } from "@/lib/lead-intelligence/types";
 import { queryAvailableLeads } from "@/lib/promocije/queries";

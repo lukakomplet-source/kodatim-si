@@ -3,11 +3,15 @@ import "server-only";
 export type SendEmailResult = { id: string };
 
 /**
- * Sends a single email through Resend (https://resend.com/docs/api-reference/emails/send-email).
- * Throws a clear, actionable error if the provider isn't configured yet —
- * never silently pretends the email went out.
+ * Direct Resend REST transport.
+ *
+ * As of the Listmonk migration this is the FALLBACK, not the primary path: the
+ * dispatcher in lib/email.ts prefers Listmonk when it is configured and only
+ * calls this when it isn't, so a half-finished Listmonk setup can never take
+ * production email offline. It stays a thin, self-contained wrapper around
+ * https://resend.com/docs/api-reference/emails/send-email.
  */
-export async function sendEmail(params: {
+export async function sendViaResend(params: {
   to: string;
   subject: string;
   html: string;
@@ -50,6 +54,6 @@ export async function sendEmail(params: {
   return { id: json.id as string };
 }
 
-export function isEmailProviderConfigured() {
+export function isResendConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 }
