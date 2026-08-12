@@ -33,6 +33,7 @@
     "test:brez-migracije": "tsx src/test-brez-migracije.ts",
     "test:naslov": "tsx src/test-naslov.ts",
     "popravi:novo": "tsx src/popravi-novo.ts",
+    "koncaj:fazo": "tsx src/koncaj-fazo.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {

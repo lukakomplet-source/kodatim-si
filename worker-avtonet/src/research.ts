@@ -434,6 +434,15 @@ export async function runResearch(
       );
       if (batch.length === 0) break;
 
+      // The whole batch is fetched again next iteration if it stays "missing",
+      // so a batch that fails on EVERY advert would loop forever — which is
+      // exactly what happened: 53.702/53.708 done, then ~6 unparseable adverts
+      // (new-vehicle pages / blocked fetches) retried every few seconds for
+      // 21 h. If a full batch produces zero new details, those adverts cannot
+      // be processed right now; stop and let the next scheduled run retry them,
+      // rather than spin. Real work still advances `detajlov_obdelanih`, so a
+      // batch with even one success does not trip this.
+      const predObdelavo = p.detajlov_obdelanih;
       await detailPhase(browser, db, batch, {
         concurrency: cfg.detailConcurrency,
         delayMs: cfg.delayDetailMs,
@@ -445,6 +454,15 @@ export async function runResearch(
         shouldStop: opts.shouldStop,
       });
       await onProgress(p);
+
+      if (p.detajlov_obdelanih === predObdelavo && !opts.shouldStop?.()) {
+        dnevnik.zapisi(
+          "faza",
+          `2. faza ustavljena: zadnjih ${batch.length} oglasov ni bilo mogoče obdelati (verjetno nove predstavitvene strani ali blokada vira). Ostanejo za naslednji krog.`
+        );
+        log("warn", "detail brez napredka — ustavljam fazo", { preostalih: batch.length });
+        break;
+      }
     }
     await onProgress(p);
 
