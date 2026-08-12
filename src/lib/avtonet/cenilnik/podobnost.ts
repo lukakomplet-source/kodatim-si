@@ -27,6 +27,7 @@ export type Utezi = {
   kilometri: number;
   oprema: number;
   karoserija: number;
+  barva: number;
 };
 
 /**
@@ -37,10 +38,13 @@ export type Utezi = {
 export const PRIVZETE_UTEZI: Utezi = {
   konfiguracija: 34,
   motor: 24,
-  letnik: 14,
-  kilometri: 9,
-  oprema: 15,
+  letnik: 13,
+  kilometri: 8,
+  oprema: 12,
   karoserija: 4,
+  // Colour moves the price modestly (an unpopular colour is harder to sell), so
+  // it is a light, soft factor — never a gate.
+  barva: 5,
 };
 
 export type Sestavine = {
@@ -50,6 +54,7 @@ export type Sestavine = {
   kilometri: number;
   oprema: number;
   karoserija: number;
+  barva: number;
 };
 
 export type Ocena = {
@@ -158,18 +163,26 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
 
   const oprema = podobnostOpreme(cilj.znacilke, kandidat.znacilke);
   const karoserija = enako(cilj.karoserija, kandidat.karoserija) ?? NEZNANO;
+  const barva = enako(cilj.barva, kandidat.barva) ?? NEZNANO;
 
-  const sestavine: Sestavine = { konfiguracija, motor, letnik, kilometri, oprema, karoserija };
+  const sestavine: Sestavine = { konfiguracija, motor, letnik, kilometri, oprema, karoserija, barva };
 
   const skupnaTeza =
-    utezi.konfiguracija + utezi.motor + utezi.letnik + utezi.kilometri + utezi.oprema + utezi.karoserija;
+    utezi.konfiguracija +
+    utezi.motor +
+    utezi.letnik +
+    utezi.kilometri +
+    utezi.oprema +
+    utezi.karoserija +
+    utezi.barva;
   const osnovno = Math.round(
     (konfiguracija * utezi.konfiguracija +
       motor * utezi.motor +
       letnik * utezi.letnik +
       kilometri * utezi.kilometri +
       oprema * utezi.oprema +
-      karoserija * utezi.karoserija) /
+      karoserija * utezi.karoserija +
+      barva * utezi.barva) /
       skupnaTeza
   );
 

@@ -77,3 +77,48 @@ export async function prekliciRaziskavo(id: string): Promise<ActionResult> {
   if (error) return { error: `Preklic ni uspel: ${error.message}` };
   return { success: true };
 }
+
+export type Urnik = { omogocen: boolean; ure: string };
+
+/** Cleans "5, 10, 22" style input into a sorted, de-duplicated list of valid hours. */
+function ocistiUre(raw: string): string {
+  const ure = raw
+    .split(/[,\s]+/)
+    .map((h) => Number(h.trim()))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  return [...new Set(ure)].sort((a, b) => a - b).join(",");
+}
+
+/**
+ * The automatic-sweep schedule, shared with the worker.
+ *
+ * The row is the single source of truth: the dashboard writes it here and the
+ * worker reads it every poll, so changing the hours takes effect without
+ * touching env vars or redeploying anything. A missing table just means the
+ * migration has not been run — reported, not thrown.
+ */
+export async function shraniUrnik(omogocen: boolean, ure: string): Promise<ActionResult> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  const ociscene = ocistiUre(ure);
+  if (omogocen && !ociscene) {
+    return { error: "Vnesite vsaj eno veljavno uro (0–23), npr. 5, 10, 22." };
+  }
+
+  const db = createAdminClient();
+  const { error } = await db
+    .from("avtonet_urnik")
+    .upsert({ id: 1, omogocen, ure: ociscene || "5,10,22", posodobljeno: new Date().toISOString() });
+
+  if (error) {
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { error: "Tabela urnika še ne obstaja — poženite supabase/migration_avtonet_urnik.sql." };
+    }
+    return { error: `Urnika ni bilo mogoče shraniti: ${error.message}` };
+  }
+  return { success: true };
+}

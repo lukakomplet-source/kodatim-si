@@ -67,13 +67,14 @@ export async function GET() {
   // already-captured adverts were correctly skipped. Reporting the standing
   // totals alongside makes the real progress visible and a restart obviously
   // harmless.
-  const [aktivnihRes, zDetajliRes] = await Promise.all([
+  const [aktivnihRes, zDetajliRes, urnikRes] = await Promise.all([
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db
       .from("avtonet_oglasi")
       .select("id", { count: "exact", head: true })
       .eq("status", "aktiven")
       .not("detajl_zajet", "is", null),
+    db.from("avtonet_urnik").select("omogocen, ure").eq("id", 1).maybeSingle(),
   ]);
 
   return NextResponse.json({
@@ -84,5 +85,7 @@ export async function GET() {
       aktivnih: aktivnihRes.count ?? 0,
       zDetajli: zDetajliRes.count ?? 0,
     },
+    // Absent table (migration not yet run) simply means no schedule to show.
+    urnik: urnikRes.error ? null : (urnikRes.data ?? { omogocen: false, ure: "5,10,22" }),
   });
 }

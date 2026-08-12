@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  normalizirajBarvo,
   normalizirajGorivo,
   normalizirajKaroserijo,
   normalizirajMenjalnik,
@@ -41,6 +42,7 @@ export type KandidatVrstica = {
   menjalnik: string | null;
   pogon: string | null;
   karoserija: string | null;
+  barva: string | null;
   oprema_znacilke: string[] | null;
   cena_eur: number | null;
   cena_prvotna_eur: number | null;
@@ -54,7 +56,7 @@ export type KandidatVrstica = {
 
 const STOLPCI_OSNOVA =
   "id, avtonet_id, url, naziv, znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, " +
-  "pogon, karoserija, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
+  "pogon, karoserija, barva, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
   "status_spremenjen, je_dealer, lokacija";
 
 const STOLPCI = `${STOLPCI_OSNOVA}, oprema_znacilke`;
@@ -100,6 +102,7 @@ export function vVozilo(r: KandidatVrstica): Vozilo {
     menjalnik: normalizirajMenjalnik(r.menjalnik),
     pogon: normalizirajPogon(r.pogon),
     karoserija: normalizirajKaroserijo(r.karoserija),
+    barva: normalizirajBarvo(r.barva),
     znacilke: r.oprema_znacilke ?? [],
     cena: r.cena_eur === null ? null : Number(r.cena_eur),
     valuta: "EUR",
@@ -126,7 +129,16 @@ export async function najdiKandidate(cilj: Vozilo, najvec = 400): Promise<Iskanj
       .select(brezZnacilk ? STOLPCI_OSNOVA : STOLPCI)
       .ilike("znamka", cilj.znamka!);
 
-    if (zModelom && cilj.model) q = q.ilike("model", cilj.model);
+    if (zModelom && cilj.model) {
+      // The `model` column is not always clean: many rows (older ones, and some
+      // brands the title-splitter did not catch) carry the WHOLE advert title in
+      // `model`, e.g. "Formentor 4Drive 2.0 TDI DSG+VIRTUAL+KAMERA…". An exact
+      // `ilike('model','Formentor')` then matches almost none — measured: 8 of
+      // 60+ real Formentors in the DB. So the model name is matched as a
+      // SUBSTRING of the model OR of the title, where it reliably appears.
+      const vzorec = cilj.model.replace(/[%,*()]/g, " ").trim();
+      if (vzorec) q = q.or(`model.ilike.*${vzorec}*,naziv.ilike.*${vzorec}*`);
+    }
 
     // Fuel is a hard filter: a diesel and a petrol of the same model are
     // different products with different prices, so mixing them would not widen

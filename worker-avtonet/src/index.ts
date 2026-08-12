@@ -47,6 +47,37 @@ function researchHours(): number[] {
   return hours.length > 0 ? [...new Set(hours)].sort((a, b) => a - b) : [5, 10, 22];
 }
 
+function razcleniUre(raw: string): number[] {
+  const hours = raw
+    .split(/[,\s]+/)
+    .map((h) => Number(h.trim()))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  return hours.length > 0 ? [...new Set(hours)].sort((a, b) => a - b) : [];
+}
+
+/**
+ * The schedule, read from the database so the dashboard is the single source of
+ * truth: a change to the hours or the on/off switch takes effect within one poll
+ * with no redeploy. If the table is missing (migration not run) this returns
+ * null and the caller falls back to the AVTONET_URNIK / AVTONET_RESEARCH_HOURS
+ * env vars — so nothing about the old behaviour changes until the table exists.
+ */
+async function beriUrnik(db: Db): Promise<{ omogocen: boolean; hours: number[] } | null> {
+  try {
+    const { data, error } = await db
+      .from("avtonet_urnik")
+      .select("omogocen, ure")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { omogocen: boolean; ure: string };
+    const hours = razcleniUre(String(row.ure ?? ""));
+    return { omogocen: Boolean(row.omogocen), hours: hours.length ? hours : researchHours() };
+  } catch {
+    return null;
+  }
+}
+
 function log(level: "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>): void {
   console.log(JSON.stringify({ t: new Date().toISOString(), lvl: level, msg, ...extra }));
 }
@@ -250,10 +281,30 @@ async function main(): Promise<void> {
   // The single loop: the schedule presses the button, the poll picks it up.
   // Both go through the identical claim/run path the dashboard uses, so there
   // is no second sweep implementation to drift out of date.
-  let termin = URNIK ? naslednjiTermin(hours) : null;
-  if (termin) log("info", "naslednji termin urnika", { ob: termin.toISOString() });
+  //
+  // The schedule is re-read from the database every loop (with the env vars as
+  // fallback), so enabling it, disabling it or changing the hours from the
+  // dashboard takes effect within one poll — no redeploy, no restart.
+  let urnikKljuc = "";
+  let termin: Date | null = null;
+
+  const osveziUrnik = async (): Promise<number[]> => {
+    const iz = await beriUrnik(db);
+    const omogocen = iz ? iz.omogocen : URNIK;
+    const ure = iz ? iz.hours : hours;
+    const kljuc = `${omogocen}:${ure.join(",")}`;
+    if (kljuc !== urnikKljuc) {
+      urnikKljuc = kljuc;
+      termin = omogocen ? naslednjiTermin(ure) : null;
+      log("info", "urnik", { vir: iz ? "baza" : "env", omogocen, ure, naslednji: termin?.toISOString() ?? null });
+    }
+    return ure;
+  };
+
+  await osveziUrnik();
 
   while (!stopping) {
+    const ure = await osveziUrnik();
     if (termin && Date.now() >= termin.getTime()) {
       const out = await requestResearch(db);
       if ("zeTece" in out) {
@@ -264,7 +315,7 @@ async function main(): Promise<void> {
       } else {
         log("info", "urnik: raziskava dana v vrsto", { raziskava: out.id });
       }
-      termin = naslednjiTermin(hours);
+      termin = naslednjiTermin(ure);
       log("info", "naslednji termin urnika", { ob: termin.toISOString() });
     }
 

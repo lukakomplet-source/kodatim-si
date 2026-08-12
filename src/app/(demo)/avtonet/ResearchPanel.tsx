@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, Play, RefreshCw, Square } from "lucide-react";
-import { prekliciRaziskavo, zazeniRaziskavo } from "./actions";
+import { AlertTriangle, CalendarClock, Loader2, Play, RefreshCw, Square } from "lucide-react";
+import { prekliciRaziskavo, shraniUrnik, zazeniRaziskavo } from "./actions";
 
 /**
  * The admin control panel for a market research: one button, and an honest
@@ -44,12 +44,15 @@ type Raziskava = {
 
 type Skupno = { aktivnih: number; zDetajli: number };
 
+type Urnik = { omogocen: boolean; ure: string };
+
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
   aktivna: Raziskava | null;
   zgodovina: Raziskava[];
   skupno?: Skupno;
+  urnik?: Urnik | null;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -225,10 +228,166 @@ export function ResearchPanel() {
         </p>
       )}
 
+      {!odziv.migracijaManjka && (
+        <UrnikBox urnik={odziv.urnik ?? null} zgodovina={odziv.zgodovina} now={now} onSaved={preberi} />
+      )}
+
       {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} />}
 
       {odziv.zgodovina.length > 0 && <Zgodovina vrstice={odziv.zgodovina} now={now} />}
     </section>
+  );
+}
+
+/** Next occurrence of any scheduled hour, strictly after `now`. */
+function naslednjiZagon(ure: number[], now: number): Date {
+  const base = now > 0 ? now : Date.now();
+  const d = new Date(base);
+  const sorted = [...new Set(ure)].sort((a, b) => a - b);
+  for (let off = 0; off <= 1; off++) {
+    for (const h of sorted) {
+      const c = new Date(d);
+      c.setDate(d.getDate() + off);
+      c.setHours(h, 0, 0, 0);
+      if (c.getTime() > base) return c;
+    }
+  }
+  return new Date(base + 24 * 3_600_000);
+}
+
+/** Median duration of past COMPLETED runs — the honest basis for an estimate. */
+function predvidenoTrajanjeMs(zgodovina: Raziskava[]): number | null {
+  const trajanja = zgodovina
+    .filter((r) => r.status === "koncano" && r.zacetek && r.konec)
+    .map((r) => new Date(r.konec as string).getTime() - new Date(r.zacetek as string).getTime())
+    .filter((ms) => ms > 60_000)
+    .sort((a, b) => a - b);
+  if (trajanja.length === 0) return null;
+  const mid = Math.floor(trajanja.length / 2);
+  return trajanja.length % 2 ? trajanja[mid] : Math.round((trajanja[mid - 1] + trajanja[mid]) / 2);
+}
+
+function formatTrajanje(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+/**
+ * The schedule editor: an on/off switch and the hours, saved to the shared row
+ * the worker reads. It also shows the next run and a predicted duration from
+ * past runs, so turning it on is not a leap of faith about how long it takes.
+ */
+function UrnikBox({
+  urnik,
+  zgodovina,
+  now,
+  onSaved,
+}: {
+  urnik: Urnik | null;
+  zgodovina: Raziskava[];
+  now: number;
+  onSaved: () => Promise<unknown>;
+}) {
+  // `lokalno` holds unsaved edits; while it is null the box shows the server
+  // value straight from the prop. Deriving the displayed value this way — rather
+  // than mirroring the prop into state inside an effect — keeps the poll from
+  // clobbering what the user is typing, with no effect and no lint tripwire.
+  const [lokalno, setLokalno] = useState<Urnik | null>(null);
+  const [shranjujem, setShranjujem] = useState(false);
+  const [sporocilo, setSporocilo] = useState<string | null>(null);
+  const [napaka, setNapaka] = useState<string | null>(null);
+
+  const omogocen = lokalno?.omogocen ?? urnik?.omogocen ?? false;
+  const ure = lokalno?.ure ?? urnik?.ure ?? "5,10,22";
+  const dirty = lokalno !== null;
+
+  const ureSeznam = ure
+    .split(/[,\s]+/)
+    .map((h) => Number(h.trim()))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  const naslednji = omogocen && ureSeznam.length > 0 ? naslednjiZagon(ureSeznam, now) : null;
+  const predvideno = predvidenoTrajanjeMs(zgodovina);
+
+  const shrani = async () => {
+    setShranjujem(true);
+    setNapaka(null);
+    setSporocilo(null);
+    const out = await shraniUrnik(omogocen, ure);
+    if (out.error) {
+      setNapaka(out.error);
+    } else {
+      setSporocilo("Urnik je shranjen.");
+      // Pull the fresh row, then drop local edits so the box tracks the server
+      // again without a flash of the old value.
+      await onSaved();
+      setLokalno(null);
+    }
+    setShranjujem(false);
+  };
+
+  return (
+    <div className="mt-5 rounded-xl border border-zinc-200 bg-white p-4">
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-4 w-4 text-accent" />
+        <h3 className="text-sm font-semibold text-zinc-900">Samodejni urnik</h3>
+      </div>
+      <p className="mt-1 text-xs text-zinc-500">
+        Ko je vklopljen, zbiralnik ob navedenih urah sam požene raziskavo (če teče). Sprememba
+        začne veljati v nekaj sekundah — brez ponovnega zagona.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-end gap-4">
+        <label className="flex items-center gap-2 text-sm text-zinc-700">
+          <input
+            type="checkbox"
+            checked={omogocen}
+            onChange={(e) => setLokalno({ omogocen: e.target.checked, ure })}
+            className="h-4 w-4 rounded border-zinc-300 text-accent focus:ring-accent"
+          />
+          Vklopljen
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-zinc-600">Ure (0–23, ločene z vejico)</span>
+          <input
+            value={ure}
+            onChange={(e) => setLokalno({ omogocen, ure: e.target.value })}
+            placeholder="5, 10, 22"
+            className="w-44 rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void shrani()}
+          disabled={shranjujem || !dirty}
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+        >
+          {shranjujem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Shrani urnik
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-600">
+        {naslednji && (
+          <span>
+            Naslednji zagon:{" "}
+            <strong>
+              {naslednji.toLocaleString("sl-SI", { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+            </strong>
+          </span>
+        )}
+        {predvideno ? (
+          <span>
+            Predviden čas raziskave: <strong>≈ {formatTrajanje(predvideno)}</strong>
+          </span>
+        ) : (
+          <span className="text-zinc-400">Predviden čas: še ni dovolj preteklih raziskav.</span>
+        )}
+      </div>
+
+      {napaka && <p className="mt-2 text-xs text-red-600">{napaka}</p>}
+      {sporocilo && <p className="mt-2 text-xs text-emerald-600">{sporocilo}</p>}
+    </div>
   );
 }
 
@@ -284,10 +443,11 @@ function Napredek({ r, now, skupno }: { r: Raziskava; now: number; skupno?: Skup
         </p>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <Stat label="Strani" value={stevilo(r.strani_pregledanih)} />
         <Stat label="Oglasov" value={stevilo(r.oglasov_najdenih)} />
         <Stat label="Novih" value={stevilo(r.novih)} tone="emerald" />
+        <Stat label="Izginulih" value={stevilo(r.izginulih)} tone="amber" />
         <Stat label="Sprememb cen" value={stevilo(r.spremembe_cen)} tone="amber" />
         <Stat
           label="Podrobnosti v bazi"
@@ -364,6 +524,7 @@ function Zgodovina({ vrstice, now }: { vrstice: Raziskava[]; now: number }) {
               <th className="px-3 py-2 font-medium">Strani</th>
               <th className="px-3 py-2 font-medium">Oglasov</th>
               <th className="px-3 py-2 font-medium">Novih</th>
+              <th className="px-3 py-2 font-medium">Izginulih</th>
               <th className="px-3 py-2 font-medium">Podrobnosti</th>
               <th className="px-3 py-2 font-medium">Napak</th>
             </tr>
@@ -406,6 +567,7 @@ function Zgodovina({ vrstice, now }: { vrstice: Raziskava[]; now: number }) {
                 <td className="px-3 py-2 tabular-nums text-zinc-600">{stevilo(r.strani_pregledanih)}</td>
                 <td className="px-3 py-2 tabular-nums text-zinc-600">{stevilo(r.oglasov_najdenih)}</td>
                 <td className="px-3 py-2 tabular-nums text-emerald-600">{stevilo(r.novih)}</td>
+                <td className="px-3 py-2 tabular-nums text-amber-600">{stevilo(r.izginulih)}</td>
                 <td className="px-3 py-2 tabular-nums text-zinc-600">
                   {stevilo(r.detajlov_obdelanih)} / {stevilo(r.detajlov_skupaj)}
                 </td>

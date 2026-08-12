@@ -4,6 +4,7 @@ import { preberiIzBesedila, preberiIzPovezave, preberiIzSlik } from "@/lib/avton
 import { oceniVozilo, preracunajPoPreverbi } from "@/lib/avtonet/cenilnik/cenitev";
 import { aiPreveriUjemanje, aiRazlozi } from "@/lib/avtonet/cenilnik/aiPrimerjava";
 import {
+  normalizirajBarvo,
   normalizirajGorivo,
   normalizirajKaroserijo,
   normalizirajMenjalnik,
@@ -58,6 +59,7 @@ function izObrazca(v: Partial<Vozilo>): Vozilo {
     menjalnik: normalizirajMenjalnik(v.menjalnik),
     pogon: normalizirajPogon(v.pogon),
     karoserija: normalizirajKaroserijo(v.karoserija),
+    barva: normalizirajBarvo(v.barva),
     znacilke: Array.isArray(v.znacilke) ? v.znacilke.filter((z) => typeof z === "string").slice(0, 80) : [],
     cena: st(v.cena),
     valuta: niz(v.valuta) ?? "EUR",
@@ -78,6 +80,7 @@ function zlijVozili(osnova: Vozilo, cez: Vozilo): Vozilo {
     menjalnik: cez.menjalnik ?? osnova.menjalnik,
     pogon: cez.pogon ?? osnova.pogon,
     karoserija: cez.karoserija ?? osnova.karoserija,
+    barva: cez.barva ?? osnova.barva,
     znacilke: Array.from(new Set([...(osnova.znacilke ?? []), ...(cez.znacilke ?? [])])),
     cena: cez.cena ?? osnova.cena,
     valuta: cez.valuta ?? osnova.valuta,

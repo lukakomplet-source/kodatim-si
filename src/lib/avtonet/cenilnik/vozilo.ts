@@ -30,6 +30,8 @@ export type Vozilo = {
   menjalnik: Menjalnik;
   pogon: Pogon;
   karoserija: string | null;
+  /** Canonical colour key (bela, crna, siva, …), or null if unknown. */
+  barva: string | null;
   /** Canonical equipment slugs — the same vocabulary the worker stores. */
   znacilke: string[];
   /** Asking price at the source, when there is one. Never used as a filter. */
@@ -40,7 +42,7 @@ export type Vozilo = {
 
 export const PRAZNO_VOZILO: Vozilo = {
   znamka: null, model: null, verzija: null, letnik: null, km: null, ccm: null, kw: null,
-  gorivo: null, menjalnik: null, pogon: null, karoserija: null, znacilke: [], cena: null,
+  gorivo: null, menjalnik: null, pogon: null, karoserija: null, barva: null, znacilke: [], cena: null,
   valuta: null,
 };
 
@@ -105,6 +107,37 @@ export function normalizirajKaroserijo(raw: string | null | undefined): string |
   if (/kombi|transporter|dostavn/.test(k)) return "kombi";
   return null;
 }
+
+/**
+ * Colour, collapsed to the handful of groups a Slovenian buyer actually pays a
+ * premium (or discount) for. Metallic vs solid is folded away on purpose: the
+ * colour FAMILY moves the price, the finish rarely does, and keeping them apart
+ * would split a thin sample in half for no gain.
+ */
+export function normalizirajBarvo(raw: string | null | undefined): string | null {
+  const k = kljuc(raw);
+  if (!k) return null;
+  if (/\bbel|bela|weiss|white|snez/.test(k)) return "bela";
+  if (/\bcrn|crna|schwarz|black/.test(k)) return "crna";
+  if (/\bsiv|siva|grau|grey|gray|antracit|anthrazit/.test(k)) return "siva";
+  if (/\bsrebr|silber|silver/.test(k)) return "srebrna";
+  if (/\bmoder|modra|plava|blau|blue/.test(k)) return "modra";
+  if (/\brdec|rdeca|rot\b|red\b/.test(k)) return "rdeca";
+  if (/\bzelen|zelena|grun|gruen|green/.test(k)) return "zelena";
+  if (/\brjav|rjava|braun|brown|bronz/.test(k)) return "rjava";
+  if (/\bbez|bez |beige/.test(k)) return "bez";
+  if (/\brumen|rumena|gelb|yellow/.test(k)) return "rumena";
+  if (/\boranz|orange/.test(k)) return "oranzna";
+  if (/\bzlat|zlata|gold/.test(k)) return "zlata";
+  if (/\bvijol|vijolic|lila|violet|purple/.test(k)) return "vijolicna";
+  return null;
+}
+
+export const OZNAKE_BARVE: Record<string, string> = {
+  bela: "Bela", crna: "Črna", siva: "Siva", srebrna: "Srebrna", modra: "Modra",
+  rdeca: "Rdeča", zelena: "Zelena", rjava: "Rjava", bez: "Bež", rumena: "Rumena",
+  oranzna: "Oranžna", zlata: "Zlata", vijolicna: "Vijolična",
+};
 
 export const OZNAKE_KAROSERIJE: Record<string, string> = {
   suv: "SUV / terensko",

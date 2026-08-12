@@ -3,6 +3,7 @@ import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { isFirecrawlUnavailable, scrapeUrl } from "@/lib/firecrawl";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  normalizirajBarvo,
   normalizirajGorivo,
   normalizirajKaroserijo,
   normalizirajMenjalnik,
@@ -66,7 +67,7 @@ const SISTEM = `Si natančen luščilnik podatkov o rabljenih vozilih iz oglasov
 Vrni SAMO JSON s temi ključi:
 {"znamka":string|null,"model":string|null,"verzija":string|null,"letnik":number|null,
  "km":number|null,"ccm":number|null,"kw":number|null,"gorivo":string|null,
- "menjalnik":string|null,"pogon":string|null,"karoserija":string|null,
+ "menjalnik":string|null,"pogon":string|null,"karoserija":string|null,"barva":string|null,
  "cena":number|null,"valuta":string|null,"znacilke":string[]}
 
 PRAVILA — ta so pomembnejša od popolnosti odgovora:
@@ -79,7 +80,9 @@ PRAVILA — ta so pomembnejša od popolnosti odgovora:
 7. "cena" je zahtevana cena kot število; "valuta" npr. "EUR".
 8. "znacilke" izberi SAMO iz tega slovarja, in samo tiste, ki so v oglasu izrecno navedene: ${SLOVAR_ZNACILK}
 9. Nemške izraze normaliziraj (Automatik -> avtomatski, Allrad -> 4x4, Kombi -> karavan,
-   Limousine -> limuzina, Schaltgetriebe -> ročni, Benzin -> bencin, Diesel -> diesel).`;
+   Limousine -> limuzina, Schaltgetriebe -> ročni, Benzin -> bencin, Diesel -> diesel).
+10. "barva" je osnovna barva vozila (bela, črna, siva, srebrna, modra, rdeča, zelena, rjava,
+    bež, rumena, oranžna). Kovinsko/mat izpusti — samo osnovno barvo. Če ni jasna, null.`;
 
 type SurovoBranje = {
   znamka?: string | null;
@@ -93,6 +96,7 @@ type SurovoBranje = {
   menjalnik?: string | null;
   pogon?: string | null;
   karoserija?: string | null;
+  barva?: string | null;
   cena?: number | null;
   valuta?: string | null;
   znacilke?: string[] | null;
@@ -127,6 +131,7 @@ function vVozilo(s: SurovoBranje): Vozilo {
     menjalnik: normalizirajMenjalnik(s.menjalnik),
     pogon: normalizirajPogon(s.pogon),
     karoserija: normalizirajKaroserijo(s.karoserija),
+    barva: normalizirajBarvo(s.barva),
     // A slug the model made up would silently never match anything, so it is
     // dropped here rather than carried into the comparison as dead weight.
     znacilke: (s.znacilke ?? []).filter((z) => typeof z === "string" && dovoljene.has(z)),
@@ -189,7 +194,7 @@ async function izBaze(id: string): Promise<BranjeRezultat | null> {
   const { data } = await db
     .from("avtonet_oglasi")
     .select(
-      "znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, pogon, karoserija, " +
+      "znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, pogon, karoserija, barva, " +
         "oprema_znacilke, cena_eur"
     )
     .eq("avtonet_id", id)
@@ -210,6 +215,7 @@ async function izBaze(id: string): Promise<BranjeRezultat | null> {
     menjalnik: normalizirajMenjalnik(r.menjalnik as string),
     pogon: normalizirajPogon(r.pogon as string),
     karoserija: normalizirajKaroserijo(r.karoserija as string),
+    barva: normalizirajBarvo(r.barva as string),
     znacilke: (r.oprema_znacilke as string[]) ?? [],
     cena: r.cena_eur === null || r.cena_eur === undefined ? null : Number(r.cena_eur),
     valuta: "EUR",

@@ -18,6 +18,7 @@ import type { Cenitev, Primerljiv } from "@/lib/avtonet/cenilnik/cenitev";
 import type { BranjeRezultat } from "@/lib/avtonet/cenilnik/branje";
 import type { AiRazlaga } from "@/lib/avtonet/cenilnik/aiPrimerjava";
 import {
+  OZNAKE_BARVE,
   OZNAKE_GORIVA,
   OZNAKE_KAROSERIJE,
   OZNAKE_MENJALNIKA,
@@ -52,7 +53,7 @@ export function CenilnikClient() {
   const [slike, setSlike] = useState<string[]>([]);
   const [rocno, setRocno] = useState({
     znamka: "", model: "", verzija: "", letnik: "", km: "", kw: "", gorivo: "", menjalnik: "",
-    pogon: "", karoserija: "",
+    pogon: "", karoserija: "", barva: "",
   });
   const [rocnoBesedilo, setRocnoBesedilo] = useState("");
   const [tece, setTece] = useState(false);
@@ -215,6 +216,7 @@ export function CenilnikClient() {
                 ["gorivo", "Gorivo", "diesel"],
                 ["menjalnik", "Menjalnik", "avtomatski"],
                 ["karoserija", "Karoserija", "limuzina"],
+                ["barva", "Barva", "črna"],
               ] as const).map(([k, oznaka, primer]) => (
                 <label key={k} className="block">
                   <span className="mb-1 block text-xs font-medium text-zinc-600">{oznaka}</span>
@@ -283,6 +285,7 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
           <Podatek oznaka="Menjalnik" vrednost={v.menjalnik ? OZNAKE_MENJALNIKA[v.menjalnik] : null} />
           <Podatek oznaka="Pogon" vrednost={v.pogon ? OZNAKE_POGONA[v.pogon] : null} />
           <Podatek oznaka="Karoserija" vrednost={v.karoserija ? OZNAKE_KAROSERIJE[v.karoserija] : null} />
+          <Podatek oznaka="Barva" vrednost={v.barva ? OZNAKE_BARVE[v.barva] ?? v.barva : null} />
           <Podatek oznaka="Cena v oglasu" vrednost={v.cena === null ? null : eur(v.cena)} />
         </dl>
 
