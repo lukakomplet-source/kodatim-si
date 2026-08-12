@@ -148,6 +148,30 @@ export function jeAvtoNet(url: string): boolean {
   return /(^|\.)avto\.net$/i.test(safeHost(url) ?? "");
 }
 
+/**
+ * A readable car name from a mobile.de listing URL, e.g.
+ * ".../auto-inserat/cupra-formentor-vz-4drive-led-beats-.../458599126.html"
+ * -> "Cupra Formentor Vz 4drive Led Beats". Used only to make the "we can't
+ * read mobile.de, use a screenshot" message concrete — never as valuation data.
+ */
+function mobileDeSlug(url: string): string | null {
+  const m = url.match(/auto-inserat\/([a-z0-9-]+)\//i);
+  if (!m) return null;
+  const words = m[1]
+    .split("-")
+    .filter((w) => w && !/^\d+$/.test(w))
+    .slice(0, 6)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.length ? words.join(" ") : null;
+}
+
+/** Signals a fetched page is a bot-block interstitial, not the real content. */
+function jeBlokada(text: string): boolean {
+  return /Access denied|Zugriff verweigert|returned error 403|Just a moment|captcha|cf-browser-verification/i.test(
+    text.slice(0, 1500)
+  );
+}
+
 function safeHost(url: string): string | null {
   try {
     return new URL(url).hostname;
@@ -263,9 +287,27 @@ export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
     }
   }
 
-  // Plain fetch as the fallback. mobile.de and avto.net both fight scrapers, so
-  // this is expected to fail sometimes — and when it does we say so and ask for
-  // a screenshot rather than returning a half-read vehicle.
+  // Jina Reader — a free, no-key rendering proxy. Works on most sites that
+  // block a naive fetch (it uses its own headless browser), so avto.net ads not
+  // in our DB and other sources become readable without Firecrawl. mobile.de is
+  // the known exception: its WAF returns "Access denied" even to Jina, which
+  // jeBlokada() detects and rejects rather than feeding a block page to the AI.
+  if (!besedilo) {
+    try {
+      const jr = await fetch(`https://r.jina.ai/${url}`, {
+        headers: { "User-Agent": "Mozilla/5.0", "X-Return-Format": "markdown" },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (jr.ok) {
+        const t = await jr.text();
+        if (t && t.length > 300 && !jeBlokada(t)) besedilo = t.slice(0, 12_000);
+      }
+    } catch {
+      // Falls through to plain fetch.
+    }
+  }
+
+  // Plain fetch as the last resort.
   if (!besedilo) {
     try {
       const res = await fetch(url, {
@@ -277,12 +319,13 @@ export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
       });
       if (res.ok) {
         const html = await res.text();
-        besedilo = html
+        const clean = html
           .replace(/<script[\s\S]*?<\/script>/gi, " ")
           .replace(/<style[\s\S]*?<\/style>/gi, " ")
           .replace(/<[^>]+>/g, " ")
           .replace(/\s+/g, " ")
           .slice(0, 12_000);
+        if (!jeBlokada(clean)) besedilo = clean;
       }
     } catch {
       // Handled below.
@@ -290,6 +333,17 @@ export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
   }
 
   if (!besedilo || besedilo.trim().length < 200) {
+    // mobile.de deliberately blocks all server-side reading (verified: 403
+    // "Access denied" to every method). Rather than a generic failure, name the
+    // car recognised from the URL and point at the path that actually works.
+    if (jeMobileDe(url)) {
+      const ime = mobileDeSlug(url);
+      throw new Error(
+        `mobile.de blokira samodejno branje oglasa (njihova zaščita proti botom).${
+          ime ? ` Iz povezave prepoznam: ${ime}.` : ""
+        } Uporabi zavihek „Posnetek zaslona" — z njega preberemo ceno, kilometre in letnik. (Povezava deluje pri Avto.net oglasih.)`
+      );
+    }
     throw new Error(
       `Strani ni bilo mogoče prebrati. ${opombaVira} Poskusite naložiti posnetek zaslona oglasa — z njega preberemo iste podatke.`
     );
