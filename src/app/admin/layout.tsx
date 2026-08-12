@@ -13,6 +13,7 @@ import {
   DatabaseZap,
   GraduationCap,
   Globe,
+  Mail,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -56,6 +57,12 @@ const NAV_ITEMS: {
     href: "/admin/promocije",
     label: "Promocije",
     icon: <Target className={ICON_CLASS} />,
+    permission: "promotion.view",
+  },
+  {
+    href: "/admin/e-posta",
+    label: "E-pošta",
+    icon: <Mail className={ICON_CLASS} />,
     permission: "promotion.view",
   },
   {
