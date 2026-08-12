@@ -188,6 +188,22 @@ export const DRAGE_ZNACILKE = new Set([
   "nocni_vid", "usnje", "sedezi_el", "memory", "adaptive_light", "streha",
 ]);
 
+/**
+ * Equipment slugs ordered by what they are worth, expensive first.
+ *
+ * Order is load-bearing wherever a list gets truncated: the AI comparison and
+ * the compact UI both cut after N entries, and an alphabetical cut was dropping
+ * "matrix_led" while keeping "abs" — discarding exactly the feature that moves
+ * the price and keeping the one every car has.
+ */
+export function razvrstiPoVrednosti(znacilke: string[]): string[] {
+  return [...znacilke].sort((a, b) => {
+    const va = DRAGE_ZNACILKE.has(a) ? 0 : 1;
+    const vb = DRAGE_ZNACILKE.has(b) ? 0 : 1;
+    return va !== vb ? va - vb : a.localeCompare(b);
+  });
+}
+
 /** A short one-line description, used in headings and in AI prompts. */
 export function opisVozila(v: Vozilo): string {
   const deli = [v.znamka, v.model, v.verzija].filter(Boolean).join(" ");

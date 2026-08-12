@@ -1,6 +1,6 @@
 import "server-only";
 import { chatJSON } from "@/lib/openai";
-import { oznakaZnacilke, opisVozila, type Vozilo } from "./vozilo";
+import { OZNAKE_KAROSERIJE, oznakaZnacilke, opisVozila, razvrstiPoVrednosti, type Vozilo } from "./vozilo";
 import { skupnaPodobnost, type Cenitev, type Primerljiv } from "./cenitev";
 
 /**
@@ -22,25 +22,52 @@ import { skupnaPodobnost, type Cenitev, type Primerljiv } from "./cenitev";
  * never to "no answer".
  */
 
-/** Sent to the model per candidate. Small on purpose: this is the cost driver. */
+/**
+ * Sent to the model per candidate. Small, but not starved: the first version
+ * sent a 90-character rebuilt name, no body style and 14 alphabetical
+ * equipment slugs — so "Limuzina" versus "Sportback" was invisible and
+ * "matrix_led" fell off the end while "abs" made the cut. Now the advert's own
+ * title goes in whole (that is where avto.net sellers write S line, MATRIX,
+ * Limuzina), the body style is an explicit field, and equipment is listed
+ * expensive-first.
+ */
 type AiKandidat = {
   i: number;
   naziv: string;
+  karoserija: string | null;
   letnik: number | null;
   km: number | null;
   kw: number | null;
   oprema: string;
 };
 
-const SISTEM_UJEMANJE = `Presojaš, ali sta dve rabljeni vozili res primerljivi za oceno cene.
+const SISTEM_UJEMANJE = `Presojaš, ali sta dve rabljeni vozili res primerljivi za oceno cene. Natančen si kot sodni cenilec: razlika med limuzino in karavanom, med S line in osnovno opremo, med Matrix in navadnimi LED žarometi je razlika v ceni.
 Vrni SAMO JSON: {"ocene":[{"i":number,"podobnost":number,"razlog":string}]}
 
-PRAVILA:
-1. "podobnost" je 0–100: ali gre za isti model, generacijo, motor in raven opreme.
-2. Sodi SAMO po navedenih podatkih. Če podatka ni, ga ne domnevaj in ne kaznuj.
-3. "razlog" je ena kratka slovenska poved o glavni razliki ali ujemanju.
-4. Ne omenjaj cen in jih ne ocenjuj — cena ni tvoja naloga.
-5. Za vsak vnos iz seznama vrni natanko eno oceno z istim "i".`;
+KAJ PRIMERJAŠ, PO VRSTNEM REDU POMEMBNOSTI:
+1. MODEL IN GENERACIJA — A3 ni A4, Formentor ni Ateca. Drug model → podobnost 0–10.
+2. MOTOR IN MOČ — ista motorna izvedenka (30 TFSI ni 35 TFSI, 320d ni 330d).
+   Razlika v moči nad 20 % → največ 30.
+3. KAROSERIJA — limuzina, karavan, sportback/hatchback, kupe in SUV so RAZLIČNE
+   karoserije z različnimi cenami. Isti model v drugi karoseriji (Limuzina proti
+   Sportback) → največ 75 in razliko OBVEZNO omeni v razlogu.
+   POZOR: različno poimenovanje ISTE oblike ni druga karoserija (SUV kupé proti
+   SUV pri istem modelu, sportback proti hatchback, limuzina proti sedan) —
+   viri isto vozilo kategorizirajo različno.
+4. PAKET OPREME — S line / M Sport / AMG Line / VZ / GT Line je bistven del
+   vrednosti. Cilj ga ima, kandidat ne (ali obratno) → odbij 10–20 točk in povej.
+   Paket je pogosto zapisan v NAZIVU oglasa, ne v seznamu opreme — beri oboje.
+5. DRAGA OPREMA — Matrix LED ni navadni LED. Panorama, HUD, zračno vzmetenje,
+   Brembo zavore, DCC podvozje, 360° kamera: preveri v nazivu IN v opremi.
+
+TRDA PRAVILA:
+- Nad 85 sme le vozilo, ki se ujema v modelu, generaciji, motorju/moči,
+  karoseriji IN ravni opreme.
+- Sodi SAMO po navedenih podatkih. Manjkajoč podatek ni dokaz odsotnosti —
+  ne kaznuj ga in si ga ne izmišljaj.
+- "razlog" je ena kratka slovenska poved: kaj se ujema in katera je glavna razlika.
+- Ne omenjaj cen in jih ne ocenjuj — cena ni tvoja naloga.
+- Za vsak vnos iz seznama vrni natanko eno oceno z istim "i".`;
 
 /**
  * Re-ranks the shortlist. The algorithm already did the heavy filtering; this
@@ -75,18 +102,25 @@ export async function aiPreveriUjemanje(
       odmik: od,
       kandidati: podmnozica.slice(od, od + VELIKOST).map((p, i) => ({
         i: od + i,
-        naziv: [p.znamka, p.model, p.verzija].filter(Boolean).join(" ").slice(0, 90),
+        // The advert's own title, whole — sellers write the facts that decide
+        // comparability ("Limuzina", "S line", "MATRIX") exactly there.
+        naziv: (p.naziv ?? [p.znamka, p.model, p.verzija].filter(Boolean).join(" ")).slice(0, 130),
+        karoserija: p.karoserija ? (OZNAKE_KAROSERIJE[p.karoserija] ?? p.karoserija) : null,
         letnik: p.letnik,
         km: p.km,
         kw: p.kw,
-        oprema: p.znacilke.slice(0, 14).map(oznakaZnacilke).join(", "),
+        oprema: razvrstiPoVrednosti(p.znacilke).slice(0, 20).map(oznakaZnacilke).join(", "),
       })),
     });
   }
 
   const glavaCilja = [
     `CILJNO VOZILO: ${opisVozila(cilj)}`,
-    `Oprema cilja: ${cilj.znacilke.map(oznakaZnacilke).join(", ") || "ni podatka"}`,
+    `Karoserija cilja: ${cilj.karoserija ? OZNAKE_KAROSERIJE[cilj.karoserija] ?? cilj.karoserija : "ni podatka"}`,
+    `Paket / verzija cilja: ${cilj.verzija ?? "ni podatka"}`,
+    `Oprema cilja (dražja najprej): ${
+      razvrstiPoVrednosti(cilj.znacilke).slice(0, 25).map(oznakaZnacilke).join(", ") || "ni podatka"
+    }`,
   ].join("\n");
 
   const poIndeksu = new Map<number, { podobnost: number; razlog: string }>();

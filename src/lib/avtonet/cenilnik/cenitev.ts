@@ -38,6 +38,8 @@ export type Primerljiv = {
   letnik: number | null;
   km: number | null;
   kw: number | null;
+  /** Normalised body key (limuzina, karavan, suv …) — the AI pass compares it explicitly. */
+  karoserija: string | null;
   cena: number | null;
   cenaPrvotna: number | null;
   status: string;
@@ -272,6 +274,7 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
         letnik: r.letnik,
         km: r.km,
         kw: r.kw,
+        karoserija: v.karoserija,
         cena: r.cena_eur === null ? null : Number(r.cena_eur),
         cenaPrvotna: r.cena_prvotna_eur === null ? null : Number(r.cena_prvotna_eur),
         status: r.status,
