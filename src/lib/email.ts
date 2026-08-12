@@ -1,5 +1,5 @@
 import "server-only";
-import { isListmonkConfigured, sendViaListmonk } from "./listmonk";
+import { isListmonkConfigured, ListmonkUnreachableError, sendViaListmonk } from "./listmonk";
 import { isResendConfigured, sendViaResend, type SendEmailResult } from "./resend";
 
 /**
@@ -63,13 +63,35 @@ export async function sendEmail(params: {
   try {
     let result: SendEmailResult;
     if (transport === "listmonk") {
-      result = await sendViaListmonk({
-        to: params.to,
-        subject: params.subject,
-        html: params.html,
-        data: params.data,
-        templateId: params.templateId,
-      });
+      try {
+        result = await sendViaListmonk({
+          to: params.to,
+          subject: params.subject,
+          html: params.html,
+          data: params.data,
+          templateId: params.templateId,
+        });
+      } catch (err) {
+        // The ONE safe fallback: Listmonk was provably never reached (PC/tunnel
+        // down), so no message could have been queued there. Resend then still
+        // delivers. Every other failure — a timeout (ambiguous), a 4xx/500
+        // (Listmonk reached) — is NOT caught here, so it can never cause a
+        // duplicate send. Needs Resend to still be configured as the net.
+        if (err instanceof ListmonkUnreachableError && isResendConfigured()) {
+          console.warn(
+            `[email] listmonk nedosegljiv, padec na resend to=${redact(params.to)} razlog=${err.message}`
+          );
+          const r = await sendViaResend({
+            to: params.to,
+            subject: params.subject,
+            html: params.html,
+            replyTo: params.replyTo,
+          });
+          console.info(`[email] ok transport=resend(fallback) to=${redact(params.to)} ms=${Date.now() - started}`);
+          return r;
+        }
+        throw err;
+      }
     } else if (transport === "resend") {
       result = await sendViaResend({
         to: params.to,

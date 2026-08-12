@@ -28,13 +28,20 @@ ne zahteva nobene spremembe kode.
 
 ---
 
-## 1. Kje bo Listmonk tekel (izberi eno)
+## 1. Kje bo Listmonk tekel
 
 Listmonk **mora biti javno dosegljiv prek HTTPS**, ker ga kliče Vercel.
-`localhost` ne pride v poštev za produkcijo.
+`localhost` ne pride v poštev za produkcijo — a ni treba plačati VPS-a.
 
-Najlažje: majhen VPS (Hetzner ~4 €/mes, DigitalOcean, itd.) + domena
-`listmonk.kodatim.si`.
+**Izbrana pot: lokalno na PC-ju + Cloudflare Tunnel (0 €).** Listmonk teče v
+Dockerju na tvojem računalniku (ki tako ali tako že teče za SBN worker), tunel
+pa naredi stabilen javni HTTPS naslov `https://listmonk.kodatim.si` →
+`localhost:9000`. Brez odpiranja portov na routerju, brez javnega IP-ja.
+
+> **Zanesljivost:** ko je PC ugasnjen, Cloudflare vrne HTTP 530 in koda takrat
+> **samodejno pošlje prek Resenda** (fallback je varen — Listmonk ni prejel
+> sporočila, zato ni dvojnika). Ko je PC spet gor, gre spet prek Listmonka.
+> Zato pusti `RESEND_*` v Vercelu nastavljene tudi po prehodu na Listmonk.
 
 `docker-compose.yml`:
 
@@ -70,16 +77,36 @@ docker compose up -d
 docker compose run --rm app ./listmonk --install   # enkratna inicializacija baze
 ```
 
-Pred njega daj **HTTPS reverse proxy** (Caddy je najhitrejši):
+Zdaj HTTPS prek **Cloudflare Tunnela** (zastonj, stabilen naslov):
 
-```
-listmonk.kodatim.si {
-    reverse_proxy localhost:9000
-}
-```
+1. Domeno `kodatim.si` daj v Cloudflare (Free plan) — v Cloudflare dodaj site,
+   pri registrarju zamenjaj nameserverje na tiste, ki ti jih da Cloudflare.
+2. Namesti `cloudflared` na PC in se prijavi:
+   ```bash
+   cloudflared tunnel login
+   cloudflared tunnel create kodatim-listmonk
+   cloudflared tunnel route dns kodatim-listmonk listmonk.kodatim.si
+   ```
+3. `config.yml` (pot izpiše `tunnel create`):
+   ```yaml
+   tunnel: kodatim-listmonk
+   credentials-file: C:\Users\lukak\.cloudflared\<TUNNEL-ID>.json
+   ingress:
+     - hostname: listmonk.kodatim.si
+       service: http://localhost:9000
+     - service: http_status:404
+   ```
+4. Zaženi kot storitev, da teče stalno:
+   ```bash
+   cloudflared service install
+   ```
 
-Caddy si sam pridobi TLS certifikat. Odpri `https://listmonk.kodatim.si`,
-prijava z admin računom, ki ga nastaviš ob prvem obisku.
+> **NE** uporabi hitrega tunela (`cloudflared tunnel --url ...`,
+> `*.trycloudflare.com`) — naslov se menja in podre `LISTMONK_URL`. Rabiš
+> named tunnel zgoraj.
+
+Odpri `https://listmonk.kodatim.si` (TLS uredi Cloudflare), prijava z admin
+računom, ki ga nastaviš ob prvem obisku.
 
 ---
 

@@ -43,6 +43,32 @@ export type ListmonkConfig = {
   txTemplateId: number;
 };
 
+/**
+ * Thrown ONLY when the message provably did not reach Listmonk — the origin was
+ * never touched. That is the one condition under which the dispatcher may retry
+ * on another transport (Resend) without any risk of a duplicate.
+ *
+ * This case is not exotic once Listmonk runs behind a Cloudflare tunnel on a
+ * home PC: when the PC is off, Cloudflare's edge answers for it with HTTP 530
+ * (and 502/503/504), so "PC is off" arrives as a gateway status, not as a
+ * socket error. Missing that is how email would fail silently with the PC
+ * asleep — exactly the failure mode local hosting introduces.
+ */
+export class ListmonkUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ListmonkUnreachableError";
+  }
+}
+
+/** Socket-level errors that mean the request never left for the origin. */
+const NEDOSEGLJIV_KODA = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
+
+function jeNedosegljiv(err: unknown): boolean {
+  const cause = (err as { cause?: { code?: string } })?.cause;
+  return typeof cause?.code === "string" && NEDOSEGLJIV_KODA.has(cause.code);
+}
+
 /** Reads and validates Listmonk env, or returns null when it isn't set up. */
 export function listmonkConfig(): ListmonkConfig | null {
   const url = process.env.LISTMONK_URL?.trim().replace(/\/+$/, "");
@@ -63,8 +89,13 @@ export function isListmonkConfigured(): boolean {
 const TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 
-/** HTTP statuses where the gateway explicitly did NOT process the message. */
-const RETRY_STATUS = new Set([502, 503, 504]);
+/**
+ * Gateway statuses that mean the ORIGIN was never reached — the request did not
+ * get to Listmonk. Includes Cloudflare's 530 (tunnel origin down), which is how
+ * a sleeping home PC presents from the edge. These are safe to retry and safe
+ * to fall back from, because Listmonk never saw the message.
+ */
+const RETRY_STATUS = new Set([502, 503, 504, 530]);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -129,26 +160,42 @@ export async function sendViaListmonk(params: ListmonkSendParams): Promise<{ id:
       }
 
       const text = (await res.text().catch(() => "")).slice(0, 300);
-      if (RETRY_STATUS.has(res.status) && attempt < MAX_ATTEMPTS) {
-        lastErr = new Error(`Listmonk ${res.status}: ${text}`);
-        await sleep(500 * attempt);
-        continue;
+      // Origin-not-reached gateway statuses: retry, then surface as
+      // "unreachable" so the dispatcher can safely fall back to Resend.
+      if (RETRY_STATUS.has(res.status)) {
+        const msg = `Listmonk nedosegljiv prek prehoda (${res.status}): ${text}`;
+        if (attempt < MAX_ATTEMPTS) {
+          lastErr = new ListmonkUnreachableError(msg);
+          await sleep(500 * attempt);
+          continue;
+        }
+        throw new ListmonkUnreachableError(msg);
       }
+      // 4xx (bad template/auth/sender) and 500 mean Listmonk WAS reached and
+      // either rejected or errored internally — not safe to blindly resend
+      // elsewhere, so this is a plain error that does not trigger fallback.
       throw new Error(`Listmonk zavrnil (${res.status}): ${text}`);
     } catch (err) {
       clearTimeout(timer);
-      // A timeout after sending the body is ambiguous — do not resend.
+      // Rethrow an already-classified unreachable error unchanged.
+      if (err instanceof ListmonkUnreachableError) throw err;
+      // A timeout after sending the body is ambiguous — Listmonk may have
+      // accepted it — so we neither retry nor fall back.
       if (timedOut) {
         throw new Error(
           `Listmonk se ni odzval v ${TIMEOUT_MS / 1000} s — sporočilo je morda bilo sprejeto, zato ga ne pošiljam znova.`
         );
       }
-      // A pre-response network failure (DNS, refused, reset) means it did not
-      // land — safe to retry.
-      lastErr = err;
-      if (attempt < MAX_ATTEMPTS) {
-        await sleep(500 * attempt);
-        continue;
+      // A socket error that proves the request never left (refused, DNS) is
+      // safe to retry and, once exhausted, safe to fall back from. An
+      // ambiguous mid-stream reset is treated as a plain error instead.
+      if (jeNedosegljiv(err)) {
+        lastErr = new ListmonkUnreachableError(err instanceof Error ? err.message : String(err));
+        if (attempt < MAX_ATTEMPTS) {
+          await sleep(500 * attempt);
+          continue;
+        }
+        throw lastErr;
       }
       throw err instanceof Error ? err : new Error(String(err));
     }
