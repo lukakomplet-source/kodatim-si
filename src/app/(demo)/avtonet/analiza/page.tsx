@@ -117,7 +117,7 @@ export default async function AnalizaPage({
         <>
           <h2 className="mt-8 flex items-center gap-2 text-lg font-semibold text-zinc-900">
             <Flame className="h-5 w-5 text-accent" />
-            Najhitreje zapuščajo oglasnik
+            Najhitreje prodani modeli
           </h2>
           <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
             <table className="min-w-full text-left text-sm">
@@ -128,7 +128,7 @@ export default async function AnalizaPage({
                   <th className="px-4 py-3 text-right font-semibold">Mediana dni</th>
                   <th className="px-4 py-3 text-right font-semibold">≤ 7 dni</th>
                   <th className="px-4 py-3 text-right font-semibold">≤ 14 dni</th>
-                  <th className="px-4 py-3 text-right font-semibold">Vzorec</th>
+                  <th className="px-4 py-3 text-right font-semibold">Prodanih</th>
                   <th className="px-4 py-3 text-right font-semibold">Povp. začetna cena</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -150,7 +150,12 @@ export default async function AnalizaPage({
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-zinc-600">{m.delez7} %</td>
                     <td className="px-4 py-3 text-right tabular-nums text-zinc-600">{m.delez14} %</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">{m.vzorec}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.vzorec}
+                      <span className="ml-1 text-[11px] text-zinc-400">
+                        ({m.potrjenih} potrj. + {m.verjetnih} verj.)
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums text-zinc-600">
                       {eur(m.povprecnaZacetnaCena)}
                     </td>
@@ -187,7 +192,8 @@ function Ovoj({ children }: { children: React.ReactNode }) {
       </h1>
       <p className="mt-2 max-w-2xl text-[15px] text-zinc-500">
         Analiza zgodovine oglasov na slovenskem trgu. Merimo, koliko dni je oglas na oglasniku in kdaj
-        z njega izgine — ne pa prodaje, ker vir te ne pove.
+        z njega izgine. Vir sam ne pove, ali je bil avto prodan ali le umaknjen — zato prodajo ocenimo
+        iz cene in hitrosti izginotja.
       </p>
 
       <KakoDeluje
@@ -246,7 +252,9 @@ function Ovoj({ children }: { children: React.ReactNode }) {
                 <strong>Mediana dni</strong> je sredinska vrednost (polovica oglasov je šla hitreje,
                 polovica počasneje) — ne povprečje, ker enega samega dolgega oglasa ne sme potegniti
                 navzgor. <strong>≤ 7 in ≤ 14 dni</strong> sta deleža oglasov, ki so izginili v tem
-                času. <strong>Vzorec</strong> je število zaključenih oglasov, na katerih to stoji.
+                času. <strong>Prodanih</strong> je število zaključenih oglasov (v oklepaju: koliko jih
+                je vir izrecno označil za prodane in koliko jih je po ceni in hitrosti izginotja
+                <em>verjetno</em> prodanih).
               </>
             ),
           },
@@ -262,8 +270,10 @@ function Ovoj({ children }: { children: React.ReactNode }) {
         ]}
         omejitve={[
           <>
-            <strong>„Izginil&ldquo; ni „prodan&ldquo;.</strong> Oglas je lahko potekel ali ga je
-            prodajalec umaknil. Kot prodano šteje samo tisto, kar vir sam izrecno označi.
+            <strong>„Verjetno prodan&ldquo; je ocena, ne dejstvo.</strong> Vir izrecno potrdi le del
+            prodaj; za ostale sklepamo iz cene in hitrosti izginotja. Poceni avto, ki hitro izgine, je
+            skoraj zagotovo prodan; dolgo objavljen ali predrag oglas je bolj verjetno umaknjen ali
+            potekel. Zanesljivo prodane in ocenjene ločimo v oklepaju stolpca <em>Prodanih</em>.
           </>,
           <>
             <strong>Modeli se združujejo samo po znamki in modelu.</strong> BMW X5 za 20.000 € in za

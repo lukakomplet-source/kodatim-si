@@ -42,7 +42,90 @@ export type ModelStat = {
   delez7: number;
   delez14: number;
   povprecnaZacetnaCena: number | null;
+  /** Of the sample: how many the source confirmed sold vs inferred from disappearance. */
+  potrjenih: number;
+  verjetnih: number;
 };
+
+/**
+ * Whether a finished advert counts as a CONFIRMED sale or an INFERRED one.
+ *
+ * Working assumption, set by the user from how the market behaves: a car that
+ * leaves the board was almost always sold — sellers either mark it "prodano" or
+ * just delete the ad the moment it sells (a good car can go in a day). So both
+ * count as sold; the only honest distinction is HOW we know — the source said
+ * so ("potrjeno") or we inferred it from the disappearance ("verjetno"). We
+ * never rewrite the raw status; this is a label on top of it.
+ */
+export type Prodajnost = "potrjeno" | "verjetno";
+
+export function prodajnost(status: string): Prodajnost {
+  return status === "prodano" ? "potrjeno" : "verjetno";
+}
+
+export type ProdajaStopnja = "potrjeno" | "zelo_verjetno" | "verjetno" | "negotovo";
+export type ProdajaOcena = { stopnja: ProdajaStopnja; razlog: string };
+
+/**
+ * How confidently a finished advert was actually SOLD (as opposed to withdrawn,
+ * expired, or a problem listing) — and why, in plain Slovenian.
+ *
+ * The signal is the ad's own numbers read against its peers, which is exactly
+ * the reasoning the user described: a genuinely good price moves fast, so a
+ * cheaper-than-peers ad that left quickly is almost certainly a sale; an ad that
+ * sat far longer than its peers (or well above their price) is the doubtful one
+ * — more likely pulled, expired, or wrong in some way than sold at that price.
+ *
+ * Confirmed "prodano" from the source always wins. Everything else is graded,
+ * never discarded — a fast one-day disappearance still counts as a (quick) sale,
+ * because a good car does sell in a day.
+ */
+export function oceniProdajo(args: {
+  status: string;
+  dniNaTrgu: number | null;
+  cena: number | null;
+  /** Peer median days-on-board (same model / comparable set). */
+  medianaDni: number | null;
+  /** Peer median asking price. */
+  medianaCene: number | null;
+}): ProdajaOcena {
+  const { status, dniNaTrgu, cena, medianaDni, medianaCene } = args;
+  if (status === "prodano") return { stopnja: "potrjeno", razlog: "vir je oglas označil kot prodan" };
+
+  const ceneje = cena !== null && medianaCene !== null && medianaCene > 0 && cena < medianaCene * 0.95;
+  const drazje = cena !== null && medianaCene !== null && medianaCene > 0 && cena > medianaCene * 1.12;
+  const hitro = dniNaTrgu !== null && medianaDni !== null && medianaDni > 0 && dniNaTrgu <= medianaDni;
+  const dni = dniNaTrgu === null ? null : Math.round(dniNaTrgu);
+  const zeloDolgo =
+    dniNaTrgu !== null && ((medianaDni !== null && medianaDni > 0 && dniNaTrgu > medianaDni * 2.5) || dniNaTrgu > 120);
+
+  // Long on the board AND overpriced (or absurdly long) — the doubtful case.
+  if (zeloDolgo && (drazje || (dni ?? 0) > 150)) {
+    return {
+      stopnja: "negotovo",
+      razlog: `dolgo na oglasniku (${dni} dni)${drazje ? ", nad povprečno ceno" : ""} — morda umaknjen, potekel ali težava z oglasom`,
+    };
+  }
+  if (ceneje && hitro) return { stopnja: "zelo_verjetno", razlog: "ugodna cena in prodan hitreje od povprečja" };
+  if (ceneje) return { stopnja: "zelo_verjetno", razlog: "cena pod povprečjem primerljivih — verjetno hitro prodan" };
+  if (zeloDolgo) return { stopnja: "negotovo", razlog: `dolgo na oglasniku (${dni} dni) — morda umaknjen ali potekel` };
+  if (hitro) return { stopnja: "verjetno", razlog: "prodan v pričakovanem času" };
+  return { stopnja: "verjetno", razlog: "izginil z oglasnika — verjetno prodan" };
+}
+
+/** Weight a confident sale should carry when it drives a valuation. */
+export function utezProdaje(stopnja: ProdajaStopnja): number {
+  switch (stopnja) {
+    case "potrjeno":
+      return 1.6;
+    case "zelo_verjetno":
+      return 1.5;
+    case "verjetno":
+      return 1.0;
+    case "negotovo":
+      return 0.35;
+  }
+}
 
 export function median(values: number[]): number {
   if (values.length === 0) return 0;
@@ -89,6 +172,8 @@ export function statistikaPoModelih(rows: ZakljucenOglas[], minVzorec = MIN_VZOR
     const dnevi = group.map(dniNaOglasu).filter((d): d is number => d !== null);
     if (dnevi.length < minVzorec) continue;
 
+    const potrjenih = group.filter((g) => prodajnost(g.status) === "potrjeno").length;
+
     out.push({
       kljuc,
       znamka: group[0].znamka,
@@ -99,6 +184,8 @@ export function statistikaPoModelih(rows: ZakljucenOglas[], minVzorec = MIN_VZOR
       povprecnaZacetnaCena: povprecje(
         group.map((g) => Number(g.cena_prvotna_eur ?? g.cena_eur)).filter((n) => Number.isFinite(n) && n > 0)
       ),
+      potrjenih,
+      verjetnih: group.length - potrjenih,
     });
   }
 

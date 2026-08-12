@@ -394,8 +394,10 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
               </p>
             )}
             <p className="mt-3 text-xs text-zinc-500">
-              Merjeno je <strong>trajanje na oglasniku</strong>, ne prodaja. Oglas, ki je izginil, je lahko
-              bil tudi umaknjen.
+              Vir ne pove zagotovo, ali je bil avto <strong>prodan</strong> ali le <strong>umaknjen</strong>.
+              Zato vsak izginuli oglas ocenimo posebej: poceni avto, ki hitro izgine, je skoraj zagotovo
+              prodan; oglas, ki je bil dolgo gor ali precej dražji od ostalih, je bolj verjetno umaknjen ali
+              potekel. Bolj ko je prodaja verjetna, več šteje pri oceni cene.
               {cenitev.zakljuceni.vzorec > 0 && (
                 <>
                   {" "}
@@ -450,9 +452,27 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
   );
 }
 
+/** Sale-confidence badge for a finished advert (izginil / prodano). */
+const PRODAJA_OZNAKA: Record<string, { kratko: string; barva: string }> = {
+  potrjeno: { kratko: "prodan", barva: "bg-blue-50 text-blue-700" },
+  zelo_verjetno: { kratko: "verjetno prodan", barva: "bg-blue-50 text-blue-700" },
+  verjetno: { kratko: "verjetno prodan", barva: "bg-sky-50 text-sky-700" },
+  negotovo: { kratko: "morda umaknjen", barva: "bg-amber-50 text-amber-700" },
+};
+
 function Vrstica({ p }: { p: Primerljiv }) {
   const [odprto, setOdprto] = useState(false);
   const skupna = p.aiPodobnost === null ? p.podobnost : Math.round((p.podobnost + p.aiPodobnost) / 2);
+
+  const dniOznaka = p.dniNaTrgu !== null ? ` · ${Math.round(p.dniNaTrgu)} dni` : "";
+  const videz =
+    p.status === "aktiven"
+      ? { besedilo: "aktiven", barva: "bg-emerald-50 text-emerald-700" }
+      : p.status === "prodano"
+        ? { besedilo: "označen prodan", barva: "bg-blue-50 text-blue-700" }
+        : p.prodaja
+          ? { besedilo: `${PRODAJA_OZNAKA[p.prodaja.stopnja].kratko}${dniOznaka}`, barva: PRODAJA_OZNAKA[p.prodaja.stopnja].barva }
+          : { besedilo: `izginil${dniOznaka}`, barva: "bg-zinc-100 text-zinc-600" };
 
   return (
     <>
@@ -467,20 +487,8 @@ function Vrstica({ p }: { p: Primerljiv }) {
         <td className="px-3 py-2.5 text-right tabular-nums">{stevilo(p.km)}</td>
         <td className="px-3 py-2.5 text-right tabular-nums">{p.letnik ?? "—"}</td>
         <td className="px-3 py-2.5">
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              p.status === "aktiven"
-                ? "bg-emerald-50 text-emerald-700"
-                : p.status === "prodano"
-                  ? "bg-blue-50 text-blue-700"
-                  : "bg-zinc-100 text-zinc-600"
-            }`}
-          >
-            {p.status === "aktiven"
-              ? "aktiven"
-              : p.status === "prodano"
-                ? "označen prodan"
-                : `izginil${p.dniNaTrgu !== null ? ` po ${Math.round(p.dniNaTrgu)} dneh` : ""}`}
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${videz.barva}`}>
+            {videz.besedilo}
           </span>
         </td>
         <td className="px-3 py-2.5 text-right">
@@ -513,6 +521,11 @@ function Vrstica({ p }: { p: Primerljiv }) {
             {p.aiRazlog && (
               <p className="mt-1">
                 <strong>AI presoja ({p.aiPodobnost} %):</strong> {p.aiRazlog}
+              </p>
+            )}
+            {p.prodaja && p.status !== "aktiven" && (
+              <p className="mt-1">
+                <strong>Sodba trga:</strong> {p.prodaja.razlog}.
               </p>
             )}
             <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-zinc-500">

@@ -11,6 +11,7 @@ import {
   type CenovnaStatistika,
 } from "./statistika";
 import { opisVozila, type Vozilo } from "./vozilo";
+import { oceniProdajo, utezProdaje, type ProdajaOcena } from "@/lib/avtonet/analiza";
 
 /**
  * The valuation itself: database first, statistics second, AI only for
@@ -54,6 +55,8 @@ export type Primerljiv = {
   /** Filled by the AI pass when it ran; null otherwise. */
   aiPodobnost: number | null;
   aiRazlog: string | null;
+  /** For finished ads: how confidently it was actually sold, and why. Null for active. */
+  prodaja: ProdajaOcena | null;
 };
 
 export type Cenitev = {
@@ -288,6 +291,7 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
         ocena,
         aiPodobnost: null,
         aiRazlog: null,
+        prodaja: null,
       };
       return p;
     })
@@ -354,6 +358,22 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
   const dnevi = ocenjeni.map((p) => p.dniNaTrgu).filter((d): d is number => d !== null);
   const cas = casNaTrgu(dnevi);
 
+  // Sale confidence per finished ad, read against its peers: a cheaper-than-peers
+  // ad that left fast is almost certainly a sale; one that sat far longer than
+  // peers (or well above their price) is the doubtful one — likely pulled,
+  // expired or a problem listing. Peer references: the active asking median for
+  // price, the finished-set median for days.
+  const medCenaRef = aktivni.mediana ?? zakljuceni.mediana;
+  for (const p of zakljuceniVrstice) {
+    p.prodaja = oceniProdajo({
+      status: p.status,
+      dniNaTrgu: p.dniNaTrgu,
+      cena: p.cena,
+      medianaDni: cas.medianaDni,
+      medianaCene: medCenaRef,
+    });
+  }
+
   const zdaj = Date.now();
   const hitri = zakljuceniVrstice.filter(
     (p) => p.dniNaTrgu !== null && p.dniNaTrgu <= HITRO_DNI
@@ -369,10 +389,12 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
   //
   // An active advert contributes its ASKING price — the owner's opinion. A
   // finished advert contributes the last price seen before it left the board,
-  // and if it left fast, that is the market ACCEPTING a price: the closest
-  // thing public data has to a transaction. So finished adverts enter the same
-  // weighted median as the actives, scaled by utezKoncanega — fast-gone 1.5×
-  // an equally-similar ask, slow-gone 0.5×, everything discounted by age.
+  // and if it left fast at a keen price, that is the market ACCEPTING a price:
+  // the closest thing public data has to a transaction. So finished adverts
+  // enter the same weighted median as the actives, scaled by utezProdaje — a
+  // confident cheap-and-fast sale pulls ~1.5×, a doubtful long/overpriced
+  // disappearance only ~0.35× (it was probably pulled, not sold), everything
+  // additionally discounted by how long ago it left.
   //
   // With no history yet the pool is all asks and the estimate behaves exactly
   // as before; as research rounds accumulate disappearances, the number
@@ -386,11 +408,17 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
       .filter((p) => p.dniNaTrgu !== null && p.statusSpremenjen !== null)
       .map((p) => {
         const starostDni = (zdaj - new Date(p.statusSpremenjen as string).getTime()) / 86_400_000;
+        // Weight = similarity × sale confidence × age decay. A confidently-sold
+        // cheap-and-fast ad (zelo_verjetno / potrjeno) pulls hard; a doubtful
+        // long/overpriced disappearance (negotovo) barely counts, so it can't
+        // drag the estimate toward a price that was probably never accepted.
+        const staranje = Math.pow(0.5, Math.max(0, starostDni) / RAZPOLOVNI_CAS_DNI);
         return {
           vrednost: p.cena as number,
           teza:
             Math.max(1, skupnaPodobnost(p) - PRAG_PODOBNOSTI) *
-            utezKoncanega(p.dniNaTrgu as number, starostDni),
+            utezProdaje(p.prodaja?.stopnja ?? "verjetno") *
+            staranje,
         };
       }),
   ]);
