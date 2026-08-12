@@ -193,7 +193,8 @@ ${
     ? `<p style="color:#a16207;font-size:13px;margin-top:16px">Opomba: pri nekaterih oglasih vrsta prodajalca še ni znana (na seznamu oglasov ni objavljena). Teh nismo izpustili — preverite v samem oglasu.</p>`
     : ""
 }
-<p style="color:#a1a1aa;font-size:12px;margin-top:20px">SBN Auto - KodaTim.si</p>
+<p style="margin-top:22px"><a href="${process.env.SBN_ANALIZA_URL ?? "https://www.kodatim.si/avtonet/analiza"}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:11px 22px;border-radius:9px;font-weight:600;font-size:14px;">Poglej analizo trga →</a></p>
+<p style="color:#a1a1aa;font-size:12px;margin-top:20px">SBN Auto · KodaTim · kodatim.si</p>
 </body></html>`;
 }
 
