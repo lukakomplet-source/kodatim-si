@@ -35,12 +35,12 @@ export type Utezi = {
  * else matches.
  */
 export const PRIVZETE_UTEZI: Utezi = {
-  konfiguracija: 30,
-  motor: 20,
-  letnik: 15,
-  kilometri: 15,
+  konfiguracija: 34,
+  motor: 24,
+  letnik: 14,
+  kilometri: 9,
   oprema: 15,
-  karoserija: 5,
+  karoserija: 4,
 };
 
 export type Sestavine = {
@@ -84,10 +84,14 @@ function enako(a: string | null, b: string | null): number | null {
 }
 
 /**
- * Trim similarity by shared words: "50 TDI quattro" against "50 TDI quattro
- * S-line" shares everything that identifies the engine. Marketing noise
- * ("NOVO NOVO", "MATRIX.VIRTUAL") is diluted rather than decisive, which is why
- * this is a share of overlap and not an equality test.
+ * Trim similarity as the overlap coefficient — shared words over the SHORTER
+ * descriptor. "50 TDI quattro" against "50 TDI quattro S-line" shares
+ * everything that identifies the engine and scores 100. Crucially, a short
+ * descriptor recovered from a listing URL ("vz 4drive") found whole inside a
+ * long noisy title ("VZ 4Drive 2.0 TSI SLO FI NAVI GRETJE VOLANA") also scores
+ * as a full trim match, instead of being diluted to a third by the title's
+ * marketing words — which is exactly the case that was ranking the right VZ
+ * below cheap 1.5 petrols.
  */
 function podobnostVerzije(a: string | null, b: string | null): number {
   const ka = kljuc(a).split(" ").filter((w) => w.length > 1);
@@ -97,7 +101,7 @@ function podobnostVerzije(a: string | null, b: string | null): number {
   const sb = new Set(kb);
   let skupnih = 0;
   for (const w of sa) if (sb.has(w)) skupnih++;
-  return Math.round((100 * skupnih) / Math.max(sa.size, sb.size));
+  return Math.round((100 * skupnih) / Math.min(sa.size, sb.size));
 }
 
 /**
@@ -130,8 +134,14 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
   const menjalnik = enako(cilj.menjalnik, kandidat.menjalnik);
   const pogon = enako(cilj.pogon, kandidat.pogon);
   const verzija = podobnostVerzije(cilj.verzija, kandidat.verzija);
-  const konfDeli = [model ?? NEZNANO, menjalnik ?? NEZNANO, pogon ?? NEZNANO, verzija];
-  const konfiguracija = Math.round(konfDeli.reduce((a, b) => a + b, 0) / konfDeli.length);
+  // Model identity and trim/engine designation carry configuration together;
+  // gearbox and drivetrain refine it. Trim is weighted alongside model on
+  // purpose: the same model in a different performance version (VZ vs 1.5, RS
+  // vs base) is not the same product, and equal-weighting it with gearbox let
+  // that difference wash out.
+  const konfiguracija = Math.round(
+    (model ?? NEZNANO) * 0.35 + verzija * 0.35 + (menjalnik ?? NEZNANO) * 0.15 + (pogon ?? NEZNANO) * 0.15
+  );
 
   // Engine: power carries most of it, displacement confirms it, fuel is a gate.
   const gorivo = enako(cilj.gorivo, kandidat.gorivo);

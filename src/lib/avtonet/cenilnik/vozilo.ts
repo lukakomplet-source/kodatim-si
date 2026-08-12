@@ -82,7 +82,7 @@ export function normalizirajMenjalnik(raw: string | null | undefined): Menjalnik
 export function normalizirajPogon(raw: string | null | undefined): Pogon {
   const k = kljuc(raw);
   if (!k) return null;
-  if (/4x4|4wd|awd|quattro|xdrive|4motion|4matic|allrad|stirikolesni/.test(k)) return "4x4";
+  if (/4x4|4wd|awd|quattro|xdrive|4motion|4matic|4drive|allrad|stirikolesni/.test(k)) return "4x4";
   if (/zadnj|rear|hinterrad|rwd/.test(k)) return "zadnji";
   if (/sprednj|front|vorderrad|fwd/.test(k)) return "sprednji";
   return null;

@@ -263,6 +263,131 @@ export async function preberiIzSlik(dataUrls: string[]): Promise<BranjeRezultat>
   };
 }
 
+/**
+ * Trim / engine / drivetrain badges worth carrying into `verzija`.
+ *
+ * These are the words a seller puts in the listing URL that identify WHICH
+ * version of a model it is — the difference between a 310 PS Formentor VZ and a
+ * 150 PS 1.5 eTSI. Single-character badges (Golf "R", BMW "M") are omitted on
+ * purpose: podobnostVerzije drops one-character tokens, so extracting them
+ * would be dead weight.
+ */
+const BESEDE_IZVEDBE = new Set([
+  "vz", "gti", "gtd", "gts", "rs", "amg", "sline", "mpaket", "msport", "mperformance",
+  "quattro", "xdrive", "4drive", "4motion", "4matic", "allrad", "tdi", "tsi", "tfsi", "etsi",
+  "tdci", "ecoboost", "bluehdi", "hdi", "cdi", "dci", "crdi", "jtd", "phev", "mhev", "hybrid",
+  "abarth", "jcw", "nline", "cupra", "competition", "performance",
+]);
+
+/**
+ * Slug-token → equipment slug. First matching pattern wins per token; the list
+ * is ordered specific-before-generic ("matrix" before "led"). Only slugs that
+ * exist in our vocabulary survive the caller's validation.
+ */
+const SLUG_ZNACILKE: [RegExp, string][] = [
+  [/matrix/, "matrix_led"],
+  [/laser/, "laser_luci"],
+  [/xenon/, "xenon"],
+  [/led/, "led"],
+  [/beats|bose|harman|hifi|soundsystem|dynaudio|meridian/, "hi_fi"],
+  [/360/, "kamera_360"],
+  [/kamera|camera|rueckfahr|rearview|backup/, "kamera"],
+  [/^acc$|abstandstempomat|adaptivetempomat|adaptivecruise/, "acc"],
+  [/tempomat|cruise/, "tempomat"],
+  [/lane|spurhalt|^lka$/, "lane_assist"],
+  [/blindspot|totwinkel/, "blind_spot"],
+  [/keyless|kessy|smartkey/, "keyless"],
+  [/panorama|panodach|^pano$/, "panorama"],
+  [/navi/, "navigacija"],
+  [/carplay/, "apple_carplay"],
+  [/androidauto/, "android_auto"],
+  [/headup|^hud$/, "hud"],
+  [/virtualcockpit|digitalcockpit|^cockpit$|^virtual$/, "virtual_cockpit"],
+  [/leder|usnje|leather/, "usnje"],
+  [/massage/, "sedezi_masaza"],
+  [/memory/, "memory"],
+  [/sitzheiz|seatheat|gretjesedez|heatedseats/, "sedezi_gretje"],
+  [/^ahk$|anhang|towbar|vlecna|kupplung/, "vlecna"],
+  [/ambient/, "ambientna"],
+];
+
+/** Power from a slug: "150kw"/"150-kw"/"310ps"/"310hp" → kW (PS/HP ÷ 1.36). */
+function izlusciMoc(tokeni: string[]): number | null {
+  for (let i = 0; i < tokeni.length; i++) {
+    let m = tokeni[i].match(/^(\d{2,3})(kw|ps|hp)$/);
+    if (!m && /^\d{2,3}$/.test(tokeni[i]) && i + 1 < tokeni.length && /^(kw|ps|hp)$/.test(tokeni[i + 1])) {
+      m = [tokeni[i] + tokeni[i + 1], tokeni[i], tokeni[i + 1]] as unknown as RegExpMatchArray;
+    }
+    if (m) {
+      const n = Number(m[1]);
+      const kw = m[2] === "kw" ? n : Math.round(n / 1.36);
+      if (kw >= 40 && kw <= 700) return kw;
+    }
+  }
+  return null;
+}
+
+/**
+ * What the listing URL itself reveals about the car.
+ *
+ * mobile.de blocks page reading, but the seller-written slug
+ * (".../cupra-formentor-vz-4drive-led-beats-acc-lane-keylessgo-...") still
+ * names the trim, drivetrain and headline equipment. Reading it is not
+ * inference — the words are literally in the link — but it only ever FILLS
+ * gaps (see the merge), so it can never override what the page actually stated.
+ */
+function izLuscenegaSlug(url: string): Partial<Vozilo> {
+  let pot: string;
+  try {
+    pot = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    pot = url;
+  }
+  const razrez = pot
+    .toLowerCase()
+    .replace(/\.html?$/i, "")
+    .split(/[/\-_.]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .filter((t) => !["auto", "inserat", "autos", "fahrzeug", "details", "podrobnosti", "oglas", "vehicle"].includes(t));
+  const besede = razrez.filter((t) => !/^\d+$/.test(t));
+
+  const izvedba = besede.filter((t) => BESEDE_IZVEDBE.has(t));
+  const verzija = izvedba.length ? izvedba.join(" ") : null;
+
+  const dovoljene = new Set(Object.keys(OZNAKE_ZNACILK));
+  const znacilke = new Set<string>();
+  for (const t of besede) {
+    for (const [re, slug] of SLUG_ZNACILKE) {
+      if (re.test(t)) {
+        if (dovoljene.has(slug)) znacilke.add(slug);
+        break;
+      }
+    }
+  }
+
+  return {
+    verzija,
+    pogon: normalizirajPogon(razrez.join(" ")),
+    // Only the engine badges, so a stray word in the slug cannot invent a fuel.
+    gorivo: normalizirajGorivo(izvedba.join(" ")),
+    kw: izlusciMoc(razrez),
+    znacilke: [...znacilke],
+  };
+}
+
+/** Fills only the fields the source left empty; equipment is unioned. */
+function zdruziIzSlug(v: Vozilo, iz: Partial<Vozilo>): Vozilo {
+  return {
+    ...v,
+    verzija: v.verzija ?? iz.verzija ?? null,
+    pogon: v.pogon ?? iz.pogon ?? null,
+    gorivo: v.gorivo ?? iz.gorivo ?? null,
+    kw: v.kw ?? iz.kw ?? null,
+    znacilke: Array.from(new Set([...(v.znacilke ?? []), ...(iz.znacilke ?? [])])),
+  };
+}
+
 export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
   // Our own database first: free, instant, and the only path with no inference.
   if (jeAvtoNet(url)) {
@@ -350,5 +475,24 @@ export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
   }
 
   const izvor: Izvor = jeMobileDe(url) ? "mobile" : jeAvtoNet(url) ? "avtonet" : "besedilo";
-  return preberiIzBesedila(besedilo, izvor);
+  const rez = await preberiIzBesedila(besedilo, izvor);
+
+  // The link's own words fill what the (often thin or partly blocked) page body
+  // did not — trim, drivetrain and headline equipment — WITHOUT overwriting any
+  // field the page stated. This is the difference between comparing a Formentor
+  // VZ 4Drive against real VZ 4Drives and comparing it against every cheap 1.5.
+  const iz = izLuscenegaSlug(url);
+  const vozilo = zdruziIzSlug(rez.vozilo, iz);
+  const { znano, neznano } = razvrstiPolja(vozilo);
+  const dopolnjeno = Boolean(iz.verzija || iz.pogon || iz.gorivo || iz.kw || iz.znacilke?.length);
+  const opomba = [
+    neznano.length > 0
+      ? `Iz vira ni bilo mogoče razbrati: ${neznano.join(", ")}. Ta polja ostajajo prazna in niso ugibana.`
+      : "Vsa ključna polja so bila razbrana iz vira.",
+    dopolnjeno ? "Izvedbo, pogon in opremo smo dopolnili iz besed v sami povezavi oglasa." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return { ...rez, vozilo, znano, neznano, opomba };
 }
