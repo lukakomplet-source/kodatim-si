@@ -384,7 +384,21 @@ function extractPogon(pairs: Record<string, string>, text: string): string | nul
  */
 function extractNaslov(naslov: string | undefined, text: string): string | null {
   const iz = clean(naslov);
-  if (iz) return iz;
+  if (iz) {
+    // New-vehicle showroom pages have no h1, so the harvest falls back to
+    // document.title — which carries decorations: "MG ZS 1.5L Comfort,
+    // letnik:2026,0 EUR - prodam :: Avtonet :: www.Avto.net". Un-stripped,
+    // those decorations flowed through razdeliNaziv and 710 adverts ended up
+    // with avto.net's own phone number stored as their trim level.
+    const ocisen = iz
+      .replace(/\s*::\s*Avtonet\s*::.*$/i, "")
+      .replace(/\s*-\s*prodam\b.*$/i, "")
+      .replace(/[,;]?\s*letnik\s*:\s*\d{4}.*$/i, "")
+      .replace(/\b0\d{2,3}\s*\/?\s*\d{2}\s+\d{2,3}\b/g, " ")
+      .trim();
+    const cist = clean(ocisen);
+    if (cist) return cist;
+  }
   const kandidat = lines(text).find(
     (l) => l.length > 8 && l.length < 160 && /[A-Za-zČŠŽ]/.test(l) && !/:$/.test(l) && !/\t/.test(l)
   );
@@ -403,6 +417,10 @@ export function parseDetail(raw: DetailRaw): DetailData {
 
   const naslov = extractNaslov(raw.naslov, text);
   const razdeljen = razdeliNaziv(naslov);
+  // A trim designation contains letters ("50 TDI quattro", "Intens"). A value
+  // that is only digits and punctuation is a phone number, a price fragment or
+  // a date that leaked out of a decorated title — never a version.
+  if (razdeljen.verzija && !/\p{L}/u.test(razdeljen.verzija)) razdeljen.verzija = null;
 
   return {
     naslov,

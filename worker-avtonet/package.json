@@ -31,6 +31,8 @@
     "test:nazivi": "tsx src/test-nazivi.ts",
     "test:detajli": "tsx src/test-detajli.ts",
     "test:brez-migracije": "tsx src/test-brez-migracije.ts",
+    "test:naslov": "tsx src/test-naslov.ts",
+    "popravi:novo": "tsx src/popravi-novo.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {

@@ -292,9 +292,16 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
   // The detail page's heading is a cleaner source for these three than the
   // results row, so it overwrites them — but only when it actually parsed
   // something. A null here would otherwise erase a good value from phase 1.
-  if (naslov) patch.naziv = naslov;
-  if (znamka) patch.znamka = znamka;
-  if (model) patch.model = model;
+  //
+  // The brand is the gate for ALL three: a "title" in which no known brand can
+  // be found is not a car's name, it is page furniture (the new-vehicle layout
+  // has no h1, and its document.title fallback is how junk got in) — and junk
+  // must not overwrite a good phase-1 value.
+  if (znamka) {
+    if (naslov) patch.naziv = naslov;
+    patch.znamka = znamka;
+    if (model) patch.model = model;
+  }
 
   // Running the migration is a manual step, and a worker started before it was
   // done would otherwise fail on every single advert — turning a 20-hour
@@ -307,7 +314,19 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
   }
 
   const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
-  if (error) throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
+  if (!error) return;
+
+  // "Empty or invalid json" (PGRST102) showed up live as four failures within
+  // four seconds and then never again — a transient network blip corrupting
+  // request bodies, not a content problem. One short retry absorbs exactly
+  // that; a real error fails again and is reported as before.
+  if (/empty or invalid json/i.test(error.message)) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const { error: ponovno } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
+    if (!ponovno) return;
+    throw new Error(`Zapis podrobnosti ni uspel: ${ponovno.message}`);
+  }
+  throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
 }
 
 /**

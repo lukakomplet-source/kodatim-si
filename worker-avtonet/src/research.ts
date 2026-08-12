@@ -620,6 +620,14 @@ async function detailPhase(
 
       try {
         const raw = await fetchDetailPage(browser, detailUrl(item.avtonet_id));
+        // A page with not one specification pair and no equipment is not an
+        // advert — it is an interstitial or an error page that answered 200.
+        // Saving it would stamp the advert "done" with junk and it would never
+        // be revisited; failing it leaves the advert in the queue for the next
+        // round, which is the correct outcome for a transient page.
+        if (Object.keys(raw.pairs).length === 0 && !/Oprema in ostali podatki/i.test(raw.text)) {
+          throw new Error("stran ni oglas (prazna vsebina) — ostane v vrsti za naslednji krog");
+        }
         const detail = parseDetail(raw);
         await saveDetail(db, item.id, detail);
         p.detajlov_obdelanih += 1;
