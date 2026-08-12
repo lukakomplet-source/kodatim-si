@@ -163,7 +163,7 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
 
   const skupnaTeza =
     utezi.konfiguracija + utezi.motor + utezi.letnik + utezi.kilometri + utezi.oprema + utezi.karoserija;
-  const skupno = Math.round(
+  const osnovno = Math.round(
     (konfiguracija * utezi.konfiguracija +
       motor * utezi.motor +
       letnik * utezi.letnik +
@@ -173,7 +173,53 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
       skupnaTeza
   );
 
-  return { skupno, sestavine, razlaga: sestaviRazlago(cilj, kandidat, sestavine) };
+  // Hard gates. A weighted average is too forgiving for the things that make a
+  // car a DIFFERENT product for pricing: a diesel is not a petrol, an automatic
+  // is not a manual, a limousine is not an estate, and 150 kW is not 310 kW. So
+  // when BOTH sides state such a value and they differ, the whole score is cut
+  // sharply — enough to drop the car below the inclusion threshold, so it stops
+  // feeding the estimate. Equipment is deliberately NOT gated (it may differ a
+  // little). And the rule that protects older adverts holds: an UNKNOWN field
+  // never gates, so a target read only partially is not punished — it just
+  // relies on the fields it does have.
+  const { faktor, razlogi } = vrata(cilj, kandidat);
+  const skupno = Math.round(osnovno * faktor);
+
+  const osnovnaRazlaga = sestaviRazlago(cilj, kandidat, sestavine);
+  const razlaga = razlogi.length > 0 ? `${razlogi.join(", ")} — ${osnovnaRazlaga}` : osnovnaRazlaga;
+
+  return { skupno, sestavine, razlaga };
+}
+
+/**
+ * The gate factor (0..1) and the human reasons behind it. Each mismatch that
+ * both sources actually state multiplies the score down; unknowns are skipped.
+ */
+function vrata(cilj: Vozilo, kandidat: Vozilo): { faktor: number; razlogi: string[] } {
+  let faktor = 1;
+  const razlogi: string[] = [];
+
+  if (cilj.gorivo && kandidat.gorivo && cilj.gorivo !== kandidat.gorivo) {
+    faktor *= 0.3;
+    razlogi.push("drugo gorivo");
+  }
+  if (cilj.menjalnik && kandidat.menjalnik && cilj.menjalnik !== kandidat.menjalnik) {
+    faktor *= 0.45;
+    razlogi.push("drug menjalnik");
+  }
+  if (cilj.karoserija && kandidat.karoserija && cilj.karoserija !== kandidat.karoserija) {
+    faktor *= 0.4;
+    razlogi.push("druga karoserija");
+  }
+  if (cilj.kw !== null && kandidat.kw !== null && Math.max(cilj.kw, kandidat.kw) > 0) {
+    const delez = Math.abs(cilj.kw - kandidat.kw) / Math.max(cilj.kw, kandidat.kw);
+    if (delez > 0.25) {
+      faktor *= 0.55;
+      razlogi.push("bistveno drugačna moč");
+    }
+  }
+
+  return { faktor, razlogi };
 }
 
 /**

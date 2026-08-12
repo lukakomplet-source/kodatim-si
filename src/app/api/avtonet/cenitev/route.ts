@@ -64,6 +64,26 @@ function izObrazca(v: Partial<Vozilo>): Vozilo {
   };
 }
 
+/** Overlays the non-null fields of `cez` onto `osnova`; equipment is unioned. */
+function zlijVozili(osnova: Vozilo, cez: Vozilo): Vozilo {
+  return {
+    znamka: cez.znamka ?? osnova.znamka,
+    model: cez.model ?? osnova.model,
+    verzija: cez.verzija ?? osnova.verzija,
+    letnik: cez.letnik ?? osnova.letnik,
+    km: cez.km ?? osnova.km,
+    ccm: cez.ccm ?? osnova.ccm,
+    kw: cez.kw ?? osnova.kw,
+    gorivo: cez.gorivo ?? osnova.gorivo,
+    menjalnik: cez.menjalnik ?? osnova.menjalnik,
+    pogon: cez.pogon ?? osnova.pogon,
+    karoserija: cez.karoserija ?? osnova.karoserija,
+    znacilke: Array.from(new Set([...(osnova.znacilke ?? []), ...(cez.znacilke ?? [])])),
+    cena: cez.cena ?? osnova.cena,
+    valuta: cez.valuta ?? osnova.valuta,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik) {
@@ -80,14 +100,43 @@ export async function POST(request: NextRequest) {
   try {
     // ---- 1. Read the vehicle -------------------------------------------
     let branje;
-    if (telo.nacin === "rocno" && telo.vozilo) {
-      const vozilo = izObrazca(telo.vozilo);
+    if (telo.nacin === "rocno") {
+      // The target is layered together, weakest evidence first so the strongest
+      // wins each field: photos of the car → the pasted advert text → whatever
+      // the user typed into the form. Equipment is unioned across all three, so
+      // a feature seen only in a photo or only in the text still counts. This is
+      // the path that makes a blocked mobile.de ad usable: paste its text,
+      // drop in a couple of photos, and equipment is recognised automatically.
+      const slike = (telo.slike ?? []).filter((s) => typeof s === "string" && s.startsWith("data:image/"));
+      const bes = (telo.besedilo ?? "").trim();
+      let vozilo: Vozilo = PRAZNO_VOZILO;
+      const dopolnitve: string[] = [];
+      if (slike.length > 0) {
+        try {
+          vozilo = zlijVozili(vozilo, (await preberiIzSlik(slike, { vidnaOprema: true })).vozilo);
+          dopolnitve.push("slik vozila");
+        } catch {
+          // A failed vision read must not sink a manual entry that stands alone.
+        }
+      }
+      if (bes.length >= 20) {
+        try {
+          vozilo = zlijVozili(vozilo, (await preberiIzBesedila(bes)).vozilo);
+          dopolnitve.push("prilepljenega besedila");
+        } catch {
+          // Same: text extraction is a bonus, not a requirement.
+        }
+      }
+      if (telo.vozilo) vozilo = zlijVozili(vozilo, izObrazca(telo.vozilo));
+
       branje = {
         vozilo,
         izvor: "besedilo" as const,
         znano: [],
         neznano: [],
-        opomba: "Podatki so vneseni ročno.",
+        opomba: dopolnitve.length
+          ? `Ročni vnos, dopolnjen iz ${dopolnitve.join(" in ")}. Opremo smo zaznali samodejno — preverite jo.`
+          : "Podatki so vneseni ročno.",
       };
     } else if (telo.nacin === "slika") {
       const slike = (telo.slike ?? []).filter((s) => typeof s === "string" && s.startsWith("data:image/"));

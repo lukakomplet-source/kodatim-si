@@ -240,10 +240,23 @@ export async function preberiIzBesedila(besedilo: string, izvor: Izvor = "besedi
   };
 }
 
-export async function preberiIzSlik(dataUrls: string[]): Promise<BranjeRezultat> {
+export async function preberiIzSlik(
+  dataUrls: string[],
+  opcije?: { vidnaOprema?: boolean }
+): Promise<BranjeRezultat> {
+  // For photos of the CAR (not a screenshot of the advert's spec table), the
+  // user wants visible equipment recognised — LED headlights, a panoramic roof,
+  // the alloy design, leather, a large screen. That is reading a visible fact,
+  // not inventing one, so it is allowed; anything not clearly visible still
+  // stays null.
+  const navodilo = opcije?.vidnaOprema
+    ? "Preberi podatke o vozilu s teh fotografij. Kar jasno vidiš na sliki (LED/matrix žarometi, " +
+      "panoramska streha, oblika platišč, usnjeni/športni sedeži, velik zaslon, digitalni merilniki), " +
+      "dodaj v 'znacilke'. Česar ne vidiš jasno, NE ugibaj."
+    : "Preberi podatke o vozilu iz tega posnetka oglasa.";
   const surovo = await chatJSONWithImages<SurovoBranje>(
     SISTEM,
-    "Preberi podatke o vozilu iz tega posnetka oglasa.",
+    navodilo,
     dataUrls.slice(0, 4),
     // The spec table on a car advert is dense small text; low detail loses the
     // digits that matter most (mileage, power, price).
@@ -409,6 +422,21 @@ export async function preberiIzPovezave(url: string): Promise<BranjeRezultat> {
       opombaVira = `Branje strani prek Firecrawl ni uspelo (${err instanceof Error ? err.message : "neznana napaka"}).`;
     } else {
       opombaVira = "Firecrawl ni na voljo.";
+    }
+  }
+
+  // mobile.de blocks ordinary reading; a stealth (residential + anti-bot) proxy
+  // is the one server-side path that sometimes gets through. Attempted only for
+  // mobile.de and only if the plain read produced nothing, because stealth
+  // costs more Firecrawl credits. Silently falls through if Firecrawl is
+  // unavailable — this is a bonus attempt, not the load-bearing path.
+  if ((!besedilo || jeBlokada(besedilo)) && jeMobileDe(url)) {
+    try {
+      const scrape = await scrapeUrl(url, { onlyMainContent: true, proxy: "stealth", waitFor: 2500 });
+      const t = `${scrape.title ?? ""}\n\n${scrape.markdown}`;
+      if (t.trim().length > 200 && !jeBlokada(t)) besedilo = t;
+    } catch {
+      // Stealth also blocked or no Firecrawl — the screenshot path still works.
     }
   }
 

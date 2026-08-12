@@ -54,6 +54,7 @@ export function CenilnikClient() {
     znamka: "", model: "", verzija: "", letnik: "", km: "", kw: "", gorivo: "", menjalnik: "",
     pogon: "", karoserija: "",
   });
+  const [rocnoBesedilo, setRocnoBesedilo] = useState("");
   const [tece, setTece] = useState(false);
   const [napaka, setNapaka] = useState<string | null>(null);
   const [odgovor, setOdgovor] = useState<Odgovor | null>(null);
@@ -91,7 +92,7 @@ export function CenilnikClient() {
           ? { nacin: "povezava", url }
           : nacin === "slika"
             ? { nacin: "slika", slike }
-            : { nacin: "rocno", vozilo: rocno };
+            : { nacin: "rocno", vozilo: rocno, besedilo: rocnoBesedilo, slike };
 
       const res = await fetch("/api/avtonet/cenitev", {
         method: "POST",
@@ -114,7 +115,7 @@ export function CenilnikClient() {
   const pripravljen =
     nacin === "povezava" ? /^https?:\/\//i.test(url.trim())
       : nacin === "slika" ? slike.length > 0
-        : rocno.znamka.trim().length > 1;
+        : rocno.znamka.trim().length > 1 || rocnoBesedilo.trim().length > 20 || slike.length > 0;
 
   return (
     <div className="mt-6">
@@ -178,9 +179,34 @@ export function CenilnikClient() {
           )}
 
           {nacin === "rocno" && (
-            <div className="grid gap-3 sm:grid-cols-3">
-              {([
-                ["znamka", "Znamka *", "BMW"],
+            <div className="space-y-4">
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 p-3">
+                <p className="text-xs font-medium text-zinc-600">
+                  Hitro (neobvezno): prilepi celotno besedilo oglasa in/ali naloži slike vozila — opremo
+                  in podatke prepoznamo samodejno, ročna polja spodaj imajo prednost.
+                </p>
+                <textarea
+                  value={rocnoBesedilo}
+                  onChange={(e) => setRocnoBesedilo(e.target.value)}
+                  rows={4}
+                  placeholder="Prilepi celotno besedilo strani oglasa (na strani Ctrl+A → Ctrl+C)…"
+                  className="mt-2 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => void naloziSlike(e.target.files)}
+                  className="mt-2 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-700 hover:file:bg-zinc-200"
+                />
+                {slike.length > 0 && (
+                  <p className="mt-1.5 text-xs text-zinc-500">Naloženih slik: {slike.length}</p>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                {([
+                  ["znamka", "Znamka *", "BMW"],
                 ["model", "Model", "serija 3"],
                 ["verzija", "Verzija / motor", "320d xDrive M Sport"],
                 ["letnik", "Letnik", "2021"],
@@ -200,6 +226,7 @@ export function CenilnikClient() {
                   />
                 </label>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -447,7 +474,11 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
         )}
       </section>
 
-      {branje.izvor === "mobile" && <UvoznaKalkulacija cenitev={cenitev} />}
+      {/* Import margin worksheet: for any foreign / manually-entered car — a
+          mobile.de link, a screenshot, pasted text or a manual entry. Hidden
+          only for a domestic avto.net ad already in our own market, where there
+          is nothing to import. */}
+      {branje.izvor !== "baza" && branje.izvor !== "avtonet" && <UvoznaKalkulacija cenitev={cenitev} />}
     </div>
   );
 }

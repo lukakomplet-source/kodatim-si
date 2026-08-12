@@ -44,7 +44,17 @@ export type FirecrawlScrapeResult = {
 
 export async function scrapeUrl(
   url: string,
-  options?: { onlyMainContent?: boolean }
+  options?: {
+    onlyMainContent?: boolean;
+    /**
+     * "stealth" routes through residential proxies with anti-bot handling — the
+     * one server-side path that sometimes gets past a strict WAF (mobile.de).
+     * Costs more Firecrawl credits, so callers use it only as a retry.
+     */
+    proxy?: "basic" | "stealth" | "auto";
+    /** Milliseconds to let the page settle before reading (client-rendered ads). */
+    waitFor?: number;
+  }
 ): Promise<FirecrawlScrapeResult> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) {
@@ -64,6 +74,8 @@ export async function scrapeUrl(
       // which "main content" extraction can strip — callers that need those
       // (e.g. the lead-intelligence website lookup) pass onlyMainContent: false.
       onlyMainContent: options?.onlyMainContent ?? true,
+      ...(options?.proxy ? { proxy: options.proxy } : {}),
+      ...(options?.waitFor ? { waitFor: options.waitFor } : {}),
     }),
   });
 
