@@ -65,6 +65,51 @@ type ScrapeResult = {
   warning?: string;
 };
 
+/** Splits a registry string ("Janez Novak, Marija Kovač (50 %)") into names. */
+function razbijNaOsebe(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\n;,/]+/)
+    .map((s) =>
+      s
+        .replace(/\(.*?\)/g, "") // drop "(50 %)", "(prokurist)" …
+        .replace(/\d+[.,]?\d*\s*%/g, "") // drop bare percentages
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((s) => s.length > 2 && /[a-zščž]/i.test(s));
+}
+
+/**
+ * Every named PERSON the registries surfaced for one company, as one list:
+ * the contact persons plus the director, owners and authorised representatives
+ * from AJPES / CompanyWall / Bizi. The point is a single roster to work from
+ * (e.g. to look each up on Instagram), instead of names buried in custom
+ * fields. Deduplicated case-insensitively; internal commas are stripped so the
+ * comma-joined value round-trips cleanly through ContactPersonsField.
+ */
+function zberiOsebe(result: ScrapeResult | undefined): string[] {
+  if (!result) return [];
+  const f = result.fields ?? {};
+  const vsi = [
+    ...(result.contactPersons ?? []),
+    ...razbijNaOsebe(f.director),
+    ...razbijNaOsebe(f.owners),
+    ...razbijNaOsebe(f.authorized_representatives),
+  ].map((s) => s.replace(/,/g, " ").replace(/\s+/g, " ").trim());
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of vsi) {
+    const k = n.toLowerCase();
+    if (n && !seen.has(k)) {
+      seen.add(k);
+      out.push(n);
+    }
+  }
+  return out.slice(0, 40);
+}
+
 type Row = SearchRow & {
   status: "waiting" | "running" | "done" | "error";
   error?: string;
@@ -204,7 +249,7 @@ function whyMissing(row: Row): string {
   if (result.warning) return result.warning;
 
   const missing = KEY_FIELDS.filter((f) =>
-    f === "website" ? !result.website : f === "contact_person" ? result.contactPersons.length === 0 : !result.fields[f]
+    f === "website" ? !result.website : f === "contact_person" ? zberiOsebe(result).length === 0 : !result.fields[f]
   );
   if (missing.length === 0) return "";
 
@@ -220,7 +265,7 @@ function valueFor(row: Row, key: string): string {
   if (key === "company_name") return row.name;
   if (key === "why_missing") return whyMissing(row);
   if (key === "description") return row.result?.description ?? "";
-  if (key === "contact_person") return row.result?.contactPersons.join(", ") ?? "";
+  if (key === "contact_person") return zberiOsebe(row.result).join(", ");
   if (key === "website") return row.result?.website ?? "";
   // Before the scrape runs, the AJPES search row is already worth showing.
   const fallback: Record<string, string | null> = {
@@ -716,7 +761,7 @@ export default function LeadScrapeClient() {
       email,
       phone,
       website,
-      person: has((r) => (r.result?.contactPersons.length ?? 0) > 0),
+      person: has((r) => zberiOsebe(r.result).length > 0),
       revenue: has((r) => Boolean(r.result?.fields.revenue_amount)),
       bankrupt: has((r) => Boolean(r.result?.bankrupt)),
       // The one number that matters: rows you can actually reach someone at.
@@ -1306,7 +1351,7 @@ export default function LeadScrapeClient() {
           address_city: f.address_city ?? r.city,
           address_country: f.address_country ?? null,
           vat_id: f.vat_id ?? r.vatId,
-          contact_person: r.result?.contactPersons.join(", ") || null,
+          contact_person: zberiOsebe(r.result).join(", ") || null,
           notes: r.result?.description ? `AI opis: ${r.result.description}` : null,
           custom_fields: custom,
         };
@@ -1325,26 +1370,65 @@ export default function LeadScrapeClient() {
 
     setImporting(true);
     setImportMessage(null);
-    const result = await importScrapedLeads(payload, includeUnscraped);
-    setImporting(false);
 
-    if (result.error) {
-      setImportMessage(result.error);
+    // Sent in chunks, not one giant call. A single request for hundreds of
+    // companies is exactly what used to spin forever: a slow or timed-out
+    // server action left the button loading with no way to tell "done" from
+    // "dead". Now each chunk reports back, the message shows live progress, a
+    // mid-way failure keeps what already landed, and the spinner ALWAYS stops
+    // (finally) so the state can never get stuck again.
+    const CHUNK = 50;
+    let inserted = 0;
+    let updated = 0;
+    let queued = 0;
+    let obdelano = 0;
+    let napaka: string | null = null;
+
+    try {
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const kos = payload.slice(i, i + CHUNK);
+        const result = await importScrapedLeads(kos, includeUnscraped);
+        if (result.error) {
+          napaka = result.error;
+          break;
+        }
+        inserted += result.inserted ?? 0;
+        updated += result.updated ?? 0;
+        queued += result.queued ?? 0;
+        obdelano += kos.length;
+
+        // Mark just-sent rows as imported as we go, so a later failure (or a
+        // re-click) never re-sends what already landed.
+        const doZdaj = chosen.slice(0, obdelano);
+        setImportedUrls((prev) => {
+          const next = new Set(prev);
+          for (const r of doZdaj) next.add(r.detailUrl);
+          return next;
+        });
+
+        if (payload.length > CHUNK) {
+          setImportMessage(`Uvažam … obdelano ${obdelano} / ${payload.length} podjetij.`);
+        }
+      }
+    } catch (err) {
+      napaka = err instanceof Error ? err.message : "Uvoz je bil nepričakovano prekinjen.";
+    } finally {
+      setImporting(false);
+    }
+
+    if (napaka) {
+      setImportMessage(
+        `Napaka po ${obdelano} / ${payload.length} podjetjih: ${napaka}` +
+          (obdelano > 0 ? " Kar je bilo uvoženo, ostane — kliknite znova za preostanek." : "")
+      );
       return;
     }
 
-    // Remember what went over, so the next click only sends what is new.
-    setImportedUrls((prev) => {
-      const next = new Set(prev);
-      for (const r of chosen) next.add(r.detailUrl);
-      return next;
-    });
-
     const remaining = rows.filter((r, i) => selected.has(i) && !importedUrls.has(r.detailUrl)).length - chosen.length;
     setImportMessage(
-      `Uvoženih ${result.inserted ?? 0} novih leadov.` +
-        (result.updated ? ` Dopolnjenih ${result.updated} obstoječih (dodani manjkajoči podatki, nič prepisano).` : "") +
-        (result.queued ? ` ${result.queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "") +
+      `✅ KONČANO — uvoženih ${inserted} novih leadov.` +
+        (updated ? ` Dopolnjenih ${updated} obstoječih (dodani manjkajoči podatki, nič prepisano).` : "") +
+        (queued ? ` ${queued} jih čaka na obdelavo v ozadju — poženite \`npm run worker\`.` : "") +
         (scraping
           ? ` Skrejp teče naprej — ko se končajo preostale vrstice, kliknite znova in uvozile se bodo samo nove.`
           : remaining > 0
