@@ -67,6 +67,17 @@ export type DetailData = {
   prodajalec_registriran_od: string | null;
   /** True when the advert says "Pokličite za ceno!" — no price is a fact, not a gap. */
   cena_na_poziv: boolean;
+
+  // --- Added for market-timing accuracy (migration_avtonet_natancnost) ------
+  /**
+   * The source's own "Zadnja sprememba" date (ISO yyyy-mm-dd). A lower bound on
+   * how long the advert has existed — our first_seen only says when WE first
+   * saw it, which undercounts everything already on the board before sweeps
+   * began.
+   */
+  source_zadnja_sprememba: string | null;
+  /** The source's view counter — views/day is a direct demand signal. */
+  ogledov: number | null;
 };
 
 /** avto.net's detail URL for a listing id. */
@@ -459,5 +470,34 @@ export function parseDetail(raw: DetailRaw): DetailData {
     prodajalec_naslov: prodajalec.naslov,
     prodajalec_registriran_od: prodajalec.registriranOd,
     cena_na_poziv: /Pokličite za ceno/i.test(text),
+
+    source_zadnja_sprememba: extractZadnjaSprememba(text),
+    ogledov: extractOgledov(text),
   };
+}
+
+/**
+ * The source's "Zadnja sprememba: 12.08.2026" line, as an ISO date.
+ *
+ * Not a publish date — avto.net does not show one — but a floor on the advert's
+ * age: it existed at least since its last edit. Tolerant of "Zadnja sprememba
+ * oglasa" and of a time following the date.
+ */
+function extractZadnjaSprememba(text: string): string | null {
+  const m = text.match(/Zadnja sprememba(?:\s+oglasa)?:?\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/i);
+  if (!m) return null;
+  const [, d, mes, leto] = m;
+  const dan = Number(d);
+  const mesec = Number(mes);
+  const l = Number(leto);
+  if (dan < 1 || dan > 31 || mesec < 1 || mesec > 12 || l < 2000 || l > 2100) return null;
+  return `${l}-${String(mesec).padStart(2, "0")}-${String(dan).padStart(2, "0")}`;
+}
+
+/** The "Ogledov: 12.345" counter. Dots are thousands separators. */
+function extractOgledov(text: string): number | null {
+  const m = text.match(/Ogledov:?\s*([\d.]+)/i);
+  if (!m) return null;
+  const n = Number(m[1].replace(/\./g, ""));
+  return Number.isFinite(n) && n >= 0 && n < 10_000_000 ? n : null;
 }

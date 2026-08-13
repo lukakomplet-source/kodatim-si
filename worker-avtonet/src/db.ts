@@ -49,15 +49,31 @@ export async function upsertListings(
   // the page is four batched statements regardless of how many adverts it holds:
   // read existing, insert new, update known, insert all snapshots.
   const ids = rows.map((r) => r.avtonetId);
+  const natancnost = await imaNatancnost(db);
+  // km and status join cena here because a snapshot is now written only when
+  // one of the three actually changed, which needs the previous values.
+  // manjka_od/vrnjen_krat so a returning advert can be recognised as returned.
+  // (Typed as plain string so the client's literal-type parser stays out of it.)
+  const stolpciObstojecih: string = natancnost
+    ? "id, avtonet_id, cena_eur, km, status, manjka_od, vrnjen_krat"
+    : "id, avtonet_id, cena_eur, km, status";
   const { data: existing, error } = await db
     .from("avtonet_oglasi")
-    // km and status join cena here because a snapshot is now written only when
-    // one of the three actually changed, which needs the previous values.
-    .select("id, avtonet_id, cena_eur, km, status")
+    .select(stolpciObstojecih)
     .in("avtonet_id", ids);
   if (error) throw new Error(`Branje obstoječih oglasov ni uspelo: ${error.message}`);
 
-  const known = new Map((existing ?? []).map((e) => [e.avtonet_id as string, e]));
+  type ObstojecaVrstica = {
+    id: string;
+    avtonet_id: string;
+    cena_eur: number | string | null;
+    km: number | null;
+    status: string;
+    manjka_od?: string | null;
+    vrnjen_krat?: number | null;
+  };
+  const vrsticeObstojecih = (existing ?? []) as unknown as ObstojecaVrstica[];
+  const known = new Map(vrsticeObstojecih.map((e) => [e.avtonet_id, e]));
   const now = new Date().toISOString();
 
   // A page can legitimately list the same advert twice around a boundary; keep
@@ -122,12 +138,29 @@ export async function upsertListings(
   // overlap instead of stacking, which is what cost the time.
   if (zaPosodobitev.length > 0) {
     const results = await Promise.all(
-      zaPosodobitev.map((u) =>
-        db
-          .from("avtonet_oglasi")
-          .update({ last_seen: now, cena_eur: u.row.cenaEur, km: u.row.km, status: u.status })
-          .eq("id", u.id)
-      )
+      zaPosodobitev.map((u) => {
+        const patch: Record<string, unknown> = {
+          last_seen: now,
+          cena_eur: u.row.cenaEur,
+          km: u.row.km,
+          status: u.status,
+        };
+        if (natancnost) {
+          const prev = known.get(u.row.avtonetId) as
+            | { status?: string; manjka_od?: string | null; vrnjen_krat?: number | null }
+            | undefined;
+          // Seen again: any pending absence is cancelled. A confirmed-izginil
+          // advert that reappears is a RETURN — counted, because its "days on
+          // market" are no longer evidence of a sale and analytics must know.
+          // A single missed sweep that self-corrects is just scraper noise and
+          // is cleared silently.
+          patch.manjka_od = null;
+          if (prev?.status === "izginil") {
+            patch.vrnjen_krat = (prev.vrnjen_krat ?? 0) + 1;
+          }
+        }
+        return db.from("avtonet_oglasi").update(patch).eq("id", u.id);
+      })
     );
     const napaka = results.find((r) => r.error);
     if (napaka?.error) throw new Error(`Posodobitev oglasa ni uspela: ${napaka.error.message}`);
@@ -203,7 +236,9 @@ export async function upsertListings(
  *      type, doors, seats, owners, build year, emissions, consumption, seller
  *      address and registered-since, and brand/model re-split from the title
  */
-export const DETAJL_VERZIJA = 2;
+// 3: + source_zadnja_sprememba, ogledov (migration_avtonet_natancnost) — bump
+// makes phase 2 revisit every advert once and backfill both fields.
+export const DETAJL_VERZIJA = 3;
 
 /**
  * Phase 2's write: the fields that only exist on the advert's own page.
@@ -243,6 +278,8 @@ export type DetailZapis = {
   prodajalec_naslov: string | null;
   prodajalec_registriran_od: string | null;
   cena_na_poziv: boolean;
+  source_zadnja_sprememba: string | null;
+  ogledov: number | null;
 };
 
 /** Columns that only exist after migration_avtonet_detajl_v2.sql. */
@@ -280,6 +317,22 @@ async function imaV2(db: Db): Promise<boolean> {
   return v2NaVoljo;
 }
 
+/** Whether migration_avtonet_natancnost.sql (manjka_od, vrnjen_krat, …) is in. */
+let natancnostNaVoljo: boolean | null = null;
+
+async function imaNatancnost(db: Db): Promise<boolean> {
+  if (natancnostNaVoljo !== null) return natancnostNaVoljo;
+  const { error } = await db.from("avtonet_oglasi").select("manjka_od").limit(1);
+  natancnostNaVoljo = !error;
+  if (!natancnostNaVoljo) {
+    console.warn(
+      "[natancnost] Baza še nima stolpcev iz migration_avtonet_natancnost.sql — " +
+        "izginotje se označuje po starem (prvi popolni pregled)."
+    );
+  }
+  return natancnostNaVoljo;
+}
+
 export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): Promise<void> {
   const { naslov, znamka, model, ...ostalo } = detail;
 
@@ -311,6 +364,10 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
   // phase 2 picks these adverts up again on its own.
   if (!(await imaV2(db))) {
     for (const k of POLJA_V2) delete patch[k];
+  }
+  if (!(await imaNatancnost(db))) {
+    delete patch.source_zadnja_sprememba;
+    delete patch.ogledov;
   }
 
   const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
@@ -379,13 +436,79 @@ export async function markDisappeared(db: Db, seenIds: string[], scopeIds: strin
   if (missing.length === 0) return 0;
 
   const now = new Date().toISOString();
-  const { error } = await db
-    .from("avtonet_oglasi")
-    .update({ status: "izginil", status_spremenjen: now })
-    .in("avtonet_id", missing)
-    .eq("status", "aktiven");
-  if (error) throw new Error(`Označevanje izginulih ni uspelo: ${error.message}`);
-  return missing.length;
+
+  // Without the natančnost migration: the old single-strike behaviour.
+  if (!(await imaNatancnost(db))) {
+    const { error } = await db
+      .from("avtonet_oglasi")
+      .update({ status: "izginil", status_spremenjen: now })
+      .in("avtonet_id", missing)
+      .eq("status", "aktiven");
+    if (error) throw new Error(`Označevanje izginulih ni uspelo: ${error.message}`);
+    return missing.length;
+  }
+
+  // Two-strike rule. One complete sweep without the advert only RECORDS the
+  // absence (manjka_od); the next complete sweep that still cannot find it
+  // CONFIRMS it. This is what keeps one bad scrape or a temporarily hidden
+  // advert from becoming a fake sale in the statistics.
+  //
+  // The confirmed advert's status_spremenjen is set to manjka_od — the moment
+  // it actually left the board — not to now, so "days on market" is not
+  // inflated by one sweep interval for every single sale.
+  //
+  // The .in() lists are chunked: a full sweep can carry thousands of ids and
+  // PostgREST receives filters via the URL, which has a length ceiling.
+  const KOS = 200;
+  let potrjenih = 0;
+
+  for (let i = 0; i < missing.length; i += KOS) {
+    const kos = missing.slice(i, i + KOS);
+
+    // Which of these are already on their first strike?
+    const { data: zeManjkajo, error: bralna } = await db
+      .from("avtonet_oglasi")
+      .select("avtonet_id, manjka_od")
+      .in("avtonet_id", kos)
+      .eq("status", "aktiven")
+      .not("manjka_od", "is", null);
+    if (bralna) throw new Error(`Branje manjkajočih ni uspelo: ${bralna.message}`);
+
+    const drugiUdarec = (zeManjkajo ?? []) as { avtonet_id: string; manjka_od: string }[];
+    const drugiIds = new Set(drugiUdarec.map((z) => z.avtonet_id));
+    const prviIds = kos.filter((id) => !drugiIds.has(id));
+
+    // Strike two → confirmed gone, timed from the FIRST absence.
+    // Grouped by manjka_od so each update sets the correct historical moment.
+    const poCasu = new Map<string, string[]>();
+    for (const z of drugiUdarec) {
+      const arr = poCasu.get(z.manjka_od) ?? [];
+      arr.push(z.avtonet_id);
+      poCasu.set(z.manjka_od, arr);
+    }
+    for (const [manjkaOd, idsSkupine] of poCasu) {
+      const { error } = await db
+        .from("avtonet_oglasi")
+        .update({ status: "izginil", status_spremenjen: manjkaOd })
+        .in("avtonet_id", idsSkupine)
+        .eq("status", "aktiven");
+      if (error) throw new Error(`Označevanje izginulih ni uspelo: ${error.message}`);
+      potrjenih += idsSkupine.length;
+    }
+
+    // Strike one → just remember when we first missed it.
+    if (prviIds.length > 0) {
+      const { error } = await db
+        .from("avtonet_oglasi")
+        .update({ manjka_od: now })
+        .in("avtonet_id", prviIds)
+        .eq("status", "aktiven")
+        .is("manjka_od", null);
+      if (error) throw new Error(`Beleženje prve odsotnosti ni uspelo: ${error.message}`);
+    }
+  }
+
+  return potrjenih;
 }
 
 /**
