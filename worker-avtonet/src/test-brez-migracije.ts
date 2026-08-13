@@ -42,7 +42,7 @@ async function main(): Promise<void> {
         opis: null, dodatni_podatki: {}, oprema_kategorije: {}, oprema_znacilke: [],
         notranjost: null, pogonski_sklop: null, stevilo_vrat: null, stevilo_sedezev: null,
         lastnikov: null, leto_proizvodnje: null, registracija_mesec: null, emisijski_razred: null,
-        co2_g_km: null, poraba_l_100km: null, starost: null, prodajalec_naslov: null, source_zadnja_sprememba: null, ogledov: null,
+        co2_g_km: null, poraba_l_100km: null, starost: null, prodajalec_naslov: null, source_zadnja_sprememba: null, ogledov: null, slike_urls: null,
         prodajalec_registriran_od: null, cena_na_poziv: false,
       });
       preveri(true, "saveDetail ne vrze napake", "degradira, ce stolpcev se ni");

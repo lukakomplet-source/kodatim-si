@@ -6,6 +6,7 @@ import { buildDailyReport, sendDailyReport } from "./report.js";
 import { claimResearch, finishResearch, requestResearch, saveProgress, type Job } from "./jobs.js";
 import { runResearch, type Progress } from "./research.js";
 import { pociistiStareVnose } from "./retention.js";
+import { poveziVozila } from "./vozila.js";
 
 /**
  * SBN Auto collector — the long-running production process.
@@ -270,6 +271,16 @@ async function main(): Promise<void> {
     }
   };
 
+  // Same-vehicle linking runs after every research: new adverts are matched
+  // against recently finished ones, so a relist stops counting as a sale.
+  const maybeLinkVehicles = async (): Promise<void> => {
+    try {
+      await poveziVozila(db, log);
+    } catch (err) {
+      log("warn", "povezovanje vozil ni uspelo", { napaka: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   // Retention runs once per calendar day too: prune the oldest snapshots, log
   // events and finished adverts so the local DB stays bounded (see retention.ts).
   let lastPruneDay: string | null = null;
@@ -289,6 +300,7 @@ async function main(): Promise<void> {
     await requestResearch(db);
     const job = await claimResearch(db);
     if (job) await runJob(db, job);
+    await maybeLinkVehicles();
     await maybeSendReport();
     await maybePrune();
     return;
@@ -350,6 +362,7 @@ async function main(): Promise<void> {
 
     if (job) {
       await runJob(db, job);
+      await maybeLinkVehicles();
       await maybeSendReport();
       await maybePrune();
       continue; // Another request may already be waiting.

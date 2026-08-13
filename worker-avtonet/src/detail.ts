@@ -26,6 +26,8 @@ export type DetailRaw = {
   pairs: Record<string, string>;
   /** The advert's heading — the authoritative title, not a line guessed out of the body. */
   naslov?: string;
+  /** First few gallery image URLs, as collected from the page. */
+  slike?: string[];
   /** The page's visible text, for the prose sections. */
   text: string;
 };
@@ -78,6 +80,8 @@ export type DetailData = {
   source_zadnja_sprememba: string | null;
   /** The source's view counter — views/day is a direct demand signal. */
   ogledov: number | null;
+  /** First gallery image URLs (max 3) — visual fingerprint for vehicle linking. */
+  slike_urls: string[] | null;
 };
 
 /** avto.net's detail URL for a listing id. */
@@ -473,6 +477,7 @@ export function parseDetail(raw: DetailRaw): DetailData {
 
     source_zadnja_sprememba: extractZadnjaSprememba(text),
     ogledov: extractOgledov(text),
+    slike_urls: raw.slike && raw.slike.length > 0 ? raw.slike.slice(0, 3) : null,
   };
 }
 

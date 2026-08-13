@@ -280,6 +280,7 @@ export type DetailZapis = {
   cena_na_poziv: boolean;
   source_zadnja_sprememba: string | null;
   ogledov: number | null;
+  slike_urls: string[] | null;
 };
 
 /** Columns that only exist after migration_avtonet_detajl_v2.sql. */
@@ -333,6 +334,21 @@ async function imaNatancnost(db: Db): Promise<boolean> {
   return natancnostNaVoljo;
 }
 
+/** Whether migration_avtonet_vozila.sql (vozilo_id, slike_urls, …) is in. */
+let vozilaNaVoljo: boolean | null = null;
+
+export async function imaVozila(db: Db): Promise<boolean> {
+  if (vozilaNaVoljo !== null) return vozilaNaVoljo;
+  const { error } = await db.from("avtonet_oglasi").select("vozilo_id").limit(1);
+  vozilaNaVoljo = !error;
+  if (!vozilaNaVoljo) {
+    console.warn(
+      "[vozila] Baza še nima stolpcev iz migration_avtonet_vozila.sql — povezovanje istih vozil je izklopljeno."
+    );
+  }
+  return vozilaNaVoljo;
+}
+
 export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): Promise<void> {
   const { naslov, znamka, model, ...ostalo } = detail;
 
@@ -368,6 +384,9 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
   if (!(await imaNatancnost(db))) {
     delete patch.source_zadnja_sprememba;
     delete patch.ogledov;
+  }
+  if (!(await imaVozila(db))) {
+    delete patch.slike_urls;
   }
 
   const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);

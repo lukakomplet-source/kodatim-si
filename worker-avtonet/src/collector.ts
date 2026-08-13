@@ -217,7 +217,15 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
       // spec row instead and stored "rabljeno" as the version.
       const h1 = document.querySelector("h1")?.textContent ?? "";
       const naslov = (h1 || document.title || "").replace(/\s+/g, " ").trim();
-      return { pairs, naslov, text: (document.body.innerText ?? "").replace(/\r/g, "") };
+      // First few gallery image URLs — a visual fingerprint for same-vehicle
+      // matching (sellers reuse the exact photos on a relist) and a manual
+      // check for linked adverts. URLs only; nothing is downloaded.
+      const slike = Array.from(document.querySelectorAll("img"))
+        .map((im) => im.getAttribute("src") ?? "")
+        .filter((s) => /images\.avto\.net|avtonet.*\/(foto|image|slik)/i.test(s))
+        .filter((s, i, a) => a.indexOf(s) === i)
+        .slice(0, 3);
+      return { pairs, naslov, slike, text: (document.body.innerText ?? "").replace(/\r/g, "") };
     });
   } finally {
     await context.close();
