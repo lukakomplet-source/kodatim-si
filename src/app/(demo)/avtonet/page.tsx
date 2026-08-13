@@ -19,12 +19,37 @@ import { SpremljanjaClient } from "./SpremljanjaClient";
 // Per-user from here on: what this page shows depends on who is asking, so it
 // cannot be cached for everyone the way the public analysis pages can.
 export const dynamic = "force-dynamic";
+// Headroom over the platform default: the count queries can be slow on a large,
+// write-heavy table until the indexes in migration_avtonet_indeksi.sql are in.
+export const maxDuration = 30;
 
 type Kartica = {
   spremljanje: Spremljanje;
   zadetkov: number;
   novih: number;
 };
+
+/**
+ * Runs a query but never lets it sink the whole page: a rejection OR a query
+ * that runs past `ms` both yield the fallback instead of throwing. A single
+ * spremljanje whose `ILIKE '%naziv%'` count hits the Postgres statement timeout
+ * used to reject the page's Promise.all and 500 the entire screen; now it just
+ * shows an unknown count and the rest of the page renders.
+ */
+async function varno<T>(fn: () => Promise<T>, ms: number, fallback: T): Promise<T> {
+  const p = fn();
+  // Swallow a rejection that arrives AFTER the timeout already won, so the slow
+  // query losing the race never surfaces as an unhandled rejection.
+  p.catch(() => {});
+  try {
+    return await Promise.race([
+      p,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+    ]);
+  } catch {
+    return fallback;
+  }
+}
 
 export default async function SpremljanjaPage() {
   const dostop = await preberiDostop();
@@ -71,15 +96,19 @@ export default async function SpremljanjaPage() {
   const kartice: Kartica[] = await Promise.all(
     vrstice.map(async (s) => {
       const [zadetkov, novih] = await Promise.all([
-        stejUjemanja(db, s),
+        varno(() => stejUjemanja(db, s), 7000, 0),
         // Never looked at it? Then everything matching is new to this person.
-        s.zadnji_ogled ? stejUjemanja(db, s, s.zadnji_ogled) : Promise.resolve(null),
+        s.zadnji_ogled ? varno(() => stejUjemanja(db, s, s.zadnji_ogled), 7000, 0) : Promise.resolve(null),
       ]);
       return { spremljanje: s, zadetkov, novih: novih ?? zadetkov };
     })
   );
 
-  const moznosti = await preberiMoznosti(db);
+  const moznosti = await varno(() => preberiMoznosti(db), 7000, {
+    znamke: [],
+    goriva: [],
+    menjalniki: [],
+  });
 
   return (
     <SpremljanjaClient
