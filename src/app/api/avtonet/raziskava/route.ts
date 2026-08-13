@@ -67,7 +67,7 @@ export async function GET() {
   // already-captured adverts were correctly skipped. Reporting the standing
   // totals alongside makes the real progress visible and a restart obviously
   // harmless.
-  const [aktivnihRes, zDetajliRes, urnikRes] = await Promise.all([
+  const [aktivnihRes, zDetajliRes, urnikRes, prostorRes] = await Promise.all([
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db
       .from("avtonet_oglasi")
@@ -75,7 +75,14 @@ export async function GET() {
       .eq("status", "aktiven")
       .not("detajl_zajet", "is", null),
     db.from("avtonet_urnik").select("omogocen, ure").eq("id", 1).maybeSingle(),
+    // Physical size of the avtonet DB — for the "zasedeno" gauge. Only the local
+    // avtonet DB has this RPC; on the cloud fallback it simply comes back null.
+    db.rpc("avtonet_db_size"),
   ]);
+
+  const uporabljeno =
+    !prostorRes.error && prostorRes.data != null ? Number(prostorRes.data) : null;
+  const AVTONET_LIMIT_BYTES = Number(process.env.AVTONET_MAX_BYTES ?? 50 * 1024 * 1024 * 1024);
 
   return NextResponse.json({
     jeAdmin: true,
@@ -87,5 +94,6 @@ export async function GET() {
     },
     // Absent table (migration not yet run) simply means no schedule to show.
     urnik: urnikRes.error ? null : (urnikRes.data ?? { omogocen: false, ure: "5,10,22" }),
+    prostor: { uporabljeno, limit: AVTONET_LIMIT_BYTES },
   });
 }

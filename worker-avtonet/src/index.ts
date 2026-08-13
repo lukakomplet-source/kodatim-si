@@ -5,6 +5,7 @@ import { current, startHealthServer, update, type WorkerState } from "./health.j
 import { buildDailyReport, sendDailyReport } from "./report.js";
 import { claimResearch, finishResearch, requestResearch, saveProgress, type Job } from "./jobs.js";
 import { runResearch, type Progress } from "./research.js";
+import { pociistiStareVnose } from "./retention.js";
 
 /**
  * SBN Auto collector — the long-running production process.
@@ -269,12 +270,27 @@ async function main(): Promise<void> {
     }
   };
 
+  // Retention runs once per calendar day too: prune the oldest snapshots, log
+  // events and finished adverts so the local DB stays bounded (see retention.ts).
+  let lastPruneDay: string | null = null;
+  const maybePrune = async (): Promise<void> => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (lastPruneDay === today) return;
+    lastPruneDay = today;
+    try {
+      await pociistiStareVnose(db, log);
+    } catch (err) {
+      log("warn", "retention ni uspel", { napaka: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   // --once: queue one research, run it, exit. For tests and cron-style hosts.
   if (once) {
     await requestResearch(db);
     const job = await claimResearch(db);
     if (job) await runJob(db, job);
     await maybeSendReport();
+    await maybePrune();
     return;
   }
 
@@ -335,6 +351,7 @@ async function main(): Promise<void> {
     if (job) {
       await runJob(db, job);
       await maybeSendReport();
+      await maybePrune();
       continue; // Another request may already be waiting.
     }
 

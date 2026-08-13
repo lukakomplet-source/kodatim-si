@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarClock, Loader2, Play, Plus, RefreshCw, Square, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Database, Loader2, Play, Plus, RefreshCw, Square, X } from "lucide-react";
 import { prekliciRaziskavo, shraniUrnik, zazeniRaziskavo } from "./actions";
 
 /**
@@ -46,6 +46,8 @@ type Skupno = { aktivnih: number; zDetajli: number };
 
 type Urnik = { omogocen: boolean; ure: string };
 
+type Prostor = { uporabljeno: number | null; limit: number };
+
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
@@ -53,6 +55,7 @@ type Odziv = {
   zgodovina: Raziskava[];
   skupno?: Skupno;
   urnik?: Urnik | null;
+  prostor?: Prostor;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -228,6 +231,10 @@ export function ResearchPanel() {
         </p>
       )}
 
+      {odziv.prostor && odziv.prostor.uporabljeno !== null && (
+        <ProstorBox prostor={odziv.prostor} />
+      )}
+
       {!odziv.migracijaManjka && (
         <UrnikBox urnik={odziv.urnik ?? null} zgodovina={odziv.zgodovina} now={now} onSaved={preberi} />
       )}
@@ -236,6 +243,41 @@ export function ResearchPanel() {
 
       {odziv.zgodovina.length > 0 && <Zgodovina vrstice={odziv.zgodovina} now={now} />}
     </section>
+  );
+}
+
+function formatGB(bytes: number): string {
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+}
+
+/**
+ * How full the avtonet database is against its cap. As it approaches the cap the
+ * worker auto-prunes the oldest data, so this is a health gauge, not a wall.
+ */
+function ProstorBox({ prostor }: { prostor: Prostor }) {
+  const upor = prostor.uporabljeno ?? 0;
+  const odstotek = prostor.limit > 0 ? Math.min(100, (upor / prostor.limit) * 100) : 0;
+  const barva = odstotek >= 90 ? "bg-red-500" : odstotek >= 75 ? "bg-amber-500" : "bg-accent";
+  return (
+    <div className="mt-5 rounded-xl border border-zinc-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="flex items-center gap-2 font-semibold text-zinc-900">
+          <Database className="h-4 w-4 text-accent" />
+          Zasedenost baze
+        </span>
+        <span className="tabular-nums text-zinc-600">
+          {formatGB(upor)} / {formatGB(prostor.limit)} ({odstotek < 1 ? odstotek.toFixed(2) : Math.round(odstotek)} %)
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-200">
+        <div className={`h-full rounded-full ${barva} transition-all`} style={{ width: `${Math.max(1, odstotek)}%` }} />
+      </div>
+      <p className="mt-1.5 text-[11px] text-zinc-400">
+        Ko se približa meji, zbiralnik samodejno počisti najstarejše podatke (posnetke cen, dnevnike).
+      </p>
+    </div>
   );
 }
 
