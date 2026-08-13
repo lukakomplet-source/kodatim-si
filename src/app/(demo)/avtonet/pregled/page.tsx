@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { ResearchPanel } from "../ResearchPanel";
 import { WorkerHealth } from "../Freshness";
 import { PregledClient } from "./PregledClient";
@@ -26,7 +26,7 @@ export default async function PregledPage() {
     redirect("/prijava?redirect=/avtonet/pregled");
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const [zdravjeRes, aktivnaRes] = await Promise.all([
     db.from("avtonet_zdravje").select("*").eq("id", "worker").maybeSingle(),
     db

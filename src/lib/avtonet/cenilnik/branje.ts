@@ -1,7 +1,7 @@
 import "server-only";
 import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { isFirecrawlUnavailable, scrapeUrl } from "@/lib/firecrawl";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import {
   normalizirajBarvo,
   normalizirajGorivo,
@@ -190,7 +190,7 @@ function safeHost(url: string): string | null {
  * the path where every field is a fact we collected ourselves.
  */
 async function izBaze(id: string): Promise<BranjeRezultat | null> {
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { data } = await db
     .from("avtonet_oglasi")
     .select(

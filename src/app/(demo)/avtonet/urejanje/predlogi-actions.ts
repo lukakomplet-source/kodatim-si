@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 
 /**
@@ -29,7 +29,7 @@ export async function oddajPredlog(
   if (besedilo.length < 5) return { error: "Napišite malo več — kaj naj dodamo ali popravimo?" };
   if (besedilo.length > 4000) return { error: "Predlog je predolg (največ 4000 znakov)." };
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { error } = await db
     .from("avtonet_predlogi")
     .insert({ besedilo, avtor: dostop.userId, status: "novo" });
@@ -56,7 +56,7 @@ export async function spremeniStatusPredloga(
     return { error: "Neveljaven status." };
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const patch: Record<string, unknown> = { status };
   if (odgovor !== undefined) patch.odgovor = odgovor.trim() || null;
 

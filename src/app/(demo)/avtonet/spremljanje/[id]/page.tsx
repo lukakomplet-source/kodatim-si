@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { ArrowLeft, ExternalLink, HelpCircle, TrendingDown } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { naslovVozila, povzetekFiltra, type Spremljanje } from "@/lib/avtonet/spremljanja";
 import { jeNov, najdiUjemanja, prodajalecNeznan } from "@/lib/avtonet/ujemanje";
 import { eur } from "@/lib/avtonet/analiza";
@@ -24,7 +24,7 @@ export default async function SpremljanjePage({ params }: { params: Promise<{ id
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik) redirect(prijavaZa(`/avtonet/spremljanje/${id}`));
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   const { data, error } = await db.from("avtonet_iskanja").select("*").eq("id", id).maybeSingle();
   if (error?.code === "PGRST205" || !data) notFound();

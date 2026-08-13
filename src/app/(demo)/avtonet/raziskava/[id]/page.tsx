@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Download, ExternalLink, Info, Terminal } from "lucide-react";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { eur, trajanje } from "@/lib/avtonet/analiza";
 import { RaziskavaOrodja } from "./RaziskavaOrodja";
 
@@ -51,7 +51,7 @@ export default async function RaziskavaPage({ params }: { params: Promise<{ id: 
   if (!dostop.jeUporabnik) redirect(prijavaZa(`/avtonet/raziskava/${id}`));
   if (!dostop.jeAdmin) redirect("/avtonet");
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { data, error } = await db.from("avtonet_raziskave").select("*").eq("id", id).maybeSingle();
   if (error?.code === "PGRST205" || !data) notFound();
   const r = data as unknown as Raziskava;

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Bell, Car, Sparkles } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import type { MoznostiFiltrov, Spremljanje } from "@/lib/avtonet/spremljanja";
 import { stejUjemanja } from "@/lib/avtonet/ujemanje";
@@ -55,7 +55,7 @@ export default async function SpremljanjaPage() {
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik) redirect(prijavaZa("/avtonet"));
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   // Everyone sees their own watches; an admin sees all of them, because the
   // agency has to be able to support a client who cannot explain their filter.
@@ -129,7 +129,7 @@ export default async function SpremljanjaPage() {
  * the distinct values means the form can only offer what actually exists, and
  * the list grows on its own as the market is swept.
  */
-async function preberiMoznosti(db: ReturnType<typeof createAdminClient>): Promise<MoznostiFiltrov> {
+async function preberiMoznosti(db: ReturnType<typeof createAvtonetClient>): Promise<MoznostiFiltrov> {
   const { data } = await db
     .from("avtonet_oglasi")
     .select("znamka, gorivo, menjalnik")

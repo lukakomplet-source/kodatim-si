@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 
 /**
@@ -74,7 +74,7 @@ export async function spremeniObvestila(
     return { error: "E-naslov ni videti veljaven." };
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { error } = await db
     .from("avtonet_uporabniki")
     .upsert(

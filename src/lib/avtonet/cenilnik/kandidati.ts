@@ -1,5 +1,5 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import {
   normalizirajBarvo,
   normalizirajGorivo,
@@ -117,7 +117,7 @@ export function vVozilo(r: KandidatVrstica): Vozilo {
  * make the answer circular.
  */
 export async function najdiKandidate(cilj: Vozilo, najvec = 400): Promise<IskanjeKandidatov> {
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   if (!cilj.znamka) {
     return { vrstice: [], oknoLetnika: null, brezModela: false, opomba: "Znamka vozila ni znana, zato primerjave ni mogoče poiskati." };

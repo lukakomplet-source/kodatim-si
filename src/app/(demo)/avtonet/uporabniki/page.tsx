@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { UporabnikiClient, type Vrstica } from "./UporabnikiClient";
 
 /**
@@ -18,7 +18,7 @@ export default async function UporabnikiPage() {
   if (!dostop.jeUporabnik) redirect(prijavaZa("/avtonet/uporabniki"));
   if (!dostop.jeAdmin) redirect("/avtonet");
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { data, error } = await db
     .from("avtonet_uporabniki")
     .select("id, uporabnik, vloga, aktiven, obvestila_email, created_at, profiles:uporabnik (email, full_name)")

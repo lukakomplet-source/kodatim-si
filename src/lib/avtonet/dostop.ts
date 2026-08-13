@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 
 /**
  * Who is looking at SBN Auto, and what they may see.
@@ -43,11 +44,14 @@ export async function preberiDostop(): Promise<Dostop> {
   } = await supabase.auth.getUser();
   if (!user) return BREZ_DOSTOPA;
 
+  // profiles/roles live on the MAIN Supabase (auth); avtonet_uporabniki lives
+  // in the separate avtonet DB. Two clients, one for each.
   const admin = createAdminClient();
+  const avtonet = createAvtonetClient();
 
   const [{ data: profil }, { data: vpis }] = await Promise.all([
     admin.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-    admin
+    avtonet
       .from("avtonet_uporabniki")
       .select("vloga, aktiven, obvestila_email")
       .eq("uporabnik", user.id)

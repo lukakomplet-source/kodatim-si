@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { RAZLOG_SAMO_LOKALNO } from "@/lib/avtonet/aiScope";
 import { UrejanjeClient, type Predlog, type Seja } from "./UrejanjeClient";
@@ -23,7 +23,7 @@ export default async function UrejanjePage() {
   if (!dostop.jeUporabnik || !dostop.userId) redirect(prijavaZa("/avtonet/urejanje"));
 
   const lokalno = process.env.NODE_ENV !== "production" && !process.env.VERCEL;
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   // A regular user sees their own suggestions; an admin sees everyone's.
   let predlogiQ = db

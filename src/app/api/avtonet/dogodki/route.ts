@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 
 /**
  * The research console's feed: events the worker actually wrote.
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   const raziskavaId = url.searchParams.get("raziskava");
   const po = Number(url.searchParams.get("po") ?? 0);
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   // Without a research id, follow the most recent one — that is what "live"
   // means when you open the page while something is already running.

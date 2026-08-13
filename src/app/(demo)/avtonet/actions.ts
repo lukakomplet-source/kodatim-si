@@ -1,7 +1,7 @@
 "use server";
 
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 
 /**
  * Starting and stopping a market research from the dashboard.
@@ -28,7 +28,7 @@ export async function zazeniRaziskavo(): Promise<ActionResult & { id?: string }>
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { data, error } = await db
     .from("avtonet_raziskave")
     .insert({ status: "zahtevano", sprozil: user.id })
@@ -67,7 +67,7 @@ export async function prekliciRaziskavo(id: string): Promise<ActionResult> {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { error } = await db
     .from("avtonet_raziskave")
     .update({ status: "preklicano", konec: new Date().toISOString() })
@@ -109,7 +109,7 @@ export async function shraniUrnik(omogocen: boolean, ure: string): Promise<Actio
     return { error: "Vnesite vsaj eno veljavno uro (0–23), npr. 5, 10, 22." };
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { error } = await db
     .from("avtonet_urnik")
     .upsert({ id: 1, omogocen, ure: ociscene || "5,10,22", posodobljeno: new Date().toISOString() });

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Database, Download, ExternalLink, Search, TrendingDown } from "lucide-react";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { eur } from "@/lib/avtonet/analiza";
 import { KakoDeluje } from "../KakoDeluje";
 
@@ -67,7 +67,7 @@ export default async function BazaPage({
   const stran = Math.max(1, Number(sp.stran ?? 1) || 1);
   const od = (stran - 1) * NA_STRAN;
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   let q = db
     .from("avtonet_oglasi")

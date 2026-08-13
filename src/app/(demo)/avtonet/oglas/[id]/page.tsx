@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { oznakaZnacilke } from "@/lib/avtonet/cenilnik/vozilo";
 
@@ -41,7 +41,7 @@ export default async function OglasPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!dostop.jeUporabnik) redirect(prijavaZa(`/avtonet/oglas/${id}`));
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const { data, error } = await db.from("avtonet_oglasi").select("*").eq("avtonet_id", id).maybeSingle();
 
   if (error && error.code !== "PGRST116") {

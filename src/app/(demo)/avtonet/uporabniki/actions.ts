@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 import { povezavaZaVabilo } from "@/lib/javniNaslov";
 
@@ -68,7 +69,8 @@ export async function dodajUporabnika(
     povabljen = true;
   }
 
-  const { error } = await admin.from("avtonet_uporabniki").upsert(
+  const avtonet = createAvtonetClient();
+  const { error } = await avtonet.from("avtonet_uporabniki").upsert(
     {
       uporabnik: userId,
       vloga,
@@ -104,8 +106,8 @@ export async function spremeniVlogo(id: string, vloga: string): Promise<Uporabni
   if ("napaka" in kdo) return { error: kdo.napaka };
   if (!["stranka", "admin"].includes(vloga)) return { error: "Neveljavna vloga." };
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("avtonet_uporabniki").update({ vloga }).eq("id", id);
+  const avtonet = createAvtonetClient();
+  const { error } = await avtonet.from("avtonet_uporabniki").update({ vloga }).eq("id", id);
   if (error) return { error: `Spremembe ni bilo mogoče shraniti: ${error.message}` };
 
   revalidatePath("/avtonet/uporabniki");
@@ -116,8 +118,8 @@ export async function preklopiDostop(id: string, aktiven: boolean): Promise<Upor
   const kdo = await zahtevajAdmina();
   if ("napaka" in kdo) return { error: kdo.napaka };
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("avtonet_uporabniki").update({ aktiven }).eq("id", id);
+  const avtonet = createAvtonetClient();
+  const { error } = await avtonet.from("avtonet_uporabniki").update({ aktiven }).eq("id", id);
   if (error) return { error: `Spremembe ni bilo mogoče shraniti: ${error.message}` };
 
   revalidatePath("/avtonet/uporabniki");
@@ -147,14 +149,20 @@ export async function posljiVabiloZnova(id: string): Promise<UporabnikResult> {
   if ("napaka" in kdo) return { error: kdo.napaka };
 
   const admin = createAdminClient();
+  const avtonet = createAvtonetClient();
 
-  const { data: vrstica } = await admin
+  // avtonet_uporabniki lives in the avtonet DB, the email in profiles on the
+  // main Supabase — so the old single embedded join is now two reads.
+  const { data: vrstica } = await avtonet
     .from("avtonet_uporabniki")
-    .select("uporabnik, profiles:uporabnik (email)")
+    .select("uporabnik")
     .eq("id", id)
     .maybeSingle();
+  const uporabnikId = (vrstica as { uporabnik: string } | null)?.uporabnik;
+  if (!uporabnikId) return { error: "Uporabnik ne obstaja." };
 
-  const email = (vrstica as { profiles: { email: string | null } | null } | null)?.profiles?.email;
+  const { data: profil } = await admin.from("profiles").select("email").eq("id", uporabnikId).maybeSingle();
+  const email = (profil as { email: string | null } | null)?.email;
   if (!email) return { error: "Za tega uporabnika ni znanega e-naslova." };
 
   const cilj = povezavaZaVabilo("/nastavi-geslo");
@@ -217,16 +225,20 @@ export async function nastaviGeslo(id: string, geslo: string): Promise<Uporabnik
   if (geslo.length < 8) return { error: "Geslo naj ima vsaj 8 znakov." };
 
   const admin = createAdminClient();
-  const { data: vrstica } = await admin
+  const avtonet = createAvtonetClient();
+  const { data: vrstica } = await avtonet
     .from("avtonet_uporabniki")
-    .select("uporabnik, profiles:uporabnik (email)")
+    .select("uporabnik")
     .eq("id", id)
     .maybeSingle();
 
-  const zapis = vrstica as { uporabnik: string; profiles: { email: string | null } | null } | null;
-  if (!zapis) return { error: "Uporabnik ne obstaja." };
+  const uporabnikId = (vrstica as { uporabnik: string } | null)?.uporabnik;
+  if (!uporabnikId) return { error: "Uporabnik ne obstaja." };
 
-  const { error } = await admin.auth.admin.updateUserById(zapis.uporabnik, {
+  const { data: profil } = await admin.from("profiles").select("email").eq("id", uporabnikId).maybeSingle();
+  const email = (profil as { email: string | null } | null)?.email;
+
+  const { error } = await admin.auth.admin.updateUserById(uporabnikId, {
     password: geslo,
     email_confirm: true,
   });
@@ -234,7 +246,7 @@ export async function nastaviGeslo(id: string, geslo: string): Promise<Uporabnik
 
   revalidatePath("/avtonet/uporabniki");
   return {
-    success: `Geslo nastavljeno za ${zapis.profiles?.email ?? "uporabnika"}. Sporočite mu ga po varni poti — mi ga nikjer ne shranimo in ga ne moremo znova prikazati.`,
+    success: `Geslo nastavljeno za ${email ?? "uporabnika"}. Sporočite mu ga po varni poti — mi ga nikjer ne shranimo in ga ne moremo znova prikazati.`,
   };
 }
 
@@ -246,8 +258,8 @@ export async function odstraniUporabnika(id: string): Promise<UporabnikResult> {
   const kdo = await zahtevajAdmina();
   if ("napaka" in kdo) return { error: kdo.napaka };
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("avtonet_uporabniki").delete().eq("id", id);
+  const avtonet = createAvtonetClient();
+  const { error } = await avtonet.from("avtonet_uporabniki").delete().eq("id", id);
   if (error) return { error: `Brisanje ni uspelo: ${error.message}` };
 
   revalidatePath("/avtonet/uporabniki");

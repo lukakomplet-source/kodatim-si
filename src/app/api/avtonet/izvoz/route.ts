@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { preberiDostop } from "@/lib/avtonet/dostop";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 
 /**
  * CSV export of collected adverts — the whole database, or just what one
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
   }
 
   const raziskava = new URL(request.url).searchParams.get("raziskava");
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   let idji: string[] | null = null;
   if (raziskava) {

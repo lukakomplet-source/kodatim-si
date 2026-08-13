@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 
 /**
  * What the dashboard polls while a research runs.
@@ -32,7 +32,7 @@ export async function GET() {
     return NextResponse.json({ jeAdmin: false, aktivna: null, zgodovina: [] });
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   const [aktivnaRes, zgodovinaRes] = await Promise.all([
     db

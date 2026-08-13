@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { chatJSON } from "@/lib/openai";
 import {
   DOSEG,
@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Napišite, kaj želite spremeniti." }, { status: 400 });
   }
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const zapisi = async (polja: Record<string, unknown>) => {
     try {
       await db.from("avtonet_ai_seje").insert({ uporabnik: user.id, zahteva, ...polja });

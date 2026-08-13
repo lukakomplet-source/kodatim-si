@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ChevronRight, Database, Flame, Info } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import {
   MIN_VZOREC,
   OBDOBJA,
@@ -31,7 +31,7 @@ export default async function AnalizaPage({
 }) {
   const { obdobje, znamka } = await searchParams;
   const dni = obdobjeDni(obdobje);
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   const od = mejaObdobja(dni);
 

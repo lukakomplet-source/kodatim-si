@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 
 /**
@@ -25,7 +25,7 @@ export async function izbrisiRaziskavo(id: string): Promise<RaziskavaResult> {
   const dostop = await preberiDostop();
   if (!dostop.jeAdmin) return { error: "Nimate dovoljenja za to dejanje." };
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   const { data: vrstica } = await db
     .from("avtonet_raziskave")

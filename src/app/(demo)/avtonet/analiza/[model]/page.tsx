@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Info } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import {
   MIN_VZOREC,
   eur,
@@ -37,7 +37,7 @@ export default async function ModelPage({
   const kljuc = decodeURIComponent(model);
   const dni = obdobjeDni(obdobje);
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
   const od = mejaObdobja(dni);
 
   // The key is "znamka model" and the brand is the first word, so the query

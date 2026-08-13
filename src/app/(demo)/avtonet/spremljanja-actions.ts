@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 import { preberiObrazec } from "@/lib/avtonet/spremljanja";
 
@@ -32,12 +32,12 @@ function napakaBaze(code: string | undefined, message: string): string {
 
 /** Resolves the caller, and whether they may act on this particular watch. */
 async function dovoljenje(id?: string): Promise<
-  { napaka: string } | { userId: string; jeAdmin: boolean; db: ReturnType<typeof createAdminClient> }
+  { napaka: string } | { userId: string; jeAdmin: boolean; db: ReturnType<typeof createAvtonetClient> }
 > {
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik || !dostop.userId) return { napaka: "Niste prijavljeni." };
 
-  const db = createAdminClient();
+  const db = createAvtonetClient();
 
   if (id) {
     const { data } = await db.from("avtonet_iskanja").select("created_by").eq("id", id).maybeSingle();
