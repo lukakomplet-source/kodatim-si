@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarClock, Loader2, Play, RefreshCw, Square } from "lucide-react";
+import { AlertTriangle, CalendarClock, Loader2, Play, Plus, RefreshCw, Square, X } from "lucide-react";
 import { prekliciRaziskavo, shraniUrnik, zazeniRaziskavo } from "./actions";
 
 /**
@@ -273,6 +273,18 @@ function formatTrajanje(ms: number): string {
   return `${Math.floor(min / 60)} h ${min % 60} min`;
 }
 
+function uraHHMM(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
+/** Clock time `ms` after a run that STARTS at hour `h` today — the rough finish. */
+function konecHHMM(h: number, trajanjeMs: number): string {
+  const d = new Date();
+  d.setHours(h, 0, 0, 0);
+  const konec = new Date(d.getTime() + trajanjeMs);
+  return konec.toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" });
+}
+
 /**
  * The schedule editor: an on/off switch and the hours, saved to the shared row
  * the worker reads. It also shows the next run and a predicted duration from
@@ -309,6 +321,12 @@ function UrnikBox({
   const naslednji = omogocen && ureSeznam.length > 0 ? naslednjiZagon(ureSeznam, now) : null;
   const predvideno = predvidenoTrajanjeMs(zgodovina);
 
+  const nastaviUre = (seznam: number[]) =>
+    setLokalno({ omogocen, ure: [...new Set(seznam)].sort((a, b) => a - b).join(",") });
+  const dodajUro = (h: number) => nastaviUre([...ureSeznam, h]);
+  const odstraniUro = (h: number) => nastaviUre(ureSeznam.filter((x) => x !== h));
+  const prosteUre = Array.from({ length: 24 }, (_, i) => i).filter((i) => !ureSeznam.includes(i));
+
   const shrani = async () => {
     setShranjujem(true);
     setNapaka(null);
@@ -337,35 +355,74 @@ function UrnikBox({
         začne veljati v nekaj sekundah — brez ponovnega zagona.
       </p>
 
-      <div className="mt-3 flex flex-wrap items-end gap-4">
-        <label className="flex items-center gap-2 text-sm text-zinc-700">
-          <input
-            type="checkbox"
-            checked={omogocen}
-            onChange={(e) => setLokalno({ omogocen: e.target.checked, ure })}
-            className="h-4 w-4 rounded border-zinc-300 text-accent focus:ring-accent"
-          />
-          Vklopljen
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-zinc-600">Ure (0–23, ločene z vejico)</span>
-          <input
-            value={ure}
-            onChange={(e) => setLokalno({ omogocen, ure: e.target.value })}
-            placeholder="5, 10, 22"
-            className="w-44 rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void shrani()}
-          disabled={shranjujem || !dirty}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
-        >
-          {shranjujem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Shrani urnik
-        </button>
+      <label className="mt-3 flex w-fit items-center gap-2 text-sm text-zinc-700">
+        <input
+          type="checkbox"
+          checked={omogocen}
+          onChange={(e) => setLokalno({ omogocen: e.target.checked, ure })}
+          className="h-4 w-4 rounded border-zinc-300 text-accent focus:ring-accent"
+        />
+        Vklopljen
+      </label>
+
+      <div className="mt-3">
+        <span className="mb-1.5 block text-xs font-medium text-zinc-600">
+          Ure zagona {predvideno ? "(pod uro je približen konec)" : ""}
+        </span>
+        <div className="flex flex-wrap items-stretch gap-2">
+          {ureSeznam.map((h) => (
+            <div key={h} className="relative rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-center">
+              <button
+                type="button"
+                onClick={() => odstraniUro(h)}
+                title="Odstrani uro"
+                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-300 text-white transition hover:bg-red-500"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+              <p className="text-sm font-semibold tabular-nums text-zinc-900">{uraHHMM(h)}</p>
+              <p className="mt-0.5 text-[10px] tabular-nums text-zinc-400">
+                {predvideno ? `→ ~${konecHHMM(h, predvideno)}` : "→ ~?"}
+              </p>
+            </div>
+          ))}
+
+          {prosteUre.length > 0 && (
+            <label
+              className="relative flex cursor-pointer items-center gap-1 rounded-xl border border-dashed border-zinc-300 px-3.5 text-sm font-medium text-zinc-500 transition hover:border-accent hover:text-accent"
+              title="Dodaj uro"
+            >
+              <Plus className="h-4 w-4" />
+              Dodaj
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value !== "") dodajUro(Number(e.target.value));
+                }}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="Dodaj uro zagona"
+              >
+                <option value="">Dodaj uro…</option>
+                {prosteUre.map((i) => (
+                  <option key={i} value={i}>
+                    {uraHHMM(i)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => void shrani()}
+        disabled={shranjujem || !dirty}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+      >
+        {shranjujem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        Shrani urnik
+      </button>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-600">
         {naslednji && (
