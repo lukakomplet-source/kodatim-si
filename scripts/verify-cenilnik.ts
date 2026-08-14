@@ -57,9 +57,15 @@ async function moduli() {
     import("@/lib/avtonet/cenilnik/podobnost"),
     import("@/lib/avtonet/cenilnik/vozilo"),
     import("@/lib/avtonet/cenilnik/cenitev"),
-    import("@/lib/supabase/admin"),
+    // The AVTONET client, not the main-Supabase admin: the target must come
+    // from the same database the valuation searches, or the test picks a car
+    // (cloud) the candidate query (local) has never heard of.
+    import("@/lib/avtonet/db"),
   ]);
-  return { ...statistika, ...podobnost, ...vozilo, ...cenitev, ...admin };
+  const { createAvtonetClient } = admin as unknown as {
+    createAvtonetClient: () => ReturnType<(typeof import("@/lib/supabase/admin"))["createAdminClient"]>;
+  };
+  return { ...statistika, ...podobnost, ...vozilo, ...cenitev, createAdminClient: createAvtonetClient };
 }
 
 /** Pure statistics first: these must hold regardless of what is in the database. */

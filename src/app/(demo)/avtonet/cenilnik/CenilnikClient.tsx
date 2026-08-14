@@ -363,6 +363,9 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
         </p>
       </section>
 
+      {/* ---------- KodaTim ocena (Deal Intelligence) ---------- */}
+      <KodaTimOcena cenitev={cenitev} />
+
       {/* ---------- AI razlaga ---------- */}
       {razlaga && (
         <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -579,6 +582,124 @@ function Vrstica({ p }: { p: Primerljiv }) {
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * The KodaTim ocena — the deal verdict, from numbers already computed.
+ *
+ * Nothing here is new information: margin is the estimate minus the asking
+ * price, speed comes from the weighted cohort, confidence is the valuation's
+ * own reliability. The card only combines them into the sentence a dealer
+ * actually wants: is this worth buying, and how fast does it move.
+ */
+function KodaTimOcena({ cenitev }: { cenitev: Cenitev }) {
+  const k = cenitev.kohorta;
+  const nakupna = cenitev.cilj.cena;
+  const ocena = cenitev.ocenjenaVrednost;
+  if (ocena === null) return null;
+
+  const marza = nakupna !== null && nakupna > 0 ? ocena - nakupna : null;
+  const marzaDelez = marza !== null && nakupna ? marza / nakupna : null;
+  const hitro =
+    (k.delez14 !== null && k.delez14 >= 50) || (k.medianaDni !== null && k.medianaDni <= 21);
+
+  type Verdikt = { emoji: string; naslov: string; barva: string; opis: string };
+  const verdikt: Verdikt = (() => {
+    if (marza === null) {
+      return {
+        emoji: "⚪",
+        naslov: "BREZ NAKUPNE CENE",
+        barva: "bg-zinc-50 text-zinc-700 ring-zinc-200",
+        opis: "Oglas nima objavljene cene, zato posla ni mogoče oceniti — vnesite ceno ročno.",
+      };
+    }
+    if (k.vzorec < 5) {
+      return {
+        emoji: "🟡",
+        naslov: "PREMALO PODATKOV O PRODAJI",
+        barva: "bg-amber-50 text-amber-900 ring-amber-200",
+        opis: `Zaključenih primerljivih oglasov je šele ${k.vzorec} — marža je izračunana, hitrost prodaje pa še ni zanesljiva.`,
+      };
+    }
+    if (marzaDelez !== null && marzaDelez >= 0.08 && hitro) {
+      return {
+        emoji: "🟢",
+        naslov: "DOBER POSEL",
+        barva: "bg-emerald-50 text-emerald-900 ring-emerald-200",
+        opis: "Marža nad 8 % in taki avti se prodajajo hitro.",
+      };
+    }
+    if (marzaDelez !== null && marzaDelez >= 0.08) {
+      return {
+        emoji: "🟡",
+        naslov: "DOBRA MARŽA, POČASNEJŠA PRODAJA",
+        barva: "bg-amber-50 text-amber-900 ring-amber-200",
+        opis: "Zaslužek je, a primerljivi avti stojijo dlje — računajte na vezavo denarja.",
+      };
+    }
+    if (marzaDelez !== null && marzaDelez >= 0.03) {
+      return {
+        emoji: "🟡",
+        naslov: "SREDNJI POSEL",
+        barva: "bg-amber-50 text-amber-900 ring-amber-200",
+        opis: "Marža je tanka — po stroških ostane malo. Smiselno le ob dobri nabavni ceni.",
+      };
+    }
+    return {
+      emoji: "🔴",
+      naslov: "SLAB POSEL",
+      barva: "bg-red-50 text-red-900 ring-red-200",
+      opis: "Zahtevana cena je pri ali nad ocenjeno vrednostjo — marže praktično ni.",
+    };
+  })();
+
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+        <TrendingUp className="h-4 w-4 text-accent" />
+        KodaTim ocena
+      </h2>
+
+      <div className={`mt-3 rounded-xl px-4 py-3 ring-1 ${verdikt.barva}`}>
+        <p className="text-lg font-semibold">
+          {verdikt.emoji} {verdikt.naslov}
+          <span className="ml-2 text-xs font-medium opacity-70">zanesljivost {cenitev.zanesljivost} %</span>
+        </p>
+        <p className="mt-1 text-sm">{verdikt.opis}</p>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat oznaka="Nakupna cena" vrednost={eur(nakupna)} />
+        <Stat oznaka="Ocenjena vrednost" vrednost={eur(ocena)} />
+        <Stat
+          oznaka="Potencialna marža"
+          vrednost={marza === null ? "—" : `${marza > 0 ? "+" : ""}${eur(marza)}`}
+        />
+        <Stat
+          oznaka="Mediana prodaje"
+          vrednost={k.medianaDni === null ? "—" : `${Math.round(k.medianaDni)} dni`}
+        />
+      </div>
+
+      {k.vzorec > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat oznaka="Prodanih ≤ 14 dni" vrednost={k.delez14 === null ? "—" : `${k.delez14} %`} />
+          <Stat oznaka="Prodanih ≤ 30 dni" vrednost={k.delez30 === null ? "—" : `${k.delez30} %`} />
+          <Stat oznaka="Mediana zadnje cene" vrednost={eur(k.medianaZadnjeCene)} />
+          <Stat
+            oznaka="Povprečen padec cene"
+            vrednost={k.povprecenPadecOdstotek === null ? "—" : `${k.povprecenPadecOdstotek} %`}
+          />
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-zinc-500">
+        Hitrost prodaje je izračunana iz {k.vzorec} zaključenih primerljivih oglasov, ponderiranih po
+        podobnosti in zanesljivosti prodaje (ponovne objave istega vozila so izločene). Marža je bruto —
+        pred stroški, garancijo in vašim časom.
+      </p>
+    </section>
   );
 }
 

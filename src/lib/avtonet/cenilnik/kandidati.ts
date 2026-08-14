@@ -52,12 +52,14 @@ export type KandidatVrstica = {
   status_spremenjen: string | null;
   je_dealer: boolean | null;
   lokacija: string | null;
+  source_zadnja_sprememba: string | null;
+  naslednji_oglas_id: string | null;
 };
 
 const STOLPCI_OSNOVA =
   "id, avtonet_id, url, naziv, znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, " +
   "pogon, karoserija, barva, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
-  "status_spremenjen, je_dealer, lokacija";
+  "status_spremenjen, je_dealer, lokacija, source_zadnja_sprememba, naslednji_oglas_id";
 
 const STOLPCI = `${STOLPCI_OSNOVA}, oprema_znacilke`;
 

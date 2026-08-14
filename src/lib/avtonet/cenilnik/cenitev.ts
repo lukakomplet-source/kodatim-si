@@ -11,7 +11,13 @@ import {
   type CenovnaStatistika,
 } from "./statistika";
 import { opisVozila, type Vozilo } from "./vozilo";
-import { oceniProdajo, utezProdaje, type ProdajaOcena } from "@/lib/avtonet/analiza";
+import {
+  oceniProdajo,
+  prodajnaStatistikaKohorte,
+  utezProdaje,
+  type KohortnaProdaja,
+  type ProdajaOcena,
+} from "@/lib/avtonet/analiza";
 
 /**
  * The valuation itself: database first, statistics second, AI only for
@@ -57,6 +63,8 @@ export type Primerljiv = {
   aiRazlog: string | null;
   /** For finished ads: how confidently it was actually sold, and why. Null for active. */
   prodaja: ProdajaOcena | null;
+  /** True when this ad's disappearance was a RELIST (same car, new id) — not a sale. */
+  jePonovnaObjava: boolean;
 };
 
 export type Cenitev = {
@@ -90,6 +98,14 @@ export type Cenitev = {
     medianaDni: number | null;
     pragDni: number;
   };
+
+  /**
+   * Weighted sale-speed statistics over the finished comparables — the cohort's
+   * own answer to "how fast does THIS kind of car sell, and at what price".
+   * Weights combine similarity with sale confidence, so a doubtful withdrawal
+   * barely counts. Feeds the KodaTim ocena (Deal Intelligence) card.
+   */
+  kohorta: KohortnaProdaja;
 
   /** Correction applied because the target's mileage differs from the comparables'. */
   popravekKm: { eur: number; medianaKmPrimerljivih: number | null; razlaga: string } | null;
@@ -285,13 +301,14 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
         lokacija: r.lokacija,
         firstSeen: r.first_seen,
         statusSpremenjen: r.status_spremenjen,
-        dniNaTrgu: dniNaTrgu(r.first_seen, r.status_spremenjen),
+        dniNaTrgu: dniNaTrgu(r.first_seen, r.status_spremenjen, r.source_zadnja_sprememba),
         znacilke: r.oprema_znacilke ?? [],
         podobnost: ocena.skupno,
         ocena,
         aiPodobnost: null,
         aiRazlog: null,
         prodaja: null,
+        jePonovnaObjava: r.naslednji_oglas_id !== null && r.naslednji_oglas_id !== undefined,
       };
       return p;
     })
@@ -351,8 +368,12 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
   const aktivni = cenovnaStatistika(aktivniZCeno.map((p) => p.cena as number));
 
   // Finished adverts: the last price seen before they left the board. NOT a
-  // sale price — the source only says "sold" on some of them.
-  const zakljuceniVrstice = ocenjeni.filter((p) => p.status !== "aktiven" && p.cena !== null && p.cena > 0);
+  // sale price — the source only says "sold" on some of them. Relists are
+  // excluded outright: a disappearance explained by the same car reappearing
+  // under a new id is not the market accepting a price.
+  const zakljuceniVrstice = ocenjeni.filter(
+    (p) => p.status !== "aktiven" && p.cena !== null && p.cena > 0 && !p.jePonovnaObjava
+  );
   const zakljuceni = cenovnaStatistika(zakljuceniVrstice.map((p) => p.cena as number));
 
   const dnevi = ocenjeni.map((p) => p.dniNaTrgu).filter((d): d is number => d !== null);
@@ -373,6 +394,19 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
       medianaCene: medCenaRef,
     });
   }
+
+  // The cohort's sale-speed figures, weighted by similarity × sale confidence:
+  // what the Deal Intelligence card reports as "cars like this one sell in…".
+  const kohorta = prodajnaStatistikaKohorte(
+    zakljuceniVrstice.map((p) => ({
+      dniNaTrgu: p.dniNaTrgu,
+      zadnjaCena: p.cena,
+      prvotnaCena: p.cenaPrvotna,
+      utez:
+        Math.max(1, skupnaPodobnost(p) - PRAG_PODOBNOSTI) *
+        utezProdaje(p.prodaja?.stopnja ?? "verjetno"),
+    }))
+  );
 
   const zdaj = Date.now();
   const hitri = zakljuceniVrstice.filter(
@@ -504,6 +538,7 @@ function sestaviCenitev(cilj: Vozilo, kandidatiVsi: Primerljiv[], meta: MetaIska
     zakljuceni,
     cas,
     hitroIzginuli,
+    kohorta,
     popravekKm: popravek
       ? { eur: popravek.eur, medianaKmPrimerljivih: popravek.medianaKm, razlaga: popravek.razlaga }
       : null,

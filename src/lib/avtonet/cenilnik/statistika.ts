@@ -103,9 +103,19 @@ export type CasNaTrgu = {
 };
 
 /** Days between first sighting and leaving the board. */
-export function dniNaTrgu(firstSeen: string, statusSpremenjen: string | null): number | null {
+export function dniNaTrgu(
+  firstSeen: string,
+  statusSpremenjen: string | null,
+  /** The source's own "last change" date — proof the ad predates our first sighting. */
+  sourceZadnjaSprememba?: string | null
+): number | null {
   if (!statusSpremenjen) return null;
-  const dni = (new Date(statusSpremenjen).getTime() - new Date(firstSeen).getTime()) / 86_400_000;
+  let zacetek = new Date(firstSeen).getTime();
+  if (sourceZadnjaSprememba) {
+    const vir = new Date(sourceZadnjaSprememba).getTime();
+    if (Number.isFinite(vir) && vir < zacetek) zacetek = vir;
+  }
+  const dni = (new Date(statusSpremenjen).getTime() - zacetek) / 86_400_000;
   return Number.isFinite(dni) && dni >= 0 ? dni : null;
 }
 
