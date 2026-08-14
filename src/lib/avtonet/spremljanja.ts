@@ -1,3 +1,10 @@
+import {
+  filtriIzFormData,
+  opisFiltrovVozil,
+  steviloFiltrov,
+  type FiltriVozil,
+} from "./filtriVozil";
+
 /**
  * Spremljanja — a user's saved car search, and how it reads on screen.
  *
@@ -41,6 +48,12 @@ export type Spremljanje = {
   zadnji_ogled: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * The FULL avto.net-style filter (FiltriVozil). The legacy columns above are
+   * mirrored from it so the worker's email matching keeps working; when this is
+   * present, it is the source of truth for matching in the app.
+   */
+  filtri?: FiltriVozil | null;
 };
 
 /** What the form may offer, read from the data rather than assumed. */
@@ -63,6 +76,7 @@ function stevilo(n: number): string {
  * card is to be understood at a glance.
  */
 export function povzetekFiltra(s: Spremljanje): string {
+  if (s.filtri && steviloFiltrov(s.filtri) > 0) return opisFiltrovVozil(s.filtri);
   const deli: string[] = [];
 
   if (s.letnik_min !== null && s.letnik_max !== null) deli.push(`${s.letnik_min}–${s.letnik_max}`);
@@ -117,9 +131,15 @@ export function preberiObrazec(fd: FormData): { vnos: VnosSpremljanja } | { napa
     return Number.isFinite(n) ? n : null;
   };
 
+  // The full avto.net-style filter; the legacy columns below are mirrored from
+  // it so worker emails keep matching even before the worker learns the jsonb.
+  const filtri = filtriIzFormData(fd);
+
   const znamka = text("znamka");
   const model = text("model");
-  const naziv = text("naziv") ?? [znamka, model].filter(Boolean).join(" ").trim();
+  const naziv =
+    text("naziv") ??
+    [znamka ?? filtri.znamka, model ?? filtri.model].filter(Boolean).join(" ").trim();
   if (!naziv) return { napaka: "Vnesite ime spremljanja ali izberite znamko." };
 
   const prodajalecRaw = text("prodajalec_filter") ?? "vsi";
@@ -143,7 +163,25 @@ export function preberiObrazec(fd: FormData): { vnos: VnosSpremljanja } | { napa
     menjalnik: text("menjalnik"),
     prodajalec_filter,
     email_obvestila: text("email_obvestila"),
+    filtri: steviloFiltrov(filtri) > 0 ? filtri : null,
   };
+
+  // The new shared form posts ranges under its own names; mirror them into the
+  // legacy columns when the legacy inputs were not present.
+  if (vnos.filtri) {
+    const f = vnos.filtri;
+    vnos.letnik_min = vnos.letnik_min ?? f.letnikMin ?? null;
+    vnos.letnik_max = vnos.letnik_max ?? f.letnikMax ?? null;
+    vnos.km_min = vnos.km_min ?? f.kmMin ?? null;
+    vnos.km_max = vnos.km_max ?? f.kmMax ?? null;
+    vnos.moc_min = vnos.moc_min ?? f.mocMin ?? null;
+    vnos.moc_max = vnos.moc_max ?? f.mocMax ?? null;
+    vnos.cena_min = vnos.cena_min ?? f.cenaMin ?? null;
+    vnos.cena_max = vnos.cena_max ?? f.cenaMax ?? null;
+    if (!vnos.gorivo && f.gorivo) vnos.gorivo = f.gorivo === "plin" ? "lpg" : f.gorivo;
+    if (!vnos.menjalnik && f.menjalnik) vnos.menjalnik = f.menjalnik;
+    if (prodajalecRaw === "vsi" && f.prodajalec) vnos.prodajalec_filter = f.prodajalec;
+  }
 
   const obrnjeni: [string, number | null, number | null][] = [
     ["Letnik", vnos.letnik_min, vnos.letnik_max],

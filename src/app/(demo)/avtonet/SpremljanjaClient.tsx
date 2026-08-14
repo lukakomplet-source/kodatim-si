@@ -18,8 +18,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  PRODAJALEC_FILTRI,
-  PRODAJALEC_LABELS,
   naslovVozila,
   povzetekFiltra,
   type MoznostiFiltrov,
@@ -32,6 +30,8 @@ import {
   type SpremljanjeResult,
 } from "./spremljanja-actions";
 import { KakoDeluje } from "./KakoDeluje";
+import { FiltriVozilForm, type ZnamkaZModeli } from "./FiltriVozilForm";
+import type { FiltriVozil } from "@/lib/avtonet/filtriVozil";
 
 /**
  * The watch list.
@@ -52,12 +52,13 @@ const LABEL = "block text-[11px] font-semibold uppercase tracking-wide text-zinc
 
 export function SpremljanjaClient({
   kartice,
-  moznosti,
+  znamkeModeli = [],
   aktivnihOglasov,
   zadnjiPregled,
 }: {
   kartice: Kartica[];
   moznosti: MoznostiFiltrov;
+  znamkeModeli?: ZnamkaZModeli[];
   aktivnihOglasov: number;
   zadnjiPregled: string | null;
 }) {
@@ -228,7 +229,7 @@ export function SpremljanjaClient({
       {obrazec.open && (
         <Obrazec
           urejam={obrazec.urejam}
-          moznosti={moznosti}
+          znamkeModeli={znamkeModeli}
           formAction={formAction}
           saving={saving}
           napaka={state.error}
@@ -392,14 +393,14 @@ function Prazno({ onNovo }: { onNovo: () => void }) {
 
 function Obrazec({
   urejam,
-  moznosti,
+  znamkeModeli = [],
   formAction,
   saving,
   napaka,
   zapri,
-}: {
+} : {
   urejam: Spremljanje | null;
-  moznosti: MoznostiFiltrov;
+  znamkeModeli?: ZnamkaZModeli[];
   formAction: (fd: FormData) => void;
   saving: boolean;
   napaka?: string;
@@ -428,95 +429,11 @@ function Obrazec({
       <form action={formAction} className="mt-5 space-y-5">
         <input type="hidden" name="id" value={urejam?.id ?? ""} />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className={LABEL}>
-            Znamka
-            <input
-              name="znamka"
-              defaultValue={urejam?.znamka ?? ""}
-              list="avtonet-znamke"
-              placeholder="npr. BMW"
-              className={INPUT}
-            />
-            <datalist id="avtonet-znamke">
-              {moznosti.znamke.map((z) => (
-                <option key={z} value={z} />
-              ))}
-            </datalist>
-          </label>
-          <label className={LABEL}>
-            Model
-            <input
-              name="model"
-              defaultValue={urejam?.model ?? ""}
-              placeholder="npr. M340i"
-              className={INPUT}
-            />
-          </label>
-        </div>
-
-        <Skupina naslov="Letnik">
-          <Par ime="letnik_min" oznaka="Od" vrednost={urejam?.letnik_min} placeholder="2020" />
-          <Par ime="letnik_max" oznaka="Do" vrednost={urejam?.letnik_max} placeholder="2025" />
-        </Skupina>
-
-        <Skupina naslov="Kilometri">
-          <Par ime="km_min" oznaka="Najmanj" vrednost={urejam?.km_min} placeholder="0" />
-          <Par ime="km_max" oznaka="Največ" vrednost={urejam?.km_max} placeholder="100000" />
-        </Skupina>
-
-        <Skupina naslov="Moč (KM)">
-          <Par ime="moc_min" oznaka="Najmanj" vrednost={urejam?.moc_min} placeholder="300" />
-          <Par ime="moc_max" oznaka="Največ" vrednost={urejam?.moc_max} placeholder="" />
-        </Skupina>
-
-        <Skupina naslov="Cena (€)">
-          <Par ime="cena_min" oznaka="Od" vrednost={urejam?.cena_min} placeholder="" />
-          <Par ime="cena_max" oznaka="Do" vrednost={urejam?.cena_max} placeholder="50000" />
-        </Skupina>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <label className={LABEL}>
-            Gorivo
-            <select name="gorivo" defaultValue={urejam?.gorivo ?? ""} className={INPUT}>
-              <option value="">Vse</option>
-              {moznosti.goriva.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={LABEL}>
-            Menjalnik
-            <select name="menjalnik" defaultValue={urejam?.menjalnik ?? ""} className={INPUT}>
-              <option value="">Vsi</option>
-              {moznosti.menjalniki.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={LABEL}>
-            Prodajalec
-            <select
-              name="prodajalec_filter"
-              defaultValue={urejam?.prodajalec_filter ?? "vsi"}
-              className={INPUT}
-            >
-              {PRODAJALEC_FILTRI.map((p) => (
-                <option key={p} value={p}>
-                  {PRODAJALEC_LABELS[p]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <FiltriVozilForm znamkeModeli={znamkeModeli} privzeto={filtriIzSpremljanja(urejam)} />
 
         <p className="rounded-xl bg-zinc-50 px-3.5 py-2.5 text-xs text-zinc-500">
-          Vrsta prodajalca ni objavljena na seznamu oglasov — preberemo jo šele na strani posameznega
-          oglasa in tudi tam ne vedno. Oglasov z neznanim prodajalcem zato ne izpustimo, ampak jih
+          Karoserija, barva in oprema so znane pri oglasih z zajetimi podrobnostmi; vrsta prodajalca
+          ni objavljena na seznamu, zato oglasov z neznanim prodajalcem ne izpustimo, ampak jih
           označimo.
         </p>
 
@@ -575,36 +492,26 @@ function Obrazec({
   );
 }
 
-function Skupina({ naslov, children }: { naslov: string; children: React.ReactNode }) {
-  return (
-    <fieldset>
-      <legend className={LABEL}>{naslov}</legend>
-      <div className="mt-1 grid grid-cols-2 gap-4">{children}</div>
-    </fieldset>
-  );
-}
 
-function Par({
-  ime,
-  oznaka,
-  vrednost,
-  placeholder,
-}: {
-  ime: string;
-  oznaka: string;
-  vrednost: number | null | undefined;
-  placeholder: string;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs text-zinc-500">{oznaka}</span>
-      <input
-        name={ime}
-        inputMode="numeric"
-        defaultValue={vrednost ?? ""}
-        placeholder={placeholder}
-        className={INPUT}
-      />
-    </label>
-  );
+
+
+/** The editing watch as the shared filter's default values. */
+function filtriIzSpremljanja(s: Spremljanje | null): FiltriVozil {
+  if (!s) return {};
+  if (s.filtri) return s.filtri;
+  return {
+    znamka: s.znamka ?? undefined,
+    model: s.model ?? undefined,
+    letnikMin: s.letnik_min ?? undefined,
+    letnikMax: s.letnik_max ?? undefined,
+    kmMin: s.km_min ?? undefined,
+    kmMax: s.km_max ?? undefined,
+    mocMin: s.moc_min ?? undefined,
+    mocMax: s.moc_max ?? undefined,
+    cenaMin: s.cena_min ?? undefined,
+    cenaMax: s.cena_max ?? undefined,
+    gorivo: s.gorivo === "lpg" || s.gorivo === "cng" ? "plin" : (s.gorivo ?? undefined),
+    menjalnik: s.menjalnik ?? undefined,
+    prodajalec: s.prodajalec_filter !== "vsi" ? s.prodajalec_filter : undefined,
+  };
 }

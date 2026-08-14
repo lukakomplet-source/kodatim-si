@@ -5,6 +5,8 @@ import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import type { MoznostiFiltrov, Spremljanje } from "@/lib/avtonet/spremljanja";
 import { stejUjemanja } from "@/lib/avtonet/ujemanje";
 import { SpremljanjaClient } from "./SpremljanjaClient";
+import { preberiStatistike } from "@/lib/avtonet/statistikaBranje";
+import type { ZnamkaZModeli } from "./FiltriVozilForm";
 
 /**
  * Moja spremljanja — the product's front door.
@@ -110,10 +112,15 @@ export default async function SpremljanjaPage() {
     menjalniki: [],
   });
 
+  const st = await varno(() => preberiStatistike(["modeli_seznam"]), 7000, { modeli_seznam: null });
+  const znamkeModeli =
+    ((st.modeli_seznam as { znamke: ZnamkaZModeli[] } | null)?.znamke ?? []) as ZnamkaZModeli[];
+
   return (
     <SpremljanjaClient
       kartice={kartice}
       moznosti={moznosti}
+      znamkeModeli={znamkeModeli}
       aktivnihOglasov={oglasiRes.count ?? 0}
       zadnjiPregled={(zdravjeRes.data as { zadnji_uspeh: string | null } | null)?.zadnji_uspeh ?? null}
     />

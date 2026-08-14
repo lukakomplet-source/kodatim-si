@@ -1,4 +1,9 @@
 import type { Spremljanje } from "./spremljanja";
+import {
+  steviloFiltrov,
+  uporabiFiltre,
+  type FiltrirljivaPoizvedba,
+} from "./filtriVozil";
 
 /**
  * Which listings match a spremljanje.
@@ -68,6 +73,12 @@ type Filtrirljiv = {
  */
 function pogojiSpremljanja(q: Filtrirljiv, s: Spremljanje): Filtrirljiv {
   let out = q.eq("status", "aktiven");
+
+  // A watch saved with the full avto.net-style filter uses IT as the source of
+  // truth — the legacy columns below are only its mirror for the worker.
+  if (s.filtri && steviloFiltrov(s.filtri) > 0) {
+    return uporabiFiltre(out as unknown as FiltrirljivaPoizvedba, s.filtri) as unknown as Filtrirljiv;
+  }
 
   if (s.znamka) out = out.ilike("znamka", s.znamka);
   if (s.model) out = out.ilike("naziv", `%${s.model}%`);

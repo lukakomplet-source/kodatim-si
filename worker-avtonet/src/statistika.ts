@@ -650,6 +650,28 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
     await zapisi(db, "deal_feed", { deals: deals.slice(0, 20), pregledanih: aktivni.length });
   }
 
+  // ---- seznam znamk in modelov (za filtrirne obrazce) --------------------
+  {
+    const poZnamki = new Map<string, Map<string, number>>();
+    for (const o of aktivni) {
+      if (!o.znamka || !o.model || o.model.length > 40) continue;
+      const m = poZnamki.get(o.znamka) ?? new Map<string, number>();
+      m.set(o.model, (m.get(o.model) ?? 0) + 1);
+      poZnamki.set(o.znamka, m);
+    }
+    const znamke = [...poZnamki.entries()]
+      .map(([znamka, m]) => ({
+        znamka,
+        modeli: [...m.entries()]
+          .filter(([, n]) => n >= 3)
+          .sort(([a], [b]) => a.localeCompare(b, "sl"))
+          .map(([model]) => model),
+      }))
+      .filter((z) => z.modeli.length > 0)
+      .sort((a, b) => a.znamka.localeCompare(b.znamka, "sl"));
+    await zapisi(db, "modeli_seznam", { znamke });
+  }
+
   await zapisi(db, "meta", {
     aktivnih: aktivni.length,
     zakljucenihVeljavnih: zakljuceni.length,

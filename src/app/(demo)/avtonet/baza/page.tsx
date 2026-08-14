@@ -4,6 +4,14 @@ import { Database, Download, ExternalLink, Search, TrendingDown } from "lucide-r
 import { requireAdmin } from "@/lib/require-admin";
 import { createAvtonetClient } from "@/lib/avtonet/db";
 import { eur } from "@/lib/avtonet/analiza";
+import {
+  filtriIzParams,
+  steviloFiltrov,
+  uporabiFiltre,
+  type FiltrirljivaPoizvedba,
+} from "@/lib/avtonet/filtriVozil";
+import { preberiStatistike } from "@/lib/avtonet/statistikaBranje";
+import { FiltriVozilForm, type ZnamkaZModeli } from "../FiltriVozilForm";
 import { KakoDeluje } from "../KakoDeluje";
 
 /**
@@ -55,7 +63,7 @@ const STATUSI = [
 export default async function BazaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; znamka?: string; status?: string; stran?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   try {
     await requireAdmin();
@@ -66,46 +74,53 @@ export default async function BazaPage({
   const sp = await searchParams;
   const stran = Math.max(1, Number(sp.stran ?? 1) || 1);
   const od = (stran - 1) * NA_STRAN;
+  const status = typeof sp.status === "string" ? sp.status : "";
+  const filtri = filtriIzParams(sp);
+  const aktivnihFiltrov = steviloFiltrov(filtri);
 
   const db = createAvtonetClient();
+
+  // A shallow structural view of the builder: chaining on the full Supabase
+  // generic re-instantiates its row types at every step and trips TS2589.
+  type Poizvedba = FiltrirljivaPoizvedba & {
+    order(c: string, o: { ascending: boolean }): Poizvedba;
+    range(a: number, b: number): PromiseLike<{
+      data: unknown[] | null;
+      count: number | null;
+      error: { message: string } | null;
+    }>;
+  };
 
   let q = db
     .from("avtonet_oglasi")
     .select(
       "id, avtonet_id, naziv, znamka, letnik, km, km_moci, gorivo, menjalnik, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, lokacija, prodajalec_naziv, je_dealer, detajl_zajet, url",
       { count: "exact" }
-    )
-    .order("first_seen", { ascending: false })
-    .range(od, od + NA_STRAN - 1);
+    ) as unknown as Poizvedba;
 
-  if (sp.q) q = q.ilike("naziv", `%${sp.q}%`);
-  if (sp.znamka) q = q.ilike("znamka", sp.znamka);
-  if (sp.status) q = q.eq("status", sp.status);
+  q = uporabiFiltre(q, filtri);
+  if (status) q = q.eq("status", status) as Poizvedba;
 
-  const { data, count, error } = await q;
+  const { data, count, error } = await q.order("first_seen", { ascending: false }).range(od, od + NA_STRAN - 1);
 
-  const { data: znamkeRaw } = await db
-    .from("avtonet_oglasi")
-    .select("znamka")
-    .not("znamka", "is", null)
-    .limit(5000);
-  const znamke = [
-    ...new Set(((znamkeRaw ?? []) as { znamka: string }[]).map((z) => z.znamka)),
-  ].sort((a, b) => a.localeCompare(b, "sl"));
+  // The brand→models catalogue, precomputed by the worker's statistics step.
+  const st = await preberiStatistike(["modeli_seznam"]);
+  const znamkeModeli =
+    ((st.modeli_seznam as { znamke: ZnamkaZModeli[] } | null)?.znamke ?? []) as ZnamkaZModeli[];
 
   const vrstice = (data ?? []) as unknown as Vrstica[];
   const skupaj = count ?? 0;
   const zadnjaStran = Math.max(1, Math.ceil(skupaj / NA_STRAN));
 
-  const povezava = (nastran: number) => ({
-    pathname: "/avtonet/baza",
-    query: {
-      ...(sp.q ? { q: sp.q } : {}),
-      ...(sp.znamka ? { znamka: sp.znamka } : {}),
-      ...(sp.status ? { status: sp.status } : {}),
-      stran: String(nastran),
-    },
-  });
+  // Pagination keeps EVERY filter param, whatever it is.
+  const povezava = (nastran: number) => {
+    const query: Record<string, string | string[]> = {};
+    for (const [k, v] of Object.entries(sp)) {
+      if (v !== undefined && k !== "stran") query[k] = v;
+    }
+    query.stran = String(nastran);
+    return { pathname: "/avtonet/baza", query };
+  };
 
   return (
     <div>
@@ -204,65 +219,41 @@ export default async function BazaPage({
         ]}
       />
 
-      <form className="mt-6 flex flex-wrap items-end gap-2">
-        <label className="min-w-[14rem] flex-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Iskanje</span>
-          <span className="mt-1 flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
-            <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-            <input
-              name="q"
-              defaultValue={sp.q ?? ""}
-              placeholder="npr. Golf GTI"
-              className="w-full text-sm focus:outline-none"
-            />
-          </span>
-        </label>
+      <form className="mt-6">
+        <FiltriVozilForm znamkeModeli={znamkeModeli} privzeto={filtri} />
 
-        <label>
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Znamka</span>
-          <select
-            name="znamka"
-            defaultValue={sp.znamka ?? ""}
-            className="mt-1 block rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Vse</option>
-            {znamke.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Status</span>
+            <select
+              name="status"
+              defaultValue={status}
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+            >
+              {STATUSI.map((s) => (
+                <option key={s.kljuc} value={s.kljuc}>
+                  {s.oznaka}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Status</span>
-          <select
-            name="status"
-            defaultValue={sp.status ?? ""}
-            className="mt-1 block rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+          <button
+            type="submit"
+            className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
           >
-            {STATUSI.map((s) => (
-              <option key={s.kljuc} value={s.kljuc}>
-                {s.oznaka}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          type="submit"
-          className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
-        >
-          Uporabi
-        </button>
-        {(sp.q || sp.znamka || sp.status) && (
-          <Link
-            href="/avtonet/baza"
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
-          >
-            Počisti
-          </Link>
-        )}
+            <Search className="h-4 w-4" />
+            Iskanje vozil
+          </button>
+          {(aktivnihFiltrov > 0 || status) && (
+            <Link
+              href="/avtonet/baza"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+            >
+              Počisti {aktivnihFiltrov > 0 ? `(${aktivnihFiltrov})` : ""}
+            </Link>
+          )}
+        </div>
       </form>
 
       {error ? (
@@ -273,7 +264,7 @@ export default async function BazaPage({
         <>
           <p className="mt-5 text-sm text-zinc-500">
             {skupaj.toLocaleString("sl-SI")} oglasov
-            {(sp.q || sp.znamka || sp.status) && " po izbranih pogojih"} · stran {stran} od{" "}
+            {(aktivnihFiltrov > 0 || status) && " po izbranih pogojih"} · stran {stran} od{" "}
             {zadnjaStran}
           </p>
 

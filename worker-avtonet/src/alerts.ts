@@ -31,7 +31,57 @@ export type Iskanje = {
   email_obvestila: string | null;
   /** Who created the search — the link to their account-level settings. */
   created_by?: string | null;
+  /** The full avto.net-style filter (FiltriVozil jsonb); extras applied below. */
+  filtri?: Record<string, unknown> | null;
 };
+
+/**
+ * The conditions the legacy columns cannot express, read from the jsonb filter.
+ * Mirrors src/lib/avtonet/filtriVozil.ts (the worker is a separate package; the
+ * file-level comment above already declares this mirror duty).
+ */
+function dodatniPogoji<Q extends { ilike(c: string, p: string): Q; or(f: string): Q; gte(c: string, v: unknown): Q; lte(c: string, v: unknown): Q; contains(c: string, v: unknown): Q }>(
+  q: Q,
+  f: Record<string, unknown> | null | undefined
+): Q {
+  if (!f) return q;
+  let out = q;
+  const niz = (k: string) => (typeof f[k] === "string" && (f[k] as string).trim() ? (f[k] as string) : null);
+  const st = (k: string) => (typeof f[k] === "number" && Number.isFinite(f[k]) ? (f[k] as number) : null);
+  const seznam = (k: string) => (Array.isArray(f[k]) ? (f[k] as string[]).filter((x) => typeof x === "string") : []);
+
+  const tip = niz("tip");
+  if (tip) out = out.ilike("naziv", `%${tip.replace(/[%,*()]/g, " ").trim()}%`);
+  const starosti = seznam("starost");
+  if (starosti.length > 0 && starosti.length < 3) out = out.or(starosti.map((s) => `starost.ilike.${s}*`).join(","));
+  if (f.oldtimer) out = out.ilike("starost", "%oldtimer%");
+  if (f.garancija) out = out.or("starost.ilike.*garanc*,starost.ilike.*jamstvo*");
+  const kar = seznam("karoserija");
+  if (kar.length > 0) {
+    const VZORCI: Record<string, string> = {
+      microcar: "*microcar*", kombilimuzina: "*kombilimuzina*", limuzina: "limuzina*",
+      karavan: "*karavan*", enoprostorec: "*enoprostorec*", suv: "*suv*", coupe: "*coupe*",
+      cabrio: "*cabrio*", pickup: "*pick*",
+    };
+    const deli = kar.filter((k) => VZORCI[k]).map((k) => `karoserija.ilike.${VZORCI[k]}`);
+    if (deli.length) out = out.or(deli.join(","));
+  }
+  if (f.pogon4x4) out = out.or("pogon.ilike.*4x4*,pogon.ilike.*4wd*");
+  const ccmMin = st("ccmMin"); if (ccmMin) out = out.gte("ccm", ccmMin);
+  const ccmMax = st("ccmMax"); if (ccmMax) out = out.lte("ccm", ccmMax);
+  const barva = niz("barva"); if (barva) out = out.ilike("barva", `%${barva}%`);
+  if (f.metalik) out = out.ilike("barva", "%metalik%");
+  const vrata = niz("vrata");
+  if (vrata === "23") out = out.lte("stevilo_vrat", 3);
+  if (vrata === "45") out = out.gte("stevilo_vrat", 4);
+  const sedezi = niz("sedezi");
+  if (sedezi && Number(sedezi) > 0) out = out.gte("stevilo_sedezev", Number(sedezi));
+  const oprema = seznam("oprema");
+  if (oprema.length > 0) out = out.contains("oprema_znacilke", oprema);
+  const lokacija = niz("lokacija");
+  if (lokacija) out = out.ilike("lokacija", `%${lokacija.replace(/[%,*()]/g, " ").trim()}%`);
+  return out;
+}
 
 /**
  * Where a search's notifications go.
@@ -144,6 +194,9 @@ export async function findMatches(db: Db, iskanje: Iskanje, limit = 25): Promise
   if (pogoj !== "vsi") {
     q = pogoj === "dealer" ? q.or("je_dealer.is.true,je_dealer.is.null") : q.or("je_dealer.is.false,je_dealer.is.null");
   }
+
+  // Full-filter watches carry extra conditions the legacy columns cannot hold.
+  q = dodatniPogoji(q, iskanje.filtri);
 
   const { data, error } = await q;
   if (error) throw new Error(`Iskanje zadetkov ni uspelo: ${error.message}`);
