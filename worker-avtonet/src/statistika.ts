@@ -41,12 +41,18 @@ type Oglas = {
   prodajalec_naziv: string | null;
   lokacija: string | null;
   ogledov: number | null;
+  starost: string | null;
 };
 
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, gorivo, menjalnik, karoserija, barva, " +
   "cena_eur, cena_prvotna_eur, status, first_seen, status_spremenjen, source_zadnja_sprememba, " +
-  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov";
+  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost";
+
+/** Brand-new stock behaves like a price list, not a market — excluded from comparisons. */
+function jeNov(o: Oglas): boolean {
+  return /nov/i.test(o.starost ?? "") || (o.km !== null && o.km < 500);
+}
 
 const DAN = 86_400_000;
 
@@ -292,40 +298,43 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
   }
 
   // ---- C3: zasebnik vs trgovec ------------------------------------------
+  // Compared inside model × YEAR cells, or a dealer's brand-new Jazz gets
+  // measured against a private seller's 15-year-old one and reports a fantasy
+  // 90 % gap. New stock is excluded outright. The per-model figure is the
+  // median of its per-year gaps.
   {
-    const poModelu = new Map<string, { d: number[]; z: number[]; dd: number[]; zd: number[] }>();
+    const poCelici = new Map<string, { d: number[]; z: number[] }>();
     for (const o of aktivni) {
       const k = modelKljuc(o);
       const c = num(o.cena_eur);
-      if (!k || c === null || o.je_dealer === null) continue;
-      const e = poModelu.get(k) ?? { d: [], z: [], dd: [], zd: [] };
+      if (!k || c === null || o.je_dealer === null || o.letnik === null || jeNov(o)) continue;
+      const celica = `${k}|${o.letnik}`;
+      const e = poCelici.get(celica) ?? { d: [], z: [] };
       (o.je_dealer ? e.d : e.z).push(c);
-      poModelu.set(k, e);
+      poCelici.set(celica, e);
     }
-    for (const o of zakljuceni) {
-      const k = modelKljuc(o);
-      const d = dniNaTrgu(o);
-      if (!k || d === null || o.je_dealer === null) continue;
-      const e = poModelu.get(k) ?? { d: [], z: [], dd: [], zd: [] };
-      (o.je_dealer ? e.dd : e.zd).push(d);
-      poModelu.set(k, e);
+    const poModelu = new Map<string, { razlike: number[]; d: number[]; z: number[]; vzorec: number }>();
+    for (const [celica, e] of poCelici) {
+      if (e.d.length < 4 || e.z.length < 4) continue;
+      const model = celica.split("|")[0];
+      const md = median(e.d) as number;
+      const mz = median(e.z) as number;
+      const agg = poModelu.get(model) ?? { razlike: [], d: [], z: [], vzorec: 0 };
+      agg.razlike.push(((md - mz) / md) * 100);
+      agg.d.push(md);
+      agg.z.push(mz);
+      agg.vzorec += e.d.length + e.z.length;
+      poModelu.set(model, agg);
     }
     const modeli = [...poModelu.entries()]
-      .filter(([, e]) => e.d.length >= 8 && e.z.length >= 8)
-      .map(([model, e]) => {
-        const md = median(e.d) as number;
-        const mz = median(e.z) as number;
-        return {
-          model,
-          cenaDealer: Math.round(md),
-          cenaZasebnik: Math.round(mz),
-          razlikaPct: Math.round(((md - mz) / md) * 1000) / 10,
-          dniDealer: e.dd.length >= 8 ? Math.round((median(e.dd) ?? 0) * 10) / 10 : null,
-          dniZasebnik: e.zd.length >= 8 ? Math.round((median(e.zd) ?? 0) * 10) / 10 : null,
-          vzorec: e.d.length + e.z.length,
-        };
-      })
-      .sort((a, b) => b.razlikaPct - a.razlikaPct);
+      .map(([model, a]) => ({
+        model,
+        cenaDealer: Math.round(median(a.d) as number),
+        cenaZasebnik: Math.round(median(a.z) as number),
+        razlikaPct: Math.round((median(a.razlike) as number) * 10) / 10,
+        vzorec: a.vzorec,
+      }))
+      .sort((a, b) => b.vzorec - a.vzorec);
     const razlike = modeli.map((m) => m.razlikaPct);
     await zapisi(db, "zasebnik_vs_trgovec", {
       modeli: modeli.slice(0, 30),
@@ -380,9 +389,18 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       return Object.fromEntries([...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8));
     };
     const letos = new Date().getFullYear();
+    const ZNANA_GORIVA = new Set(["diesel", "bencinski", "hibridni", "elektricni", "električni", "plin", "cng", "lpg"]);
     const trenutna = {
-      gorivo: delez((o) => (o.gorivo ?? "").split(" ")[0] || null),
-      menjalnik: delez((o) => (o.menjalnik ?? "").split(" ")[0] || null),
+      // Only recognised values, so junk like "novo" cannot appear as a fuel;
+      // the page computes shares against the KNOWN set, not against all ads.
+      gorivo: delez((o) => {
+        const g = (o.gorivo ?? "").split(" ")[0].toLowerCase();
+        return ZNANA_GORIVA.has(g) ? g : null;
+      }),
+      menjalnik: delez((o) => {
+        const m = (o.menjalnik ?? "").split(" ")[0].toLowerCase();
+        return m === "ročni" || m === "avtomatski" ? m : null;
+      }),
       starost: delez((o) => {
         if (o.letnik === null) return null;
         const let_ = letos - o.letnik;

@@ -10,7 +10,10 @@ import {
   Lightbulb,
   LineChart,
   Sparkles,
+  Store,
+  Target,
   TerminalSquare,
+  TrendingUp,
   UserCog,
 } from "lucide-react";
 
@@ -26,7 +29,10 @@ import {
  * these tabs checks the role again for itself.
  */
 
-const JAVNO = [{ href: "/avtonet/analiza", label: "Analiza trga", icon: LineChart }];
+const JAVNO = [
+  { href: "/avtonet/analiza", label: "Analiza trga", icon: LineChart },
+  { href: "/avtonet/trg", label: "Trg", icon: TrendingUp },
+];
 
 // Nastavitve is deliberately absent: account controls sit top right in the
 // header, so the tabs hold only the places you actually work in.
@@ -36,8 +42,11 @@ const JAVNO = [{ href: "/avtonet/analiza", label: "Analiza trga", icon: LineChar
 // data underneath it.
 const UPORABNIK = [
   { href: "/avtonet/cenilnik", label: "Oceni vozilo", icon: Calculator },
+  { href: "/avtonet/posli", label: "Posli", icon: Target },
   { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
 ];
+
+const UPORABNIK_ZA_JAVNIM = [{ href: "/avtonet/trgovci", label: "Trgovci", icon: Store }];
 
 /** Same page, different name: for a user it is a suggestion box, for an admin an editor. */
 const PREDLOGI = { href: "/avtonet/urejanje", label: "Predlogi", icon: Lightbulb };
@@ -78,6 +87,7 @@ export function AvtonetNav() {
   const items = [
     ...(dostop.jeUporabnik ? UPORABNIK : []),
     ...JAVNO,
+    ...(dostop.jeUporabnik ? UPORABNIK_ZA_JAVNIM : []),
     ...(dostop.jeUporabnik && !dostop.jeAdmin ? [PREDLOGI] : []),
     ...(dostop.jeAdmin ? ADMIN : []),
   ];
