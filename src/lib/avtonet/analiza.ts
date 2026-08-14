@@ -31,7 +31,25 @@ export type ZakljucenOglas = {
   km: number | null;
   letnik: number | null;
   je_dealer: boolean | null;
+  /** The source's own "last change" date — a floor on how long the ad existed. */
+  source_zadnja_sprememba?: string | null;
+  /** Set when this ad's disappearance was explained by a RELIST — not a sale. */
+  naslednji_oglas_id?: string | null;
+  /** How many times the ad vanished and came back. */
+  vrnjen_krat?: number | null;
 };
+
+/**
+ * Whether a finished advert may feed SALE statistics at all.
+ *
+ * An advert whose disappearance is explained by a relist (naslednji_oglas_id)
+ * is the same car back on the board under a new id — counting it would invent
+ * a sale that never happened. This is the single gate every statistic below
+ * goes through.
+ */
+export function veljavnaProdaja(row: ZakljucenOglas): boolean {
+  return !row.naslednji_oglas_id;
+}
 
 export type ModelStat = {
   /** "BMW serija X5" — also the key used in the detail page's URL. */
@@ -134,11 +152,23 @@ export function median(values: number[]): number {
   return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
 }
 
-/** Days between first sighting and leaving the board; null when unmeasurable. */
+/**
+ * Days between appearing and leaving the board; null when unmeasurable.
+ *
+ * The start is our first sighting — EXCEPT when the source's own "last change"
+ * date is earlier, which proves the advert existed before we ever saw it (an ad
+ * already on the board when sweeps began would otherwise read as one day old).
+ * The source date is a floor on age, so taking the earlier of the two only ever
+ * makes the figure more honest, never optimistic.
+ */
 export function dniNaOglasu(row: ZakljucenOglas): number | null {
   if (!row.status_spremenjen) return null;
-  const dni =
-    (new Date(row.status_spremenjen).getTime() - new Date(row.first_seen).getTime()) / 86_400_000;
+  let zacetek = new Date(row.first_seen).getTime();
+  if (row.source_zadnja_sprememba) {
+    const vir = new Date(row.source_zadnja_sprememba).getTime();
+    if (Number.isFinite(vir) && vir < zacetek) zacetek = vir;
+  }
+  const dni = (new Date(row.status_spremenjen).getTime() - zacetek) / 86_400_000;
   return Number.isFinite(dni) && dni >= 0 ? dni : null;
 }
 
@@ -160,6 +190,7 @@ function povprecje(values: number[]): number | null {
 export function statistikaPoModelih(rows: ZakljucenOglas[], minVzorec = MIN_VZOREC): ModelStat[] {
   const skupine = new Map<string, ZakljucenOglas[]>();
   for (const row of rows) {
+    if (!veljavnaProdaja(row)) continue; // a relist is not a sale
     const kljuc = modelKljuc(row);
     if (!kljuc) continue;
     const list = skupine.get(kljuc) ?? [];
@@ -217,7 +248,8 @@ const KOSI: { oznaka: string; do_: number }[] = [
   { oznaka: "60+ dni", do_: Infinity },
 ];
 
-export function podrobnostiModela(rows: ZakljucenOglas[]): PodrobnostiModela {
+export function podrobnostiModela(vseVrstice: ZakljucenOglas[]): PodrobnostiModela {
+  const rows = vseVrstice.filter(veljavnaProdaja); // relists are not sales
   const dnevi = rows.map(dniNaOglasu).filter((d): d is number => d !== null);
 
   const porazdelitev: Porazdelitev[] = KOSI.map((k, i) => {
@@ -313,4 +345,160 @@ export function trajanje(od: string | null, do_: string | null): string {
   const min = Math.round((konec - new Date(od).getTime()) / 60_000);
   if (min < 1) return "manj kot minuto";
   return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+// ---------------------------------------------------------------------------
+// Sale-speed statistics over a WEIGHTED cohort (faza 3)
+// ---------------------------------------------------------------------------
+
+export type KohortniVnos = {
+  dniNaTrgu: number | null;
+  zadnjaCena: number | null;
+  prvotnaCena: number | null;
+  /** Combined weight: similarity × sale confidence (utezProdaje). */
+  utez: number;
+};
+
+export type KohortnaProdaja = {
+  vzorec: number;
+  medianaDni: number | null;
+  /** Weighted share sold within N days, 0–100. */
+  delez7: number | null;
+  delez14: number | null;
+  delez30: number | null;
+  medianaZadnjeCene: number | null;
+  /** Average price drop from first to last price, as a % of the first. */
+  povprecenPadecOdstotek: number | null;
+};
+
+function utezenaMedianaVrednosti(vnosi: { vrednost: number; utez: number }[]): number | null {
+  const veljavni = vnosi.filter((v) => Number.isFinite(v.vrednost) && v.utez > 0);
+  if (veljavni.length === 0) return null;
+  const sorted = [...veljavni].sort((a, b) => a.vrednost - b.vrednost);
+  const skupna = sorted.reduce((a, v) => a + v.utez, 0);
+  let tek = 0;
+  for (const v of sorted) {
+    tek += v.utez;
+    if (tek >= skupna / 2) return v.vrednost;
+  }
+  return sorted[sorted.length - 1].vrednost;
+}
+
+/**
+ * Sale statistics for one cohort of comparable finished adverts.
+ *
+ * The cohort is dynamic — the caller selects it by similarity (this is what
+ * makes "Captur 1.3 TCe, 2022, ~100k km, ~14k €" a segment without pre-cutting
+ * the market into thousands of empty cells) — and every figure is weighted, so
+ * a doubtful disappearance (negotovo) barely moves the numbers while a
+ * confirmed cheap-and-fast sale drives them.
+ */
+export function prodajnaStatistikaKohorte(vnosi: KohortniVnos[]): KohortnaProdaja {
+  const zDnevi = vnosi.filter((v) => v.dniNaTrgu !== null && v.utez > 0);
+  const skupnaUtez = zDnevi.reduce((a, v) => a + v.utez, 0);
+
+  const delezDo = (dni: number): number | null => {
+    if (skupnaUtez <= 0) return null;
+    const del = zDnevi.filter((v) => (v.dniNaTrgu as number) <= dni).reduce((a, v) => a + v.utez, 0);
+    return Math.round((del / skupnaUtez) * 100);
+  };
+
+  const padci = vnosi
+    .filter(
+      (v) =>
+        v.prvotnaCena !== null &&
+        v.zadnjaCena !== null &&
+        v.prvotnaCena > 0 &&
+        v.zadnjaCena <= v.prvotnaCena
+    )
+    .map((v) => ((v.prvotnaCena! - v.zadnjaCena!) / v.prvotnaCena!) * 100);
+
+  return {
+    vzorec: zDnevi.length,
+    medianaDni: utezenaMedianaVrednosti(
+      zDnevi.map((v) => ({ vrednost: v.dniNaTrgu as number, utez: v.utez }))
+    ),
+    delez7: delezDo(7),
+    delez14: delezDo(14),
+    delez30: delezDo(30),
+    medianaZadnjeCene: utezenaMedianaVrednosti(
+      vnosi
+        .filter((v) => v.zadnjaCena !== null && v.utez > 0)
+        .map((v) => ({ vrednost: v.zadnjaCena as number, utez: v.utez }))
+    ),
+    povprecenPadecOdstotek: padci.length > 0 ? Math.round((padci.reduce((a, b) => a + b, 0) / padci.length) * 10) / 10 : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Coarse segments of one model (faza 3): letnik × cenovni razred
+// ---------------------------------------------------------------------------
+
+export type SegmentProdaje = {
+  oznaka: string;
+  vzorec: number;
+  medianaDni: number;
+  delez14: number;
+  medianaZacetneCene: number | null;
+};
+
+const MIN_SEGMENT = 8;
+
+/**
+ * A model's market split the way a dealer thinks about it: by year and by price
+ * band — a 19.900 € X5 and a 69.900 € X5 are different markets. Only segments
+ * with a workable sample are returned; fixed grids over every field would
+ * produce thousands of empty cells whose medians are noise.
+ */
+export function segmentiModela(vseVrstice: ZakljucenOglas[]): SegmentProdaje[] {
+  const rows = vseVrstice.filter(veljavnaProdaja);
+  const out: SegmentProdaje[] = [];
+
+  const dodaj = (oznaka: string, skupina: ZakljucenOglas[]) => {
+    const dnevi = skupina.map(dniNaOglasu).filter((d): d is number => d !== null);
+    if (dnevi.length < MIN_SEGMENT) return;
+    const zacetne = skupina
+      .map((r) => Number(r.cena_prvotna_eur ?? r.cena_eur))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    out.push({
+      oznaka,
+      vzorec: dnevi.length,
+      medianaDni: Math.round(median(dnevi) * 10) / 10,
+      delez14: Math.round((dnevi.filter((d) => d <= 14).length / dnevi.length) * 100),
+      medianaZacetneCene: zacetne.length > 0 ? median(zacetne) : null,
+    });
+  };
+
+  // By year.
+  const poLetniku = new Map<number, ZakljucenOglas[]>();
+  for (const r of rows) {
+    if (r.letnik === null) continue;
+    const arr = poLetniku.get(r.letnik) ?? [];
+    arr.push(r);
+    poLetniku.set(r.letnik, arr);
+  }
+  for (const [letnik, skupina] of [...poLetniku.entries()].sort((a, b) => b[0] - a[0])) {
+    dodaj(`Letnik ${letnik}`, skupina);
+  }
+
+  // By price tercile of the model's own asking prices.
+  const sCeno = rows.filter((r) => Number(r.cena_prvotna_eur ?? r.cena_eur) > 0);
+  if (sCeno.length >= MIN_SEGMENT * 2) {
+    const cene = sCeno
+      .map((r) => Number(r.cena_prvotna_eur ?? r.cena_eur))
+      .sort((a, b) => a - b);
+    const t1 = cene[Math.floor(cene.length / 3)];
+    const t2 = cene[Math.floor((2 * cene.length) / 3)];
+    dodaj(`Do ${eur(t1)}`, sCeno.filter((r) => Number(r.cena_prvotna_eur ?? r.cena_eur) <= t1));
+    dodaj(
+      `${eur(t1)}–${eur(t2)}`,
+      sCeno.filter((r) => {
+        const c = Number(r.cena_prvotna_eur ?? r.cena_eur);
+        return c > t1 && c <= t2;
+      })
+    );
+    dodaj(`Nad ${eur(t2)}`, sCeno.filter((r) => Number(r.cena_prvotna_eur ?? r.cena_eur) > t2));
+  }
+
+  return out;
 }

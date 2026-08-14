@@ -37,7 +37,10 @@ export default async function AnalizaPage({
 
   let q = db
     .from("avtonet_oglasi")
-    .select("znamka, model, first_seen, status, status_spremenjen, cena_eur, cena_prvotna_eur, km, letnik, je_dealer")
+    .select(
+      "znamka, model, first_seen, status, status_spremenjen, cena_eur, cena_prvotna_eur, km, letnik, je_dealer, " +
+        "source_zadnja_sprememba, naslednji_oglas_id, vrnjen_krat"
+    )
     .in("status", ["izginil", "prodano"])
     .not("status_spremenjen", "is", null)
     .gte("status_spremenjen", od)

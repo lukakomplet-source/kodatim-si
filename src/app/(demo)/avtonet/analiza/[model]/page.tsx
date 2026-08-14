@@ -8,6 +8,7 @@ import {
   modelKljuc,
   obdobjeDni,
   podrobnostiModela,
+  segmentiModela,
   type ZakljucenOglas,
 } from "@/lib/avtonet/analiza";
 import { GrafPorazdelitve, GrafTrenda } from "../Grafi";
@@ -47,7 +48,10 @@ export default async function ModelPage({
 
   const { data } = await db
     .from("avtonet_oglasi")
-    .select("znamka, model, first_seen, status, status_spremenjen, cena_eur, cena_prvotna_eur, km, letnik, je_dealer")
+    .select(
+      "znamka, model, first_seen, status, status_spremenjen, cena_eur, cena_prvotna_eur, km, letnik, je_dealer, " +
+        "source_zadnja_sprememba, naslednji_oglas_id, vrnjen_krat"
+    )
     .in("status", ["izginil", "prodano"])
     .not("status_spremenjen", "is", null)
     .gte("status_spremenjen", od)
@@ -56,6 +60,7 @@ export default async function ModelPage({
 
   const vrstice = ((data ?? []) as unknown as ZakljucenOglas[]).filter((r) => modelKljuc(r) === kljuc);
   const s = podrobnostiModela(vrstice);
+  const segmenti = segmentiModela(vrstice);
 
   return (
     <div>
@@ -182,6 +187,40 @@ export default async function ModelPage({
               <GrafTrenda podatki={s.trend} />
             </div>
           </section>
+
+          {segmenti.length > 0 && (
+            <section className="mt-8">
+              <h2 className="text-lg font-semibold text-zinc-900">Po segmentih</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Isti model ni en trg: letniki in cenovni razredi se prodajajo različno hitro.
+                Prikazani so samo segmenti z dovolj velikim vzorcem.
+              </p>
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-zinc-200 bg-zinc-50 text-xs text-zinc-500">
+                    <tr>
+                      <th className="px-4 py-2.5 font-medium">Segment</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Mediana dni</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Prodanih ≤ 14 dni</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Mediana začetne cene</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Vzorec</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {segmenti.map((seg) => (
+                      <tr key={seg.oznaka} className="hover:bg-zinc-50">
+                        <td className="px-4 py-2.5 font-medium text-zinc-900">{seg.oznaka}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{seg.medianaDni}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{seg.delez14} %</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">{eur(seg.medianaZacetneCene)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{seg.vzorec}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
 
           <section className="mt-8">
             <h2 className="text-lg font-semibold text-zinc-900">Cene</h2>
