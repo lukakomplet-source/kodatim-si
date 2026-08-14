@@ -162,8 +162,23 @@ export async function upsertListings(
         return db.from("avtonet_oglasi").update(patch).eq("id", u.id);
       })
     );
-    const napaka = results.find((r) => r.error);
-    if (napaka?.error) throw new Error(`Posodobitev oglasa ni uspela: ${napaka.error.message}`);
+    // A transient blip (observed live: an error with an EMPTY message while the
+    // DB containers were warming up) must not sink an hours-long sweep. Failed
+    // rows get one short retry; only a repeat failure stops the run.
+    const spodleteli = zaPosodobitev.filter((_, i) => results[i].error);
+    if (spodleteli.length > 0) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const ponovno = await Promise.all(
+        spodleteli.map((u) =>
+          db
+            .from("avtonet_oglasi")
+            .update({ last_seen: now, cena_eur: u.row.cenaEur, km: u.row.km, status: u.status })
+            .eq("id", u.id)
+        )
+      );
+      const napaka = ponovno.find((r) => r.error);
+      if (napaka?.error) throw new Error(`Posodobitev oglasa ni uspela: ${napaka.error.message}`);
+    }
   }
 
   // A snapshot per advert per round was the original design, and measurement
