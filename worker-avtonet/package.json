@@ -35,6 +35,7 @@
     "popravi:novo": "tsx src/popravi-novo.ts",
     "koncaj:fazo": "tsx src/koncaj-fazo.ts",
     "report": "tsx src/report-once.ts",
+    "statistika": "tsx src/statistika-once.ts",
     "test:dvojni": "tsx src/test-dvojni.ts"
   },
   "dependencies": {

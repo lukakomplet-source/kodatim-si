@@ -7,6 +7,8 @@ import { claimResearch, finishResearch, requestResearch, saveProgress, type Job 
 import { runResearch, type Progress } from "./research.js";
 import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
+import { izracunajStatistiko } from "./statistika.js";
+import { posljiDealFeed } from "./dealfeed.js";
 
 /**
  * SBN Auto collector — the long-running production process.
@@ -281,6 +283,24 @@ async function main(): Promise<void> {
     }
   };
 
+  // All aggregates the pages show, recomputed after every research (and after
+  // linking, so relists are already excluded). Deal Feed email once per day.
+  let lastFeedDay: string | null = null;
+  const maybeStatistika = async (): Promise<void> => {
+    try {
+      await izracunajStatistiko(db, log);
+    } catch (err) {
+      log("warn", "statistika ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (lastFeedDay !== today) {
+      lastFeedDay = today;
+      const izid = await posljiDealFeed(db);
+      log("info", "deal feed", { posiljanje: izid });
+    }
+  };
+
   // Retention runs once per calendar day too: prune the oldest snapshots, log
   // events and finished adverts so the local DB stays bounded (see retention.ts).
   let lastPruneDay: string | null = null;
@@ -301,6 +321,7 @@ async function main(): Promise<void> {
     const job = await claimResearch(db);
     if (job) await runJob(db, job);
     await maybeLinkVehicles();
+    await maybeStatistika();
     await maybeSendReport();
     await maybePrune();
     return;
@@ -363,6 +384,7 @@ async function main(): Promise<void> {
     if (job) {
       await runJob(db, job);
       await maybeLinkVehicles();
+      await maybeStatistika();
       await maybeSendReport();
       await maybePrune();
       continue; // Another request may already be waiting.
