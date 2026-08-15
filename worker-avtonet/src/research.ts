@@ -380,8 +380,20 @@ export async function runResearch(
     // Disappearance only from a fully complete sweep. Anything less has not seen
     // the whole market, so "not seen" says nothing about a listing.
     if (vseRezinePopolne && !opts.shouldStop?.()) {
-      const { data: scope } = await db.from("avtonet_oglasi").select("avtonet_id").eq("status", "aktiven");
-      p.izginulih = await markDisappeared(db, [...seenIds], (scope ?? []).map((s) => s.avtonet_id as string));
+      // "Seen" is judged by last_seen against the research's ORIGINAL start, so
+      // adverts swept before a crash-and-resume still count as seen. The old
+      // in-memory seen-set forgot them on resume and once marked 29,730 live
+      // adverts gone in a single stroke.
+      const { data: vrstaRaziskave } = await db
+        .from("avtonet_raziskave")
+        .select("zacetek, zahtevano_ob")
+        .eq("id", opts.raziskavaId)
+        .maybeSingle();
+      const zacetekRaziskave =
+        (vrstaRaziskave as { zacetek: string | null; zahtevano_ob: string } | null)?.zacetek ??
+        (vrstaRaziskave as { zahtevano_ob: string } | null)?.zahtevano_ob ??
+        new Date().toISOString();
+      p.izginulih = await markDisappeared(db, zacetekRaziskave);
       p.pregled_popoln = true;
       log("info", "izginuli oglasi zabelezeni", { izginilo: p.izginulih });
       dnevnik.zapisi("info", `Pregled celotnega trga popoln — ${p.izginulih} oglasov ni več na oglasniku`);

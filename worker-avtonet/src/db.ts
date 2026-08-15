@@ -463,11 +463,36 @@ export async function countMissingDetail(db: Db): Promise<number> {
  * listing not seen in one narrow search would declare the whole database gone
  * the first time somebody scrapes a single brand.
  */
-export async function markDisappeared(db: Db, seenIds: string[], scopeIds: string[]): Promise<number> {
-  if (scopeIds.length === 0) return 0;
-  const seen = new Set(seenIds);
-  const missing = scopeIds.filter((id) => !seen.has(id));
-  if (missing.length === 0) return 0;
+export async function markDisappeared(db: Db, sweepZacetek: string): Promise<number> {
+  // "Seen" is read from the DATABASE, not from process memory: every advert the
+  // sweep touched had its last_seen bumped, and that survives crashes and
+  // restarts. The in-memory seen-set this replaced did not — a research resumed
+  // after a crash skipped its completed slices, "saw" nothing, and on 15.08
+  // marked 29,730 live adverts as disappeared in one stroke.
+  //
+  // Unseen this sweep = aktiven AND last_seen older than the research's ORIGINAL
+  // start (pre-crash sightings count, exactly as they should).
+
+  // Sanity fuse: a complete sweep that failed to see almost half the active
+  // market did not measure disappearance — it malfunctioned. Refuse to mark.
+  const { count: aktivnihSkupaj } = await db
+    .from("avtonet_oglasi")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "aktiven");
+  const { count: neVidenih } = await db
+    .from("avtonet_oglasi")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "aktiven")
+    .lt("last_seen", sweepZacetek);
+  if (!aktivnihSkupaj || neVidenih === null) return 0;
+  if (neVidenih === 0) return 0;
+  if (neVidenih > aktivnihSkupaj * 0.4) {
+    console.warn(
+      `[izginuli] VAROVALKA: ${neVidenih} od ${aktivnihSkupaj} aktivnih ni bilo videnih — ` +
+        "tak pregled ni izmeril izginotja, oznacevanje preskoceno."
+    );
+    return 0;
+  }
 
   const now = new Date().toISOString();
 
@@ -476,10 +501,10 @@ export async function markDisappeared(db: Db, seenIds: string[], scopeIds: strin
     const { error } = await db
       .from("avtonet_oglasi")
       .update({ status: "izginil", status_spremenjen: now })
-      .in("avtonet_id", missing)
-      .eq("status", "aktiven");
+      .eq("status", "aktiven")
+      .lt("last_seen", sweepZacetek);
     if (error) throw new Error(`Označevanje izginulih ni uspelo: ${error.message}`);
-    return missing.length;
+    return neVidenih;
   }
 
   // Two-strike rule. One complete sweep without the advert only RECORDS the
@@ -490,57 +515,56 @@ export async function markDisappeared(db: Db, seenIds: string[], scopeIds: strin
   // The confirmed advert's status_spremenjen is set to manjka_od — the moment
   // it actually left the board — not to now, so "days on market" is not
   // inflated by one sweep interval for every single sale.
-  //
-  // The .in() lists are chunked: a full sweep can carry thousands of ids and
-  // PostgREST receives filters via the URL, which has a length ceiling.
-  const KOS = 200;
   let potrjenih = 0;
 
-  for (let i = 0; i < missing.length; i += KOS) {
-    const kos = missing.slice(i, i + KOS);
-
-    // Which of these are already on their first strike?
-    const { data: zeManjkajo, error: bralna } = await db
+  // Strike two → confirmed gone, timed from the FIRST absence. Read the
+  // candidates (paged past PostgREST's 1000-row ceiling), group by manjka_od so
+  // each update sets the correct historical moment, update in chunked id lists
+  // (filters travel in the URL, which has a length ceiling).
+  const drugiUdarec: { avtonet_id: string; manjka_od: string }[] = [];
+  for (let od = 0; ; od += 1000) {
+    const { data, error } = await db
       .from("avtonet_oglasi")
       .select("avtonet_id, manjka_od")
-      .in("avtonet_id", kos)
       .eq("status", "aktiven")
-      .not("manjka_od", "is", null);
-    if (bralna) throw new Error(`Branje manjkajočih ni uspelo: ${bralna.message}`);
+      .lt("last_seen", sweepZacetek)
+      .not("manjka_od", "is", null)
+      .range(od, od + 999);
+    if (error) throw new Error(`Branje manjkajočih ni uspelo: ${error.message}`);
+    const rows = (data ?? []) as { avtonet_id: string; manjka_od: string }[];
+    drugiUdarec.push(...rows);
+    if (rows.length < 1000) break;
+  }
 
-    const drugiUdarec = (zeManjkajo ?? []) as { avtonet_id: string; manjka_od: string }[];
-    const drugiIds = new Set(drugiUdarec.map((z) => z.avtonet_id));
-    const prviIds = kos.filter((id) => !drugiIds.has(id));
-
-    // Strike two → confirmed gone, timed from the FIRST absence.
-    // Grouped by manjka_od so each update sets the correct historical moment.
-    const poCasu = new Map<string, string[]>();
-    for (const z of drugiUdarec) {
-      const arr = poCasu.get(z.manjka_od) ?? [];
-      arr.push(z.avtonet_id);
-      poCasu.set(z.manjka_od, arr);
-    }
-    for (const [manjkaOd, idsSkupine] of poCasu) {
+  const poCasu = new Map<string, string[]>();
+  for (const z of drugiUdarec) {
+    const arr = poCasu.get(z.manjka_od) ?? [];
+    arr.push(z.avtonet_id);
+    poCasu.set(z.manjka_od, arr);
+  }
+  const KOS = 200;
+  for (const [manjkaOd, idsSkupine] of poCasu) {
+    for (let i = 0; i < idsSkupine.length; i += KOS) {
+      const kos = idsSkupine.slice(i, i + KOS);
       const { error } = await db
         .from("avtonet_oglasi")
         .update({ status: "izginil", status_spremenjen: manjkaOd })
-        .in("avtonet_id", idsSkupine)
+        .in("avtonet_id", kos)
         .eq("status", "aktiven");
       if (error) throw new Error(`Označevanje izginulih ni uspelo: ${error.message}`);
-      potrjenih += idsSkupine.length;
-    }
-
-    // Strike one → just remember when we first missed it.
-    if (prviIds.length > 0) {
-      const { error } = await db
-        .from("avtonet_oglasi")
-        .update({ manjka_od: now })
-        .in("avtonet_id", prviIds)
-        .eq("status", "aktiven")
-        .is("manjka_od", null);
-      if (error) throw new Error(`Beleženje prve odsotnosti ni uspelo: ${error.message}`);
+      potrjenih += kos.length;
     }
   }
+
+  // Strike one → just remember when we first missed it. One set-based update:
+  // the condition IS the filter, no id lists needed.
+  const { error: prviErr } = await db
+    .from("avtonet_oglasi")
+    .update({ manjka_od: now })
+    .eq("status", "aktiven")
+    .lt("last_seen", sweepZacetek)
+    .is("manjka_od", null);
+  if (prviErr) throw new Error(`Beleženje prve odsotnosti ni uspelo: ${prviErr.message}`);
 
   return potrjenih;
 }
