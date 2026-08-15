@@ -59,8 +59,8 @@ type Odziv = {
 };
 
 /** Fast while something is happening, slow while nothing is. */
-const POLL_AKTIVNO_MS = 3000;
-const POLL_MIRNO_MS = 20_000;
+const POLL_AKTIVNO_MS = 10_000;
+const POLL_MIRNO_MS = 60_000;
 
 /**
  * Elapsed time. `now` is passed in rather than read here: a running research has

@@ -29,8 +29,8 @@ type Odziv = {
   dogodki: Dogodek[];
 };
 
-const POLL_AKTIVNO_MS = 2000;
-const POLL_MIRNO_MS = 10_000;
+const POLL_AKTIVNO_MS = 8000;
+const POLL_MIRNO_MS = 40_000;
 /** Enough to read back over a few pages; beyond that the browser pays for nothing. */
 const MAX_VRSTIC = 2000;
 
