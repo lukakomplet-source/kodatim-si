@@ -134,8 +134,56 @@ export function buildResultsUrl(opts: {
   return `https://www.avto.net/Ads/results.asp?${znamka}&${p.toString()}`;
 }
 
+/**
+ * A hard ceiling on any single browser call.
+ *
+ * `page.goto` has always had one; nothing else did — and on 16.08 the collector
+ * hung for ninety minutes inside a call that simply never returned. The process
+ * stayed alive, held its port, logged nothing and reported no error, so neither
+ * the watchdog nor the console noticed. A promise that can never settle is the
+ * one failure a retry loop cannot survive, so every call gets a deadline and a
+ * name to report when it expires.
+ */
+export const KLIC_TIMEOUT_MS = Number(process.env.AVTONET_CALL_TIMEOUT_MS ?? 60_000);
+
+export class ZastojError extends Error {
+  constructor(kaj: string, ms: number) {
+    super(`Klic brskalnika "${kaj}" se ni odzval v ${Math.round(ms / 1000)} s`);
+    this.name = "ZastojError";
+  }
+}
+
+export function zOmejitvijo<T>(kaj: string, delo: Promise<T>, ms = KLIC_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new ZastojError(kaj, ms)), ms);
+    delo.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+/** Closing must never be what hangs the collector — a leaked context is cheaper. */
+async function zapri(context: { close(): Promise<void> }): Promise<void> {
+  try {
+    await zOmejitvijo("context.close", context.close(), 15_000);
+  } catch {
+    // The browser is unresponsive; the process-level stall guard handles that.
+  }
+}
+
 export async function openBrowser(): Promise<Browser> {
-  return chromium.launch({ args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  return zOmejitvijo(
+    "chromium.launch",
+    chromium.launch({ args: ["--no-sandbox", "--disable-dev-shm-usage"] }),
+    90_000
+  );
 }
 
 /**
@@ -147,12 +195,15 @@ export async function openBrowser(): Promise<Browser> {
  * value and are dropped, leaving only real brands.
  */
 export async function fetchBrands(browser: Browser): Promise<string[]> {
-  const context = await browser.newContext({
-    locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
+  const context = await zOmejitvijo(
+    "browser.newContext",
+    browser.newContext({
+      locale: "sl-SI",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    })
+  );
+  const page = await zOmejitvijo("context.newPage", context.newPage());
   try {
     const response = await page.goto("https://www.avto.net/", {
       waitUntil: "domcontentloaded",
@@ -161,18 +212,18 @@ export async function fetchBrands(browser: Browser): Promise<string[]> {
     const status = response?.status() ?? 0;
     if (status === 403 || status === 429) throw new BlockedError(status);
 
-    const znamke = await page.evaluate(() => {
+    const znamke = await zOmejitvijo("page.evaluate(znamke)", page.evaluate(() => {
       const sel = document.querySelector<HTMLSelectElement>('select[name="znamka"]');
       if (!sel) return [];
       return Array.from(sel.options)
         .map((o) => o.value.trim())
         .filter((v) => v && v !== "0" && !v.startsWith("-"));
-    });
+    }));
     // De-duplicate defensively; the select occasionally repeats a value across
     // its "popular" and "all" groups.
     return [...new Set(znamke)];
   } finally {
-    await context.close();
+    await zapri(context);
   }
 }
 
@@ -188,19 +239,22 @@ export async function fetchBrands(browser: Browser): Promise<string[]> {
  * would land in the specification bag and drown the real fields.
  */
 export async function fetchDetailPage(browser: Browser, url: string): Promise<DetailRaw> {
-  const context = await browser.newContext({
-    locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
+  const context = await zOmejitvijo(
+    "browser.newContext",
+    browser.newContext({
+      locale: "sl-SI",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    })
+  );
+  const page = await zOmejitvijo("context.newPage", context.newPage());
 
   try {
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
     const status = response?.status() ?? 0;
     if (status === 403 || status === 429) throw new BlockedError(status);
 
-    return await page.evaluate(() => {
+    return await zOmejitvijo("page.evaluate(detajl)", page.evaluate(() => {
       const pairs: Record<string, string> = {};
       for (const tr of Array.from(document.querySelectorAll("table tr"))) {
         const cells = Array.from(tr.querySelectorAll("td,th")).map((c) =>
@@ -226,9 +280,9 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
         .filter((s, i, a) => a.indexOf(s) === i)
         .slice(0, 3);
       return { pairs, naslov, slike, text: (document.body.innerText ?? "").replace(/\r/g, "") };
-    });
+    }));
   } finally {
-    await context.close();
+    await zapri(context);
   }
 }
 
@@ -246,18 +300,24 @@ export type Stevilo =
  * twenty-one deep only to discover the repetition that signals truncation.
  */
 export async function fetchCount(browser: Browser, url: string): Promise<Stevilo> {
-  const context = await browser.newContext({
-    locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
+  const context = await zOmejitvijo(
+    "browser.newContext",
+    browser.newContext({
+      locale: "sl-SI",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    })
+  );
+  const page = await zOmejitvijo("context.newPage", context.newPage());
   try {
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
     const status = response?.status() ?? 0;
     if (status === 403 || status === 429) throw new BlockedError(status);
 
-    const summary = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
+    const summary = await zOmejitvijo(
+      "page.evaluate(summary)",
+      page.evaluate(() => document.body.innerText.replace(/\s+/g, " "))
+    );
 
     if (/Preko\s+[\d.]+\s+oglas/i.test(summary)) return { vrsta: "cezCap" };
     const m = summary.match(/Prikazano\s+([\d.]+)\s+oglas/i);
@@ -267,18 +327,21 @@ export async function fetchCount(browser: Browser, url: string): Promise<Stevilo
     }
     return { vrsta: "prazno" };
   } finally {
-    await context.close();
+    await zapri(context);
   }
 }
 
 /** One results page, parsed. Throws BlockedError on 403/429 so the caller stops. */
 export async function fetchResultsPage(browser: Browser, url: string): Promise<ParsedRow[]> {
-  const context = await browser.newContext({
-    locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  });
-  const page = await context.newPage();
+  const context = await zOmejitvijo(
+    "browser.newContext",
+    browser.newContext({
+      locale: "sl-SI",
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    })
+  );
+  const page = await zOmejitvijo("context.newPage", context.newPage());
 
   try {
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
@@ -287,11 +350,14 @@ export async function fetchResultsPage(browser: Browser, url: string): Promise<P
 
     // The rows are server-rendered, so their presence is the signal that the
     // page is a real result set and not the site's own error page.
-    const rows = await page.$$eval(RESULTS_ROW, (nodes) =>
-      nodes.map((n) => ({
-        text: (n.textContent ?? "").replace(/\s+/g, " ").trim(),
-        href: n.querySelector<HTMLAnchorElement>('a[href*="details.asp?id="]')?.getAttribute("href") ?? "",
-      }))
+    const rows = await zOmejitvijo(
+      "page.$$eval(rows)",
+      page.$$eval(RESULTS_ROW, (nodes) =>
+        nodes.map((n) => ({
+          text: (n.textContent ?? "").replace(/\s+/g, " ").trim(),
+          href: n.querySelector<HTMLAnchorElement>('a[href*="details.asp?id="]')?.getAttribute("href") ?? "",
+        }))
+      )
     );
 
     const parsed: ParsedRow[] = [];
@@ -301,7 +367,7 @@ export async function fetchResultsPage(browser: Browser, url: string): Promise<P
     }
     return parsed;
   } finally {
-    await context.close();
+    await zapri(context);
   }
 }
 

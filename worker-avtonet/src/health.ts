@@ -64,9 +64,13 @@ export const KODA_ZE_TECE = 3;
 export function startHealthServer(port: number): Server {
   const server = createServer((req, res) => {
     const snap = current();
+    // A frozen process still answers on its port, so the port alone proves
+    // nothing. The age of the liveness stamp is what the watchdog reads: it
+    // grows without bound exactly when the collector is wedged.
+    const zastoj = mirovanjeMs();
     const healthy = snap.state !== "ustavljeno";
     res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ ok: healthy, ...snap }, null, 2));
+    res.end(JSON.stringify({ ok: healthy, heartbeatAgeMs: zastoj, ...snap }, null, 2));
   });
 
   // A taken port means another worker is already running, which is a reason to
@@ -91,4 +95,22 @@ export function startHealthServer(port: number): Server {
     console.log(JSON.stringify({ t: new Date().toISOString(), lvl: "info", msg: `health na portu ${port}` }));
   });
   return server;
+}
+
+/**
+ * Liveness stamp for the stall guard in index.ts.
+ *
+ * Lives here rather than in index.ts so the research loop can mark itself alive
+ * without importing the entry point: a legitimate cooling pause (the source
+ * pushing back can mean an hour of deliberate waiting) must not look like the
+ * process being wedged.
+ */
+let zadnjiPremik = Date.now();
+
+export function premik(): void {
+  zadnjiPremik = Date.now();
+}
+
+export function mirovanjeMs(): number {
+  return Date.now() - zadnjiPremik;
 }

@@ -20,6 +20,7 @@ import {
   type Db,
 } from "./db.js";
 import { objaviStanje, ustvariZascito } from "./zascita.js";
+import { premik } from "./health.js";
 
 /**
  * When the running research entered phase 2.
@@ -698,6 +699,8 @@ async function detailPhase(
       let cakaj = Math.max(stanje.delayMs, stanje.pavzaDo - Date.now(), zascita.cakanje());
       while (cakaj > 0) {
         if (ctx.shouldStop?.() || stanje.ustavi || zascita.ustaviSe()) return;
+        // Waiting on purpose is not a stall — say so on every slice.
+        premik();
         await sleep(Math.min(cakaj, 5_000));
         cakaj = Math.max(stanje.pavzaDo - Date.now(), zascita.cakanje() - stanje.delayMs);
       }
@@ -795,6 +798,9 @@ async function detailPhase(
       // what the collector is doing instead of just a rising error count.
       if (Date.now() - objavaOb > 30_000) {
         objavaOb = Date.now();
+        // Deliberate waiting is still being alive: a cooling pause can last an
+        // hour, and the stall guard must not mistake it for a wedged process.
+        premik();
         await objaviStanje(db, {
           ...zascita.stanje(),
           faza: "detajli",

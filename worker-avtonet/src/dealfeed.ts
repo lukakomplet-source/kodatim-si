@@ -73,7 +73,10 @@ export async function posljiDealFeed(db: Db): Promise<"poslano" | "preskoceno" |
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from,
-        to: [to],
+        // Several recipients, comma-separated, exactly as the daily report
+        // already accepts them — the feed used to go to one address only, so
+        // everyone else on the team simply never saw it.
+        to: to.split(",").map((t) => t.trim()).filter(Boolean),
         subject: `🎯 SBN Deal Feed — ${deals.length} poslov (${datum})`,
         html: renderDealFeedHtml(deals, datum),
       }),

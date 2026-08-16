@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { BlockedError } from "./collector.js";
 import { connect, reportHealth, type Db } from "./db.js";
-import { current, startHealthServer, update, type WorkerState } from "./health.js";
+import { current, mirovanjeMs, premik, startHealthServer, update, type WorkerState } from "./health.js";
 import { buildDailyReport, sendDailyReport } from "./report.js";
 import { claimResearch, finishResearch, requestResearch, saveProgress, type Job } from "./jobs.js";
 import { runResearch, type Progress } from "./research.js";
@@ -113,6 +113,42 @@ function naslednjiTermin(hours: number[]): Date {
 let stopping = false;
 
 /**
+ * The stall guard: the last time this process made any visible progress.
+ *
+ * On 16.08 the collector hung inside a browser call for ninety minutes — alive,
+ * holding its port, logging nothing, reporting no error. Every retry and backoff
+ * in this worker assumes a call eventually returns; none of them fires when the
+ * process simply stops. So progress is stamped here, and a timer that runs
+ * outside all of that work checks the stamp: no movement for the budget means
+ * the process is wedged, and the honest response is to die so the wrapper
+ * script can start a healthy one. Since the restart reclaims the running
+ * research immediately, that costs seconds, not a run.
+ */
+const ZASTOJ_MS = Number(process.env.AVTONET_STALL_MS ?? 12 * 60_000);
+
+function zazeniNadzorZastoja(db: Db): void {
+  const t = setInterval(() => {
+    const mirujeMs = mirovanjeMs();
+    if (mirujeMs < ZASTOJ_MS) return;
+    clearInterval(t);
+    const minut = Math.round(mirujeMs / 60_000);
+    log("error", "ZASTOJ - proces se ne premika, koncujem, da se lahko zazene znova", {
+      mirovanjeMin: minut,
+      opomba: "raziskava ostane 'tece' in jo nova instanca prevzame takoj",
+    });
+    // Best effort: leave a trace in the database for the console, then exit.
+    void reportHealth(db, {
+      heartbeat: new Date().toISOString(),
+      stanje: "napaka",
+      zadnja_napaka: `Zastoj: ${minut} min brez premika — zbiralnik se je sam ponovno zagnal`,
+    }).finally(() => process.exit(1));
+    // If even that write hangs, do not wait for it.
+    setTimeout(() => process.exit(1), 10_000).unref();
+  }, 60_000);
+  t.unref();
+}
+
+/**
  * Runs one research requested from the dashboard or the schedule, reporting
  * into its row.
  *
@@ -140,6 +176,7 @@ async function runJob(db: Db, job: Job): Promise<void> {
       log,
       shouldStop: () => cancelled || stopping,
       onProgress: async (p) => {
+        premik();
         if (!(await saveProgress(db, job.id, p))) {
           cancelled = true;
           log("warn", "raziskava je bila preklicana", { raziskava: job.id });
@@ -242,6 +279,7 @@ async function main(): Promise<void> {
   }
 
   const db = connect();
+  if (!once) zazeniNadzorZastoja(db);
   log("info", "zbiralnik zagnan", {
     nacin: URNIK ? "urnik + rocne zahteve" : "caka na rocne zahteve",
     urnikOb: URNIK ? hours : "izklopljen",
@@ -426,6 +464,8 @@ async function main(): Promise<void> {
       continue; // Another request may already be waiting.
     }
 
+    // An idle worker is not a stalled one: the poll itself is progress.
+    premik();
     await reportHealth(db, { heartbeat: new Date().toISOString() });
     await sleep(POLL_MS);
   }
