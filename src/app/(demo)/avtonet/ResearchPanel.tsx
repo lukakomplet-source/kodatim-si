@@ -48,6 +48,8 @@ type Urnik = { omogocen: boolean; ure: string };
 
 type Prostor = { uporabljeno: number | null; limit: number };
 
+type Blokada = { do: string | null; stopnja: number; faktor: number; razlog: string | null };
+
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
@@ -56,6 +58,7 @@ type Odziv = {
   skupno?: Skupno;
   urnik?: Urnik | null;
   prostor?: Prostor;
+  blokada?: Blokada | null;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -198,7 +201,11 @@ export function ResearchPanel() {
           <button
             type="button"
             onClick={zazeni}
-            disabled={posiljam || odziv.migracijaManjka}
+            disabled={
+              posiljam ||
+              odziv.migracijaManjka ||
+              Boolean(odziv.blokada?.do && new Date(odziv.blokada.do).getTime() > now && now > 0)
+            }
             className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {posiljam ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -229,6 +236,21 @@ export function ResearchPanel() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {napaka}
         </p>
+      )}
+
+      {odziv.blokada?.do && new Date(odziv.blokada.do).getTime() > now && now > 0 && (
+        <div className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+          <p className="font-semibold">
+            ⏸️ Vir nas trenutno blokira — zbiranje počiva še{" "}
+            {Math.max(0, Math.round((new Date(odziv.blokada.do).getTime() - now) / 60_000))} min
+          </p>
+          <p className="mt-1 text-xs">
+            {odziv.blokada.razlog ?? "Avto.net je vrnil 403."} Vsak poskus vmes blokado podaljša, zato
+            zbiralnik počaka sam in nato nadaljuje počasneje
+            {odziv.blokada.faktor > 1 ? ` (${odziv.blokada.faktor}× večji razmiki)` : ""}. Zbrani
+            podatki ostanejo nedotaknjeni.
+          </p>
+        </div>
       )}
 
       {odziv.prostor && odziv.prostor.uporabljeno !== null && (

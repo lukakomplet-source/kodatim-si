@@ -8,6 +8,7 @@ import { runResearch, type Progress } from "./research.js";
 import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
 import { izracunajStatistiko } from "./statistika.js";
+import { blokiran, minutDoKonca, preberiBlokado, zabelezBlokado, zabelezUspeh } from "./blokada.js";
 import { posljiDealFeed } from "./dealfeed.js";
 
 /**
@@ -158,6 +159,8 @@ async function runJob(db: Db, job: Job): Promise<void> {
       return; // Left as `tece`: the next worker picks it up where it stood.
     } else {
       await finishResearch(db, job.id, "koncano", progress);
+      // A clean finish forgets any block and hands some speed back.
+      await zabelezUspeh(db);
       update({
         lastSuccessAt: new Date().toISOString(),
         lastError: null,
@@ -195,6 +198,16 @@ async function runJob(db: Db, job: Job): Promise<void> {
 
     update({ lastError: message, consecutiveFailures: failures, state });
     await finishResearch(db, job.id, "napaka", progress, message);
+    // A 403/429 is the source telling us to go away. Park collecting for hours
+    // (longer each time) instead of letting the schedule walk straight back in.
+    if (blocked) {
+      const b = await zabelezBlokado(db, "Vir je vrnil 403");
+      log("warn", "vir blokira - zbiranje pocakalo", {
+        do: b.do,
+        stopnja: b.stopnja,
+        faktor: b.faktor,
+      });
+    }
     await reportHealth(db, {
       zadnja_napaka: message,
       zaporednih_napak: failures,
@@ -355,6 +368,15 @@ async function main(): Promise<void> {
   while (!stopping) {
     const ure = await osveziUrnik();
     if (termin && Date.now() >= termin.getTime()) {
+      // Never walk into an active block: each attempt makes the next block
+      // arrive sooner (measured: 631 -> 953 -> 31 pages before the 403).
+      const bl = await preberiBlokado(db);
+      if (blokiran(bl)) {
+        log("warn", "termin preskocen - vir blokira", { se: minutDoKonca(bl) + " min", stopnja: bl.stopnja });
+        termin = naslednjiTermin(ure);
+        await sleep(POLL_MS);
+        continue;
+      }
       const out = await requestResearch(db);
       if ("zeTece" in out) {
         // A research is still running from earlier (the first full fill can
@@ -370,6 +392,15 @@ async function main(): Promise<void> {
 
     let job: Job | null = null;
     try {
+      const bl = await preberiBlokado(db);
+      if (blokiran(bl)) {
+        // A queued request (e.g. the dashboard button) waits out the block
+        // rather than burning it — the row stays, so it starts by itself after.
+        await reportHealth(db, { heartbeat: new Date().toISOString(), stanje: "opozorilo",
+          zadnja_napaka: `Vir blokira — zbiranje počiva še ${minutDoKonca(bl)} min` });
+        await sleep(POLL_MS);
+        continue;
+      }
       job = await claimResearch(db);
     } catch (err) {
       // Not being able to READ the queue is a database problem, not a

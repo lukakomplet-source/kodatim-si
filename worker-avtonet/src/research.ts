@@ -20,6 +20,7 @@ import {
   type Db,
 } from "./db.js";
 import { objaviStanje, ustvariZascito } from "./zascita.js";
+import { preberiBlokado } from "./blokada.js";
 import { runSavedSearches } from "./alerts.js";
 import { odpriDnevnik, opisOglasa, type EventSink } from "./events.js";
 import { CAP, korenskaRezina, razdeli, type Rezina } from "./rezine.js";
@@ -139,6 +140,21 @@ export async function runResearch(
 ): Promise<Progress> {
   const { onProgress, log } = opts;
   const cfg = nastavitve();
+
+  // Come back slower after a block: the factor doubles on every 403 and halves
+  // after a clean run, so the collector converges on a pace the source tolerates
+  // instead of waiting for someone to tune the delays by hand.
+  const bl = await preberiBlokado(db);
+  if (bl.faktor > 1) {
+    cfg.delayListMs = Math.round(cfg.delayListMs * bl.faktor);
+    cfg.delayDetailMs = Math.round(cfg.delayDetailMs * bl.faktor);
+    cfg.detailConcurrency = 1;
+    log("info", "po blokadi zbiram pocasneje", {
+      faktor: bl.faktor,
+      list: cfg.delayListMs,
+      detail: cfg.delayDetailMs,
+    });
+  }
   const dnevnik: EventSink = odpriDnevnik(db, opts.raziskavaId ?? null);
   const raziskavaId = opts.raziskavaId ?? null;
 

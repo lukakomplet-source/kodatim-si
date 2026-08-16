@@ -29,6 +29,25 @@ export async function zazeniRaziskavo(): Promise<ActionResult & { id?: string }>
   }
 
   const db = createAvtonetClient();
+
+  // Refuse while the source is blocking us. Every attempt into an active block
+  // makes the next one arrive sooner (measured: 631 -> 953 -> 31 pages before
+  // the 403), so the button must not be a way to make things worse.
+  const { data: bl } = await db
+    .from("avtonet_statistika")
+    .select("podatki")
+    .eq("kljuc", "blokada")
+    .maybeSingle();
+  const blokada = (bl as { podatki: { do?: string | null; razlog?: string | null } } | null)?.podatki;
+  if (blokada?.do && new Date(blokada.do).getTime() > Date.now()) {
+    const minut = Math.round((new Date(blokada.do).getTime() - Date.now()) / 60_000);
+    return {
+      error:
+        `Avto.net nas trenutno blokira, zato zbiranje počiva še ${minut} min. ` +
+        "Vsak poskus vmes blokado podaljša — raziskava se bo zagnala sama, ko mine.",
+    };
+  }
+
   const { data, error } = await db
     .from("avtonet_raziskave")
     .insert({ status: "zahtevano", sprozil: user.id })
