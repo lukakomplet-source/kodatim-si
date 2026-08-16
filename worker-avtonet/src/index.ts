@@ -349,6 +349,8 @@ async function main(): Promise<void> {
   // dashboard takes effect within one poll — no redeploy, no restart.
   let urnikKljuc = "";
   let termin: Date | null = null;
+  // Only the first poll may reclaim this machine's own interrupted research.
+  let prviKrog = true;
 
   const osveziUrnik = async (): Promise<number[]> => {
     const iz = await beriUrnik(db);
@@ -401,7 +403,10 @@ async function main(): Promise<void> {
         await sleep(POLL_MS);
         continue;
       }
-      job = await claimResearch(db);
+      // First pass after startup takes back a research this machine was running
+      // when it stopped, without waiting out the stale window.
+      job = await claimResearch(db, prviKrog);
+      prviKrog = false;
     } catch (err) {
       // Not being able to READ the queue is a database problem, not a
       // collecting problem: it must not trigger the failure back-off that

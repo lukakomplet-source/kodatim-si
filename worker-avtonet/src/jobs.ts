@@ -58,8 +58,16 @@ function toJob(row: Row, nadaljevanje: boolean): Job {
  * followed by a write: two workers racing for the same row means exactly one
  * update matches and the loser gets no row back.
  */
-export async function claimResearch(db: Db): Promise<Job | null> {
-  const cutoff = new Date(Date.now() - staleAfterMs()).toISOString();
+/**
+ * @param takoj  Take over a running research regardless of how recently it was
+ *   written. Only the first pass after startup may do this: the collector binds
+ *   port 8080 as a mutex, so reaching this point proves no other worker is
+ *   alive on this machine, and the fifteen-minute wait would otherwise be a
+ *   dead zone after every restart or crash — the row says `tece`, nobody is
+ *   working it, and the console shows a run that has stopped moving.
+ */
+export async function claimResearch(db: Db, takoj = false): Promise<Job | null> {
+  const cutoff = new Date(takoj ? Date.now() + 1000 : Date.now() - staleAfterMs()).toISOString();
 
   const { data: stale } = await db
     .from("avtonet_raziskave")
