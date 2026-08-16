@@ -16,8 +16,10 @@ import {
   markDisappeared,
   saveDetail,
   upsertListings,
+  zabelezNeuspehDetajla,
   type Db,
 } from "./db.js";
+import { objaviStanje, ustvariZascito } from "./zascita.js";
 import { runSavedSearches } from "./alerts.js";
 import { odpriDnevnik, opisOglasa, type EventSink } from "./events.js";
 import { CAP, korenskaRezina, razdeli, type Rezina } from "./rezine.js";
@@ -634,19 +636,29 @@ async function detailPhase(
   const { p, dnevnik, log } = ctx;
   let idx = 0;
   const stanje = { delayMs: ctx.delayMs, pavzaDo: 0, blokad: 0, ustavi: false };
+  // The self-healing guard: watches the recent success rate, withdraws when the
+  // source stops answering, speeds back up when it does. See zascita.ts.
+  const zascita = ustvariZascito(ctx.delayMs, log);
+  let objavaOb = 0;
 
-  const naslednji = (): { id: string; avtonet_id: string } | null =>
+  const naslednji = (): { id: string; avtonet_id: string; detajl_poskusov?: number } | null =>
     idx < queue.length ? queue[idx++] : null;
 
   const delavec = async (): Promise<void> => {
     for (;;) {
-      if (ctx.shouldStop?.() || stanje.ustavi) return;
+      if (ctx.shouldStop?.() || stanje.ustavi || zascita.ustaviSe()) return;
       const item = naslednji();
       if (!item) return;
 
-      // Respect a backoff pause set by a block, plus the per-request spacing.
-      const cakaj = Math.max(stanje.delayMs, stanje.pavzaDo - Date.now());
-      if (cakaj > 0) await sleep(cakaj);
+      // Spacing, plus any withdrawal the guard has ordered. A cool-down can be
+      // many minutes, so it is served in short slices — otherwise a cancel or a
+      // shutdown would have to wait out the whole pause.
+      let cakaj = Math.max(stanje.delayMs, stanje.pavzaDo - Date.now(), zascita.cakanje());
+      while (cakaj > 0) {
+        if (ctx.shouldStop?.() || stanje.ustavi || zascita.ustaviSe()) return;
+        await sleep(Math.min(cakaj, 5_000));
+        cakaj = Math.max(stanje.pavzaDo - Date.now(), zascita.cakanje() - stanje.delayMs);
+      }
 
       try {
         const raw = await fetchDetailPage(browser, detailUrl(item.avtonet_id));
@@ -684,6 +696,7 @@ async function detailPhase(
         // A good response is evidence the source is not pushing back; let the
         // spacing relax back toward the configured value.
         if (stanje.delayMs > ctx.delayMs) stanje.delayMs = Math.max(ctx.delayMs, stanje.delayMs / 2);
+        zascita.zabelezi("uspeh");
       } catch (err) {
         if (err instanceof BlockedError) {
           stanje.blokad += 1;
@@ -705,7 +718,42 @@ async function detailPhase(
         p.napak += 1;
         p.zadnja_napaka = err instanceof Error ? err.message : String(err);
         p.detajlov_v_vrsti = Math.max(0, p.detajlov_skupaj - p.detajlov_obdelanih - p.napak);
-        dnevnik.zapisi("napaka", `Podrobnosti ${item.avtonet_id}: ${p.zadnja_napaka}`);
+
+        // Park this advert for a while (exponential per advert), so a page that
+        // is permanently broken cannot be retried every round forever.
+        await zabelezNeuspehDetajla(db, item.id, item.detajl_poskusov ?? 0);
+
+        // Judge the SOURCE, not the advert: an empty page is the soft block we
+        // were blind to. Once the recent failure share collapses, the guard
+        // withdraws — and if it does not recover, it ends the round instead of
+        // grinding out thousands of errors.
+        const prazna = /prazna vsebina/i.test(p.zadnja_napaka);
+        const odlocitev = zascita.zabelezi(prazna ? "prazna" : "druga");
+        const st = zascita.stanje();
+        if (st.razlog && st.pavzaDo > Date.now()) {
+          dnevnik.zapisi("napaka", `Zaščita: ${st.razlog}`);
+        }
+        if (odlocitev === "ustavi") {
+          dnevnik.zapisi(
+            "info",
+            `Zaščita je ustavila zbiranje podrobnosti za ta krog (${zascita.razlogUstavitve() ?? ""}). Preostali oglasi ostanejo v vrsti.`
+          );
+          await ctx.onProgress(p);
+          return;
+        }
+        if (!prazna) {
+          dnevnik.zapisi("napaka", `Podrobnosti ${item.avtonet_id}: ${p.zadnja_napaka}`);
+        } else if (p.napak % 25 === 0) {
+          // Empty pages come in floods; one line per 25 keeps the log readable.
+          dnevnik.zapisi("napaka", `Vir vrača prazne strani (${p.napak} skupaj) — zaščita spremlja stanje`);
+        }
+      }
+
+      // Publish the guard's state at most every 30 s, so the console can show
+      // what the collector is doing instead of just a rising error count.
+      if (Date.now() - objavaOb > 30_000) {
+        objavaOb = Date.now();
+        await objaviStanje(db, { ...zascita.stanje(), faza: "detajli", ob: new Date().toISOString() });
       }
 
       if (p.detajlov_obdelanih % 10 === 0) {

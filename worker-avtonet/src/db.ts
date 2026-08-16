@@ -349,6 +349,41 @@ async function imaNatancnost(db: Db): Promise<boolean> {
   return natancnostNaVoljo;
 }
 
+/** Whether migration_avtonet_poskusi.sql (detajl_poskusov, …) is in. */
+let poskusiNaVoljo: boolean | null = null;
+
+async function imaPoskuse(db: Db): Promise<boolean> {
+  if (poskusiNaVoljo !== null) return poskusiNaVoljo;
+  const { error } = await db.from("avtonet_oglasi").select("detajl_poskusov").limit(1);
+  poskusiNaVoljo = !error;
+  return poskusiNaVoljo;
+}
+
+/**
+ * Records a failed detail attempt and pushes the advert into the future.
+ *
+ * Backoff is exponential in hours (2^n, capped at 48) so a page that is
+ * permanently broken stops costing a request every round, while a page that
+ * failed because the source was blocking us comes back soon enough. Never
+ * throws: bookkeeping must not fail a run.
+ */
+export async function zabelezNeuspehDetajla(db: Db, oglasId: string, doslejPoskusov: number): Promise<void> {
+  if (!(await imaPoskuse(db))) return;
+  const poskusov = doslejPoskusov + 1;
+  const ur = Math.min(48, Math.pow(2, Math.min(poskusov, 6)));
+  try {
+    await db
+      .from("avtonet_oglasi")
+      .update({
+        detajl_poskusov: poskusov,
+        detajl_naslednji_poskus: new Date(Date.now() + ur * 3_600_000).toISOString(),
+      })
+      .eq("id", oglasId);
+  } catch {
+    // Ignored on purpose — see doc comment.
+  }
+}
+
 /** Whether migration_avtonet_vozila.sql (vozilo_id, slike_urls, …) is in. */
 let vozilaNaVoljo: boolean | null = null;
 
@@ -372,6 +407,12 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
     detajl_zajet: new Date().toISOString(),
     detajl_verzija: DETAJL_VERZIJA,
   };
+
+  // A success clears the advert's failure history: whatever was wrong is over.
+  if (await imaPoskuse(db)) {
+    patch.detajl_poskusov = 0;
+    patch.detajl_naslednji_poskus = null;
+  }
 
   // The detail page's heading is a cleaner source for these three than the
   // results row, so it overwrites them — but only when it actually parsed
@@ -431,17 +472,34 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
 export async function listingsMissingDetail(
   db: Db,
   limit: number
-): Promise<{ id: string; avtonet_id: string }[]> {
+): Promise<{ id: string; avtonet_id: string; detajl_poskusov?: number }[]> {
   const zVerzijo = await imaV2(db);
-  const q = db.from("avtonet_oglasi").select("id, avtonet_id").eq("status", "aktiven");
-  const { data, error } = await (zVerzijo
-    ? q.lt("detajl_verzija", DETAJL_VERZIJA)
-    : q.is("detajl_zajet", null))
+  const zPoskusi = await imaPoskuse(db);
+  const stolpci: string = zPoskusi ? "id, avtonet_id, detajl_poskusov" : "id, avtonet_id";
+  let q = db.from("avtonet_oglasi").select(stolpci).eq("status", "aktiven") as unknown as {
+    lt(c: string, v: unknown): typeof q;
+    is(c: string, v: unknown): typeof q;
+    or(f: string): typeof q;
+    order(c: string, o: { ascending: boolean; nullsFirst?: boolean }): typeof q;
+    limit(n: number): PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+  };
+  q = zVerzijo ? q.lt("detajl_verzija", DETAJL_VERZIJA) : q.is("detajl_zajet", null);
+
+  // Adverts parked by earlier failures are skipped until their time comes, and
+  // the ones that never failed are served first — so a round spends its budget
+  // on pages that are likely to answer, not on known-broken ones.
+  if (zPoskusi) {
+    q = q
+      .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lte.${new Date().toISOString()}`)
+      .order("detajl_poskusov", { ascending: true });
+  }
+
+  const { data, error } = await q
     .order("detajl_zajet", { ascending: true, nullsFirst: true })
     .limit(limit);
 
   if (error) throw new Error(`Branje oglasov brez podrobnosti ni uspelo: ${error.message}`);
-  return (data ?? []) as { id: string; avtonet_id: string }[];
+  return (data ?? []) as { id: string; avtonet_id: string; detajl_poskusov?: number }[];
 }
 
 /** How many adverts still need a detail pass — sized with a COUNT, never a read. */
