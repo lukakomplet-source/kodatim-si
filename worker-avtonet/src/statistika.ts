@@ -581,6 +581,7 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
   {
     type Deal = {
       avtonetId: string; url: string; naziv: string | null; model: string;
+      znamka: string | null; modelIme: string | null; zasluzek: number; potencial: number;
       cena: number; medianaKohorte: number; odstopanjePct: number; vzorec: number;
       letnik: number | null; km: number | null; jeDealer: boolean | null;
       oglediNaDan: number | null; delez14: number | null; kmAnomalija: boolean;
@@ -639,15 +640,67 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       if (o.je_dealer === false) razlogi.push("zasebnik — prostor za pogajanje");
       if (kmAnomalija) razlogi.push("⚠️ km izrazito pod povprečjem letnika — preverite zgodovino");
 
+      // What the gap is actually worth, and how sellable it is.
+      //
+      // Percentage alone puts a 1.599 EUR Golf above a 17.990 EUR Passat with the
+      // same 45 % gap, even though one is 1.300 EUR of headroom and the other
+      // 14.000 EUR. "Interesting to flip" = money on the table, discounted by how
+      // fast that model actually moves and by anything that smells wrong.
+      const zasluzek = Math.round(medCena - cena);
+      const likvidnost = 0.5 + Math.min(1, (delez14 ?? 30) / 60); // 0.5 .. 1.5
+      // A 60.000 EUR gap measured against nine comparables is arithmetic, not
+      // evidence — thin cohorts get scaled down instead of leading the list.
+      const zanesljivost = Math.min(1, vrstniki.length / 20);
+      const potencial = Math.round(
+        zasluzek * likvidnost * zanesljivost * (kmAnomalija ? 0.4 : 1)
+      );
+
       deals.push({
         avtonetId: o.avtonet_id, url: o.url, naziv: o.naziv, model: mk,
+        znamka: o.znamka, modelIme: o.model, zasluzek, potencial,
         cena, medianaKohorte: Math.round(medCena), odstopanjePct: Math.round(odst * 10) / 10,
         vzorec: vrstniki.length, letnik: o.letnik, km: o.km, jeDealer: o.je_dealer,
         oglediNaDan: on, delez14, kmAnomalija, tocke: Math.round(tocke * 10) / 10, razlogi,
       });
     }
     deals.sort((a, b) => b.tocke - a.tocke);
-    await zapisi(db, "deal_feed", { deals: deals.slice(0, 20), pregledanih: aktivni.length });
+
+    // The same car is often posted twice (a dealer re-uploads it, or one advert
+    // sits under two IDs). Identical title, price, mileage and year is that, not
+    // two opportunities — and unfiltered it wastes two slots in a row.
+    const videni = new Set<string>();
+    const brezDvojnikov = deals.filter((d) => {
+      const k = `${(d.naziv ?? d.model).trim().toLowerCase()}|${d.cena}|${d.km ?? "?"}|${d.letnik ?? "?"}`;
+      if (videni.has(k)) return false;
+      videni.add(k);
+      return true;
+    });
+
+    // Kept generously wide (was 20) so the brand/model/year filters on the Posli
+    // page have something to filter: a Renault-only view of the top twenty is
+    // usually empty. Roughly 150 KB of JSON, no extra queries.
+    //
+    // Two rankings, then their union: cutting by percentage score alone would
+    // drop exactly the expensive cars with the largest euro headroom, which are
+    // the ones worth buying to resell.
+    const izbrani = new Map<string, Deal>();
+    for (const d of brezDvojnikov.slice(0, 250)) izbrani.set(d.avtonetId, d);
+    const poPotencialu = [...brezDvojnikov].sort((a, b) => b.potencial - a.potencial);
+    for (const d of poPotencialu.slice(0, 150)) izbrani.set(d.avtonetId, d);
+    // A per-brand quota on top of the global cut. Without it the list is 64 %
+    // Volkswagen (the brand with the fattest cohorts), and the brand filter on
+    // the Posli page offers thirteen options for a market of sixty.
+    const naZnamko = new Map<string, number>();
+    for (const d of poPotencialu) {
+      const z = d.znamka ?? "?";
+      const n = naZnamko.get(z) ?? 0;
+      if (n >= 15) continue;
+      naZnamko.set(z, n + 1);
+      izbrani.set(d.avtonetId, d);
+    }
+    const shranjeni = [...izbrani.values()].sort((a, b) => b.potencial - a.potencial);
+
+    await zapisi(db, "deal_feed", { deals: shranjeni, pregledanih: aktivni.length });
   }
 
   // ---- seznam znamk in modelov (za filtrirne obrazce) --------------------
