@@ -161,4 +161,13 @@ export async function objaviStanje(db: Db, s: StanjeStanje): Promise<void> {
   }
 }
 
-export type StanjeStanje = StanjeZascite & { faza: string; ob: string };
+export type StanjeStanje = StanjeZascite & {
+  faza: string;
+  ob: string;
+  /**
+   * When phase 2 started. The console's "how much longer" was dividing details
+   * done by the WHOLE run's elapsed time — including the hours of phase 1, when
+   * no detail is fetched at all — and so announced 26 h for an hour of work.
+   */
+  faza2Od?: string;
+};

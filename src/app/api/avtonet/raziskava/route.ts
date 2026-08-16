@@ -67,7 +67,7 @@ export async function GET() {
   // already-captured adverts were correctly skipped. Reporting the standing
   // totals alongside makes the real progress visible and a restart obviously
   // harmless.
-  const [aktivnihRes, zDetajliRes, urnikRes, prostorRes, blokadaRes] = await Promise.all([
+  const [aktivnihRes, zDetajliRes, urnikRes, prostorRes, blokadaRes, zbiralnikRes] = await Promise.all([
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db
       .from("avtonet_oglasi")
@@ -79,6 +79,7 @@ export async function GET() {
     // avtonet DB has this RPC; on the cloud fallback it simply comes back null.
     db.rpc("avtonet_db_size"),
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "blokada").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki").eq("kljuc", "zbiralnik").maybeSingle(),
   ]);
 
   const uporabljeno =
@@ -99,5 +100,10 @@ export async function GET() {
     // Source-block state: the console must say "the source is blocking us",
     // not show a red error row that looks like our bug.
     blokada: blokadaRes.error ? null : ((blokadaRes.data as { podatki: unknown } | null)?.podatki ?? null),
+    // What the collector's self-protection is doing, and — importantly for the
+    // estimate — when phase 2 started.
+    zbiralnik: zbiralnikRes.error
+      ? null
+      : ((zbiralnikRes.data as { podatki: unknown } | null)?.podatki ?? null),
   });
 }

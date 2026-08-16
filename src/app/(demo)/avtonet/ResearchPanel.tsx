@@ -50,6 +50,17 @@ type Prostor = { uporabljeno: number | null; limit: number };
 
 type Blokada = { do: string | null; stopnja: number; faktor: number; razlog: string | null };
 
+type Zbiralnik = {
+  faza: string;
+  ob: string;
+  faza2Od?: string;
+  delayMs: number;
+  hlajenj: number;
+  pavzaDo: number;
+  napakVOknu: number;
+  vOknu: number;
+};
+
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
@@ -59,6 +70,7 @@ type Odziv = {
   urnik?: Urnik | null;
   prostor?: Prostor;
   blokada?: Blokada | null;
+  zbiralnik?: Zbiralnik | null;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -261,7 +273,7 @@ export function ResearchPanel() {
         <UrnikBox urnik={odziv.urnik ?? null} zgodovina={odziv.zgodovina} now={now} onSaved={preberi} />
       )}
 
-      {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} />}
+      {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} zbiralnik={odziv.zbiralnik} />}
 
       {odziv.zgodovina.length > 0 && <Zgodovina vrstice={odziv.zgodovina} now={now} />}
     </section>
@@ -513,7 +525,17 @@ function UrnikBox({
 }
 
 /** The live view of a run: which phase, how far, how long, and what went wrong. */
-function Napredek({ r, now, skupno }: { r: Raziskava; now: number; skupno?: Skupno }) {
+function Napredek({
+  r,
+  now,
+  skupno,
+  zbiralnik,
+}: {
+  r: Raziskava;
+  now: number;
+  skupno?: Skupno;
+  zbiralnik?: Zbiralnik | null;
+}) {
   const caka = r.status === "zahtevano";
   // A request nobody has picked up within two minutes almost always means the
   // worker is not running. Saying so beats a spinner that spins for an hour.
@@ -533,12 +555,27 @@ function Napredek({ r, now, skupno }: { r: Raziskava; now: number; skupno?: Skup
   // ETA from the rate this run is actually achieving, not from a fixed guess.
   // The old version assumed ten seconds per advert — the delay before the worker
   // was sped up — and so announced 112 hours for work that takes about twenty.
-  const tecelMs = r.zacetek ? now - new Date(r.zacetek).getTime() : 0;
+  //
+  // Measured over PHASE 2 only. Dividing by the whole run's elapsed time counts
+  // the hours of phase 1, when no advert detail is fetched at all: 70 details
+  // after a 3-hour market sweep read as 0.36 adverts/min and announced "26 h 44
+  // min" for work the collector was in fact doing at ten a minute — about an
+  // hour. The worker publishes when phase 2 began; without it (an older worker,
+  // or the row not written yet) no number is shown rather than a wrong one.
+  const faza2Od = zbiralnik?.faza2Od ? new Date(zbiralnik.faza2Od).getTime() : null;
+  const detajliMs = faza2Od !== null && now > 0 ? now - faza2Od : 0;
   const naMinuto =
-    r.detajlov_obdelanih >= 10 && tecelMs > 60_000
-      ? r.detajlov_obdelanih / (tecelMs / 60_000)
+    r.detajlov_obdelanih >= 5 && detajliMs > 60_000
+      ? r.detajlov_obdelanih / (detajliMs / 60_000)
       : null;
   const oceneMinut = naMinuto !== null ? Math.round(preostaloDetajlov / naMinuto) : null;
+
+  // Cooling and an enlarged delay are the two things that legitimately slow the
+  // tempo down; saying so beats leaving the user to wonder whether it is stuck.
+  const hlajenjeMin =
+    zbiralnik && zbiralnik.pavzaDo > now && now > 0
+      ? Math.ceil((zbiralnik.pavzaDo - now) / 60_000)
+      : 0;
 
   return (
     <div className="mt-5 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
@@ -596,9 +633,17 @@ function Napredek({ r, now, skupno }: { r: Raziskava; now: number; skupno?: Skup
           </p>
           <p className="mt-1 text-[11px] text-zinc-400">
             V tem krogu obdelanih {stevilo(r.detajlov_obdelanih)}
-            {naMinuto !== null && ` · ${Math.round(naMinuto)} oglasov/min`}. Ob ponovnem zagonu se
-            obdelani oglasi preskočijo — odstotek zgoraj se nikoli ne vrne nazaj.
+            {naMinuto !== null &&
+              ` · ${naMinuto >= 1 ? `${naMinuto.toFixed(1)} oglasov/min` : `${Math.round(60 / naMinuto)} s na oglas`}`}
+            {zbiralnik?.delayMs ? ` · razmik ${Math.round(zbiralnik.delayMs / 100) / 10} s` : ""}. Ob
+            ponovnem zagonu se obdelani oglasi preskočijo — odstotek zgoraj se nikoli ne vrne nazaj.
           </p>
+          {hlajenjeMin > 0 && (
+            <p className="mt-1 text-[11px] text-amber-700">
+              Zaščita hladi zbiranje še {hlajenjeMin} min (vir vrača prazne strani) — ocena zgoraj
+              tega premora ne šteje.
+            </p>
+          )}
         </div>
       )}
 

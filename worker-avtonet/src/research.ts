@@ -20,6 +20,15 @@ import {
   type Db,
 } from "./db.js";
 import { objaviStanje, ustvariZascito } from "./zascita.js";
+
+/**
+ * When the running research entered phase 2.
+ *
+ * Module scope on purpose: one worker process runs one research at a time (the
+ * unique index on the queue guarantees it), and the detail loop lives in its own
+ * function — threading a timestamp through every call site would buy nothing.
+ */
+let faza2Od: string | undefined;
 import { preberiBlokado } from "./blokada.js";
 import { runSavedSearches } from "./alerts.js";
 import { odpriDnevnik, opisOglasa, type EventSink } from "./events.js";
@@ -446,11 +455,28 @@ export async function runResearch(
     // Counts what the queue itself uses, including adverts captured by an older
     // parser. Duplicating the condition here once meant the phase reported a
     // backlog that did not match the work it then pulled.
+    // The clock the console measures the detail tempo against.
+    faza2Od = new Date().toISOString();
+
     const manjka = await countMissingDetail(db);
     p.detajlov_skupaj = cfg.detailLimit > 0 ? Math.min(manjka, cfg.detailLimit) : manjka;
     p.detajlov_v_vrsti = p.detajlov_skupaj;
     await onProgress(p);
     log("info", "zacenjam 2. fazo", { zaObdelavo: p.detajlov_skupaj });
+    // Published right away, so the console can measure the tempo from the first
+    // advert rather than from the first 30-second heartbeat.
+    await objaviStanje(db, {
+      delayMs: cfg.delayDetailMs,
+      hlajenj: 0,
+      pavzaDo: 0,
+      vOknu: 0,
+      napakVOknu: 0,
+      ustavi: false,
+      razlog: null,
+      faza: "detajli",
+      ob: new Date().toISOString(),
+      faza2Od,
+    });
     dnevnik.zapisi(
       "faza",
       `2. faza — podrobnosti samo za nove/brez podatkov: ${p.detajlov_skupaj} manjkajočih, ${cfg.detailConcurrency} vzporedno`
@@ -769,7 +795,12 @@ async function detailPhase(
       // what the collector is doing instead of just a rising error count.
       if (Date.now() - objavaOb > 30_000) {
         objavaOb = Date.now();
-        await objaviStanje(db, { ...zascita.stanje(), faza: "detajli", ob: new Date().toISOString() });
+        await objaviStanje(db, {
+          ...zascita.stanje(),
+          faza: "detajli",
+          ob: new Date().toISOString(),
+          faza2Od,
+        });
       }
 
       if (p.detajlov_obdelanih % 10 === 0) {

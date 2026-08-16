@@ -1653,10 +1653,11 @@ export default function LeadScrapeClient() {
                 className="h-4 w-4"
               />
               <span className="text-sm text-zinc-700">
-                Samo kontakti (email + telefon)
+                Samo kontakti (email + telefon + kontaktne osebe)
                 <span className="block text-[11px] text-zinc-400">
-                  ~3× hitreje — brez opisa, spletne strani in AJPES detajla. Kasnejši poln skrejp jih
-                  ob uvozu dopolni.
+                  ~3× hitreje — brez opisa, spletne strani in AJPES detajla. Osebe (direktor,
+                  lastniki, prokurist) se zberejo z imenom in priimkom, tudi če jih je več. Kasnejši
+                  poln skrejp dopolni ostalo.
                 </span>
               </span>
             </span>

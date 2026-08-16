@@ -293,10 +293,13 @@ export type QuickCompleteOptions = {
    */
   skipAjpesWhenKnown?: boolean;
   /**
-   * "Only find email + phone". The two heaviest steps — the AJPES detail read
-   * and the last-resort website search — contribute nothing to a contact-only
-   * scrape, so they are skipped, and Bizi runs only if CompanyWall left a
-   * contact field empty. Roughly a third of the per-company time of a full run.
+   * "Only find the contact": email, phone and the people to address — director,
+   * owners, prokurist, with first and last name, however many there are.
+   *
+   * The two heaviest steps — the description read and the last-resort website
+   * search — contribute nothing to that, so they are skipped, and the AJPES
+   * detail is opened only when no other source named a person. Roughly a third
+   * of the per-company time of a full run.
    */
   contactsOnly?: boolean;
 };
@@ -430,7 +433,7 @@ export async function quickComplete(
   const fastModeSkip =
     (skipAjpesWhenKnown || contactsOnly) && known?.vat_id?.trim() && known?.registration_number?.trim()
       ? contactsOnly
-        ? "AJPES detajl preskočen — način „samo kontakti“: iščemo le email in telefon."
+        ? "AJPES detajl preskočen — način „samo kontakti“: iščemo email, telefon in kontaktne osebe."
         : "AJPES preskočen — nastavitev „Hitro“: davčna in matična sta že znani, detajl (regija, druge dejavnosti, ustanovitelji) se izpusti za hitrost."
       : null;
   const skipAjpes = fastModeSkip ?? ajpesSkipReason(working as unknown as IntelLead);
@@ -461,17 +464,31 @@ export async function quickComplete(
 
   const biziResult = await runProvider(biziProvider);
 
+  /** Any named person from the registries — director, owners, prokurist. */
+  const imamoOsebe = (dodatno?: PublicProviderResult | null): boolean => {
+    const iz = (key: string) => fields[key] || dodatno?.fields?.[key]?.value;
+    return collectContactPersons({
+      director: iz("director") ?? "",
+      owners: iz("owners") ?? "",
+      authorized_representatives: iz("authorized_representatives") ?? "",
+    }).length > 0;
+  };
+
   const preskociZaKontakt = contactsOnly && (() => {
     // In contacts-only mode, a full contact from Bizi means CompanyWall has
     // nothing left to add — don't spend it. Check against Bizi's result, since
     // it is not absorbed yet.
+    //
+    // "Contact" here includes the people: CompanyWall is where the director,
+    // the owners and the prokurist come from, so skipping it on an email and a
+    // phone alone is what left the Kontaktne osebe column empty in this mode.
     const biziEmail = biziResult?.fields?.email?.value;
     const biziPhone = biziResult?.fields?.phone?.value;
-    return Boolean((fields.email || biziEmail) && (fields.phone || biziPhone));
+    return Boolean((fields.email || biziEmail) && (fields.phone || biziPhone) && imamoOsebe(biziResult));
   })();
 
   if (preskociZaKontakt) {
-    report(companyWallProvider.label, "preskočeno — kontakt že najden (Bizi)", "info");
+    report(companyWallProvider.label, "preskočeno — kontakt in osebe že najdeni (Bizi)", "info");
   } else if (cwWait > cwCap) {
     companyWallDeferred = true;
     const note = `preskočeno za zdaj — vir je trenutno omejen (naslednji termin čez ~${Math.round(cwWait / 1000)} s). Podjetje bo dopolnjeno ob naslednjem krogu.`;
@@ -483,6 +500,17 @@ export async function quickComplete(
 
   if (companyWallResult) absorb(companyWallProvider, companyWallResult);
   if (biziResult) absorb(biziProvider, biziResult);
+
+  // Names are the one thing the fast path can end up without: CompanyWall may
+  // have been rate-limited or may simply not list the people. AJPES's detail
+  // page always does (zastopniki, družbeniki), so it is opened as a fallback —
+  // only for this company, only when nothing else produced a person, so the
+  // mode stays fast for the majority where CompanyWall answered.
+  if (contactsOnly && fastModeSkip && !imamoOsebe()) {
+    report(ajpesProvider.label, "kontaktnih oseb še ni — odpiram AJPES detajl", "info");
+    const ajpesResult = await runProvider(ajpesProvider);
+    if (ajpesResult) absorb(ajpesProvider, ajpesResult);
+  }
 
   const bankrupt = isBankrupt(fields.company_status);
   let websiteNote = website ? "objavljena v registru." : "";
