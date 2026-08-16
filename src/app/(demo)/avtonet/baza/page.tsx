@@ -11,7 +11,9 @@ import {
   type FiltrirljivaPoizvedba,
 } from "@/lib/avtonet/filtriVozil";
 import { preberiStatistike } from "@/lib/avtonet/statistikaBranje";
+import { razvrstitevIzParam, stolpecZa } from "@/lib/avtonet/razvrscanje";
 import { FiltriVozilForm, type ZnamkaZModeli } from "../FiltriVozilForm";
+import { RazvrstiIzbira } from "../RazvrstiIzbira";
 import { KakoDeluje } from "../KakoDeluje";
 
 /**
@@ -76,6 +78,7 @@ export default async function BazaPage({
   const od = (stran - 1) * NA_STRAN;
   const status = typeof sp.status === "string" ? sp.status : "";
   const filtri = filtriIzParams(sp);
+  const razvrstitev = razvrstitevIzParam(sp.razvrsti);
   const aktivnihFiltrov = steviloFiltrov(filtri);
 
   const db = createAvtonetClient();
@@ -83,7 +86,7 @@ export default async function BazaPage({
   // A shallow structural view of the builder: chaining on the full Supabase
   // generic re-instantiates its row types at every step and trips TS2589.
   type Poizvedba = FiltrirljivaPoizvedba & {
-    order(c: string, o: { ascending: boolean }): Poizvedba;
+    order(c: string, o: { ascending: boolean; nullsFirst?: boolean }): Poizvedba;
     range(a: number, b: number): PromiseLike<{
       data: unknown[] | null;
       count: number | null;
@@ -101,7 +104,13 @@ export default async function BazaPage({
   q = uporabiFiltre(q, filtri);
   if (status) q = q.eq("status", status) as Poizvedba;
 
-  const { data, count, error } = await q.order("first_seen", { ascending: false }).range(od, od + NA_STRAN - 1);
+  const ureditev = stolpecZa(razvrstitev);
+  const { data, count, error } = await q
+    .order(ureditev.stolpec, { ascending: ureditev.ascending, nullsFirst: ureditev.nullsFirst })
+    // A stable tiebreaker: without it two adverts of the same year (or price, or
+    // mileage) can swap places between pages and appear twice or not at all.
+    .order("id", { ascending: true })
+    .range(od, od + NA_STRAN - 1);
 
   // The brand→models catalogue, precomputed by the worker's statistics step.
   const st = await preberiStatistike(["modeli_seznam"]);
@@ -262,11 +271,14 @@ export default async function BazaPage({
         </p>
       ) : (
         <>
-          <p className="mt-5 text-sm text-zinc-500">
-            {skupaj.toLocaleString("sl-SI")} oglasov
-            {(aktivnihFiltrov > 0 || status) && " po izbranih pogojih"} · stran {stran} od{" "}
-            {zadnjaStran}
-          </p>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-zinc-500">
+              {skupaj.toLocaleString("sl-SI")} oglasov
+              {(aktivnihFiltrov > 0 || status) && " po izbranih pogojih"} · stran {stran} od{" "}
+              {zadnjaStran}
+            </p>
+            <RazvrstiIzbira />
+          </div>
 
           <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
             <table className="min-w-full text-left text-sm">

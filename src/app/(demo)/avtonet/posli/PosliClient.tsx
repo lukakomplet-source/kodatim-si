@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 import { eur } from "@/lib/avtonet/analiza";
+import { RAZVRSTITVE as OGLASNE, primerjaj, type Razvrstitev as OglasnaRazvrstitev } from "@/lib/avtonet/razvrscanje";
 
 /**
  * The Deal Feed's filters and list.
@@ -40,14 +41,16 @@ export type Deal = {
 
 const KORAK = 20;
 
-type Razvrstitev = "potencial" | "zasluzek" | "odstotek" | "hitrost" | "cena";
+/** The deal-specific orders, plus every order the source itself offers. */
+type PoselRazvrstitev = "potencial" | "zasluzek" | "odstotek" | "hitrost";
 
-const RAZVRSTITVE: { vrednost: Razvrstitev; oznaka: string }[] = [
+type Razvrstitev = PoselRazvrstitev | OglasnaRazvrstitev;
+
+const POSLOVNE: { vrednost: PoselRazvrstitev; oznaka: string }[] = [
   { vrednost: "potencial", oznaka: "Najbolj zanimivi za prodajo" },
   { vrednost: "zasluzek", oznaka: "Največja razlika v €" },
   { vrednost: "odstotek", oznaka: "Največ % pod mediano" },
   { vrednost: "hitrost", oznaka: "Najhitreje prodani modeli" },
-  { vrednost: "cena", oznaka: "Najnižja cena" },
 ];
 
 const izbira =
@@ -112,15 +115,31 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
       return true;
     });
 
-    const kljuc: Record<Razvrstitev, (d: Deal) => number> = {
+    const poslovne: Record<PoselRazvrstitev, (d: Deal) => number> = {
       potencial: (d) => d.potencial,
       zasluzek: (d) => d.zasluzek,
       odstotek: (d) => d.odstopanjePct,
       hitrost: (d) => d.delez14 ?? -1,
-      cena: (d) => -d.cena,
     };
-    const f = kljuc[razvrsti];
-    return [...izbrani].sort((a, b) => f(b) - f(a));
+    if (razvrsti in poslovne) {
+      const f = poslovne[razvrsti as PoselRazvrstitev];
+      return [...izbrani].sort((a, b) => f(b) - f(a));
+    }
+    // The shared comparator speaks the database's field names; a deal keeps its
+    // price in `cena`, so it is handed over under the name it expects.
+    const oglasna = primerjaj<{
+      znamka: string | null;
+      naziv: string | null;
+      cena_eur: number;
+      letnik: number | null;
+      km: number | null;
+    }>(razvrsti as OglasnaRazvrstitev);
+    return [...izbrani].sort((a, b) =>
+      oglasna(
+        { znamka: a.znamka, naziv: a.naziv, cena_eur: a.cena, letnik: a.letnik, km: a.km },
+        { znamka: b.znamka, naziv: b.naziv, cena_eur: b.cena, letnik: b.letnik, km: b.km }
+      )
+    );
   }, [deals, znamka, model, od, do_, cOd, cDo, razvrsti]);
 
   const filtriran = Boolean(znamka || model || letnikOd || letnikDo || cenaOd || cenaDo);
@@ -263,11 +282,24 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
             }}
             className={`${izbira} min-w-56`}
           >
-            {RAZVRSTITVE.map((r) => (
-              <option key={r.vrednost} value={r.vrednost}>
-                {r.oznaka}
-              </option>
-            ))}
+            <optgroup label="Po priložnosti">
+              {POSLOVNE.map((r) => (
+                <option key={r.vrednost} value={r.vrednost}>
+                  {r.oznaka}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Kot na Avto.netu">
+              {/* Engine power and first-seen date are not part of a scored deal,
+                  so those orders are left out rather than offered as no-ops. */}
+              {OGLASNE.filter(
+                (r) => !["novi", "stari", "moc_vec", "moc_manj"].includes(r.kljuc)
+              ).map((r) => (
+                <option key={r.kljuc} value={r.kljuc}>
+                  {r.oznaka}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
 

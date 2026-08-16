@@ -6,7 +6,9 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 import { naslovVozila, povzetekFiltra, type Spremljanje } from "@/lib/avtonet/spremljanja";
 import { jeNov, najdiUjemanja, prodajalecNeznan } from "@/lib/avtonet/ujemanje";
 import { eur } from "@/lib/avtonet/analiza";
+import { primerjaj, razvrstitevIzParam } from "@/lib/avtonet/razvrscanje";
 import { OznaciVideno } from "./OznaciVideno";
+import { RazvrstiIzbira } from "../../RazvrstiIzbira";
 import { KakoDeluje } from "../../KakoDeluje";
 
 /**
@@ -19,8 +21,15 @@ import { KakoDeluje } from "../../KakoDeluje";
 
 export const dynamic = "force-dynamic";
 
-export default async function SpremljanjePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SpremljanjePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  const razvrstitev = razvrstitevIzParam((await searchParams).razvrsti);
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik) redirect(prijavaZa(`/avtonet/spremljanje/${id}`));
 
@@ -37,7 +46,11 @@ export default async function SpremljanjePage({ params }: { params: Promise<{ id
   const lastnik = (data as unknown as { created_by: string | null }).created_by;
   if (!dostop.jeAdmin && lastnik !== dostop.userId) notFound();
 
-  const oglasi = await najdiUjemanja(db, s, 200);
+  const najdeni = await najdiUjemanja(db, s, 200);
+  // Sorted here rather than in the query: the matcher already returns the whole
+  // (capped) set, so re-ordering it costs nothing and keeps the cap meaning
+  // "the 200 newest matches" regardless of how they are then displayed.
+  const oglasi = [...najdeni].sort(primerjaj(razvrstitev));
   const novih = oglasi.filter((o) => jeNov(o, s.zadnji_ogled)).length;
   const neznanih = oglasi.filter(prodajalecNeznan).length;
 
@@ -123,6 +136,12 @@ export default async function SpremljanjePage({ params }: { params: Promise<{ id
         </p>
       )}
 
+      {oglasi.length > 1 && (
+        <div className="mt-5 flex justify-end">
+          <RazvrstiIzbira />
+        </div>
+      )}
+
       {oglasi.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-zinc-200 bg-white px-6 py-12 text-center">
           <h2 className="text-lg font-semibold text-zinc-900">Trenutno ni nobenega ustreznega oglasa</h2>
@@ -132,7 +151,7 @@ export default async function SpremljanjePage({ params }: { params: Promise<{ id
           </p>
         </div>
       ) : (
-        <div className="mt-6 space-y-2.5">
+        <div className="mt-3 space-y-2.5">
           {oglasi.map((o) => {
             const nov = jeNov(o, s.zadnji_ogled);
             const znizano =
