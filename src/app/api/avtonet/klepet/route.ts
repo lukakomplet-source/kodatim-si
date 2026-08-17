@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { preberiDostop } from "@/lib/avtonet/dostop";
 import { createAvtonetClient } from "@/lib/avtonet/db";
-import { chatJSON } from "@/lib/openai";
+import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { DOSEG, DOSEG_PREDPONE } from "@/lib/avtonet/aiScope";
 import { preveriZmoznost } from "@/lib/avtonet/aiZmoznost";
 
@@ -46,6 +46,7 @@ ${DOSEG.map((d) => `- ${d}`).join("\n")}
 
 Pravila:
 - Odgovarjaj v slovenščini, kratko in konkretno: 2–5 povedi ali do 5 alinej.
+- Kadar je priložena slika zaslona, najprej z eno povedjo povej, kaj na njej vidiš (kateri del strani, katera vrednost ali napaka). Ne ugibaj besedila, ki ga na sliki ni mogoče prebrati — raje vprašaj.
 - Napiši, KAJ boš spremenil in KJE (katera stran ali del vmesnika), v jeziku uporabnika, ne v imenih datotek — razen če uporabnik sam sprašuje po datotekah.
 - Če zahteva ni jasna, NAJPREJ postavi eno konkretno vprašanje in ne izmišljuj rešitve.
 - Če zahteva zadeva del, ki ga ni dovoljeno spreminjati (KodaTim admin, druge strani, konfiguracija, avtentikacija), to jasno povej in predlagaj, kaj je znotraj dosega mogoče.
@@ -106,15 +107,34 @@ export async function POST(request: NextRequest) {
   let besedilo = "";
   let pot: string | null = null;
   let nit: string | null = null;
+  let slike: string[] = [];
   try {
     const body = await request.json();
     besedilo = typeof body?.besedilo === "string" ? body.besedilo.trim() : "";
     pot = typeof body?.pot === "string" ? body.pot.slice(0, 200) : null;
     nit = typeof body?.nit === "string" && body.nit.length > 10 ? body.nit : null;
+    // Screenshots as data URLs. Raster images only, at most three, each under a
+    // few megabytes: the point is a picture of a screen, not a file service.
+    slike = Array.isArray(body?.slike)
+      ? (body.slike as unknown[])
+          .filter(
+            (v): v is string =>
+              typeof v === "string" && /^data:image\/(png|jpe?g|webp);base64,/.test(v)
+          )
+          .filter((v) => v.length < 6_000_000)
+          .slice(0, 3)
+      : [];
   } catch {
     return NextResponse.json({ error: "Neveljavna zahteva." }, { status: 400 });
   }
-  if (besedilo.length < 3) return NextResponse.json({ error: "Napišite, kaj naj se spremeni." }, { status: 400 });
+  // With a picture attached a sentence is optional: "tole popravi" plus a
+  // screenshot is a complete request, and insisting on prose would be pedantry.
+  if (besedilo.length < 3 && slike.length === 0) {
+    return NextResponse.json(
+      { error: "Napišite, kaj naj se spremeni (ali pripnite sliko)." },
+      { status: 400 }
+    );
+  }
   if (besedilo.length > 3000) return NextResponse.json({ error: "Predolgo sporočilo." }, { status: 400 });
 
   const db = createAvtonetClient();
@@ -131,7 +151,15 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    const moje = await zapisi({ vloga: "uporabnik", vrsta: "zahteva", besedilo });
+    const moje = await zapisi({
+      vloga: "uporabnik",
+      vrsta: "zahteva",
+      // The pictures themselves are not stored: a screenshot is a megabyte of
+      // database per message, and what matters later is what was ON it — which
+      // the plan states in words. The thread records that they were there, so a
+      // later reader is not puzzled by a bare "tole popravi".
+      besedilo: besedilo || `(brez besedila — priloženih slik: ${slike.length})`,
+    });
 
     // The rest of the thread, so "ne, raje tako" means something.
     const { data: prej } = await db
@@ -148,11 +176,26 @@ export async function POST(request: NextRequest) {
     let plan = "";
     let vprasanje = false;
     try {
-      const ai = await chatJSON<{ plan?: string; vprasanje?: boolean }>(
-        SISTEM,
-        `Stran, na kateri je uporabnik: ${pot ?? "neznana"}\n\nPogovor:\n\n${zgodovina}`,
-        { temperature: 0.2 }
-      );
+      const vsebina =
+        `Stran, na kateri je uporabnik: ${pot ?? "neznana"}\n\n` +
+        (slike.length > 0
+          ? `Uporabnik je priložil ${slike.length} ${slike.length === 1 ? "sliko" : "slike"} zaslona. ` +
+            "Najprej na kratko povej, kaj vidiš na sliki (kateri del vmesnika, katera številka ali " +
+            "napaka), in šele nato napiši načrt — tako uporabnik vidi, ali sta gledala isto.\n\n"
+          : "") +
+        `Pogovor:\n\n${zgodovina}`;
+
+      const ai =
+        slike.length > 0
+          ? await chatJSONWithImages<{ plan?: string; vprasanje?: boolean }>(SISTEM, vsebina, slike, {
+              temperature: 0.2,
+              // Screenshots are dense: interface text at "low" is unreadable, and
+              // a misread number becomes a confidently wrong plan.
+              imageDetail: "high",
+            })
+          : await chatJSON<{ plan?: string; vprasanje?: boolean }>(SISTEM, vsebina, {
+              temperature: 0.2,
+            });
       plan = (ai.plan ?? "").trim();
       vprasanje = ai.vprasanje === true;
     } catch (err) {

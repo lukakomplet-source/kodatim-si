@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  ImagePlus,
   Loader2,
   MessageCircle,
   Play,
@@ -61,7 +62,11 @@ export function KlepetSprememb() {
   const [tece, setTece] = useState(false);
   const [napaka, setNapaka] = useState<string | null>(null);
   const [nit, setNit] = useState<string | null>(null);
+  // Screenshots waiting to be sent, as data URLs. Not stored anywhere after the
+  // plan is written — see the API route for why.
+  const [slike, setSlike] = useState<string[]>([]);
   const dno = useRef<HTMLDivElement | null>(null);
+  const vhodSlike = useRef<HTMLInputElement | null>(null);
 
   const preberi = useCallback(async () => {
     try {
@@ -93,25 +98,71 @@ export function KlepetSprememb() {
     if (odprt) dno.current?.scrollIntoView({ block: "end" });
   }, [odprt, stanje]);
 
+  /**
+   * A screenshot, shrunk before it is sent.
+   *
+   * A phone screenshot is three to eight megabytes; the model reads interface
+   * text perfectly well at 1600 px on the long edge, and the request goes from
+   * "sometimes fails" to instant. Drawn through a canvas rather than uploaded
+   * raw, so nothing depends on how big the user's screen is.
+   */
+  const pripraviSliko = (datoteka: File): Promise<string | null> =>
+    new Promise((resolve) => {
+      if (!datoteka.type.startsWith("image/")) return resolve(null);
+      const bralec = new FileReader();
+      bralec.onerror = () => resolve(null);
+      bralec.onload = () => {
+        const slika = new window.Image();
+        slika.onerror = () => resolve(null);
+        slika.onload = () => {
+          const NAJVEC = 1600;
+          const faktor = Math.min(1, NAJVEC / Math.max(slika.width, slika.height));
+          const platno = document.createElement("canvas");
+          platno.width = Math.round(slika.width * faktor);
+          platno.height = Math.round(slika.height * faktor);
+          const risar = platno.getContext("2d");
+          if (!risar) return resolve(null);
+          risar.drawImage(slika, 0, 0, platno.width, platno.height);
+          // PNG for screenshots: JPEG artefacts land exactly on thin interface
+          // text, which is the part that has to stay readable.
+          resolve(platno.toDataURL("image/png"));
+        };
+        slika.src = String(bralec.result);
+      };
+      bralec.readAsDataURL(datoteka);
+    });
+
+  const dodajSlike = async (datoteke: FileList | File[]) => {
+    const nove: string[] = [];
+    for (const d of Array.from(datoteke).slice(0, 3)) {
+      const url = await pripraviSliko(d);
+      if (url) nove.push(url);
+    }
+    if (nove.length === 0) return;
+    setSlike((prej) => [...prej, ...nove].slice(0, 3));
+  };
+
   if (!stanje?.prijavljen) return null;
 
   const sporocila = nit ? stanje.sporocila.filter((s) => s.nit === nit) : stanje.sporocila;
 
   const poslji = async () => {
     const besedilo = vnos.trim();
-    if (besedilo.length < 3 || tece) return;
+    // A picture alone is a complete request ("tole popravi" + posnetek).
+    if ((besedilo.length < 3 && slike.length === 0) || tece) return;
     setTece(true);
     setNapaka(null);
     try {
       const res = await fetch("/api/avtonet/klepet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ besedilo, pot, nit }),
+        body: JSON.stringify({ besedilo, pot, nit, slike }),
       });
       const data = (await res.json()) as { nit?: string; error?: string };
       if (data.error) setNapaka(data.error);
       else if (data.nit) setNit(data.nit);
       setVnos("");
+      setSlike([]);
       await preberi();
     } catch (err) {
       setNapaka(err instanceof Error ? err.message : "Zahteva ni uspela.");
@@ -222,8 +273,9 @@ export function KlepetSprememb() {
 
             {sporocila.length === 0 && (
               <p className="text-xs text-zinc-500">
-                Napiši, kaj naj se na tej strani spremeni ali doda. Dobiš načrt, kaj bi naredil; ko
-                rečeš <strong>Pojdi</strong>, se to izvede
+                Napiši, kaj naj se na tej strani spremeni ali doda — ali <strong>pripni sliko
+                zaslona</strong> (gumb levo spodaj, ali kar prilepi s Ctrl+V) in povem, kaj na njej
+                vidim. Dobiš načrt, kaj bi naredil; ko rečeš <strong>Pojdi</strong>, se to izvede
                 {stanje.smeZagnati ? " (typecheck, lint in build tečejo zares)" : ""}. Zgodovina
                 pogovora ostane tu.
               </p>
@@ -326,10 +378,65 @@ export function KlepetSprememb() {
           )}
 
           <div className="border-t border-zinc-200 p-3">
+            {slike.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {slike.map((src, i) => (
+                  <div key={i} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- data: URL, ki nikoli ne gre skozi optimizacijo slik */}
+                    <img
+                      src={src}
+                      alt={`Priložena slika ${i + 1}`}
+                      className="h-16 w-16 rounded-lg object-cover ring-1 ring-zinc-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSlike((prej) => prej.filter((_, j) => j !== i))}
+                      aria-label="Odstrani sliko"
+                      className="absolute -right-1.5 -top-1.5 rounded-full bg-zinc-900 p-0.5 text-white"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => vhodSlike.current?.click()}
+                disabled={tece || slike.length >= 3}
+                title="Pripni sliko zaslona (ali jo prilepi s Ctrl+V)"
+                aria-label="Pripni sliko"
+                className="rounded-xl border border-zinc-200 p-2.5 text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-40"
+              >
+                <ImagePlus className="h-4 w-4" />
+              </button>
+              <input
+                ref={vhodSlike}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files) void dodajSlike(e.target.files);
+                  e.target.value = "";
+                }}
+              />
               <textarea
                 value={vnos}
                 onChange={(e) => setVnos(e.target.value)}
+                onPaste={(e) => {
+                  // Ctrl+V straight from the snipping tool: the fastest way to
+                  // say "tole" is to paste the picture of it.
+                  const datoteke = Array.from(e.clipboardData.files).filter((d) =>
+                    d.type.startsWith("image/")
+                  );
+                  if (datoteke.length > 0) {
+                    e.preventDefault();
+                    void dodajSlike(datoteke);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -337,13 +444,17 @@ export function KlepetSprememb() {
                   }
                 }}
                 rows={2}
-                placeholder="npr. Na Poslih dodaj stolpec s km na leto."
+                placeholder={
+                  slike.length > 0
+                    ? "Kaj naj s tem naredim? (lahko tudi prazno)"
+                    : "npr. Na Poslih dodaj stolpec s km na leto. Sliko lahko prilepiš s Ctrl+V."
+                }
                 className="min-w-0 flex-1 resize-none rounded-xl border border-zinc-200 px-3 py-2 text-[13px] focus:border-accent/60 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={() => void poslji()}
-                disabled={tece || vnos.trim().length < 3}
+                disabled={tece || (vnos.trim().length < 3 && slike.length === 0)}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
               >
                 <Send className="h-3.5 w-3.5" />
