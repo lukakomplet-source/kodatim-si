@@ -25,6 +25,10 @@ export type Deal = {
   modelIme: string | null;
   zasluzek: number;
   potencial: number;
+  medianaTrgovcev: number | null;
+  vzorecTrgovcev: number;
+  odstopanjeTrgovciPct: number | null;
+  strogost: string;
   cena: number;
   medianaKohorte: number;
   odstopanjePct: number;
@@ -42,13 +46,14 @@ export type Deal = {
 const KORAK = 20;
 
 /** The deal-specific orders, plus every order the source itself offers. */
-type PoselRazvrstitev = "potencial" | "zasluzek" | "odstotek" | "hitrost";
+type PoselRazvrstitev = "potencial" | "zasluzek" | "odstotek" | "trgovci" | "hitrost";
 
 type Razvrstitev = PoselRazvrstitev | OglasnaRazvrstitev;
 
 const POSLOVNE: { vrednost: PoselRazvrstitev; oznaka: string }[] = [
   { vrednost: "potencial", oznaka: "Najbolj zanimivi za prodajo" },
   { vrednost: "zasluzek", oznaka: "Največja razlika v €" },
+  { vrednost: "trgovci", oznaka: "Največ pod ceno trgovcev" },
   { vrednost: "odstotek", oznaka: "Največ % pod mediano" },
   { vrednost: "hitrost", oznaka: "Najhitreje prodani modeli" },
 ];
@@ -64,6 +69,8 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
   const [cenaOd, setCenaOd] = useState("");
   const [cenaDo, setCenaDo] = useState("");
   const [razvrsti, setRazvrsti] = useState<Razvrstitev>("potencial");
+  // The arbitrage view: private sellers only, priced against what dealers ask.
+  const [samoZasebniki, setSamoZasebniki] = useState(false);
   const [prikazanih, setPrikazanih] = useState(KORAK);
 
   /** Brands with a deal behind them, most deals first. */
@@ -112,6 +119,9 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
       }
       if (cOd !== null && Number.isFinite(cOd) && d.cena < cOd) return false;
       if (cDo !== null && Number.isFinite(cDo) && d.cena > cDo) return false;
+      // Only worth showing here when there IS a dealer median to compare with —
+      // "cheap for a private car" without that number is a weaker claim.
+      if (samoZasebniki && !(d.jeDealer === false && d.medianaTrgovcev !== null)) return false;
       return true;
     });
 
@@ -119,6 +129,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
       potencial: (d) => d.potencial,
       zasluzek: (d) => d.zasluzek,
       odstotek: (d) => d.odstopanjePct,
+      trgovci: (d) => d.odstopanjeTrgovciPct ?? -1,
       hitrost: (d) => d.delez14 ?? -1,
     };
     if (razvrsti in poslovne) {
@@ -140,9 +151,11 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
         { znamka: b.znamka, naziv: b.naziv, cena_eur: b.cena, letnik: b.letnik, km: b.km }
       )
     );
-  }, [deals, znamka, model, od, do_, cOd, cDo, razvrsti]);
+  }, [deals, znamka, model, od, do_, cOd, cDo, razvrsti, samoZasebniki]);
 
-  const filtriran = Boolean(znamka || model || letnikOd || letnikDo || cenaOd || cenaDo);
+  const filtriran = Boolean(
+    znamka || model || letnikOd || letnikDo || cenaOd || cenaDo || samoZasebniki
+  );
 
   const ponastavi = () => {
     setZnamka("");
@@ -151,6 +164,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
     setLetnikDo("");
     setCenaOd("");
     setCenaDo("");
+    setSamoZasebniki(false);
     setPrikazanih(KORAK);
   };
 
@@ -272,6 +286,22 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
           </div>
         </label>
 
+        <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm">
+          <input
+            type="checkbox"
+            checked={samoZasebniki}
+            onChange={(e) => {
+              setSamoZasebniki(e.target.checked);
+              setPrikazanih(KORAK);
+            }}
+            className="h-4 w-4"
+          />
+          <span className="text-zinc-700">
+            Samo od fizičnih oseb
+            <span className="block text-[11px] text-zinc-400">primerjano s ceno trgovcev</span>
+          </span>
+        </label>
+
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-zinc-500">Razvrsti</span>
           <select
@@ -323,6 +353,16 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
         </p>
       </div>
 
+      {samoZasebniki && (
+        <p className="mt-3 rounded-xl bg-accent/5 px-4 py-3 text-xs text-zinc-600 ring-1 ring-accent/20">
+          Prikazani so <strong>samo oglasi fizičnih oseb</strong>, cena pa je primerjana z mediano{" "}
+          <strong>trgovskih</strong> oglasov istega vozila (isti model, gorivo, menjalnik in
+          karoserija; nato še isti motor in podobna oprema, kolikor je primerljivih dovolj). To je
+          razlika med tem, kar zahteva zasebnik, in tem, kar za enak avto zahtevajo trgovci — ne
+          zajamčen zaslužek: trgovčeva cena vključuje garancijo, pripravo vozila in DDV-položaj.
+        </p>
+      )}
+
       {najdeni.length === 0 ? (
         <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
           Za izbrano ni nobenega posla. Poskusite širši letnik ali drug model — seznam se osveži po
@@ -358,6 +398,14 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                       −{Math.round(d.odstopanjePct)} % pod mediano ({eur(d.medianaKohorte)})
                     </p>
                     <p className="text-xs text-zinc-500">razlika {eur(d.zasluzek)}</p>
+                    {d.jeDealer === false && d.medianaTrgovcev !== null && (
+                      <p className="mt-0.5 text-xs font-medium text-accent">
+                        trgovci: {eur(d.medianaTrgovcev)}
+                        {d.odstopanjeTrgovciPct !== null && d.odstopanjeTrgovciPct > 0 && (
+                          <> (−{Math.round(d.odstopanjeTrgovciPct)} %)</>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 

@@ -42,12 +42,65 @@ type Oglas = {
   lokacija: string | null;
   ogledov: number | null;
   starost: string | null;
+  /** Engine power in kW — the single best proxy for "same engine". */
+  kw: number | null;
+  /** Normalised equipment tags ("klima", "acc", "alu_platisca" …). */
+  oprema_znacilke: string[] | null;
 };
 
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, gorivo, menjalnik, karoserija, barva, " +
   "cena_eur, cena_prvotna_eur, status, first_seen, status_spremenjen, source_zadnja_sprememba, " +
-  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost";
+  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost, kw, oprema_znacilke";
+
+/**
+ * Gearbox as two buckets, because that is how the market prices it.
+ *
+ * The source writes "avtomatski", "avtomatski - DSG", "ročni 6 prestav" and a
+ * dozen variants; comparing an automatic against a manual of the same model is
+ * comparing two different cars, and a name-by-name match would put each variant
+ * in a cohort of its own.
+ */
+function menjalnikKljuc(v: string | null): string {
+  const t = (v ?? "").toLowerCase();
+  if (!t) return "?";
+  return /avtomat|dsg|s.tronic|tiptronic|cvt|edc|dct/.test(t) ? "avtomatski" : "rocni";
+}
+
+/** Body style, normalised — "kombilimuzina / hatchback" and "hatchback" are one. */
+function karoserijaKljuc(v: string | null): string {
+  const t = (v ?? "").toLowerCase().trim();
+  if (!t) return "?";
+  if (/karavan|estate|touring|variant|\bsw\b/.test(t)) return "karavan";
+  if (/terensko|suv|crossover/.test(t)) return "suv";
+  if (/limuzina|sedan/.test(t) && !/kombilimuzina/.test(t)) return "limuzina";
+  if (/kombilimuzina|hatchback/.test(t)) return "hatchback";
+  if (/enoprostorec|van|monovolumen/.test(t)) return "van";
+  if (/kupe|coupe|cabrio|roadster|kabriolet/.test(t)) return "kupe";
+  if (/pickup|pick.up|dostavni|tovorno/.test(t)) return "dostavno";
+  return t.split(/[\/,]/)[0].trim();
+}
+
+/**
+ * How alike two cars' equipment is, 0–1 (Jaccard over the normalised tags).
+ *
+ * Equipment is the difference between a base model and a loaded one at the same
+ * price, so a cohort that ignores it produces "deals" that are simply poorer
+ * cars. When either side has no tags captured we return 1 rather than 0: an
+ * unknown must not be treated as a mismatch, or every advert whose detail page
+ * has not been read yet would silently drop out of every comparison.
+ */
+function opremaUjemanje(a: Oglas, b: Oglas): number {
+  const x = a.oprema_znacilke ?? [];
+  const y = b.oprema_znacilke ?? [];
+  if (x.length === 0 || y.length === 0) return 1;
+  const setA = new Set(x);
+  const setB = new Set(y);
+  let skupnih = 0;
+  for (const t of setA) if (setB.has(t)) skupnih += 1;
+  const unija = setA.size + setB.size - skupnih;
+  return unija === 0 ? 1 : skupnih / unija;
+}
 
 /** Brand-new stock behaves like a price list, not a market — excluded from comparisons. */
 function jeNov(o: Oglas): boolean {
@@ -582,34 +635,79 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
     type Deal = {
       avtonetId: string; url: string; naziv: string | null; model: string;
       znamka: string | null; modelIme: string | null; zasluzek: number; potencial: number;
+      /** Median of DEALER adverts in the same cohort, when there were enough. */
+      medianaTrgovcev: number | null; vzorecTrgovcev: number;
+      odstopanjeTrgovciPct: number | null;
+      /** How strict the comparison behind the numbers was. */
+      strogost: string;
       cena: number; medianaKohorte: number; odstopanjePct: number; vzorec: number;
       letnik: number | null; km: number | null; jeDealer: boolean | null;
       oglediNaDan: number | null; delez14: number | null; kmAnomalija: boolean;
       tocke: number; razlogi: string[];
     };
-    // Cohorts keyed by model+gorivo, with letnik windows applied per candidate.
+    // Cohorts keyed by everything that has to be the SAME car, not just the same
+    // model: fuel, gearbox and body. A 45 % "gap" that compares an automatic
+    // estate against a manual hatchback is not a deal, it is a category error —
+    // and that was the complaint about the first version of this list.
     const bazen = new Map<string, Oglas[]>();
+    const kohorta = (o: Oglas) =>
+      [
+        modelKljuc(o),
+        (o.gorivo ?? "?").split(" ")[0].toLowerCase(),
+        menjalnikKljuc(o.menjalnik),
+        karoserijaKljuc(o.karoserija),
+      ].join("|");
+
     for (const o of aktivni) {
-      const k = `${modelKljuc(o)}|${(o.gorivo ?? "").split(" ")[0]}`;
       if (!modelKljuc(o)) continue;
+      const k = kohorta(o);
       const arr = bazen.get(k) ?? [];
       arr.push(o);
       bazen.set(k, arr);
     }
+
     const leto = new Date().getFullYear();
     const deals: Deal[] = [];
+
     for (const o of aktivni) {
       const cena = num(o.cena_eur);
       const mk = modelKljuc(o);
       if (!mk || cena === null || cena < 1000) continue;
-      const skupina = bazen.get(`${mk}|${(o.gorivo ?? "").split(" ")[0]}`) ?? [];
-      const okno = (let_: number) =>
-        skupina.filter(
-          (p) => p.id !== o.id && num(p.cena_eur) !== null &&
-            (o.letnik === null || p.letnik === null || Math.abs(p.letnik - o.letnik) <= let_)
-        );
-      let vrstniki = okno(2);
-      if (vrstniki.length < 8) vrstniki = okno(4);
+      const skupina = bazen.get(kohorta(o)) ?? [];
+
+      /**
+       * Peers, narrowed step by step and only as far as the evidence allows.
+       *
+       * Year and engine power first (same generation, same engine), then
+       * equipment overlap — a base model and a fully loaded one are different
+       * products at the same price. Each relaxation is recorded, so the card can
+       * say how strict the comparison behind the number actually was.
+       */
+      const vrstnikiZa = (letOkno: number, kwOkno: number | null, opremaMeja: number | null) =>
+        skupina.filter((p) => {
+          if (p.id === o.id || num(p.cena_eur) === null) return false;
+          if (o.letnik !== null && p.letnik !== null && Math.abs(p.letnik - o.letnik) > letOkno) {
+            return false;
+          }
+          if (kwOkno !== null && o.kw && p.kw && Math.abs(p.kw - o.kw) / o.kw > kwOkno) return false;
+          if (opremaMeja !== null && opremaUjemanje(o, p) < opremaMeja) return false;
+          return true;
+        });
+
+      // From strictest to loosest; the first window with enough peers wins.
+      const stopnje: { let_: number; kw: number | null; oprema: number | null; opis: string }[] = [
+        { let_: 2, kw: 0.12, oprema: 0.6, opis: "isti motor in podobna oprema" },
+        { let_: 2, kw: 0.2, oprema: 0.45, opis: "isti motor, deloma podobna oprema" },
+        { let_: 3, kw: 0.25, oprema: null, opis: "isti motor" },
+        { let_: 4, kw: null, oprema: null, opis: "isti model in menjalnik" },
+      ];
+      let vrstniki: Oglas[] = [];
+      let strogost = "";
+      for (const st of stopnje) {
+        vrstniki = vrstnikiZa(st.let_, st.kw, st.oprema);
+        strogost = st.opis;
+        if (vrstniki.length >= 8) break;
+      }
       if (vrstniki.length < 8) continue;
 
       const medCena = median(vrstniki.map((p) => num(p.cena_eur) as number)) as number;
@@ -617,6 +715,20 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       // Under 10 % below median is not a deal; over 45 % below is not a deal
       // either — it is a crashed car, an error or "cena na poziv" junk.
       if (odst < 10 || odst > 45) continue;
+
+      // What dealers ask for the same car.
+      //
+      // This is the arbitrage the user actually works with: buy privately, sell
+      // at the dealer level. So a private advert is measured against the DEALER
+      // median of its own cohort, not against the mixed one — dealers price
+      // higher for the same metal, and mixing the two hides exactly the gap
+      // being looked for.
+      const trgovci = vrstniki.filter((p) => p.je_dealer === true && !jeNov(p));
+      const medTrgovci =
+        trgovci.length >= 5 ? (median(trgovci.map((p) => num(p.cena_eur) as number)) as number) : null;
+      const zasebnik = o.je_dealer === false;
+      const odstTrgovci =
+        medTrgovci !== null ? ((medTrgovci - cena) / medTrgovci) * 100 : null;
 
       const kmMed = median(vrstniki.map((p) => p.km).filter((x): x is number => x !== null));
       const kmAnomalija =
@@ -633,11 +745,17 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
         (vrstniki.length < 12 ? 8 : 0);
 
       const razlogi = [
-        `${Math.round(odst)} % pod mediano ${vrstniki.length} primerljivih (${Math.round(medCena).toLocaleString("sl-SI")} €)`,
+        `${Math.round(odst)} % pod mediano ${vrstniki.length} primerljivih (${Math.round(medCena).toLocaleString("sl-SI")} €) — ${strogost}`,
       ];
+      if (zasebnik && odstTrgovci !== null && odstTrgovci > 0) {
+        razlogi.push(
+          `zasebnik: ${Math.round(odstTrgovci)} % pod ceno trgovcev (${trgovci.length} trgovskih oglasov, mediana ${Math.round(medTrgovci as number).toLocaleString("sl-SI")} €)`
+        );
+      } else if (o.je_dealer === false) {
+        razlogi.push("zasebnik — prostor za pogajanje");
+      }
       if (delez14 !== null) razlogi.push(`${delez14} % tega modela prodanih v ≤ 14 dneh`);
       if (on !== null && on >= 20) razlogi.push(`${on} ogledov/dan — veliko zanimanja`);
-      if (o.je_dealer === false) razlogi.push("zasebnik — prostor za pogajanje");
       if (kmAnomalija) razlogi.push("⚠️ km izrazito pod povprečjem letnika — preverite zgodovino");
 
       // What the gap is actually worth, and how sellable it is.
@@ -646,7 +764,12 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       // same 45 % gap, even though one is 1.300 EUR of headroom and the other
       // 14.000 EUR. "Interesting to flip" = money on the table, discounted by how
       // fast that model actually moves and by anything that smells wrong.
-      const zasluzek = Math.round(medCena - cena);
+      //
+      // For a private car the money on the table is the DEALER gap: that is the
+      // price it can be resold at, not the mixed median it was found under.
+      const zasluzek = Math.round(
+        zasebnik && medTrgovci !== null ? medTrgovci - cena : medCena - cena
+      );
       const likvidnost = 0.5 + Math.min(1, (delez14 ?? 30) / 60); // 0.5 .. 1.5
       // A 60.000 EUR gap measured against nine comparables is arithmetic, not
       // evidence — thin cohorts get scaled down instead of leading the list.
@@ -658,6 +781,10 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       deals.push({
         avtonetId: o.avtonet_id, url: o.url, naziv: o.naziv, model: mk,
         znamka: o.znamka, modelIme: o.model, zasluzek, potencial,
+        medianaTrgovcev: medTrgovci === null ? null : Math.round(medTrgovci),
+        vzorecTrgovcev: trgovci.length,
+        odstopanjeTrgovciPct: odstTrgovci === null ? null : Math.round(odstTrgovci * 10) / 10,
+        strogost,
         cena, medianaKohorte: Math.round(medCena), odstopanjePct: Math.round(odst * 10) / 10,
         vzorec: vrstniki.length, letnik: o.letnik, km: o.km, jeDealer: o.je_dealer,
         oglediNaDan: on, delez14, kmAnomalija, tocke: Math.round(tocke * 10) / 10, razlogi,

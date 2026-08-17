@@ -32,10 +32,12 @@ export default async function PosliPage() {
         Posli
       </h1>
       <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-        Aktivni oglasi, katerih cena je vsaj 10 % pod mediano primerljivih. Preračunano po vsakem
-        pregledu trga ({(feed?.pregledanih ?? 0).toLocaleString("sl-SI")} pregledanih oglasov). Na
-        vrhu so privzeto tisti, pri katerih je največ denarja na mizi in se model hitro proda — ne
-        zgolj največji odstotek popusta.
+        Aktivni oglasi, katerih cena je vsaj 10 % pod mediano <strong>primerljivih</strong>{" "}
+        (isti model, gorivo, menjalnik in karoserija, nato še isti motor in podobna oprema).
+        Preračunano po vsakem pregledu trga ({(feed?.pregledanih ?? 0).toLocaleString("sl-SI")}{" "}
+        pregledanih oglasov). Na vrhu so privzeto tisti, pri katerih je največ denarja na mizi in se
+        model hitro proda — ne zgolj največji odstotek popusta. S kljukico{" "}
+        <strong>„Samo od fizičnih oseb“</strong> dobiš avte zasebnikov, primerjane s ceno trgovcev.
       </p>
 
       {deals.length === 0 ? (
@@ -47,10 +49,13 @@ export default async function PosliPage() {
       )}
 
       <p className="mt-8 border-t border-zinc-200 pt-4 text-xs text-zinc-400">
-        „Pod mediano&ldquo; = pod sredinsko zahtevano ceno primerljivih aktivnih oglasov (isti model,
-        gorivo, letnik ±2). Ni prodajna cena, zato „razlika&ldquo; ni zajamčen zaslužek — je razpon,
-        znotraj katerega se pogajate. Oglasi, več kot 45 % pod mediano, so izločeni — pri takih je
-        praviloma nekaj narobe. Vsak posel preverite pri viru.
+        „Pod mediano&ldquo; = pod sredinsko <strong>zahtevano</strong> ceno primerljivih aktivnih
+        oglasov. Primerljiv pomeni isti model, gorivo, menjalnik in karoserija ter letnik ±2; kadar
+        je takih vozil dovolj, še isti motor (moč ±12 %) in podobna oprema (vsaj 60 % ujemanja
+        značilk). Če primerljivih ni dovolj, se pogoji sproti rahljajo in pri vsakem poslu piše,
+        kako stroga je bila primerjava. Ni prodajna cena, zato „razlika&ldquo; ni zajamčen zaslužek —
+        je razpon, znotraj katerega se pogajate. Oglasi, več kot 45 % pod mediano, so izločeni — pri
+        takih je praviloma nekaj narobe. Vsak posel preverite pri viru.
       </p>
     </div>
   );
