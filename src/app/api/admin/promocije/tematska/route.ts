@@ -65,6 +65,22 @@ export async function POST(request: NextRequest) {
 
       const admin = createAdminClient();
       const { leads, excludedNoRevenue } = await findMatchingLeads(admin, profile);
+
+      // How many of the base actually carry one of these codes, and how big the
+      // base is at all. "Najdenih 36" on its own reads as "there are 36 such
+      // companies", when the truth was "36 of yours are visible to this filter,
+      // the register has hundreds" — a different problem with a different fix.
+      const { count: vBazi } = await admin
+        .from("intel_leads")
+        .select("id", { count: "exact", head: true });
+      let sKodo = 0;
+      for (const code of profile.skdCodes) {
+        const { count } = await admin
+          .from("intel_leads")
+          .select("id", { count: "exact", head: true })
+          .eq("custom_fields->>skd_code", code);
+        sKodo += count ?? 0;
+      }
       const revenueNote =
         excludedNoRevenue > 0
           ? ` ${excludedNoRevenue} podjetij je izpuščenih, ker njihov promet še ni znan — skrejpajte jih v Lead skrejpu, da jih filter lahko presodi.`
@@ -79,6 +95,13 @@ export async function POST(request: NextRequest) {
         });
       }
       const candidates = await rankCandidates(leads, theme, kind);
+      const koliko = `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.`;
+      const izVaseBaze =
+        profile.skdCodes.length > 0
+          ? ` Iskano je bilo v vaši bazi (${(vBazi ?? 0).toLocaleString("sl-SI")} podjetij), kjer ima ` +
+            `${sKodo.toLocaleString("sl-SI")} podjetij eno od teh SKD kod. Če jih v registru pričakujete več, ` +
+            `jih najprej poiščite in uvozite z Lead skrejpom — kampanja vidi samo to, kar je v bazi.`
+          : "";
       return NextResponse.json({
         candidates: candidates.map((c) => {
           // Size is what decides whether a lead is worth the call, so revenue
@@ -101,7 +124,7 @@ export async function POST(request: NextRequest) {
             reason: c.reason,
           };
         }),
-        note: `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.${revenueNote}`,
+        note: `${koliko}${izVaseBaze}${revenueNote}`,
       });
     }
 

@@ -57,6 +57,17 @@ export type AjpesSearchRow = {
   registrationNumber: string | null;
   vatId: string | null;
   detailUrl: string;
+  /**
+   * The activity code whose query returned this company.
+   *
+   * Not the company's registered activity — the code we searched by. It matters
+   * because the registered code lives on the AJPES DETAIL page, which the
+   * "samo kontakti" mode skips: 862 of 891 companies imported on 17.08 arrived
+   * with no SKD at all, and a campaign that targets by SKD then cannot see them.
+   * The code the register matched them under is knowledge we already have, and
+   * it is the honest fallback.
+   */
+  foundUnderCode?: string | null;
 };
 
 export type AjpesSearchResult = {

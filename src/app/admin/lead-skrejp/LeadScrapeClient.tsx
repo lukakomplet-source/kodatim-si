@@ -50,6 +50,8 @@ type SearchRow = {
   registrationNumber: string | null;
   vatId: string | null;
   detailUrl: string;
+  /** SKD code whose AJPES query returned this company (see ajpesSearch.ts). */
+  foundUnderCode?: string | null;
 };
 
 type ScrapeResult = {
@@ -1340,6 +1342,16 @@ export default function LeadScrapeClient() {
           "other_activities",
         ]) {
           if (f[key]) custom[key] = f[key];
+        }
+        // The registered SKD comes from the AJPES detail page, which "samo
+        // kontakti" deliberately skips — so fall back to the code the search
+        // matched the company under. Without this the lead lands with no SKD
+        // and every campaign that targets by SKD is blind to it.
+        if (!custom.skd_code && r.foundUnderCode) {
+          custom.skd_code = r.foundUnderCode;
+          custom.skd_vir = "iskalna koda (AJPES detajl ni bil odprt)";
+          const vpis = skdByCode(r.foundUnderCode);
+          if (vpis && !custom.skd_name) custom.skd_name = vpis.label;
         }
         return {
           company_name: r.name,

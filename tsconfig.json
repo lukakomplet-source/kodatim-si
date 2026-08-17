@@ -30,5 +30,7 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "worker-avtonet"]
+  // scripts/ so samostojna orodja, ki tecejo pod tsx (uvazajo .ts poti
+  // neposredno) — niso del Next gradnje in jih zato tu ne preverjamo.
+  "exclude": ["node_modules", "worker-avtonet", "scripts"]
 }

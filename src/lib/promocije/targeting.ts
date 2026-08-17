@@ -132,15 +132,34 @@ export type MatchResult = {
 export async function findMatchingLeads(
   admin: AdminClient,
   profile: TargetProfile,
-  limit = 200
+  // Was 200, which silently truncated: a base with 2,000 leads and a broad code
+  // would report "found 200" and the user could not tell that from "there are
+  // only 200". Read in pages instead, up to a ceiling that is about the whole
+  // base rather than a fraction of it.
+  limit = 3000
 ): Promise<MatchResult> {
-  let query = admin.from("intel_leads").select("*").limit(limit);
-
   // SKD is the strongest signal; fall back to free-text when the theme gave
   // no codes, so a vague theme still returns something to work with.
   const or: string[] = [];
   for (const code of profile.skdCodes) {
     or.push(`custom_fields->>skd_code.eq.${code}`);
+    // A lead whose SKD was never captured (the "samo kontakti" scrape skips the
+    // AJPES detail page) still carries the activity NAME from CompanyWall, and
+    // the official name of the code is a fact we hold locally — so match on it.
+    // Without this, 862 of 891 companies imported on 17.08 were invisible to a
+    // campaign that targeted exactly the code they were found under.
+    const ime = skdByCode(code)?.label;
+    if (ime) {
+      const cist = ime.replace(/[,()*%]/g, " ").trim();
+      if (cist.length > 6) {
+        or.push(`industry.ilike.%${cist.slice(0, 28)}%`);
+        or.push(`custom_fields->>skd_name.ilike.%${cist.slice(0, 28)}%`);
+      }
+    }
+    // The class above the subclass: 77.11 covers 77.110 and 77.111, and a lead
+    // stamped with the parent code should not be missed.
+    const razred = code.trim().replace(/(\d{2}\.\d{2})\d$/, "$1");
+    if (razred !== code.trim()) or.push(`custom_fields->>skd_code.eq.${razred}`);
   }
   for (const word of profile.keywords) {
     const safe = word.replace(/[,()*%]/g, " ").trim();
@@ -149,14 +168,21 @@ export async function findMatchingLeads(
     or.push(`custom_fields->>skd_name.ilike.%${safe}%`);
     or.push(`custom_fields->>other_activities.ilike.%${safe}%`);
   }
-  if (or.length > 0) query = query.or(or.join(","));
 
-  if (profile.regions.length > 0) query = query.in("address_region", profile.regions);
+  // PostgREST caps one response at 1,000 rows, so a real answer needs paging.
+  const zbrani: IntelLead[] = [];
+  for (let od = 0; od < limit; od += 1000) {
+    let query = admin.from("intel_leads").select("*").range(od, Math.min(od + 999, limit - 1));
+    if (or.length > 0) query = query.or(or.join(","));
+    if (profile.regions.length > 0) query = query.in("address_region", profile.regions);
+    const { data, error } = await query;
+    if (error) throw new Error(`Iskanje ciljev ni uspelo: ${error.message}`);
+    const kos = (data ?? []) as unknown as IntelLead[];
+    zbrani.push(...kos);
+    if (kos.length < 1000) break;
+  }
 
-  const { data, error } = await query;
-  if (error) throw new Error(`Iskanje ciljev ni uspelo: ${error.message}`);
-
-  let leads = (data ?? []) as unknown as IntelLead[];
+  let leads = zbrani;
 
   // Size lives in custom_fields, which cannot be filtered with .in() reliably
   // across shapes — cheap enough to narrow in memory once the SQL filter ran.
@@ -254,7 +280,11 @@ export async function rankCandidates(
   leads: IntelLead[],
   theme: string,
   kind: CampaignKind = "prodaja",
-  max = 60
+  // Raised from 60: the point of a campaign is the whole segment, and a cap
+  // that low turned "there are 700 of them" into "36 candidates" with nothing
+  // saying which one it was. Scored in batches, so the model still sees a
+  // readable list at a time.
+  max = 300
 ): Promise<TargetCandidate[]> {
   const shortlist = leads.slice(0, max);
   if (shortlist.length === 0) return [];

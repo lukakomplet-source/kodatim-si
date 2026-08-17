@@ -164,8 +164,14 @@ export async function runSlice(slice: SearchSlice, base: SearchBase = {}): Promi
     town: base.town,
   });
 
+  // Every row remembers which code found it — see AjpesSearchRow.foundUnderCode.
+  const oznaceni = result.rows.map((r) => ({
+    ...r,
+    foundUnderCode: slice.activity?.trim() || null,
+  }));
+
   if (!result.limited) {
-    return { slice, rows: result.rows, total: result.totalFound, children: [], gap: null };
+    return { slice, rows: oznaceni, total: result.totalFound, children: [], gap: null };
   }
 
   const municipalities = await fetchMunicipalities();
@@ -174,7 +180,7 @@ export async function runSlice(slice: SearchSlice, base: SearchBase = {}): Promi
   return {
     slice,
     // The capped 100 are still real companies — keep them either way.
-    rows: result.rows,
+    rows: oznaceni,
     total: result.totalFound,
     children,
     gap:
