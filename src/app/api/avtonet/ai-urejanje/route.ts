@@ -10,6 +10,7 @@ import {
   vsebujeSkrivnost,
 } from "@/lib/avtonet/aiScope";
 import { odkleni, pinPravilen, preveriZmoznost, zakleni } from "@/lib/avtonet/aiZmoznost";
+import { najdiRelevantne, sestaviKontekst } from "@/lib/avtonet/aiKontekst";
 
 /**
  * The AI editor for SBN Auto — a local development tool, not a product feature.
@@ -164,10 +165,14 @@ export async function POST(request: NextRequest) {
 
   let zahteva = "";
   let pin: string | undefined;
+  let pot: string | null = null;
   try {
     const body = await request.json();
     zahteva = typeof body?.zahteva === "string" ? body.zahteva.trim() : "";
     pin = typeof body?.pin === "string" ? body.pin : undefined;
+    // Which page the request came from — worth more than any keyword, because
+    // "popravi tole" means the page in front of the person writing it.
+    pot = typeof body?.pot === "string" ? body.pot.slice(0, 200) : null;
   } catch {
     return NextResponse.json({ error: "Neveljavna zahteva." }, { status: 400 });
   }
@@ -206,14 +211,19 @@ export async function POST(request: NextRequest) {
     );
   }
   try {
-    return await izvediUrejanje(user.id, zahteva);
+    return await izvediUrejanje(user.id, zahteva, pot);
   } finally {
     odkleni();
   }
 }
 
 /** The edit itself, split out so the lock is released in exactly one place. */
-async function izvediUrejanje(userId: string, zahteva: string): Promise<NextResponse> {
+async function izvediUrejanje(
+  userId: string,
+  zahteva: string,
+  /** The page the request came from, for ranking which files to read. */
+  pot: string | null
+): Promise<NextResponse> {
 
   const db = createAvtonetClient();
   const zapisi = async (polja: Record<string, unknown>) => {
@@ -236,26 +246,28 @@ async function izvediUrejanje(userId: string, zahteva: string): Promise<NextResp
 
   // Pick which files to show by name relevance to the request, then always
   // include the front page so the model sees the house style.
-  const besede = zahteva.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
-  const ocena = (p: string) => besede.filter((b) => p.toLowerCase().includes(b)).length;
-  const izbrane = [...datoteke]
-    .sort((a, b) => ocena(b) - ocena(a))
-    .slice(0, NAJVEC_DATOTEK_V_KONTEKSTU);
-
-  const kontekst: string[] = [];
-  for (const pot of izbrane) {
-    const vsebina = await orodja.preberiVarno(pot);
-    if (vsebina !== null) kontekst.push(`--- ${pot} ---\n${vsebina}`);
-  }
+  //
+  // Ranking by FILENAME overlap alone — what this did first — answered a question
+  // about the Posli page by editing FiltriVozilForm.tsx, because the request
+  // contained the word "filter". The shared search reads file CONTENT and weighs
+  // the page the request was written on; see aiKontekst.ts.
+  const zadetki = await najdiRelevantne(orodja, zahteva, pot, NAJVEC_DATOTEK_V_KONTEKSTU);
+  const kontekst = await sestaviKontekst(orodja, zadetki, NAJVEC_ZNAKOV_NA_DATOTEKO);
 
   const uporabnisko = `ZAHTEVA UPORABNIKA:
 ${zahteva}
 
+STRAN, NA KATERI JE BILA ZAHTEVA NAPISANA: ${pot ?? "neznana"}
+
 VSE DATOTEKE PROJEKTA SBN AUTO:
 ${datoteke.join("\n")}
 
-VSEBINA NAJBOLJ RELEVANTNIH DATOTEK:
-${kontekst.join("\n\n")}`;
+NAJBOLJ RELEVANTNE DATOTEKE (izbrane po vsebini in glede na stran): ${zadetki
+    .map((z) => z.pot)
+    .join(", ")}
+
+VSEBINA TEH DATOTEK:
+${kontekst}`;
 
   // ---- Ask, validate, write -------------------------------------------
   let odgovor: Odgovor;
@@ -431,13 +443,51 @@ Vrni popravljeno celotno vsebino datotek, ki jih je treba popraviti.`,
     popravkov,
   });
 
+  // The build that just passed produced a NEW .next; the running `next start`
+  // still serves the one it booted with. Without a restart the change is real on
+  // disk and invisible in the browser, which reads as "it said it fixed it and
+  // nothing happened" — the single most confusing outcome this feature can have.
+  //
+  // Detached and delayed, so this response is sent first: killing the server that
+  // is answering would drop the very message explaining what happened. The
+  // wrapper script (START-STRAN.bat) brings it back within seconds, and the
+  // watchdog is the backstop if it does not.
+  const ponovniZagon = await zazeniPonovniZagonStrani(orodja.ukaz);
+
   return NextResponse.json({
     razlaga: odgovor.razlaga,
     spremembe: spremembe.map((s) => s.pot),
     preverjanja,
     izid: "uspeh",
     popravkov,
-    sporocilo:
-      "Spremembe so zapisane lokalno in prestale typecheck, lint in build. V produkcijo niso objavljene — poglejte jih v brskalniku in jih nato commitajte sami.",
+    sporocilo: ponovniZagon
+      ? "Spremembe so zapisane in so prestale typecheck, lint in build. Stran se zdaj ponovno zaganja — čez ~20 s osveži in bo vidno. (Commit naredi Luka.)"
+      : "Spremembe so zapisane in so prestale typecheck, lint in build. Stran se ni ponovno zagnala sama — osveži jo ročno, da bo vidna.",
   });
+}
+
+/**
+ * Restarts the site so the new build is the one being served.
+ *
+ * Only when the site is actually running as a production build behind the wrapper
+ * script; under `next dev` the change is already live and killing the server
+ * would be pure damage. Best effort by design: a failed restart costs one manual
+ * refresh, and is reported rather than hidden.
+ */
+async function zazeniPonovniZagonStrani(
+  ukaz: (command: string) => Promise<{ ok: boolean; izpis: string }>
+): Promise<boolean> {
+  if (process.env.NODE_ENV !== "production") return false;
+  const skripta = "C:\\\\Users\\\\lukak\\\\avtonet-db\\\\START-STRAN.bat";
+  try {
+    const { ok } = await ukaz(
+      `powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 4; ` +
+        `$p = (Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue).OwningProcess; ` +
+        `if ($p) { $p | Select-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }; ` +
+        `Start-Sleep -Seconds 2; if (Test-Path '${skripta}') { Start-Process -FilePath '${skripta}' }"`
+    );
+    return ok;
+  } catch {
+    return false;
+  }
 }

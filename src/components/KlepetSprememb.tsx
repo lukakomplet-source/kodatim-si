@@ -188,7 +188,9 @@ export function KlepetSprememb() {
         const res = await fetch("/api/avtonet/ai-urejanje", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ zahteva: plan.besedilo, pin }),
+          // The page travels with the request: it is the strongest hint about
+          // which files the change belongs in.
+          body: JSON.stringify({ zahteva: plan.besedilo, pin, pot }),
         });
         const out = (await res.json()) as {
           error?: string;

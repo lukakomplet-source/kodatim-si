@@ -73,38 +73,67 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
   const [samoZasebniki, setSamoZasebniki] = useState(false);
   const [prikazanih, setPrikazanih] = useState(KORAK);
 
-  /** Brands with a deal behind them, most deals first. */
+  const od = letnikOd ? Number(letnikOd) : null;
+  const do_ = letnikDo ? Number(letnikDo) : null;
+  const cOd = cenaOd.trim() === "" ? null : Number(cenaOd);
+  const cDo = cenaDo.trim() === "" ? null : Number(cenaDo);
+
+  /**
+   * Everything the OTHER filters leave standing.
+   *
+   * The counts in the dropdowns have to be counted over this, not over the whole
+   * feed: with "samo od fizičnih oseb" on, the brand list said "Vse znamke (871)"
+   * while the page showed 116 deals. A count that does not match what pressing it
+   * produces is worse than no count — it reads as a bug in the data.
+   *
+   * The brand's own choice is deliberately NOT applied here, or picking BMW would
+   * leave BMW as the only brand in the list.
+   */
+  const zaStevce = useMemo(
+    () =>
+      deals.filter((d) => {
+        if (od !== null || do_ !== null) {
+          if (d.letnik === null) return false;
+          if (od !== null && d.letnik < od) return false;
+          if (do_ !== null && d.letnik > do_) return false;
+        }
+        if (cOd !== null && Number.isFinite(cOd) && d.cena < cOd) return false;
+        if (cDo !== null && Number.isFinite(cDo) && d.cena > cDo) return false;
+        if (samoZasebniki && !(d.jeDealer === false && d.medianaTrgovcev !== null)) return false;
+        return true;
+      }),
+    [deals, od, do_, cOd, cDo, samoZasebniki]
+  );
+
+  /** Brands with a deal behind them under the current filters, most first. */
   const znamke = useMemo(() => {
     const m = new Map<string, number>();
-    for (const d of deals) if (d.znamka) m.set(d.znamka, (m.get(d.znamka) ?? 0) + 1);
+    for (const d of zaStevce) if (d.znamka) m.set(d.znamka, (m.get(d.znamka) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sl"));
-  }, [deals]);
+  }, [zaStevce]);
 
   /** Models of the chosen brand only — the second step of the cascade. */
   const modeli = useMemo(() => {
     if (!znamka) return [];
     const m = new Map<string, number>();
-    for (const d of deals) {
+    for (const d of zaStevce) {
       if (d.znamka !== znamka || !d.modelIme) continue;
       m.set(d.modelIme, (m.get(d.modelIme) ?? 0) + 1);
     }
     return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sl"));
-  }, [deals, znamka]);
+  }, [zaStevce, znamka]);
 
   /** Year bounds taken from the data, so the range can never be empty by itself. */
   const leta = useMemo(() => {
-    const vsa = deals.map((d) => d.letnik).filter((l): l is number => l !== null);
+    const vsa = deals
+      .filter((d) => !samoZasebniki || (d.jeDealer === false && d.medianaTrgovcev !== null))
+      .map((d) => d.letnik)
+      .filter((l): l is number => l !== null);
     if (vsa.length === 0) return [];
     const min = Math.min(...vsa);
     const max = Math.max(...vsa);
     return Array.from({ length: max - min + 1 }, (_, i) => max - i);
-  }, [deals]);
-
-  const od = letnikOd ? Number(letnikOd) : null;
-  const do_ = letnikDo ? Number(letnikDo) : null;
-
-  const cOd = cenaOd.trim() === "" ? null : Number(cenaOd);
-  const cDo = cenaDo.trim() === "" ? null : Number(cenaDo);
+  }, [deals, samoZasebniki]);
 
   const najdeni = useMemo(() => {
     const izbrani = deals.filter((d) => {
@@ -182,7 +211,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
             }}
             className={`${izbira} min-w-44`}
           >
-            <option value="">Vse znamke ({deals.length})</option>
+            <option value="">Vse znamke ({zaStevce.length})</option>
             {znamke.map(([z, n]) => (
               <option key={z} value={z}>
                 {z} ({n})

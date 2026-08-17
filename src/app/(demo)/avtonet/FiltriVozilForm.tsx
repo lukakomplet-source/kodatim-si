@@ -255,7 +255,7 @@ export function FiltriVozilForm({
           </label>
           <label>
             <span className={OZNAKA}>Prodajalec je lahko</span>
-            <select name="prodajalec" defaultValue={privzeto.prodajalec ?? ""} className={VNOS}>
+            <select name="prodajalec" defaultValue={privzeto.prodajalec ?? "zasebnik"} className={VNOS}>
               <option value="">trgovec ali fizična oseba</option>
               <option value="dealer">samo trgovec</option>
               <option value="zasebnik">samo fizična oseba</option>

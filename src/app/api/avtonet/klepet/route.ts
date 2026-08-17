@@ -5,6 +5,7 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { DOSEG, DOSEG_PREDPONE } from "@/lib/avtonet/aiScope";
 import { preveriZmoznost } from "@/lib/avtonet/aiZmoznost";
+import { najdiRelevantne, pripraviBralnik, sestaviKontekst } from "@/lib/avtonet/aiKontekst";
 
 /**
  * The floating chat: say what should change, get a plan, say "pojdi".
@@ -44,8 +45,14 @@ Spremeniti je mogoče izključno datoteke pod:
 ${DOSEG.map((d) => `- ${d}`).join("\n")}
 - ${DOSEG_PREDPONE.join(", ")}* (samo nove migracije)
 
+Dobiš VSEBINO najbolj relevantnih datotek. Načrt napiši na podlagi te kode, ne na podlagi ugibanja.
+
 Pravila:
 - Odgovarjaj v slovenščini, kratko in konkretno: 2–5 povedi ali do 5 alinej.
+- NAJPREJ povej VZROK (npr. „števci v spustnem seznamu se računajo po celotnem seznamu, ne po vklopljenih filtrih“), nato popravek. Brez vzroka ni načrta.
+- Imenuj datoteko in mesto, ki ga boš spremenil (npr. „PosliClient.tsx, izračun znamk“). Če v priloženi kodi tega mesta ne najdeš, to POVEJ in vprašaj — nikoli ne trdi, da nekaj obstaja, če tega v kodi nisi videl.
+- NE predlagaj uporabniku, naj „preveri, ali je pravilno nastavljeno“. Napako je prijavil on; tvoja naloga je najti vzrok v kodi.
+- Brez besed „morda“, „predlagam, da preverimo“, „bilo bi smiselno“ — napiši, kaj JE narobe in kaj boš naredil.
 - Kadar je priložena slika zaslona, najprej z eno povedjo povej, kaj na njej vidiš (kateri del strani, katera vrednost ali napaka). Ne ugibaj besedila, ki ga na sliki ni mogoče prebrati — raje vprašaj.
 - Napiši, KAJ boš spremenil in KJE (katera stran ali del vmesnika), v jeziku uporabnika, ne v imenih datotek — razen če uporabnik sam sprašuje po datotekah.
 - Če zahteva ni jasna, NAJPREJ postavi eno konkretno vprašanje in ne izmišljuj rešitve.
@@ -173,11 +180,29 @@ export async function POST(request: NextRequest) {
       .join("\n\n")
       .slice(-8000);
 
+    // Read the code first, exactly as a person would: open the page they are on
+    // and grep for the words they used. Without this the planner answers from the
+    // shape of the sentence, which is how "preveri, ali je pravilno nastavljeno"
+    // gets written where a cause belongs.
+    let koda = "";
+    let imenaDatotek: string[] = [];
+    try {
+      const bralnik = await pripraviBralnik();
+      const zadetki = await najdiRelevantne(bralnik, besedilo, pot, 8);
+      imenaDatotek = zadetki.map((z) => z.pot);
+      koda = await sestaviKontekst(bralnik, zadetki, 9000);
+    } catch {
+      // No checkout on this server: the plan is written without the code and says so.
+    }
+
     let plan = "";
     let vprasanje = false;
     try {
       const vsebina =
         `Stran, na kateri je uporabnik: ${pot ?? "neznana"}\n\n` +
+        (koda
+          ? `RELEVANTNE DATOTEKE: ${imenaDatotek.join(", ")}\n\nVSEBINA:\n\n${koda}\n\n`
+          : "OPOZORILO: kode tukaj ne morem prebrati, zato načrt temelji samo na pogovoru — to povej uporabniku.\n\n") +
         (slike.length > 0
           ? `Uporabnik je priložil ${slike.length} ${slike.length === 1 ? "sliko" : "slike"} zaslona. ` +
             "Najprej na kratko povej, kaj vidiš na sliki (kateri del vmesnika, katera številka ali " +
