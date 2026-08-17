@@ -9,6 +9,7 @@ import type { PromoCampaign } from "@/lib/promocije/types";
 import { PIPELINE_STAGE_LABELS, CALL_STATUS_LABELS } from "@/lib/promocije/types";
 import type { TargetWithLead } from "@/lib/promocije/queries";
 import { searchAvailableLeads, addTargetsToCampaign, removeTarget } from "../actions";
+import DelovnaTabela from "./DelovnaTabela";
 
 const TRI_STATE_OPTIONS = [
   { value: "", label: "Vsi" },
@@ -237,7 +238,15 @@ export default function TargetsTab({
         )}
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      {/*
+        The working table: everything needed to actually work the list — number,
+        person, and a place to tick off what has been done. The old row-per-company
+        list is kept below it as a fallback for narrow screens, where a
+        twelve-column table is unusable.
+      */}
+      <DelovnaTabela campaign={campaign} targets={targets} />
+
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm lg:hidden">
         {targets.length === 0 ? (
           <p className="p-10 text-center text-sm text-zinc-500">
             Ni dodanih podjetij. Uporabite iskalnik zgoraj.
