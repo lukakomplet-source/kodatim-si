@@ -18,7 +18,6 @@ import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
 import { izracunajStatistiko } from "./statistika.js";
 import { blokiran, minutDoKonca, preberiBlokado, zabelezBlokado, zabelezUspeh } from "./blokada.js";
-import { posljiDealFeed } from "./dealfeed.js";
 import { samopopravilo } from "./samopopravilo.js";
 
 /**
@@ -352,7 +351,9 @@ async function main(): Promise<void> {
     if (lastReportDay === today) return;
     try {
       const report = await buildDailyReport(db);
-      const outcome = await sendDailyReport(report);
+      // One mail, and the day's budget lives in the database — see posta.ts.
+      // This used to be an in-memory day marker, so every restart re-sent it.
+      const outcome = await sendDailyReport(db, report);
       lastReportDay = today;
       log("info", "dnevno porocilo", {
         datum: report.datum,
@@ -379,20 +380,16 @@ async function main(): Promise<void> {
   };
 
   // All aggregates the pages show, recomputed after every research (and after
-  // linking, so relists are already excluded). Deal Feed email once per day.
-  let lastFeedDay: string | null = null;
+  // linking, so relists are already excluded).
+  //
+  // The Deal Feed no longer has an email of its own: it is a section inside the
+  // daily report, because the numbers and the opportunities are read in the same
+  // minute and two mails for one market is one too many.
   const maybeStatistika = async (): Promise<void> => {
     try {
       await izracunajStatistiko(db, log);
     } catch (err) {
       log("warn", "statistika ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
-      return;
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    if (lastFeedDay !== today) {
-      lastFeedDay = today;
-      const izid = await posljiDealFeed(db);
-      log("info", "deal feed", { posiljanje: izid });
     }
   };
 
@@ -502,6 +499,8 @@ async function main(): Promise<void> {
     if (job) {
       await runJob(db, job);
       await maybeLinkVehicles();
+      // Statistics first: the report carries the deals the statistics step
+      // scored, so the other order would mail yesterday's list.
       await maybeStatistika();
       await maybeSendReport();
       await maybePrune();

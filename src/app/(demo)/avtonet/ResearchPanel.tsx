@@ -82,6 +82,7 @@ type Odziv = {
   blokada?: Blokada | null;
   zbiralnik?: Zbiralnik | null;
   samopopravila?: Samopopravilo[];
+  posta?: { dan: string; poslanih: number; vrste: string[] } | null;
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -295,6 +296,14 @@ export function ResearchPanel() {
       )}
 
       {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} zbiralnik={odziv.zbiralnik} />}
+
+      {odziv.posta && odziv.posta.dan === new Date().toISOString().slice(0, 10) && (
+        <p className="mt-4 text-xs text-zinc-500">
+          E-pošta danes: <strong>{odziv.posta.poslanih}</strong> od največ 2
+          {odziv.posta.vrste.length > 0 && ` (${odziv.posta.vrste.join(", ")})`}. Dnevni pregled ima
+          posle vključene v istem sporočilu; obvestila o spremljanjih gredo v enem skupnem.
+        </p>
+      )}
 
       {(odziv.samopopravila?.length ?? 0) > 0 && (
         <div className="mt-6">

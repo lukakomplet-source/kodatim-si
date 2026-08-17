@@ -1,4 +1,6 @@
 import type { Db } from "./db.js";
+import { odsekPoslov, preberiPosle } from "./dealfeed.js";
+import { posljiEnkratNaDan, type Izid } from "./posta.js";
 
 /**
  * The daily market summary.
@@ -165,27 +167,32 @@ export function renderReportHtml(r: DailyReport): string {
 </body></html>`;
 }
 
-/** Sends the report if a key is configured. Never throws. */
-export async function sendDailyReport(report: DailyReport): Promise<"poslano" | "preskoceno" | "napaka"> {
-  const key = process.env.RESEND_API_KEY;
+/**
+ * Sends the day's one email: the numbers and the deals, together.
+ *
+ * Through the postal budget rather than straight to the provider, so a restart
+ * cannot repeat it and nothing can exceed the daily cap. Never throws.
+ */
+export async function sendDailyReport(db: Db, report: DailyReport): Promise<Izid> {
   const to = process.env.REPORT_EMAIL_TO;
-  const from = process.env.REPORT_EMAIL_FROM;
+  if (!to) return "ni_nastavljeno";
 
-  if (!key || !to || !from) return "preskoceno";
+  const posli = await preberiPosle(db, 10);
+  const html = renderReportHtml(report).replace(
+    "</body></html>",
+    `${odsekPoslov(posli)}</body></html>`
+  );
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: to.split(",").map((t) => t.trim()),
-        subject: `SBN Auto — dnevni pregled ${report.datum}`,
-        html: renderReportHtml(report),
-      }),
-    });
-    return res.ok ? "poslano" : "napaka";
-  } catch {
-    return "napaka";
-  }
+  return posljiEnkratNaDan(
+    db,
+    "dnevno",
+    [
+      {
+        to: to.split(",").map((t) => t.trim()).filter(Boolean),
+        subject: `SBN Auto — dnevni pregled ${report.datum}${posli.length ? ` · ${posli.length} poslov` : ""}`,
+        html,
+      },
+    ],
+    (l, m, e) => console.log(JSON.stringify({ t: new Date().toISOString(), lvl: l, msg: m, ...e }))
+  );
 }

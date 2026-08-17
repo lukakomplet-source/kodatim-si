@@ -1,4 +1,5 @@
 import type { Db } from "./db.js";
+import { posljiEnkratNaDan } from "./posta.js";
 
 /**
  * Saved searches: the second use of the same collected data.
@@ -251,27 +252,25 @@ ${
 </body></html>`;
 }
 
-/** Never throws: an email problem must not fail a sweep that collected fine. */
-async function sendAlert(iskanje: Iskanje, zadetki: Zadetek[], to: string | null): Promise<boolean> {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.REPORT_EMAIL_FROM;
-  if (!key || !from || !to) return false;
-
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject: `${zadetki.length} nov${zadetki.length === 1 ? "" : "ih"} oglas${zadetki.length === 1 ? "" : "ov"}: ${iskanje.naziv}`,
-        html: renderAlertHtml(iskanje, zadetki),
-      }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+/**
+ * All of one person's watches in a single message.
+ *
+ * One mail per watch meant five watches were five mails, on every sweep, twice a
+ * day — which is how a useful notification turns into something the reader
+ * filters away. The sections keep each watch's own table and heading, so nothing
+ * is lost by putting them in one envelope.
+ */
+function zdruzenoHtml(deli: { iskanje: Iskanje; zadetki: Zadetek[] }[]): string {
+  if (deli.length === 1) return renderAlertHtml(deli[0].iskanje, deli[0].zadetki);
+  const odseki = deli
+    .map(({ iskanje, zadetki }) => {
+      const notranjost = renderAlertHtml(iskanje, zadetki)
+        .replace(/^[\s\S]*?<body[^>]*>/i, "")
+        .replace(/<\/body>[\s\S]*$/i, "");
+      return `<div style="margin-bottom:26px">${notranjost}</div>`;
+    })
+    .join("");
+  return `<!doctype html><html lang="sl"><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,sans-serif;color:#18181b">${odseki}</body></html>`;
 }
 
 /**
@@ -282,11 +281,18 @@ async function sendAlert(iskanje: Iskanje, zadetki: Zadetek[], to: string | null
  * emailing and failing to record — would re-send the same cars on every sweep
  * until someone noticed. Of the two failure modes, the quiet one is kinder.
  */
-export async function runSavedSearches(db: Db): Promise<AlertOutcome[]> {
+export async function runSavedSearches(
+  db: Db,
+  log: (l: "info" | "warn" | "error", m: string, e?: Record<string, unknown>) => void = () => {}
+): Promise<AlertOutcome[]> {
   const { data, error } = await db.from("avtonet_iskanja").select("*").eq("aktivno", true);
   if (error) throw new Error(`Branje shranjenih iskanj ni uspelo: ${error.message}`);
 
   const outcomes: AlertOutcome[] = [];
+  // Grouped by recipient: one envelope per person, whatever the number of
+  // watches, and all of it one item against the day's postal budget.
+  const poPrejemniku = new Map<string, { iskanje: Iskanje; zadetki: Zadetek[] }[]>();
+  const virZa = new Map<string, string>();
 
   for (const raw of (data ?? []) as unknown as Iskanje[]) {
     const zadetki = await findMatches(db, raw);
@@ -295,24 +301,60 @@ export async function runSavedSearches(db: Db): Promise<AlertOutcome[]> {
       continue;
     }
 
+    // Recorded before any send is attempted: a match marked as reported but not
+    // emailed costs one missed notification, while the reverse would re-send the
+    // same cars on every sweep.
     await db.from("avtonet_obvestila").insert(
       zadetki.map((z) => ({ iskanje_id: raw.id, oglas_id: z.id }))
     );
 
     const { email, vir } = await prejemnik(db, raw);
-    const poslano = await sendAlert(raw, zadetki, email);
-    outcomes.push({
-      iskanje: raw.naziv,
-      zadetkov: zadetki.length,
-      poslano,
-      // The reason names WHERE the address came from, because "not delivered"
-      // and "nobody has set an address anywhere" need different fixes.
-      razlog: poslano
-        ? `poslano na ${email} (vir: ${vir})`
-        : email
-          ? "posiljanje ni uspelo ali RESEND ni nastavljen"
-          : "ne spremljanje ne uporabnik nimata nastavljenega e-naslova",
+    if (!email) {
+      outcomes.push({
+        iskanje: raw.naziv,
+        zadetkov: zadetki.length,
+        poslano: false,
+        razlog: "ne spremljanje ne uporabnik nimata nastavljenega e-naslova",
+      });
+      continue;
+    }
+    virZa.set(email, vir);
+    poPrejemniku.set(email, [...(poPrejemniku.get(email) ?? []), { iskanje: raw, zadetki }]);
+  }
+
+  if (poPrejemniku.size > 0) {
+    const sporocila = [...poPrejemniku.entries()].map(([email, deli]) => {
+      const skupaj = deli.reduce((n, d) => n + d.zadetki.length, 0);
+      const naslov =
+        deli.length === 1
+          ? `${skupaj} nov${skupaj === 1 ? "" : "ih"} oglas${skupaj === 1 ? "" : "ov"}: ${deli[0].iskanje.naziv}`
+          : `${skupaj} novih oglasov pri ${deli.length} spremljanjih`;
+      return { to: [email], subject: naslov, html: zdruzenoHtml(deli) };
     });
+
+    const izid = await posljiEnkratNaDan(db, "spremljanja", sporocila, log);
+    for (const [email, deli] of poPrejemniku) {
+      for (const d of deli) {
+        outcomes.push({
+          iskanje: d.iskanje.naziv,
+          zadetkov: d.zadetki.length,
+          poslano: izid === "poslano",
+          // The reason has to distinguish "not delivered" from "deliberately not
+          // sent": a skipped mail is not a failure, and the matches are already
+          // recorded, so they will not be reported twice tomorrow either.
+          razlog:
+            izid === "poslano"
+              ? `poslano na ${email} (vir: ${virZa.get(email)})`
+              : izid === "ze_danes"
+                ? "danes je obvestilo o spremljanjih ze slo - zadetki so vidni na strani"
+                : izid === "kvota"
+                  ? "dnevna kvota e-poste je porabljena - zadetki so vidni na strani"
+                  : izid === "ni_nastavljeno"
+                    ? "RESEND ni nastavljen"
+                    : "posiljanje ni uspelo",
+        });
+      }
+    }
   }
 
   return outcomes;

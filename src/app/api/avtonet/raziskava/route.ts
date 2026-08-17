@@ -75,6 +75,7 @@ export async function GET() {
     blokadaRes,
     zbiralnikRes,
     popravilaRes,
+    postaRes,
   ] = await Promise.all([
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db
@@ -89,6 +90,7 @@ export async function GET() {
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "blokada").maybeSingle(),
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "zbiralnik").maybeSingle(),
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "samopopravila").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki").eq("kljuc", "posta").maybeSingle(),
   ]);
 
   const uporabljeno =
@@ -119,5 +121,11 @@ export async function GET() {
     samopopravila: popravilaRes.error
       ? []
       : ((popravilaRes.data as { podatki: { zapisi?: unknown[] } } | null)?.podatki?.zapisi ?? []),
+    // Today's email budget, so "why did I get no report" and "why am I getting
+    // five" are both answerable from the console.
+    posta: postaRes.error
+      ? null
+      : ((postaRes.data as { podatki: { dan: string; poslanih: number; vrste: string[] } } | null)
+          ?.podatki ?? null),
   });
 }

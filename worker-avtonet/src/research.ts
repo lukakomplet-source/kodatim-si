@@ -437,7 +437,7 @@ export async function runResearch(
     // is only useful while the car can still be called about.
     if (!opts.preskociIskanja) {
       try {
-        for (const o of await runSavedSearches(db)) log("info", "shranjeno iskanje", { ...o });
+        for (const o of await runSavedSearches(db, log)) log("info", "shranjeno iskanje", { ...o });
         dnevnik.zapisi("info", "Obvestila za shranjena iskanja preverjena po 1. fazi");
       } catch (err) {
         log("warn", "shranjenih iskanj ni bilo mogoce obdelati", {
