@@ -272,66 +272,91 @@ Pravila:
 - Vse v slovenščini.`;
 
 /**
- * Scores the shortlist. The model sees only the few facts that justify a match,
- * so it cannot invent qualities the base does not contain — and the prompt asks
- * it to explain each score from those facts.
+ * One company as the few facts that can justify a score.
+ *
+ * The model sees only these, so it cannot invent qualities the base does not
+ * contain — and the prompt asks it to explain every score from them.
  */
+function dejstva(lead: IntelLead): string {
+  const custom = (lead.custom_fields as Record<string, string> | null) ?? {};
+  const facts = [
+    lead.industry && `panoga: ${lead.industry}`,
+    custom.skd_name && `SKD: ${custom.skd_name}`,
+    custom.other_activities && `druge dejavnosti: ${custom.other_activities.slice(0, 200)}`,
+    custom.company_size && `velikost: ${custom.company_size}`,
+    custom.employees_count && `zaposleni: ${custom.employees_count}`,
+    custom.revenue_amount && `prihodki: ${custom.revenue_amount} €`,
+    lead.address_city && `kraj: ${lead.address_city}`,
+    lead.address_region && `regija: ${lead.address_region}`,
+  ]
+    .filter(Boolean)
+    .join("; ");
+  return `id: ${lead.id}
+ime: ${lead.company_name}
+${facts}`;
+}
+
 export async function rankCandidates(
   leads: IntelLead[],
   theme: string,
   kind: CampaignKind = "prodaja",
-  // Raised from 60: the point of a campaign is the whole segment, and a cap
-  // that low turned "there are 700 of them" into "36 candidates" with nothing
-  // saying which one it was. Scored in batches, so the model still sees a
-  // readable list at a time.
+  // Raised from 60: the point of a campaign is the whole segment, and a cap that
+  // low turned "there are 891 of them" into "36 candidates" with nothing saying
+  // which it was.
+  //
+  // Scored in parallel batches rather than one long prompt: 300 companies in a
+  // single request is a prompt the model answers slowly and truncates — the
+  // button spins, and whatever comes back is missing rows. A batch of 50 comes
+  // back complete, and six of them run at once.
   max = 300
 ): Promise<TargetCandidate[]> {
   const shortlist = leads.slice(0, max);
   if (shortlist.length === 0) return [];
 
-  const block = shortlist
-    .map((lead) => {
-      const custom = (lead.custom_fields as Record<string, string> | null) ?? {};
-      const facts = [
-        lead.industry && `panoga: ${lead.industry}`,
-        custom.skd_name && `SKD: ${custom.skd_name}`,
-        custom.other_activities && `druge dejavnosti: ${custom.other_activities.slice(0, 200)}`,
-        custom.company_size && `velikost: ${custom.company_size}`,
-        custom.employees_count && `zaposleni: ${custom.employees_count}`,
-        custom.revenue_amount && `prihodki: ${custom.revenue_amount} €`,
-        lead.address_city && `kraj: ${lead.address_city}`,
-        lead.address_region && `regija: ${lead.address_region}`,
-      ]
-        .filter(Boolean)
-        .join("; ");
-      return `id: ${lead.id}\nime: ${lead.company_name}\n${facts}`;
-    })
-    .join("\n\n");
+  const KOS = 50;
+  const paketi: IntelLead[][] = [];
+  for (let i = 0; i < shortlist.length; i += KOS) paketi.push(shortlist.slice(i, i + KOS));
 
-  const ai = await chatJSON<{ results?: { id?: string; score?: number; reason?: string }[] }>(
-    RANK_PROMPT,
-    `${CAMPAIGN_KIND_CONTEXT[kind]}\n\nCilj kampanje: ${theme}\n\nPodjetja:\n\n${block}`,
-    { temperature: 0.2 }
+  const odgovori = await Promise.all(
+    paketi.map(async (paket) => {
+      try {
+        return await chatJSON<{ results?: { id?: string; score?: number; reason?: string }[] }>(
+          RANK_PROMPT,
+          [
+            CAMPAIGN_KIND_CONTEXT[kind],
+            `Cilj kampanje: ${theme}`,
+            "Podjetja:",
+            paket.map(dejstva).join("\n\n"),
+          ].join("\n\n"),
+          { temperature: 0.2 }
+        );
+      } catch {
+        // One failed batch must not lose the other five; its companies come
+        // through unrated, which the table already knows how to show.
+        return { results: [] };
+      }
+    })
   );
 
   const byId = new Map(shortlist.map((l) => [l.id, l]));
   const scored: TargetCandidate[] = [];
-  for (const row of ai.results ?? []) {
-    const lead = row?.id ? byId.get(row.id) : undefined;
-    if (!lead) continue;
-    scored.push({
-      lead,
-      score: Math.max(0, Math.min(100, Math.round(Number(row.score) || 0))),
-      reason: typeof row.reason === "string" ? row.reason.trim() : "",
-    });
-    byId.delete(row.id!);
+  for (const ai of odgovori) {
+    for (const row of ai.results ?? []) {
+      const lead = row?.id ? byId.get(row.id) : undefined;
+      if (!lead) continue;
+      scored.push({
+        lead,
+        score: Math.max(0, Math.min(100, Math.round(Number(row.score) || 0))),
+        reason: typeof row.reason === "string" ? row.reason.trim() : "",
+      });
+      byId.delete(row.id!);
+    }
   }
 
-  // Anything the model skipped still belongs in the table, marked as unrated
-  // rather than silently dropped.
   for (const lead of byId.values()) {
     scored.push({ lead, score: 0, reason: "AI tega podjetja ni ocenil." });
   }
 
   return scored.sort((a, b) => b.score - a.score);
 }
+
