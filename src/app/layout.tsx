@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { KlepetSprememb } from "@/components/KlepetSprememb";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -52,6 +53,13 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         {children}
+        {/*
+          The change chat, on every page. It asks once who is signed in and
+          renders nothing for a visitor, so putting it here costs an anonymous
+          reader one small request and nothing else — and a request to fix
+          something is worth most on the page where it was noticed.
+        */}
+        <KlepetSprememb />
       </body>
     </html>
   );
