@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { RAZLOG_SAMO_LOKALNO } from "@/lib/avtonet/aiScope";
+import { preveriZmoznost } from "@/lib/avtonet/aiZmoznost";
 import { UrejanjeClient, type Predlog, type Seja } from "./UrejanjeClient";
 
 /**
@@ -22,7 +23,11 @@ export default async function UrejanjePage() {
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik || !dostop.userId) redirect(prijavaZa("/avtonet/urejanje"));
 
-  const lokalno = process.env.NODE_ENV !== "production" && !process.env.VERCEL;
+  // Whether editing is possible is now measured on the server (writable checkout
+  // + toolchain + a configured PIN), not inferred from NODE_ENV. The site runs
+  // from the repository on the owner's machine, so "production" no longer means
+  // "cannot edit" — and the reason shown to the user has to be the real one.
+  const zmoznost = await preveriZmoznost();
   const db = createAvtonetClient();
 
   // A regular user sees their own suggestions; an admin sees everyone's.
@@ -46,8 +51,8 @@ export default async function UrejanjePage() {
     <UrejanjeClient
       jeAdmin={dostop.jeAdmin}
       userId={dostop.userId}
-      lokalno={lokalno}
-      razlogSamoLokalno={RAZLOG_SAMO_LOKALNO}
+      lokalno={zmoznost.zmore}
+      razlogSamoLokalno={zmoznost.razlog ?? RAZLOG_SAMO_LOKALNO}
       migracijaManjka={sejeRes.error?.code === "PGRST205"}
       predlogiManjkajo={predlogiRes.error?.code === "PGRST205"}
       predlogi={(predlogiRes.data ?? []) as unknown as Predlog[]}

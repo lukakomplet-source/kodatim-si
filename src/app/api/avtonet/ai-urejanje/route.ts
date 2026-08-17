@@ -9,6 +9,7 @@ import {
   presodiPot,
   vsebujeSkrivnost,
 } from "@/lib/avtonet/aiScope";
+import { odkleni, pinPravilen, preveriZmoznost, zakleni } from "@/lib/avtonet/aiZmoznost";
 
 /**
  * The AI editor for SBN Auto — a local development tool, not a product feature.
@@ -141,21 +142,19 @@ Odgovori IZKLJUČNO z JSON:
 }`;
 
 export async function POST(request: NextRequest) {
-  // ---- Gate 1: never in production, whatever else is true --------------
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
-    return NextResponse.json({ error: RAZLOG_SAMO_LOKALNO }, { status: 403 });
+  // ---- Gate 1: can this server actually do it? -------------------------
+  //
+  // Measured, not assumed. The old rule was "localhost, and never production",
+  // which really tested for a writable checkout and a toolchain — the two things
+  // a Vercel function lacks. SBN Auto now runs from the repository on the owner's
+  // own machine behind a tunnel, so the capability is real and the host check
+  // only stopped the owner from using it from their phone. See aiZmoznost.ts.
+  const zmoznost = await preveriZmoznost();
+  if (!zmoznost.zmore) {
+    return NextResponse.json({ error: zmoznost.razlog ?? RAZLOG_SAMO_LOKALNO }, { status: 403 });
   }
 
-  // ---- Gate 2: the request must come from this machine -----------------
-  const host = (request.headers.get("host") ?? "").split(":")[0];
-  if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(host)) {
-    return NextResponse.json(
-      { error: `AI urejanje je dovoljeno samo z localhost (zahteva prišla z „${host}“).` },
-      { status: 403 }
-    );
-  }
-
-  // ---- Gate 3: admin ---------------------------------------------------
+  // ---- Gate 2: admin ---------------------------------------------------
   let user;
   try {
     user = await requireAdmin();
@@ -164,9 +163,11 @@ export async function POST(request: NextRequest) {
   }
 
   let zahteva = "";
+  let pin: string | undefined;
   try {
     const body = await request.json();
     zahteva = typeof body?.zahteva === "string" ? body.zahteva.trim() : "";
+    pin = typeof body?.pin === "string" ? body.pin : undefined;
   } catch {
     return NextResponse.json({ error: "Neveljavna zahteva." }, { status: 400 });
   }
@@ -174,10 +175,50 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Napišite, kaj želite spremeniti." }, { status: 400 });
   }
 
+  // ---- Gate 3: a secret that does not travel with the login -------------
+  //
+  // This route writes source files and runs a build, so once it answers from the
+  // internet a session cookie alone must not be enough to reach it: a borrowed
+  // browser would be code execution on the owner's machine. The PIN lives only
+  // in that machine's environment, is never sent by the login, and five wrong
+  // tries stop the endpoint until the process restarts.
+  //
+  // Opening the route beyond localhost was the owner's explicit decision (17.08),
+  // taken over the two safer alternatives; this gate is the condition on which it
+  // was taken, not decoration.
+  const presoja = pinPravilen(pin);
+  if (!presoja.ok) {
+    return NextResponse.json({ error: presoja.razlog ?? "Napačno geslo." }, { status: 403 });
+  }
+
+  // ---- Gate 4: one edit at a time --------------------------------------
+  //
+  // Two runs share one checkout: they would overwrite each other's files and
+  // each other's restore points, which is exactly how a half-edited repository
+  // happens. Refusing the second is the only safe answer.
+  if (!zakleni()) {
+    return NextResponse.json(
+      {
+        error:
+          "Eno urejanje že teče. Počakaj, da se konča — typecheck, lint in build vzamejo nekaj minut.",
+      },
+      { status: 409 }
+    );
+  }
+  try {
+    return await izvediUrejanje(user.id, zahteva);
+  } finally {
+    odkleni();
+  }
+}
+
+/** The edit itself, split out so the lock is released in exactly one place. */
+async function izvediUrejanje(userId: string, zahteva: string): Promise<NextResponse> {
+
   const db = createAvtonetClient();
   const zapisi = async (polja: Record<string, unknown>) => {
     try {
-      await db.from("avtonet_ai_seje").insert({ uporabnik: user.id, zahteva, ...polja });
+      await db.from("avtonet_ai_seje").insert({ uporabnik: userId, zahteva, ...polja });
     } catch {
       // The log is not worth failing the request over.
     }

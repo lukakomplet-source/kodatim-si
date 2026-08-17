@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -97,6 +97,14 @@ export function UrejanjeClient({
   const [zahteva, setZahteva] = useState("");
   const [tece, setTece] = useState(false);
   const [izid, setIzid] = useState<Izid | null>(null);
+  // Kept on the device rather than asked for every time: this is used from a
+  // phone, and a secret you have to retype on a phone keyboard is a secret that
+  // ends up written in a note. It never leaves the browser except with a request.
+  const [pin, setPin] = useState("");
+  useEffect(() => {
+    const shranjen = window.localStorage.getItem("avtonet-ai-pin");
+    if (shranjen) queueMicrotask(() => setPin(shranjen));
+  }, []);
 
   const poslji = async () => {
     if (zahteva.trim().length < 5 || tece) return;
@@ -106,9 +114,13 @@ export function UrejanjeClient({
       const res = await fetch("/api/avtonet/ai-urejanje", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zahteva }),
+        body: JSON.stringify({ zahteva, pin }),
       });
-      setIzid((await res.json()) as Izid);
+      const odgovor = (await res.json()) as Izid;
+      setIzid(odgovor);
+      // Remember the PIN only once it has actually been accepted, so a typo is
+      // not what greets you next time.
+      if (!odgovor.error && pin) window.localStorage.setItem("avtonet-ai-pin", pin);
       router.refresh();
     } catch (err) {
       setIzid({ error: err instanceof Error ? err.message : "Zahteva ni uspela." });
@@ -172,6 +184,18 @@ export function UrejanjeClient({
         </p>
       )}
 
+      {lokalno && (
+        <p className="mt-5 flex items-start gap-2 rounded-xl bg-zinc-50 px-4 py-3 text-xs text-zinc-600 ring-1 ring-zinc-200">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Urejanje teče na računalniku, kjer je koda — zato deluje tudi s telefona. Poleg admin
+            prijave je potrebno geslo za urejanje (<code>AVTONET_AI_PIN</code>), ker ta gumb piše
+            datoteke in poganja build: samo piškotek seje za to ne sme zadostovati. Po petih
+            napačnih vnosih se zaklene, hkrati pa teče lahko eno urejanje.
+          </span>
+        </p>
+      )}
+
       {migracijaManjka && (
         <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
           Zgodovine ni mogoče beležiti — poženite <code>supabase/migration_avtonet_ai_seje.sql</code>.
@@ -191,10 +215,19 @@ export function UrejanjeClient({
           className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3 text-sm focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/10 disabled:bg-zinc-50"
         />
         <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            disabled={!lokalno || tece}
+            autoComplete="current-password"
+            placeholder="geslo za urejanje"
+            className="w-44 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm focus:border-accent/60 focus:outline-none disabled:bg-zinc-50"
+          />
           <button
             type="button"
             onClick={poslji}
-            disabled={!lokalno || tece || zahteva.trim().length < 5}
+            disabled={!lokalno || tece || zahteva.trim().length < 5 || pin.trim().length === 0}
             className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {tece ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
