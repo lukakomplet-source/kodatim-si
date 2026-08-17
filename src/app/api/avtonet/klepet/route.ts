@@ -6,6 +6,7 @@ import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { DOSEG, DOSEG_PREDPONE } from "@/lib/avtonet/aiScope";
 import { preveriZmoznost } from "@/lib/avtonet/aiZmoznost";
 import { najdiRelevantne, pripraviBralnik, sestaviKontekst } from "@/lib/avtonet/aiKontekst";
+import { claudeCodeNaVoljo, nacrtSClaudeCode, shraniSlikeZaBranje } from "@/lib/avtonet/claudeCode";
 
 /**
  * The floating chat: say what should change, get a plan, say "pojdi".
@@ -197,7 +198,29 @@ export async function POST(request: NextRequest) {
 
     let plan = "";
     let vprasanje = false;
+    let motor: "claude-code" | "gpt" = "gpt";
+
+    // Claude Code writes the plan when the CLI is on this machine: with Read and
+    // Grep it opens the page and searches for the words the user quoted, instead
+    // of answering from the shape of the sentence. Screenshots go along as files,
+    // because Read renders an image — so one run sees both the picture of the
+    // problem and the code behind it.
+    if (await claudeCodeNaVoljo()) {
+      const shranjene = await shraniSlikeZaBranje(slike);
+      try {
+        const izid = await nacrtSClaudeCode(zgodovina, pot, shranjene.poti);
+        if (izid) {
+          plan = izid.plan;
+          motor = "claude-code";
+          vprasanje = /\?\s*$/.test(plan.trim());
+        }
+      } finally {
+        await shranjene.pocisti();
+      }
+    }
+
     try {
+      if (plan) throw new Error("PLAN_ZE_OBSTAJA");
       const vsebina =
         `Stran, na kateri je uporabnik: ${pot ?? "neznana"}\n\n` +
         (koda
@@ -224,15 +247,22 @@ export async function POST(request: NextRequest) {
       plan = (ai.plan ?? "").trim();
       vprasanje = ai.vprasanje === true;
     } catch (err) {
-      plan = `Načrta nisem mogel sestaviti (${err instanceof Error ? err.message : "napaka"}). Poskusi znova ali napiši zahtevo drugače.`;
-      vprasanje = true;
+      // The Claude Code path already produced a plan; this is not a failure.
+      if (!(err instanceof Error && err.message === "PLAN_ZE_OBSTAJA")) {
+        plan = `Načrta nisem mogel sestaviti (${err instanceof Error ? err.message : "napaka"}). Poskusi znova ali napiši zahtevo drugače.`;
+        vprasanje = true;
+      }
     }
     if (!plan) plan = "Nisem razumel zahteve — napiši, katero stran in kaj natanko naj spremenim.";
 
     const odgovor = await zapisi({
       vloga: "ai",
       vrsta: "plan",
-      besedilo: plan,
+      // Whose answer this is matters: the two engines are not equally good, and
+      // when a plan is weak the first useful question is which one wrote it.
+      besedilo: motor === "claude-code" ? plan : `${plan}
+
+(načrt: hitri model, brez branja kode)`,
       // A question is not something to confirm, so it does not get a "pojdi".
       potrjeno: vprasanje ? null : false,
     });

@@ -11,6 +11,7 @@ import {
 } from "@/lib/avtonet/aiScope";
 import { odkleni, pinPravilen, preveriZmoznost, zakleni } from "@/lib/avtonet/aiZmoznost";
 import { najdiRelevantne, sestaviKontekst } from "@/lib/avtonet/aiKontekst";
+import { claudeCodeNaVoljo, izvediSClaudeCode } from "@/lib/avtonet/claudeCode";
 
 /**
  * The AI editor for SBN Auto — a local development tool, not a product feature.
@@ -224,6 +225,15 @@ async function izvediUrejanje(
   /** The page the request came from, for ranking which files to read. */
   pot: string | null
 ): Promise<NextResponse> {
+
+  // Claude Code first, when the CLI is on this machine.
+  //
+  // It reads the code with real tools instead of guessing from one prompt, which
+  // is the whole difference between a fix and "predlagam, da preverimo". The
+  // one-shot path below stays as the fallback for a machine without the CLI.
+  if (await claudeCodeNaVoljo()) {
+    return await prekoClaudeCode(userId, zahteva, pot);
+  }
 
   const db = createAvtonetClient();
   const zapisi = async (polja: Record<string, unknown>) => {
@@ -490,4 +500,75 @@ async function zazeniPonovniZagonStrani(
   } catch {
     return false;
   }
+}
+
+/**
+ * The Claude Code path: same gates, same logging, real tools.
+ *
+ * Kept as its own function rather than woven into the one-shot flow above,
+ * because the two have genuinely different shapes — that one asks for whole file
+ * contents and writes them itself, this one hands over a task and then judges
+ * what came back. Mixing them would obscure both.
+ */
+async function prekoClaudeCode(
+  userId: string,
+  zahteva: string,
+  pot: string | null
+): Promise<NextResponse> {
+  const db = createAvtonetClient();
+  const izid = await izvediSClaudeCode(zahteva, pot);
+
+  try {
+    await db.from("avtonet_ai_seje").insert({
+      uporabnik: userId,
+      zahteva,
+      razlaga: `[Claude Code] ${izid.razlaga}`.slice(0, 8000),
+      datoteke: izid.datoteke.map((p) => ({ pot: p, akcija: "spremenjeno" })),
+      typecheck: izid.preverjanja.find((p) => p.ime === "typecheck")?.izid ?? "preskoceno",
+      lint: izid.preverjanja.find((p) => p.ime === "lint")?.izid ?? "preskoceno",
+      build: izid.preverjanja.find((p) => p.ime === "build")?.izid ?? "preskoceno",
+      izid: izid.ok ? "uspeh" : izid.datoteke.length > 0 ? "razveljavljeno" : "zavrnjeno",
+      napaka: izid.napaka,
+      popravkov: 0,
+    });
+  } catch {
+    // The log is not worth failing the request over.
+  }
+
+  if (!izid.ok) {
+    return NextResponse.json({
+      razlaga: izid.razlaga,
+      spremembe: izid.datoteke,
+      preverjanja: izid.preverjanja,
+      izid: izid.datoteke.length > 0 ? "razveljavljeno" : "zavrnjeno",
+      sporocilo:
+        [
+          izid.napaka,
+          izid.zavrnjene.length > 0
+            ? `Datoteke zunaj SBN Auto so bile povrnjene: ${izid.zavrnjene.join(", ")}.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || "Sprememba ni bila izvedena.",
+      motor: izid.motor,
+    });
+  }
+
+  const ponovniZagon = await (async () => {
+    const orodja = await pripraviOrodja();
+    return zazeniPonovniZagonStrani(orodja.ukaz);
+  })();
+
+  return NextResponse.json({
+    razlaga: izid.razlaga,
+    spremembe: izid.datoteke,
+    preverjanja: izid.preverjanja,
+    izid: "uspeh",
+    motor: izid.motor,
+    sporocilo:
+      (ponovniZagon
+        ? "Spremembe so zapisane, prestale typecheck, lint in build. Stran se ponovno zaganja — čez ~20 s osveži. "
+        : "Spremembe so zapisane in prestale typecheck, lint in build. Osveži stran, da bodo vidne. ") +
+      (izid.cenaUsd !== null ? `(Poraba: ${izid.cenaUsd.toFixed(2)} USD.)` : ""),
+  });
 }
