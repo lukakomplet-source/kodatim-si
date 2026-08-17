@@ -67,7 +67,15 @@ export async function GET() {
   // already-captured adverts were correctly skipped. Reporting the standing
   // totals alongside makes the real progress visible and a restart obviously
   // harmless.
-  const [aktivnihRes, zDetajliRes, urnikRes, prostorRes, blokadaRes, zbiralnikRes] = await Promise.all([
+  const [
+    aktivnihRes,
+    zDetajliRes,
+    urnikRes,
+    prostorRes,
+    blokadaRes,
+    zbiralnikRes,
+    popravilaRes,
+  ] = await Promise.all([
     db.from("avtonet_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
     db
       .from("avtonet_oglasi")
@@ -80,6 +88,7 @@ export async function GET() {
     db.rpc("avtonet_db_size"),
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "blokada").maybeSingle(),
     db.from("avtonet_statistika").select("podatki").eq("kljuc", "zbiralnik").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki").eq("kljuc", "samopopravila").maybeSingle(),
   ]);
 
   const uporabljeno =
@@ -105,5 +114,10 @@ export async function GET() {
     zbiralnik: zbiralnikRes.error
       ? null
       : ((zbiralnikRes.data as { podatki: unknown } | null)?.podatki ?? null),
+    // What the collector diagnosed and repaired on its own. Shown in the console
+    // because a repair nobody can see is indistinguishable from a bug.
+    samopopravila: popravilaRes.error
+      ? []
+      : ((popravilaRes.data as { podatki: { zapisi?: unknown[] } } | null)?.podatki?.zapisi ?? []),
   });
 }

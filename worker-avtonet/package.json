@@ -37,7 +37,8 @@
     "report": "tsx src/report-once.ts",
     "statistika": "tsx src/statistika-once.ts",
     "test:dvojni": "tsx src/test-dvojni.ts",
-    "test:zascita": "tsx src/test-zascita.ts"
+    "test:zascita": "tsx src/test-zascita.ts",
+    "test:samopopravilo": "tsx src/test-samopopravilo.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

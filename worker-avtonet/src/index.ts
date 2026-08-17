@@ -1,7 +1,16 @@
 import "dotenv/config";
 import { BlockedError } from "./collector.js";
 import { connect, reportHealth, type Db } from "./db.js";
-import { current, mirovanjeMs, premik, startHealthServer, update, type WorkerState } from "./health.js";
+import {
+  current,
+  dovoljenoCakanjeMs,
+  mirovanjeDelaMs,
+  napredek,
+  premik,
+  startHealthServer,
+  update,
+  type WorkerState,
+} from "./health.js";
 import { buildDailyReport, sendDailyReport } from "./report.js";
 import { claimResearch, finishResearch, requestResearch, saveProgress, type Job } from "./jobs.js";
 import { runResearch, type Progress } from "./research.js";
@@ -10,6 +19,7 @@ import { poveziVozila } from "./vozila.js";
 import { izracunajStatistiko } from "./statistika.js";
 import { blokiran, minutDoKonca, preberiBlokado, zabelezBlokado, zabelezUspeh } from "./blokada.js";
 import { posljiDealFeed } from "./dealfeed.js";
+import { samopopravilo } from "./samopopravilo.js";
 
 /**
  * SBN Auto collector — the long-running production process.
@@ -126,24 +136,47 @@ let stopping = false;
  */
 const ZASTOJ_MS = Number(process.env.AVTONET_STALL_MS ?? 12 * 60_000);
 
+/**
+ * Whether a research is being worked on right now.
+ *
+ * An idle worker between runs does no work by definition, and killing it for
+ * that would be a restart loop. Only a running job can stall.
+ */
+let deloVTeku = false;
+function jeDeloVTeku(): boolean {
+  return deloVTeku;
+}
+
 function zazeniNadzorZastoja(db: Db): void {
   const t = setInterval(() => {
-    const mirujeMs = mirovanjeMs();
+    // WORK, not liveness. The first version watched the liveness stamp, which a
+    // collector spinning in a wait loop keeps perfectly fresh — so it watched
+    // the one number that cannot go stale in the failure it exists to catch.
+    const mirujeMs = mirovanjeDelaMs();
     if (mirujeMs < ZASTOJ_MS) return;
+    // A declared pause is still allowed to be quiet — but only until it ends.
+    if (dovoljenoCakanjeMs() > 0) return;
+    if (!jeDeloVTeku()) return;
     clearInterval(t);
     const minut = Math.round(mirujeMs / 60_000);
-    log("error", "ZASTOJ - proces se ne premika, koncujem, da se lahko zazene znova", {
+    log("error", "ZASTOJ - nic obdelanega, koncujem, da se lahko zazene znova", {
       mirovanjeMin: minut,
       opomba: "raziskava ostane 'tece' in jo nova instanca prevzame takoj",
     });
-    // Best effort: leave a trace in the database for the console, then exit.
-    void reportHealth(db, {
-      heartbeat: new Date().toISOString(),
-      stanje: "napaka",
-      zadnja_napaka: `Zastoj: ${minut} min brez premika — zbiralnik se je sam ponovno zagnal`,
-    }).finally(() => process.exit(1));
-    // If even that write hangs, do not wait for it.
-    setTimeout(() => process.exit(1), 10_000).unref();
+    // Diagnose first, then die: the evidence (log tail, guard state, queue) is
+    // only available from inside this process's own world, and after the restart
+    // the console should say WHAT happened, not just that something did.
+    void samopopravilo(db, `Zastoj: ${minut} min brez enega samega obdelanega oglasa`, log)
+      .then(() =>
+        reportHealth(db, {
+          heartbeat: new Date().toISOString(),
+          stanje: "napaka",
+          zadnja_napaka: `Zastoj: ${minut} min brez napredka — zbiralnik se je sam ponovno zagnal`,
+        })
+      )
+      .finally(() => process.exit(1));
+    // If the diagnosis itself hangs, leave anyway — restarting beats waiting.
+    setTimeout(() => process.exit(1), 90_000).unref();
   }, 60_000);
   t.unref();
 }
@@ -158,6 +191,8 @@ function zazeniNadzorZastoja(db: Db): void {
  * attempt continues instead of starting the hours again).
  */
 async function runJob(db: Db, job: Job): Promise<void> {
+  deloVTeku = true;
+  premik();
   const startedAt = new Date().toISOString();
   update({ lastRunAt: startedAt });
   await reportHealth(db, { zadnji_zagon: startedAt, heartbeat: startedAt, stanje: "ok" });
@@ -176,7 +211,10 @@ async function runJob(db: Db, job: Job): Promise<void> {
       log,
       shouldStop: () => cancelled || stopping,
       onProgress: async (p) => {
-        premik();
+        // A written progress row is real work — phase 1 reports one per results
+        // page, and without this the work clock would run dry during a perfectly
+        // healthy market sweep.
+        napredek();
         if (!(await saveProgress(db, job.id, p))) {
           cancelled = true;
           log("warn", "raziskava je bila preklicana", { raziskava: job.id });
@@ -257,6 +295,12 @@ async function runJob(db: Db, job: Job): Promise<void> {
       zaporednihNapak: failures,
       stanje: state,
     });
+
+    // Let the diagnosis look at a real failure too, not only at a stall.
+    if (!blocked) await samopopravilo(db, `Raziskava se je ustavila z napako: ${message}`, log);
+  } finally {
+    deloVTeku = false;
+    premik();
   }
 }
 
@@ -464,8 +508,11 @@ async function main(): Promise<void> {
       continue; // Another request may already be waiting.
     }
 
-    // An idle worker is not a stalled one: the poll itself is progress.
-    premik();
+    // An idle worker is not a stalled one: with no research to work on there is
+    // no work to measure, so the poll counts as both. Without this the external
+    // watchdog would read a growing "work age" on a perfectly healthy worker
+    // that simply has nothing to do, and restart it every twenty minutes.
+    napredek();
     await reportHealth(db, { heartbeat: new Date().toISOString() });
     await sleep(POLL_MS);
   }

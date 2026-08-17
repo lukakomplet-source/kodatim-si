@@ -50,6 +50,16 @@ type Prostor = { uporabljeno: number | null; limit: number };
 
 type Blokada = { do: string | null; stopnja: number; faktor: number; razlog: string | null };
 
+type Samopopravilo = {
+  ob: string;
+  sprozil: string;
+  vzrok: string;
+  ukrep: string;
+  utemeljitev: string;
+  izvedeno: string;
+  vir: "ai" | "privzeto";
+};
+
 type Zbiralnik = {
   faza: string;
   ob: string;
@@ -71,6 +81,7 @@ type Odziv = {
   prostor?: Prostor;
   blokada?: Blokada | null;
   zbiralnik?: Zbiralnik | null;
+  samopopravila?: Samopopravilo[];
 };
 
 /** Fast while something is happening, slow while nothing is. */
@@ -105,6 +116,16 @@ function useNow(): number {
 function stevilo(n: number): string {
   return n.toLocaleString("sl-SI");
 }
+
+/** The remedies the collector is allowed to apply to itself, in plain Slovene. */
+const UKREPI: Record<string, string> = {
+  ponovni_zagon: "ponovni zagon",
+  pocasneje: "počasnejše zbiranje",
+  pocakaj_ure: "premor za nekaj ur",
+  preskoci_oglas: "preskočen oglas",
+  sprosti_vrsto: "sproščena vrsta",
+  nic: "brez posega",
+};
 
 const STATUS_OZNAKE: Record<Raziskava["status"], string> = {
   zahtevano: "Čaka na zbiralnik",
@@ -274,6 +295,41 @@ export function ResearchPanel() {
       )}
 
       {aktivna && <Napredek r={aktivna} now={now} skupno={odziv.skupno} zbiralnik={odziv.zbiralnik} />}
+
+      {(odziv.samopopravila?.length ?? 0) > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-zinc-900">Samodejna popravila</h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            Kaj je zbiralnik sam zaznal in kaj je ob tem naredil. Zapisano je vsakič, tudi če je
+            popravek uspel — brez tega bi bila razlika med „samo se je popravilo“ in „nihče ni
+            opazil“ nevidna.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {(odziv.samopopravila ?? []).slice(0, 5).map((s, i) => (
+              <li key={i} className="rounded-xl bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
+                <div className="flex flex-wrap items-center gap-2 text-zinc-500">
+                  <span className="font-medium text-zinc-700">
+                    {new Date(s.ob).toLocaleString("sl-SI", {
+                      day: "numeric",
+                      month: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <span className="rounded-full bg-white px-2 py-0.5 font-medium text-zinc-600 ring-1 ring-zinc-200">
+                    {UKREPI[s.ukrep] ?? s.ukrep}
+                  </span>
+                  {s.vir === "privzeto" && (
+                    <span className="text-amber-700">brez modela — privzeti ukrep</span>
+                  )}
+                </div>
+                <p className="mt-1 text-zinc-800">{s.vzrok}</p>
+                <p className="mt-0.5 text-zinc-500">{s.izvedeno}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {odziv.zgodovina.length > 0 && <Zgodovina vrstice={odziv.zgodovina} now={now} />}
     </section>

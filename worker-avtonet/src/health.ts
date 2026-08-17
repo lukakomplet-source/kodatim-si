@@ -67,10 +67,23 @@ export function startHealthServer(port: number): Server {
     // A frozen process still answers on its port, so the port alone proves
     // nothing. The age of the liveness stamp is what the watchdog reads: it
     // grows without bound exactly when the collector is wedged.
-    const zastoj = mirovanjeMs();
     const healthy = snap.state !== "ustavljeno";
     res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ ok: healthy, heartbeatAgeMs: zastoj, ...snap }, null, 2));
+    res.end(
+      JSON.stringify(
+        {
+          ok: healthy,
+          heartbeatAgeMs: mirovanjeMs(),
+          // The number that actually matters to an outside watchdog: a wedged
+          // collector keeps its heartbeat fresh, but not this.
+          workAgeMs: mirovanjeDelaMs(),
+          waitingForMs: dovoljenoCakanjeMs(),
+          ...snap,
+        },
+        null,
+        2
+      )
+    );
   });
 
   // A taken port means another worker is already running, which is a reason to
@@ -98,19 +111,50 @@ export function startHealthServer(port: number): Server {
 }
 
 /**
- * Liveness stamp for the stall guard in index.ts.
+ * Two different questions, and conflating them cost nine and a half hours.
  *
- * Lives here rather than in index.ts so the research loop can mark itself alive
- * without importing the entry point: a legitimate cooling pause (the source
- * pushing back can mean an hour of deliberate waiting) must not look like the
- * process being wedged.
+ * `premik` answers "is this process alive" — the poll loop ticks it. `napredek`
+ * answers "did any actual work get done" — one advert fetched, saved or failed.
+ * A collector stuck in a wait loop kept answering YES to the first question
+ * while the second stood still, so the stall guard slept through the whole
+ * night. The guard now watches WORK, and a wait is only excused while the
+ * moment it was declared to end is still in the future.
  */
 let zadnjiPremik = Date.now();
+let zadnjiNapredek = Date.now();
+let cakanjeDo = 0;
 
 export function premik(): void {
   zadnjiPremik = Date.now();
 }
 
+/** One advert actually handled — success or failure, both count as movement. */
+export function napredek(): void {
+  zadnjiNapredek = Date.now();
+  zadnjiPremik = zadnjiNapredek;
+}
+
+/**
+ * "I am deliberately waiting until this moment."
+ *
+ * An absolute time, never a duration: a duration can be re-declared forever,
+ * which is exactly the bug this exists to make impossible. Once it passes, the
+ * silence is no longer excused.
+ */
+export function napovedanoCakanjeDo(t: number): void {
+  cakanjeDo = t;
+  zadnjiPremik = Date.now();
+}
+
 export function mirovanjeMs(): number {
   return Date.now() - zadnjiPremik;
+}
+
+export function mirovanjeDelaMs(): number {
+  return Date.now() - zadnjiNapredek;
+}
+
+/** Milliseconds we are still entitled to be silent; 0 once the wait has run out. */
+export function dovoljenoCakanjeMs(): number {
+  return Math.max(0, cakanjeDo - Date.now());
 }

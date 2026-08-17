@@ -20,7 +20,7 @@ import {
   type Db,
 } from "./db.js";
 import { objaviStanje, ustvariZascito } from "./zascita.js";
-import { premik } from "./health.js";
+import { napovedanoCakanjeDo, napredek } from "./health.js";
 
 /**
  * When the running research entered phase 2.
@@ -696,13 +696,27 @@ async function detailPhase(
       // Spacing, plus any withdrawal the guard has ordered. A cool-down can be
       // many minutes, so it is served in short slices — otherwise a cancel or a
       // shutdown would have to wait out the whole pause.
-      let cakaj = Math.max(stanje.delayMs, stanje.pavzaDo - Date.now(), zascita.cakanje());
-      while (cakaj > 0) {
+      //
+      // The wait is a DEADLINE, not a recomputed remainder. It used to be the
+      // latter — `zascita.cakanje() - stanje.delayMs` — and that expression does
+      // not shrink: once the guard's adaptive delay drifted above the base
+      // spacing (6.5 s vs 5 s) it returned a constant 1.5 s forever, so the loop
+      // slept 1.5 s, recomputed 1.5 s, and never issued another request. The
+      // process stayed alive, answered its health port and reported no error
+      // while doing nothing at all for nine and a half hours. A deadline is
+      // monotone, so it always runs out.
+      const cakajDo = Date.now() + Math.max(stanje.delayMs, zascita.cakanje());
+      for (;;) {
         if (ctx.shouldStop?.() || stanje.ustavi || zascita.ustaviSe()) return;
-        // Waiting on purpose is not a stall — say so on every slice.
-        premik();
-        await sleep(Math.min(cakaj, 5_000));
-        cakaj = Math.max(stanje.pavzaDo - Date.now(), zascita.cakanje() - stanje.delayMs);
+        // An externally ordered pause may be longer than our own spacing, but it
+        // is still an absolute moment, so the bound stays monotone.
+        const meja = Math.max(cakajDo, stanje.pavzaDo);
+        const ostane = meja - Date.now();
+        if (ostane <= 0) break;
+        // Deliberate waiting is not a stall — but say so with the moment it ends,
+        // so a wait that never ends cannot masquerade as being alive.
+        napovedanoCakanjeDo(meja);
+        await sleep(Math.min(ostane, 5_000));
       }
 
       try {
@@ -717,6 +731,9 @@ async function detailPhase(
         }
         const detail = parseDetail(raw);
         await saveDetail(db, item.id, detail);
+        // Real work, as opposed to being alive: this is what the stall guard
+        // measures. Something has to actually get done.
+        napredek();
         p.detajlov_obdelanih += 1;
         p.detajlov_v_vrsti = Math.max(0, p.detajlov_skupaj - p.detajlov_obdelanih - p.napak);
 
@@ -773,6 +790,9 @@ async function detailPhase(
         // withdraws — and if it does not recover, it ends the round instead of
         // grinding out thousands of errors.
         const prazna = /prazna vsebina/i.test(p.zadnja_napaka);
+        // A failed attempt is progress too — the collector is moving through the
+        // queue, not wedged.
+        napredek();
         const odlocitev = zascita.zabelezi(prazna ? "prazna" : "druga");
         const st = zascita.stanje();
         if (st.razlog && st.pavzaDo > Date.now()) {
@@ -798,9 +818,6 @@ async function detailPhase(
       // what the collector is doing instead of just a rising error count.
       if (Date.now() - objavaOb > 30_000) {
         objavaOb = Date.now();
-        // Deliberate waiting is still being alive: a cooling pause can last an
-        // hour, and the stall guard must not mistake it for a wedged process.
-        premik();
         await objaviStanje(db, {
           ...zascita.stanje(),
           faza: "detajli",
