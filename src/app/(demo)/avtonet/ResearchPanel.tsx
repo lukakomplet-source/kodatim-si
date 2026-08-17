@@ -40,6 +40,11 @@ type Raziskava = {
   zadnja_napaka: string | null;
   pregled_popoln: boolean;
   updated_at: string;
+  /** Phase-1 bookkeeping: how many market slices are done, and of how many. */
+  poizvedb_skupaj: number;
+  poizvedb_koncanih: number;
+  poizvedb_razdeljenih: number;
+  trenutna_rezina: string | null;
 };
 
 type Skupno = { aktivnih: number; zDetajli: number };
@@ -396,16 +401,35 @@ function naslednjiZagon(ure: number[], now: number): Date {
   return new Date(base + 24 * 3_600_000);
 }
 
-/** Median duration of past COMPLETED runs — the honest basis for an estimate. */
+/**
+ * How long a run should take, from the PACE of past runs rather than their
+ * duration.
+ *
+ * Duration alone is not a forecast: a run that froze for nine hours before it
+ * was restarted took 15 h 49 min and made the console promise the same again.
+ * Pages per minute survives that — it is measured over the time the collector was
+ * actually working — and the fastest observed pace is the one a healthy run
+ * repeats. Multiplied by the pages a full sweep takes (the median of recent
+ * runs), it gives a number that matches what a good run really does.
+ */
 function predvidenoTrajanjeMs(zgodovina: Raziskava[]): number | null {
-  const trajanja = zgodovina
-    .filter((r) => r.status === "koncano" && r.zacetek && r.konec)
-    .map((r) => new Date(r.konec as string).getTime() - new Date(r.zacetek as string).getTime())
-    .filter((ms) => ms > 60_000)
-    .sort((a, b) => a - b);
-  if (trajanja.length === 0) return null;
-  const mid = Math.floor(trajanja.length / 2);
-  return trajanja.length % 2 ? trajanja[mid] : Math.round((trajanja[mid - 1] + trajanja[mid]) / 2);
+  const koncani = zgodovina.filter(
+    (r) => r.status === "koncano" && r.zacetek && r.konec && r.strani_pregledanih > 50
+  );
+  if (koncani.length === 0) return null;
+
+  const tempi = koncani
+    .map((r) => {
+      const ms = new Date(r.konec as string).getTime() - new Date(r.zacetek as string).getTime();
+      return ms > 60_000 ? r.strani_pregledanih / (ms / 60_000) : null;
+    })
+    .filter((v): v is number => v !== null && v > 0);
+  if (tempi.length === 0) return null;
+
+  const najhitrejsi = Math.max(...tempi);
+  const strani = [...koncani.map((r) => r.strani_pregledanih)].sort((a, b) => a - b);
+  const median = strani[Math.floor(strani.length / 2)];
+  return Math.round((median / najhitrejsi) * 60_000);
 }
 
 function formatTrajanje(ms: number): string {
@@ -576,7 +600,8 @@ function UrnikBox({
         )}
         {predvideno ? (
           <span>
-            Predviden čas raziskave: <strong>≈ {formatTrajanje(predvideno)}</strong>
+            Predviden čas raziskave: <strong>≈ {formatTrajanje(predvideno)}</strong>{" "}
+            <span className="text-zinc-400">(pri najboljšem doseženem tempu)</span>
           </span>
         ) : (
           <span className="text-zinc-400">Predviden čas: še ni dovolj preteklih raziskav.</span>
@@ -627,6 +652,25 @@ function Napredek({
   // min" for work the collector was in fact doing at ten a minute — about an
   // hour. The worker publishes when phase 2 began; without it (an older worker,
   // or the row not written yet) no number is shown rather than a wrong one.
+  // ---- Phase 1: how far through the market, and how much longer ------------
+  //
+  // The worker has always counted its slices (a slice = one brand/price/year
+  // query); the console showed only pages, which say nothing about the share
+  // done. Two hours of sweeping then looked indistinguishable from a run that
+  // had quietly died.
+  const rezinSkupaj = r.poizvedb_skupaj ?? 0;
+  const rezinKoncanih = r.poizvedb_koncanih ?? 0;
+  const faza1Odstotek =
+    rezinSkupaj > 0 ? Math.min(100, Math.round((rezinKoncanih / rezinSkupaj) * 100)) : 0;
+  const tekloMs = r.zacetek && now > 0 ? now - new Date(r.zacetek).getTime() : 0;
+  // Measured pace, not a guess. The total can still grow: a slice over the
+  // source's 1,000-row cap is split into smaller ones as it is met, which is
+  // why the estimate is labelled as one.
+  const faza1Minut =
+    rezinKoncanih >= 3 && tekloMs > 60_000
+      ? Math.round(((tekloMs / rezinKoncanih) * (rezinSkupaj - rezinKoncanih)) / 60_000)
+      : null;
+
   const faza2Od = zbiralnik?.faza2Od ? new Date(zbiralnik.faza2Od).getTime() : null;
   const detajliMs = faza2Od !== null && now > 0 ? now - faza2Od : 0;
   const naMinuto =
@@ -651,6 +695,14 @@ function Napredek({
         </span>
         <span className="text-zinc-400">·</span>
         <span className="text-zinc-600">Teče {trajanje(r.zacetek ?? r.zahtevano_ob, null, now)}</span>
+        {r.faza === 1 && rezinSkupaj > 0 && (
+          <>
+            <span className="text-zinc-400">·</span>
+            <span className="font-semibold text-accent">
+              {faza1Odstotek} % ({stevilo(rezinKoncanih)}/{stevilo(rezinSkupaj)} rezin)
+            </span>
+          </>
+        )}
         {r.zadnja_stran > 0 && (
           <>
             <span className="text-zinc-400">·</span>
@@ -664,6 +716,38 @@ function Napredek({
           Zahteva čaka že več kot 2 minuti. Zbiralnik (worker) verjetno ne teče — raziskava se bo
           začela takoj, ko se zažene. Zahteva se ne izgubi.
         </p>
+      )}
+
+      {r.faza === 1 && rezinSkupaj > 0 && (
+        <div className="mt-4">
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-200">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${faza1Odstotek}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-zinc-600">
+            <strong>{faza1Odstotek} %</strong> pregleda trga · {stevilo(rezinKoncanih)} od{" "}
+            {stevilo(rezinSkupaj)} rezin
+            {faza1Minut !== null && (
+              <>
+                {" · še "}
+                <strong>
+                  {faza1Minut >= 60
+                    ? `${Math.floor(faza1Minut / 60)} h ${faza1Minut % 60} min`
+                    : `${faza1Minut} min`}
+                </strong>
+              </>
+            )}
+            {r.trenutna_rezina && <span className="text-zinc-400"> · zdaj: {r.trenutna_rezina}</span>}
+          </p>
+          <p className="mt-1 text-[11px] text-zinc-400">
+            Rezina = ena poizvedba (znamka · cenovni razred · letnik). Skupno število med potjo
+            naraste, kadar je rezina nad 1.000 zadetki in jo je treba razdeliti
+            {r.poizvedb_razdeljenih > 0 ? ` (doslej ${stevilo(r.poizvedb_razdeljenih)}×)` : ""} — zato
+            je čas ocena, ne obljuba. Po 1. fazi sledi še 2. faza (podatki novih oglasov).
+          </p>
+        </div>
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">

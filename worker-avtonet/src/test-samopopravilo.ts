@@ -20,7 +20,12 @@ const log = (l: "info" | "warn" | "error", m: string, e?: Record<string, unknown
 const db = connect();
 
 console.log("Sprozam diagnozo nad trenutnim stanjem ...\n");
-const d = await samopopravilo(db, "TEST: 13 min brez enega samega obdelanega oglasa", log);
+// Poskusno: dokaze zbere in model vpraša, a ukrepa NE izvede in v zgodovino
+// samopopravil ne zapiše ničesar — v konzoli bi bil test videti kot resnična
+// okvara.
+const d = await samopopravilo(db, "TEST: 13 min brez enega samega obdelanega oglasa", log, {
+  poskusno: true,
+});
 
 if (!d) {
   console.log("\nNI ODGOVORA — diagnoza ni uspela (glej napako zgoraj).");

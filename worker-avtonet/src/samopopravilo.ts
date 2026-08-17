@@ -291,14 +291,21 @@ async function izvedi(
 export async function samopopravilo(
   db: Db,
   sprozil: string,
-  log: (l: "info" | "warn" | "error", m: string, e?: Record<string, unknown>) => void
+  log: (l: "info" | "warn" | "error", m: string, e?: Record<string, unknown>) => void,
+  // A rehearsal: gather the evidence and ask, but change nothing and record
+  // nothing. Without this the test wrote "Proces se je zataknil" into the
+  // console's incident history, where it is indistinguishable from a real
+  // failure — the user saw one and reasonably concluded the run had broken.
+  opcije: { poskusno?: boolean } = {}
 ): Promise<Diagnoza | null> {
   try {
     const dokazi = await zberiDokaze(db, sprozil);
     const ai = await vprasajAi(dokazi);
 
     const izbrani: Ukrep = ai?.ukrep ?? "ponovni_zagon";
-    const izvedeno = await izvedi(db, izbrani, ai?.ureCakanja ?? 0, log);
+    const izvedeno = opcije.poskusno
+      ? `(poskusno — ukrep "${izbrani}" ni bil izveden)`
+      : await izvedi(db, izbrani, ai?.ureCakanja ?? 0, log);
 
     const d: Diagnoza = {
       ob: new Date().toISOString(),
@@ -311,6 +318,8 @@ export async function samopopravilo(
     };
 
     log("warn", "samopopravilo", { vzrok: d.vzrok, ukrep: d.ukrep, izvedeno: d.izvedeno });
+
+    if (opcije.poskusno) return d;
 
     // History, newest first, capped — the console reads this.
     const { data } = await db

@@ -23,7 +23,11 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 export const dynamic = "force-dynamic";
 
 const POLJA =
-  "id, status, faza, zahtevano_ob, zacetek, konec, strani_pregledanih, oglasov_najdenih, novih, posodobljenih, spremembe_cen, izginulih, detajlov_obdelanih, detajlov_skupaj, napak, zadnja_stran, zadnja_napaka, pregled_popoln, updated_at";
+  "id, status, faza, zahtevano_ob, zacetek, konec, strani_pregledanih, oglasov_najdenih, novih, posodobljenih, spremembe_cen, izginulih, detajlov_obdelanih, detajlov_skupaj, napak, zadnja_stran, zadnja_napaka, pregled_popoln, updated_at, " +
+  // Phase 1 progress: the worker has always counted its slices, the console just
+  // never showed them — so a two-hour market sweep looked like it might be doing
+  // nothing, with no way to tell how much was left.
+  "poizvedb_skupaj, poizvedb_koncanih, poizvedb_razdeljenih, trenutna_rezina";
 
 export async function GET() {
   try {
