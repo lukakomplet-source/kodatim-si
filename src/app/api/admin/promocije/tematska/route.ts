@@ -95,7 +95,11 @@ export async function POST(request: NextRequest) {
         });
       }
       const candidates = await rankCandidates(leads, theme, kind);
-      const koliko = `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.`;
+      const koliko =
+        `Najdenih ${leads.length} podjetij, ocenjenih ${candidates.length}.` +
+        (candidates.length < leads.length
+          ? ` ${leads.length - candidates.length} jih ni bilo ocenjenih (zgornja meja na krog).`
+          : "");
       const izVaseBaze =
         profile.skdCodes.length > 0
           ? ` Iskano je bilo v vaši bazi (${(vBazi ?? 0).toLocaleString("sl-SI")} podjetij), kjer ima ` +
@@ -116,6 +120,9 @@ export async function POST(request: NextRequest) {
             website: c.lead.website,
             contact_person: c.lead.contact_person,
             address_city: c.lead.address_city,
+            // The region, so the table can be filtered by it — a campaign is
+            // almost always worked one region at a time.
+            address_region: c.lead.address_region,
             industry: c.lead.industry,
             revenue_amount: custom.revenue_amount ?? null,
             revenue_year: custom.revenue_year ?? null,

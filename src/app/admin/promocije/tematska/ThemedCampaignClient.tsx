@@ -57,6 +57,7 @@ type Candidate = {
   website: string | null;
   contact_person: string | null;
   address_city: string | null;
+  address_region: string | null;
   industry: string | null;
   revenue_amount: string | null;
   revenue_year: string | null;
@@ -105,6 +106,14 @@ export default function ThemedCampaignClient() {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [candidateNote, setCandidateNote] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Filters over the candidate table. Local, because the candidates are already
+  // in memory — a round trip per dropdown would buy nothing.
+  const [fRegija, setFRegija] = useState("");
+  const [fKraj, setFKraj] = useState("");
+  const [fOcena, setFOcena] = useState(0);
+  const [fSamoEmail, setFSamoEmail] = useState(false);
+  const [fSamoTelefon, setFSamoTelefon] = useState(false);
+  const [razvrsti, setRazvrsti] = useState<"ocena" | "promet" | "ime" | "kraj" | "zaposleni">("ocena");
   const [template, setTemplate] = useState<{ subject: string; body: string } | null>(null);
   const [emails, setEmails] = useState<Email[]>([]);
   const [campaignName, setCampaignName] = useState("");
@@ -164,6 +173,61 @@ export default function ThemedCampaignClient() {
    * hand-typed codes — precisely the ones that predate the gate.
    */
   const badSkd = useMemo(() => (profile ? invalidSkdCodes(profile.skdCodes) : []), [profile]);
+
+  /** Regions present among the candidates, with counts — nothing offered empty. */
+  const regije = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of candidates ?? []) {
+      const r = (c.address_region ?? "").trim();
+      if (r) m.set(r, (m.get(r) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sl"));
+  }, [candidates]);
+
+  /** Slovenian money as a number: "78.815,64" → 78815.64. */
+  const promet = (v: string | null): number | null => {
+    if (!v) return null;
+    const n = Number(v.replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const prikazani = useMemo(() => {
+    const izbrani = (candidates ?? []).filter((c) => {
+      if (fRegija && (c.address_region ?? "") !== fRegija) return false;
+      if (fKraj && !(c.address_city ?? "").toLowerCase().includes(fKraj.toLowerCase())) return false;
+      if (c.score < fOcena) return false;
+      if (fSamoEmail && !c.email) return false;
+      if (fSamoTelefon && !c.phone) return false;
+      return true;
+    });
+
+    return [...izbrani].sort((a, b) => {
+      switch (razvrsti) {
+        case "promet":
+          return (promet(b.revenue_amount) ?? -1) - (promet(a.revenue_amount) ?? -1);
+        case "zaposleni":
+          return Number(b.employees_count ?? 0) - Number(a.employees_count ?? 0);
+        case "ime":
+          return a.company_name.localeCompare(b.company_name, "sl");
+        case "kraj":
+          return (a.address_city ?? "").localeCompare(b.address_city ?? "", "sl");
+        case "ocena":
+        default:
+          return b.score - a.score || a.company_name.localeCompare(b.company_name, "sl");
+      }
+    });
+  }, [candidates, fRegija, fKraj, fOcena, fSamoEmail, fSamoTelefon, razvrsti]);
+
+  /** Ticks or unticks exactly what the filters are showing, nothing hidden. */
+  const oznaciPrikazane = (vklop: boolean) =>
+    setSelected((prej) => {
+      const next = new Set(prej);
+      for (const c of prikazani) {
+        if (vklop) next.add(c.id);
+        else next.delete(c.id);
+      }
+      return next;
+    });
 
   function replaceSkdCode(oldCode: string, newCode: string) {
     if (!profile) return;
@@ -287,8 +351,13 @@ export default function ThemedCampaignClient() {
     if (!json) return;
     setCandidates(json.candidates ?? []);
     setCandidateNote(json.note ?? null);
-    // Anything the model rated a clear match starts ticked; the rest is opt-in.
-    setSelected(new Set((json.candidates ?? []).filter((c: Candidate) => c.score >= 60).map((c: Candidate) => c.id)));
+    // Everything starts ticked.
+    //
+    // It used to be "score >= 60", which turned 893 matches into 151 targets with
+    // nothing on screen saying so — the user found out by counting. Narrowing is
+    // now a visible act: filter the table, or untick. A silent default that
+    // discards five hundred companies is not a helpful default.
+    setSelected(new Set((json.candidates ?? []).map((c: Candidate) => c.id)));
   }
 
   async function runEmails() {
@@ -813,7 +882,8 @@ export default function ThemedCampaignClient() {
               <div>
                 <p className="text-sm font-semibold text-zinc-900">3. Kandidati</p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  {candidateNote} Izbranih {selected.size}.
+                  {candidateNote} Prikazanih {prikazani.length} od {candidates?.length ?? 0} ·{" "}
+                  <strong>izbranih {selected.size}</strong> (v kampanjo gre toliko podjetij).
                 </p>
               </div>
               <button
@@ -826,6 +896,102 @@ export default function ThemedCampaignClient() {
                 Napiši maile
               </button>
             </div>
+
+            {candidates.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-zinc-50 p-3 ring-1 ring-zinc-200">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-zinc-500">Regija</span>
+                  <select
+                    value={fRegija}
+                    onChange={(e) => setFRegija(e.target.value)}
+                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs"
+                  >
+                    <option value="">Vse regije ({candidates.length})</option>
+                    {regije.map(([r, n]) => (
+                      <option key={r} value={r}>
+                        {r} ({n})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-zinc-500">Kraj</span>
+                  <input
+                    value={fKraj}
+                    onChange={(e) => setFKraj(e.target.value)}
+                    placeholder="npr. Celje"
+                    className="w-32 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-zinc-500">Ocena vsaj</span>
+                  <select
+                    value={fOcena}
+                    onChange={(e) => setFOcena(Number(e.target.value))}
+                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs"
+                  >
+                    {[0, 40, 60, 80].map((n) => (
+                      <option key={n} value={n}>
+                        {n === 0 ? "vse" : `≥ ${n}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-zinc-500">Razvrsti</span>
+                  <select
+                    value={razvrsti}
+                    onChange={(e) => setRazvrsti(e.target.value as typeof razvrsti)}
+                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs"
+                  >
+                    <option value="ocena">po oceni</option>
+                    <option value="promet">po prometu</option>
+                    <option value="zaposleni">po zaposlenih</option>
+                    <option value="ime">po imenu</option>
+                    <option value="kraj">po kraju</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 self-end rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={fSamoEmail}
+                    onChange={(e) => setFSamoEmail(e.target.checked)}
+                    className="h-3.5 w-3.5"
+                  />
+                  ima e-pošto
+                </label>
+                <label className="flex items-center gap-1.5 self-end rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={fSamoTelefon}
+                    onChange={(e) => setFSamoTelefon(e.target.checked)}
+                    className="h-3.5 w-3.5"
+                  />
+                  ima telefon
+                </label>
+
+                <div className="ml-auto flex items-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => oznaciPrikazane(true)}
+                    className="rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Označi prikazane ({prikazani.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => oznaciPrikazane(false)}
+                    className="rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Odznači prikazane
+                  </button>
+                </div>
+              </div>
+            )}
 
             {candidates.length === 0 ? (
               <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-200">
@@ -853,7 +1019,7 @@ export default function ThemedCampaignClient() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {candidates.map((c) => (
+                    {prikazani.map((c) => (
                       <tr key={c.id}>
                         <td className="px-2 py-2 align-top">
                           <input

@@ -300,15 +300,18 @@ export async function rankCandidates(
   leads: IntelLead[],
   theme: string,
   kind: CampaignKind = "prodaja",
-  // Raised from 60: the point of a campaign is the whole segment, and a cap that
-  // low turned "there are 891 of them" into "36 candidates" with nothing saying
-  // which it was.
+  // The whole segment, not a sample of it.
   //
-  // Scored in parallel batches rather than one long prompt: 300 companies in a
-  // single request is a prompt the model answers slowly and truncates — the
-  // button spins, and whatever comes back is missing rows. A batch of 50 comes
-  // back complete, and six of them run at once.
-  max = 300
+  // This was 60, then 300, and both numbers silently threw away most of a
+  // campaign: 893 companies matched, 300 were scored, and the user asked — quite
+  // rightly — where the other six hundred went. A cap that is not visible in the
+  // interface is indistinguishable from a bug.
+  //
+  // Affordable because scoring runs in parallel batches of 50 rather than as one
+  // long prompt: a single request with hundreds of companies comes back slowly
+  // and truncated, while eighteen small ones come back complete. The ceiling is
+  // a runaway guard, not a policy.
+  max = 1200
 ): Promise<TargetCandidate[]> {
   const shortlist = leads.slice(0, max);
   if (shortlist.length === 0) return [];
@@ -317,8 +320,13 @@ export async function rankCandidates(
   const paketi: IntelLead[][] = [];
   for (let i = 0; i < shortlist.length; i += KOS) paketi.push(shortlist.slice(i, i + KOS));
 
-  const odgovori = await Promise.all(
-    paketi.map(async (paket) => {
+  // Six at a time. All eighteen at once trips the provider's rate limit, and a
+  // rate-limited batch is a batch of companies with no score.
+  const NAJVEC_VZPOREDNO = 6;
+  const odgovori: { results?: { id?: string; score?: number; reason?: string }[] }[] = [];
+  for (let i = 0; i < paketi.length; i += NAJVEC_VZPOREDNO) {
+    const skupina = await Promise.all(
+      paketi.slice(i, i + NAJVEC_VZPOREDNO).map(async (paket) => {
       try {
         return await chatJSON<{ results?: { id?: string; score?: number; reason?: string }[] }>(
           RANK_PROMPT,
@@ -331,12 +339,14 @@ export async function rankCandidates(
           { temperature: 0.2 }
         );
       } catch {
-        // One failed batch must not lose the other five; its companies come
-        // through unrated, which the table already knows how to show.
+        // One failed batch must not lose the others; its companies come through
+        // unrated, which the table already knows how to show.
         return { results: [] };
       }
-    })
-  );
+      })
+    );
+    odgovori.push(...skupina);
+  }
 
   const byId = new Map(shortlist.map((l) => [l.id, l]));
   const scored: TargetCandidate[] = [];
