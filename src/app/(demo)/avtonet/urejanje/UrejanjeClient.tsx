@@ -17,6 +17,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { oddajPredlog, spremeniStatusPredloga, type PredlogResult } from "./predlogi-actions";
+import { odgovoriNaPredlog, predlagajPopravek, zakljuciPredlog } from "./pogovor-actions";
+import { DrevoPopravkov } from "./DrevoPopravkov";
 
 /**
  * The AI editing console.
@@ -34,6 +36,14 @@ export type Predlog = {
   besedilo: string;
   status: string;
   odgovor: string | null;
+  /** What the person who will fix it says they would do. */
+  predlog_popravka: string | null;
+  predlagano_ob: string | null;
+  /** The author's answer to that: caka | potrjeno | zavrnjeno. */
+  potrditev: string | null;
+  potrjeno_ob: string | null;
+  commit_sha: string | null;
+  avtor: string | null;
 };
 
 export type Seja = {
@@ -66,6 +76,7 @@ const CARD = "rounded-2xl border border-zinc-200 bg-white shadow-sm";
 
 export function UrejanjeClient({
   jeAdmin,
+  userId,
   lokalno,
   razlogSamoLokalno,
   migracijaManjka,
@@ -74,6 +85,7 @@ export function UrejanjeClient({
   zgodovina,
 }: {
   jeAdmin: boolean;
+  userId: string | null;
   lokalno: boolean;
   razlogSamoLokalno: string;
   migracijaManjka: boolean;
@@ -115,16 +127,31 @@ export function UrejanjeClient({
         <p className="mt-2 max-w-2xl text-[15px] text-zinc-500">
           {jeAdmin
             ? "Povej, kaj naj se spremeni na SBN Auto. AI pregleda kodo, naredi spremembo, zažene typecheck, lint in build — če ne gre skozi, sam popravi. Če tudi po popravkih ne gre, datoteke povrne v prvotno stanje."
-            : "Kaj bi bilo za dodati ali popraviti? Napišite in pogledali bomo. Predlog sam po sebi ničesar ne spremeni — najprej ga nekdo prebere."}
+            : "Napišite, kaj bi bilo za dodati ali popraviti. Odgovorili vam bomo s tem, kaj bi konkretno naredili — to potrdite ali zavrnete, in šele nato se karkoli spremeni. Levo je zgodovina vseh popravkov: če je kaj narobe, tam zahtevate povrnitev."}
         </p>
       </header>
 
-      <PredlogiSekcija
-        jeAdmin={jeAdmin}
-        predlogi={predlogi}
-        manjkaMigracija={predlogiManjkajo}
-        naPredajo={(besedilo) => setZahteva(besedilo)}
-      />
+      {/*
+        Two columns from the large breakpoint up: the history on the left, the
+        conversation on the right. The tree earns its place — "what changed and
+        can we go back" is the question this page is opened with when something
+        stops working, and it should not be below a form.
+      */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <DrevoPopravkov jeAdmin={jeAdmin} />
+        </div>
+
+        <div className="min-w-0">
+          <PredlogiSekcija
+            jeAdmin={jeAdmin}
+            userId={userId}
+            predlogi={predlogi}
+            manjkaMigracija={predlogiManjkajo}
+            naPredajo={(besedilo) => setZahteva(besedilo)}
+          />
+        </div>
+      </div>
 
       {!jeAdmin ? null : (
         <>
@@ -252,11 +279,13 @@ export function UrejanjeClient({
  */
 function PredlogiSekcija({
   jeAdmin,
+  userId,
   predlogi,
   manjkaMigracija,
   naPredajo,
 }: {
   jeAdmin: boolean;
+  userId: string | null;
   predlogi: Predlog[];
   manjkaMigracija: boolean;
   naPredajo: (besedilo: string) => void;
@@ -267,13 +296,15 @@ function PredlogiSekcija({
 
   const STATUSI: Record<string, { oznaka: string; stil: string }> = {
     novo: { oznaka: "Novo", stil: "bg-blue-50 text-blue-600" },
+    predlagano: { oznaka: "Čaka potrditev", stil: "bg-violet-50 text-violet-700" },
+    potrjeno: { oznaka: "Potrjeno", stil: "bg-emerald-50 text-emerald-700" },
     v_delu: { oznaka: "V delu", stil: "bg-amber-50 text-amber-700" },
     reseno: { oznaka: "Rešeno", stil: "bg-emerald-50 text-emerald-700" },
     zavrnjeno: { oznaka: "Zavrnjeno", stil: "bg-zinc-100 text-zinc-500" },
   };
 
   return (
-    <section className="mt-6">
+    <section>
       <form action={akcija} className={`${CARD} p-5`}>
         <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
           <MessageSquarePlus className="h-4 w-4 text-accent" />
@@ -322,13 +353,8 @@ function PredlogiSekcija({
           {predlogi.map((p) => (
             <article key={p.id} className={`${CARD} p-4`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="whitespace-pre-wrap text-sm text-zinc-800">{p.besedilo}</p>
-                  {p.odgovor && (
-                    <p className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-                      Odgovor: {p.odgovor}
-                    </p>
-                  )}
                   <p className="mt-1.5 text-[11px] text-zinc-400">
                     {new Date(p.ob).toLocaleString("sl-SI", {
                       day: "2-digit",
@@ -337,6 +363,18 @@ function PredlogiSekcija({
                       minute: "2-digit",
                     })}
                   </p>
+
+                  <Pogovor
+                    predlog={p}
+                    jeAdmin={jeAdmin}
+                    smemPotrditi={jeAdmin || (userId !== null && p.avtor === userId)}
+                  />
+
+                  {p.odgovor && (
+                    <p className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+                      Odgovor: {p.odgovor}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span
@@ -367,9 +405,14 @@ function PredlogiSekcija({
                       </select>
                       <button
                         type="button"
-                        onClick={() => naPredajo(p.besedilo)}
-                        title="Prenese besedilo v polje AI urejanja — ne požene ničesar"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                        onClick={() => naPredajo(p.predlog_popravka ?? p.besedilo)}
+                        disabled={p.potrditev !== "potrjeno"}
+                        title={
+                          p.potrditev === "potrjeno"
+                            ? "Prenese potrjeni popravek v polje AI urejanja — ne požene ničesar"
+                            : "Najprej napišite, kaj bi popravili, in počakajte na potrditev predlagatelja"
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Wand2 className="h-3.5 w-3.5" />
                         Predaj AI urejanju
@@ -477,6 +520,156 @@ function Rezultat({ izid }: { izid: Izid }) {
       {typeof izid.popravkov === "number" && izid.popravkov > 0 && (
         <p className="mt-3 text-xs text-zinc-500">AI je sam popravil svojo napako {izid.popravkov}×.</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The three-step exchange on one suggestion: what was asked, what will be done,
+ * and the author's answer to that.
+ *
+ * The confirmation belongs to whoever wrote the suggestion. That is the whole
+ * point of the step: it is the only place where "you understood me correctly"
+ * can be established before the work happens, and an admin confirming their own
+ * reading would establish nothing.
+ */
+function Pogovor({
+  predlog,
+  jeAdmin,
+  smemPotrditi,
+}: {
+  predlog: Predlog;
+  jeAdmin: boolean;
+  smemPotrditi: boolean;
+}) {
+  const router = useRouter();
+  const [osnutek, setOsnutek] = useState(predlog.predlog_popravka ?? "");
+  const [sha, setSha] = useState(predlog.commit_sha ?? "");
+  const [sporocilo, setSporocilo] = useState<{ ok?: string; napaka?: string }>({});
+  const [tece, start] = useTransition();
+
+  const cakaNaMojoPotrditev = predlog.potrditev === "caka" && smemPotrditi;
+
+  return (
+    <div className="mt-2 space-y-2">
+      {predlog.predlog_popravka && (
+        <div
+          className={`rounded-xl px-3 py-2 text-xs ring-1 ${
+            predlog.potrditev === "potrjeno"
+              ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+              : predlog.potrditev === "zavrnjeno"
+                ? "bg-zinc-50 text-zinc-600 ring-zinc-200"
+                : "bg-violet-50 text-violet-900 ring-violet-200"
+          }`}
+        >
+          <p className="font-semibold">Predlog popravka</p>
+          <p className="mt-0.5 whitespace-pre-wrap">{predlog.predlog_popravka}</p>
+          <p className="mt-1 text-[11px] opacity-70">
+            {predlog.predlagano_ob &&
+              new Date(predlog.predlagano_ob).toLocaleString("sl-SI", {
+                day: "2-digit",
+                month: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            {predlog.potrditev === "potrjeno" && " · potrjeno"}
+            {predlog.potrditev === "zavrnjeno" && " · zavrnjeno"}
+            {predlog.potrditev === "caka" && " · čaka potrditev"}
+          </p>
+        </div>
+      )}
+
+      {cakaNaMojoPotrditev && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={tece}
+            onClick={() =>
+              start(async () => {
+                const out = await odgovoriNaPredlog(predlog.id, true);
+                setSporocilo({ ok: out.success, napaka: out.error });
+                router.refresh();
+              })
+            }
+            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {tece ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Potrdi — tako naredi
+          </button>
+          <button
+            type="button"
+            disabled={tece}
+            onClick={() =>
+              start(async () => {
+                const out = await odgovoriNaPredlog(predlog.id, false);
+                setSporocilo({ ok: out.success, napaka: out.error });
+                router.refresh();
+              })
+            }
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Ni to — popravi predlog
+          </button>
+        </div>
+      )}
+
+      {jeAdmin && (
+        <details className="rounded-xl bg-zinc-50 p-2 ring-1 ring-zinc-200">
+          <summary className="cursor-pointer text-[11px] font-semibold text-zinc-600">
+            {predlog.predlog_popravka ? "Popravi predlog popravka" : "Napiši, kaj bi popravil"}
+          </summary>
+          <textarea
+            value={osnutek}
+            onChange={(e) => setOsnutek(e.target.value)}
+            rows={3}
+            placeholder="npr. Na kartico spremljanja dodam vrstico s povprečno ceno ustreznih oglasov, brez novih vozil."
+            className="mt-2 w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-accent/60 focus:outline-none"
+          />
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={tece}
+              onClick={() =>
+                start(async () => {
+                  const out = await predlagajPopravek(predlog.id, osnutek);
+                  setSporocilo({ ok: out.success, napaka: out.error });
+                  router.refresh();
+                })
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"
+            >
+              {tece ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              Pošlji v potrditev
+            </button>
+
+            <input
+              value={sha}
+              onChange={(e) => setSha(e.target.value)}
+              placeholder="commit sha"
+              className="w-32 rounded-lg border border-zinc-200 px-2 py-1.5 font-mono text-[11px]"
+            />
+            <button
+              type="button"
+              disabled={tece}
+              onClick={() =>
+                start(async () => {
+                  const out = await zakljuciPredlog(predlog.id, sha);
+                  setSporocilo({ ok: out.success, napaka: out.error });
+                  router.refresh();
+                })
+              }
+              title="Poveže predlog s spremembo kode, ki ga je rešila — pojavi se v drevesu popravkov"
+              className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-700 disabled:opacity-50"
+            >
+              Označi kot rešeno
+            </button>
+          </div>
+        </details>
+      )}
+
+      {sporocilo.ok && <p className="text-[11px] text-emerald-700">{sporocilo.ok}</p>}
+      {sporocilo.napaka && <p className="text-[11px] text-red-700">{sporocilo.napaka}</p>}
     </div>
   );
 }

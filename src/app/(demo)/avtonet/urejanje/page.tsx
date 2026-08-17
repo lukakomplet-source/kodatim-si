@@ -28,7 +28,9 @@ export default async function UrejanjePage() {
   // A regular user sees their own suggestions; an admin sees everyone's.
   let predlogiQ = db
     .from("avtonet_predlogi")
-    .select("id, ob, besedilo, status, odgovor, avtor")
+    .select(
+      "id, ob, besedilo, status, odgovor, avtor, predlog_popravka, predlagano_ob, potrditev, potrjeno_ob, commit_sha"
+    )
     .order("ob", { ascending: false })
     .limit(50);
   if (!dostop.jeAdmin) predlogiQ = predlogiQ.eq("avtor", dostop.userId);
@@ -43,6 +45,7 @@ export default async function UrejanjePage() {
   return (
     <UrejanjeClient
       jeAdmin={dostop.jeAdmin}
+      userId={dostop.userId}
       lokalno={lokalno}
       razlogSamoLokalno={RAZLOG_SAMO_LOKALNO}
       migracijaManjka={sejeRes.error?.code === "PGRST205"}
