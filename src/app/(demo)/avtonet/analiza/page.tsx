@@ -27,11 +27,37 @@ export const revalidate = 300;
 export default async function AnalizaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ obdobje?: string; znamka?: string }>;
+  searchParams: Promise<{
+    obdobje?: string;
+    znamka?: string;
+    model?: string;
+    letnikOd?: string;
+    letnikDo?: string;
+    cenaOd?: string;
+    cenaDo?: string;
+    minVzorec?: string;
+    razvrsti?: string;
+  }>;
 }) {
-  const { obdobje, znamka } = await searchParams;
+  const sp = await searchParams;
+  const { obdobje, znamka } = sp;
   const dni = obdobjeDni(obdobje);
   const db = createAvtonetClient();
+
+  const stevilka = (v: string | undefined): number | null => {
+    if (!v || v.trim() === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const letnikOd = stevilka(sp.letnikOd);
+  const letnikDo = stevilka(sp.letnikDo);
+  const cenaOd = stevilka(sp.cenaOd);
+  const cenaDo = stevilka(sp.cenaDo);
+  const modelIskan = (sp.model ?? "").trim().toLowerCase();
+  // The sample floor is a filter like any other: at three the median is noise,
+  // and someone comparing segments may legitimately want twenty.
+  const minVzorec = Math.max(MIN_VZOREC, stevilka(sp.minVzorec) ?? MIN_VZOREC);
+  const razvrsti = sp.razvrsti ?? "hitrost";
 
   const od = mejaObdobja(dni);
 
@@ -59,8 +85,60 @@ export default async function AnalizaPage({
     );
   }
 
-  const vrstice = (data ?? []) as unknown as ZakljucenOglas[];
-  const lestvica = statistikaPoModelih(vrstice);
+  const vseVrstice = (data ?? []) as unknown as ZakljucenOglas[];
+
+  // Filtered BEFORE the aggregation, not after: a price or year range has to
+  // decide which adverts the median is computed from. Filtering finished model
+  // rows instead would answer a different question — "which models happen to
+  // average inside this range" — and quietly so.
+  const vrstice = vseVrstice.filter((r) => {
+    if (letnikOd !== null && (r.letnik === null || r.letnik < letnikOd)) return false;
+    if (letnikDo !== null && (r.letnik === null || r.letnik > letnikDo)) return false;
+    if (cenaOd !== null || cenaDo !== null) {
+      const cena = Number(r.cena_prvotna_eur ?? r.cena_eur);
+      if (!Number.isFinite(cena) || cena <= 0) return false;
+      if (cenaOd !== null && cena < cenaOd) return false;
+      if (cenaDo !== null && cena > cenaDo) return false;
+    }
+    if (modelIskan) {
+      const ime = `${r.znamka ?? ""} ${r.model ?? ""}`.toLowerCase();
+      if (!ime.includes(modelIskan)) return false;
+    }
+    return true;
+  });
+
+  const lestvicaVse = statistikaPoModelih(vrstice, minVzorec);
+  const lestvica = [...lestvicaVse].sort((a, b) => {
+    switch (razvrsti) {
+      case "delez7":
+        return b.delez7 - a.delez7 || a.medianaDni - b.medianaDni;
+      case "delez14":
+        return b.delez14 - a.delez14 || a.medianaDni - b.medianaDni;
+      case "vzorec":
+        return b.vzorec - a.vzorec;
+      case "cena_visja":
+        return (b.povprecnaZacetnaCena ?? 0) - (a.povprecnaZacetnaCena ?? 0);
+      case "cena_nizja":
+        return (a.povprecnaZacetnaCena ?? 0) - (b.povprecnaZacetnaCena ?? 0);
+      case "najpocasnejsi":
+        return b.medianaDni - a.medianaDni;
+      case "model":
+        return a.kljuc.localeCompare(b.kljuc, "sl");
+      case "hitrost":
+      default:
+        return a.medianaDni - b.medianaDni;
+    }
+  });
+
+  /** Current filters as a query, so the period chips do not drop them. */
+  const poizvedba = (spremembe: Record<string, string | undefined>) => {
+    const q: Record<string, string> = {};
+    for (const [k, v] of Object.entries({ ...sp, ...spremembe })) {
+      if (typeof v === "string" && v.trim() !== "") q[k] = v;
+    }
+    if (!q.obdobje) q.obdobje = obdobje ?? "90";
+    return q;
+  };
 
   const { data: znamkeRaw } = await db
     .from("avtonet_oglasi")
@@ -79,7 +157,7 @@ export default async function AnalizaPage({
           return (
             <Link
               key={o.kljuc}
-              href={{ pathname: "/avtonet/analiza", query: { obdobje: o.kljuc, ...(znamka ? { znamka } : {}) } }}
+              href={{ pathname: "/avtonet/analiza", query: poizvedba({ obdobje: o.kljuc }) }}
               className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                 aktiven
                   ? "bg-accent text-white"
@@ -105,23 +183,123 @@ export default async function AnalizaPage({
             </option>
           ))}
         </select>
+        <input
+          type="text"
+          name="model"
+          defaultValue={sp.model ?? ""}
+          placeholder="model (npr. Golf)"
+          className="w-40 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        />
+
+        <span className="text-xs text-zinc-400">letnik</span>
+        <input
+          type="number"
+          name="letnikOd"
+          defaultValue={sp.letnikOd ?? ""}
+          placeholder="od"
+          min={1950}
+          max={2030}
+          className="w-20 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        />
+        <input
+          type="number"
+          name="letnikDo"
+          defaultValue={sp.letnikDo ?? ""}
+          placeholder="do"
+          min={1950}
+          max={2030}
+          className="w-20 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        />
+
+        <span className="text-xs text-zinc-400">cena €</span>
+        <input
+          type="number"
+          name="cenaOd"
+          defaultValue={sp.cenaOd ?? ""}
+          placeholder="od"
+          min={0}
+          step={500}
+          className="w-24 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        />
+        <input
+          type="number"
+          name="cenaDo"
+          defaultValue={sp.cenaDo ?? ""}
+          placeholder="do"
+          min={0}
+          step={500}
+          className="w-24 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        />
+
+        <select
+          name="razvrsti"
+          defaultValue={razvrsti}
+          className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        >
+          <option value="hitrost">najhitreje prodani</option>
+          <option value="najpocasnejsi">najpočasneje prodani</option>
+          <option value="delez7">največ prodanih v ≤ 7 dneh</option>
+          <option value="delez14">največ prodanih v ≤ 14 dneh</option>
+          <option value="vzorec">največ prodanih (vzorec)</option>
+          <option value="cena_visja">najdražji</option>
+          <option value="cena_nizja">najcenejši</option>
+          <option value="model">po imenu modela</option>
+        </select>
+
+        <select
+          name="minVzorec"
+          defaultValue={String(minVzorec)}
+          title="Najmanjše število zaključenih oglasov, da model pride na lestvico"
+          className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700"
+        >
+          {[MIN_VZOREC, 10, 20, 50].map((n) => (
+            <option key={n} value={n}>
+              vzorec ≥ {n}
+            </option>
+          ))}
+        </select>
+
         <input type="hidden" name="obdobje" value={obdobje ?? "90"} />
         <button
           type="submit"
-          className="rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50"
+          className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
         >
           Uporabi
         </button>
+        <Link
+          href="/avtonet/analiza"
+          className="rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-zinc-600 transition hover:bg-zinc-50"
+        >
+          Počisti
+        </Link>
       </form>
 
       {lestvica.length === 0 ? (
-        <Prazno vzorcev={vrstice.length} />
+        <>
+          <Prazno vzorcev={vrstice.length} />
+          {vseVrstice.length > vrstice.length && (
+            <p className="mt-3 rounded-xl bg-zinc-50 px-4 py-3 text-xs text-zinc-600 ring-1 ring-zinc-200">
+              Filtri so pustili {vrstice.length.toLocaleString("sl-SI")} od{" "}
+              {vseVrstice.length.toLocaleString("sl-SI")} zaključenih oglasov v obdobju — za lestvico
+              je potrebnih vsaj {minVzorec} pri istem modelu. Poskusi širši letnik ali cenovni razpon,
+              daljše obdobje ali nižji prag vzorca.
+            </p>
+          )}
+        </>
       ) : (
         <>
-          <h2 className="mt-8 flex items-center gap-2 text-lg font-semibold text-zinc-900">
-            <Flame className="h-5 w-5 text-accent" />
-            Najhitreje prodani modeli
-          </h2>
+          <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-900">
+              <Flame className="h-5 w-5 text-accent" />
+              {razvrsti === "najpocasnejsi" ? "Najpočasneje prodani modeli" : "Najhitreje prodani modeli"}
+            </h2>
+            <p className="text-xs text-zinc-500">
+              {lestvica.length} modelov · {vrstice.length.toLocaleString("sl-SI")} zaključenih oglasov
+              {vrstice.length !== vseVrstice.length && (
+                <> (od {vseVrstice.length.toLocaleString("sl-SI")} v obdobju)</>
+              )}
+            </p>
+          </div>
           <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-zinc-200 bg-zinc-50 text-[11px] uppercase tracking-wide text-zinc-500">
@@ -142,7 +320,10 @@ export default async function AnalizaPage({
                     <td className="px-4 py-3 text-zinc-400 tabular-nums">{i + 1}</td>
                     <td className="px-4 py-3">
                       <Link
-                        href={`/avtonet/analiza/${encodeURIComponent(m.kljuc)}?obdobje=${obdobje ?? "90"}`}
+                        href={{
+                          pathname: `/avtonet/analiza/${encodeURIComponent(m.kljuc)}`,
+                          query: { obdobje: obdobje ?? "90" },
+                        }}
                         className="font-medium text-zinc-900 group-hover:text-accent"
                       >
                         {m.kljuc}
@@ -164,7 +345,10 @@ export default async function AnalizaPage({
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
-                        href={`/avtonet/analiza/${encodeURIComponent(m.kljuc)}?obdobje=${obdobje ?? "90"}`}
+                        href={{
+                          pathname: `/avtonet/analiza/${encodeURIComponent(m.kljuc)}`,
+                          query: { obdobje: obdobje ?? "90" },
+                        }}
                         className="inline-flex text-zinc-300 transition group-hover:text-accent"
                       >
                         <ChevronRight className="h-4 w-4" />
