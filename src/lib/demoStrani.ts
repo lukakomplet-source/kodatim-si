@@ -81,6 +81,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     opis:
       "Nadzorna plošča nad oglasi z Avto.net: zgodovina trga, spremembe cen in gumb za zagon raziskave (viden samo adminu).",
   },
+  {
+    slug: "nepremicnine",
+    naziv: "SBN Nepremičnine — lastna baza trga",
+    stranka: "SBN Auto",
+    vrsta: "aplikacija",
+    opis:
+      "Iskanje po lastni bazi nepremičninskih oglasov (nepremicnine.net, dnevno): AI vrstica v naravnem jeziku, filtri, zgodovina cen, večenotni objekti za investitorje.",
+  },
 ];
 
 /**

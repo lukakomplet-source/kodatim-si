@@ -1,0 +1,8 @@
+www.nepremicnine.net
+Izvajanje varnostnega preverjanja
+
+To spletno mesto uporablja varnostno storitev za zaščito pred zlonamernimi roboti. Ta stran je prikazana, ko spletno mesto preverja, če ste človek.
+
+Ray ID: a2d324a90e1fbabb
+Delovanje in varnost zagotavlja Cloudflare.
+Zasebnost

@@ -1,0 +1,23 @@
+{
+  "name": "sbn-nepremicnine-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SBN Nepremičnine — zbiralnik oglasov z nepremicnine.net. Ločen proces od avtonet workerja: če se en vir sesuje, drugi tega ne sme čutiti.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "once": "tsx src/index.ts --once",
+    "typecheck": "tsc --noEmit",
+    "test:parse": "tsx src/test-parse.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "dotenv": "^16.4.5",
+    "playwright": "1.62.1",
+    "tsx": "^4.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}
