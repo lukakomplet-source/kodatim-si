@@ -222,3 +222,58 @@ export async function requestResearch(db: Db): Promise<{ id: string } | { zeTece
   }
   return { id: (data as { id: string }).id };
 }
+
+/**
+ * Brings a research that a block interrupted back to life, once the block has
+ * lifted.
+ *
+ * Without this the morning is simply lost: the 06:00 sweep on 18.08 hit a 403
+ * after 361 pages, the block memory correctly parked collecting for two hours —
+ * and then nothing happened until the 18:00 slot, because a failed research is
+ * not retried and the schedule only fires on the hour it was given. The market
+ * went unmeasured for a day for want of a retry.
+ *
+ * Revived rather than replaced: the row keeps its recorded slices, so the sweep
+ * CONTINUES from where it stopped instead of paying for 361 pages again. A new
+ * request would start from nothing.
+ *
+ * @returns the id it revived, or null when there was nothing to revive.
+ */
+export async function oziviPoBlokadi(db: Db): Promise<string | null> {
+  // Never while something is already queued or running: that is the invariant
+  // the unique index protects, and stepping on it would mean two sweeps.
+  const { data: aktivne } = await db
+    .from("avtonet_raziskave")
+    .select("id")
+    .in("status", ["zahtevano", "tece"])
+    .limit(1);
+  if (aktivne && aktivne.length > 0) return null;
+
+  // Only a recent failure, and only one the source caused. An old failure or a
+  // parser bug must not be retried in a loop — that is what the block memory and
+  // the self-repair are for.
+  const odKdaj = new Date(Date.now() - 18 * 3_600_000).toISOString();
+  const { data } = await db
+    .from("avtonet_raziskave")
+    .select("id, zadnja_napaka, konec, strani_pregledanih")
+    .eq("status", "napaka")
+    .gte("konec", odKdaj)
+    .order("konec", { ascending: false })
+    .limit(1);
+
+  const vrstica = (data ?? [])[0] as
+    | { id: string; zadnja_napaka: string | null; strani_pregledanih: number }
+    | undefined;
+  if (!vrstica) return null;
+  if (!/403|429|blokir/i.test(vrstica.zadnja_napaka ?? "")) return null;
+
+  const { data: ozivljena } = await db
+    .from("avtonet_raziskave")
+    .update({ status: "zahtevano", zadnja_napaka: null, konec: null })
+    .eq("id", vrstica.id)
+    .eq("status", "napaka")
+    .select("id")
+    .maybeSingle();
+
+  return (ozivljena as { id: string } | null)?.id ?? null;
+}

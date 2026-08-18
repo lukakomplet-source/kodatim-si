@@ -21,6 +21,8 @@ const STOPNJE_UR = [2, 4, 8, 12];
 const KLJUC = "blokada";
 
 export type StanjeBlokade = {
+  /** Consecutive clean runs at the current speed; three earn a step back. */
+  cistih?: number;
   /** ISO time until which collecting is parked; null = free. */
   do: string | null;
   /** How many blocks in a row — drives both the pause and the speed factor. */
@@ -85,20 +87,44 @@ export async function zabelezBlokado(db: Db, razlog: string): Promise<StanjeBlok
     faktor: Math.min(4, prej.faktor * 2),
     zadnja: new Date().toISOString(),
     razlog: `${razlog} — zbiranje počiva ${ur} h, nato nadaljuje počasneje`,
+    // A block resets the earned-speed counter: whatever pace we were on is the
+    // pace that just got us blocked.
+    cistih: 0,
   };
   await zapisi(db, novo);
   return novo;
 }
 
-/** A run finished cleanly: forget the block and give some speed back. */
+/**
+ * A run finished cleanly: forget the block, and give speed back — but slowly.
+ *
+ * Halving the factor after ONE clean run is what produced the 18.08 morning: the
+ * 17.08 sweeps at double spacing went through untouched, the factor dropped
+ * straight back to 1, and the next run was blocked after 361 pages. One clean run
+ * at a reduced pace is evidence that the reduced pace works, not that full speed
+ * would have.
+ *
+ * So speed is returned after THREE consecutive clean runs, and only one step at a
+ * time. A block resets the counter, because the whole point is not to walk into
+ * the same wall on a hunch.
+ */
 export async function zabelezUspeh(db: Db): Promise<void> {
   const prej = await preberiBlokado(db);
   if (prej.stopnja === 0 && prej.faktor === 1 && !prej.do) return;
+
+  const cistih = (prej.cistih ?? 0) + 1;
+  const spusti = cistih >= 3 && prej.faktor > 1;
+
   await zapisi(db, {
     do: null,
     stopnja: 0,
-    faktor: Math.max(1, prej.faktor / 2),
+    faktor: spusti ? Math.max(1, prej.faktor / 2) : prej.faktor,
     zadnja: prej.zadnja,
-    razlog: null,
+    razlog: spusti
+      ? null
+      : prej.faktor > 1
+        ? `Zbiranje ostaja počasnejše (${prej.faktor}×) — po treh čistih pregledih se pospeši (${cistih}/3).`
+        : null,
+    cistih: spusti ? 0 : cistih,
   });
 }

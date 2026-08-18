@@ -12,7 +12,14 @@ import {
   type WorkerState,
 } from "./health.js";
 import { buildDailyReport, sendDailyReport } from "./report.js";
-import { claimResearch, finishResearch, requestResearch, saveProgress, type Job } from "./jobs.js";
+import {
+  claimResearch,
+  finishResearch,
+  oziviPoBlokadi,
+  requestResearch,
+  saveProgress,
+  type Job,
+} from "./jobs.js";
 import { runResearch, type Progress } from "./research.js";
 import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
@@ -474,6 +481,15 @@ async function main(): Promise<void> {
     let job: Job | null = null;
     try {
       const bl = await preberiBlokado(db);
+      if (!blokiran(bl)) {
+        // A block ended: pick the interrupted sweep back up instead of waiting
+        // for the next scheduled hour. Continues from its recorded slices, so it
+        // costs the pages that are actually missing.
+        const ozivljena = await oziviPoBlokadi(db);
+        if (ozivljena) {
+          log("info", "blokada je minila - nadaljujem prekinjeno raziskavo", { raziskava: ozivljena });
+        }
+      }
       if (blokiran(bl)) {
         // A queued request (e.g. the dashboard button) waits out the block
         // rather than burning it — the row stays, so it starts by itself after.
