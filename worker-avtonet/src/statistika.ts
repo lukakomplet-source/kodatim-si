@@ -58,6 +58,39 @@ const POLJA =
   "ddv_odbitek, cena_brez_ddv_eur";
 
 /**
+ * The engine, as the market names it.
+ *
+ * "C-Razred" is not a price class: a C 180 (115 kW) and a C 43 AMG (287 kW) are
+ * the same "model" and nothing like the same car, and comparing one against the
+ * other is what produced a median of 44.360 EUR for a 27.000 EUR C 180. The badge
+ * in the title IS the class — 180, 220 d, 320d, xDrive30d, 2.0 TDI — so it
+ * belongs in the cohort key.
+ *
+ * Read from the advert's own title, in the order the market writes it, with the
+ * engine's power as the fallback: a car whose badge we cannot parse still groups
+ * with cars of the same output rather than with everything wearing the same
+ * model name.
+ */
+function motorKljuc(o: Oglas): string {
+  const naziv = (o.naziv ?? "").toLowerCase();
+
+  // BMW/Mercedes style: 320d, 530i, 220 d, 300 de, xDrive30d, 45 AMG.
+  const nemski = naziv.match(/\b(?:xdrive|sdrive|quattro|4matic)?\s*(\d{2,3})\s*(d|i|e|de|td)?\b/);
+  // Displacement + fuel family: 2.0 TDI, 1.5 TSI, 1.6 dCi, 2.2 CRDi.
+  const prostornina = naziv.match(/\b(\d[.,]\d)\s*(tdi|tsi|tfsi|fsi|crdi|dci|hdi|jtd|cdti|bluehdi|thp|multijet|d4d|vti|gdi)\b/);
+
+  if (prostornina) return `${prostornina[1].replace(",", ".")}${prostornina[2]}`;
+  // Three digits between 100 and 999 that are not a year and not a trim number.
+  if (nemski && Number(nemski[1]) >= 100 && Number(nemski[1]) <= 999) {
+    return `${nemski[1]}${nemski[2] ?? ""}`;
+  }
+  // Power, in 15 kW buckets: coarse enough to group, fine enough to separate a
+  // 115 kW C 180 from a 245 kW C 400.
+  if (o.kw) return `${Math.round(o.kw / 15) * 15}kw`;
+  return "?";
+}
+
+/**
  * Gearbox as two buckets, because that is how the market prices it.
  *
  * The source writes "avtomatski", "avtomatski - DSG", "ročni 6 prestav" and a
@@ -634,6 +667,80 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
     await zapisi(db, "indeks_cen", ind);
   }
 
+
+/**
+ * What a kilometre and a year are worth INSIDE one cohort.
+ *
+ * Rather than a table of assumed depreciation, the slope is measured on the very
+ * cars being compared: take every pair of peers far enough apart to be
+ * informative, ask what one kilometre (or one year) cost between them, and keep
+ * the median of those answers. The median is what makes it usable on real advert
+ * data — a single crashed car or a typo'd price moves an average and does not
+ * move this.
+ *
+ * Returns zeroes when the cohort has no spread to learn from, which is the
+ * honest answer: no adjustment rather than an invented one.
+ */
+function koeficienti(vrstniki: Oglas[]): { naKm: number; naLeto: number } {
+  const kmNakloni: number[] = [];
+  const letoNakloni: number[] = [];
+
+  for (let i = 0; i < vrstniki.length; i += 1) {
+    for (let j = i + 1; j < vrstniki.length; j += 1) {
+      const a = vrstniki[i];
+      const b = vrstniki[j];
+      const ca = num(a.cena_eur);
+      const cb = num(b.cena_eur);
+      if (ca === null || cb === null) continue;
+
+      if (a.km !== null && b.km !== null && Math.abs(a.km - b.km) >= 20_000) {
+        kmNakloni.push((ca - cb) / (a.km - b.km));
+      }
+      if (a.letnik !== null && b.letnik !== null && Math.abs(a.letnik - b.letnik) >= 1) {
+        letoNakloni.push((ca - cb) / (a.letnik - b.letnik));
+      }
+    }
+  }
+
+  const naKm = kmNakloni.length >= 6 ? (median(kmNakloni) as number) : 0;
+  const naLeto = letoNakloni.length >= 6 ? (median(letoNakloni) as number) : 0;
+
+  // Sanity: mileage must not raise a price and a year must not lower one. A
+  // cohort that says otherwise is telling us about its own noise, not the market.
+  return {
+    naKm: Number.isFinite(naKm) && naKm < 0 ? naKm : 0,
+    naLeto: Number.isFinite(naLeto) && naLeto > 0 ? naLeto : 0,
+  };
+}
+
+/**
+ * One peer's price, restated as if that car had the candidate's mileage and year.
+ *
+ * Capped at 35 % of the original: a coefficient learned from eight adverts can
+ * be wrong, and a wrong coefficient applied without limit would manufacture
+ * "deals" out of arithmetic.
+ */
+function prilagojenaCena(
+  vrstnik: Oglas,
+  cilj: Oglas,
+  k: { naKm: number; naLeto: number }
+): number | null {
+  const osnova = num(vrstnik.cena_eur);
+  if (osnova === null) return null;
+
+  let popravek = 0;
+  if (k.naKm !== 0 && cilj.km !== null && vrstnik.km !== null) {
+    popravek += k.naKm * (cilj.km - vrstnik.km);
+  }
+  if (k.naLeto !== 0 && cilj.letnik !== null && vrstnik.letnik !== null) {
+    popravek += k.naLeto * (cilj.letnik - vrstnik.letnik);
+  }
+
+  const meja = osnova * 0.35;
+  const omejen = Math.max(-meja, Math.min(meja, popravek));
+  return Math.max(500, osnova + omejen);
+}
+
   // ---- G1: deal feed -----------------------------------------------------
   {
     type Deal = {
@@ -646,6 +753,21 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       odstopanjeTrgovciPct: number | null;
       /** How strict the comparison behind the numbers was. */
       strogost: string;
+      /**
+       * A few of the cars the median came from — price, year, mileage, link.
+       *
+       * The point is that the claim can be checked in ten seconds instead of
+       * trusted: open two of them and it is obvious whether the comparison is
+       * fair. A "deal" nobody can verify is just a number in a coloured box.
+       */
+      primerljivi: {
+        naziv: string;
+        letnik: number | null;
+        km: number | null;
+        cena: number;
+        prilagojena: number;
+        url: string;
+      }[];
       cena: number; medianaKohorte: number; odstopanjePct: number; vzorec: number;
       letnik: number | null; km: number | null; jeDealer: boolean | null;
       oglediNaDan: number | null; delez14: number | null; kmAnomalija: boolean;
@@ -656,9 +778,16 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
     // estate against a manual hatchback is not a deal, it is a category error —
     // and that was the complaint about the first version of this list.
     const bazen = new Map<string, Oglas[]>();
+    // The cohort key: same car, in the sense the market prices it.
+    //
+    // Model alone is not that. "C-Razred" holds a 115 kW C 180 and a 287 kW
+    // C 43 AMG, and a 27.000 EUR C 180 measured against that mixture came out
+    // "39 % below a median of 44.360 EUR" — an arithmetic fact about the wrong
+    // set of cars. The engine badge is the missing piece, so it is in the key.
     const kohorta = (o: Oglas) =>
       [
         modelKljuc(o),
+        motorKljuc(o),
         (o.gorivo ?? "?").split(" ")[0].toLowerCase(),
         menjalnikKljuc(o.menjalnik),
         karoserijaKljuc(o.karoserija),
@@ -679,6 +808,13 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       const cena = num(o.cena_eur);
       const mk = modelKljuc(o);
       if (!mk || cena === null || cena < 1000) continue;
+      // No mileage or no year means the claim "this car is cheap for what it is"
+      // cannot be made at all: those two are what "what it is" mostly consists
+      // of. The first version compared a Kodiaq with unknown mileage against
+      // cars with unknown mileage and called a 21.990 EUR used car 44 % under a
+      // 39.199 EUR median that belonged to new stock.
+      if (o.km === null || o.letnik === null) continue;
+      if (jeNov(o)) continue;
       const skupina = bazen.get(kohorta(o)) ?? [];
 
       /**
@@ -689,34 +825,60 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
        * products at the same price. Each relaxation is recorded, so the card can
        * say how strict the comparison behind the number actually was.
        */
-      const vrstnikiZa = (letOkno: number, kwOkno: number | null, opremaMeja: number | null) =>
+      const vrstnikiZa = (letOkno: number, kwOkno: number | null, kmOkno: number | null, opremaMeja: number | null) =>
         skupina.filter((p) => {
           if (p.id === o.id || num(p.cena_eur) === null) return false;
+          // Same requirement on the other side, and no new stock: a price list
+          // is not a market, and an advert without mileage cannot be adjusted to
+          // anything.
+          if (p.km === null || p.letnik === null || jeNov(p)) return false;
           if (o.letnik !== null && p.letnik !== null && Math.abs(p.letnik - o.letnik) > letOkno) {
             return false;
           }
           if (kwOkno !== null && o.kw && p.kw && Math.abs(p.kw - o.kw) / o.kw > kwOkno) return false;
+          // Mileage was not used at all before, and it is the biggest price
+          // driver after age: the same car at 78.000 and at 243.000 km is easily
+          // 40 % apart. A window keeps the comparison honest; the adjustment
+          // below then removes what is left of the difference.
+          if (kmOkno !== null && o.km && p.km && Math.abs(p.km - o.km) / o.km > kmOkno) return false;
           if (opremaMeja !== null && opremaUjemanje(o, p) < opremaMeja) return false;
           return true;
         });
 
-      // From strictest to loosest; the first window with enough peers wins.
-      const stopnje: { let_: number; kw: number | null; oprema: number | null; opis: string }[] = [
-        { let_: 2, kw: 0.12, oprema: 0.6, opis: "isti motor in podobna oprema" },
-        { let_: 2, kw: 0.2, oprema: 0.45, opis: "isti motor, deloma podobna oprema" },
-        { let_: 3, kw: 0.25, oprema: null, opis: "isti motor" },
-        { let_: 4, kw: null, oprema: null, opis: "isti model in menjalnik" },
+      // Strict, then slightly less strict — and then nothing.
+      //
+      // The old ladder ended with "same model and gearbox, year ±4", which is
+      // where the wrong medians came from: the loosest comparison was used
+      // exactly where the data was thinnest. A deal that cannot be supported by
+      // genuinely comparable cars is not shown at all.
+      const stopnje: {
+        let_: number;
+        kw: number | null;
+        km: number | null;
+        oprema: number | null;
+        opis: string;
+      }[] = [
+        { let_: 2, kw: 0.1, km: 0.35, oprema: 0.6, opis: "isti motor, podobni km in oprema" },
+        { let_: 2, kw: 0.15, km: 0.5, oprema: 0.45, opis: "isti motor, podobni km" },
+        { let_: 3, kw: 0.2, km: 0.6, oprema: null, opis: "isti motor" },
       ];
       let vrstniki: Oglas[] = [];
       let strogost = "";
       for (const st of stopnje) {
-        vrstniki = vrstnikiZa(st.let_, st.kw, st.oprema);
+        vrstniki = vrstnikiZa(st.let_, st.kw, st.km, st.oprema);
         strogost = st.opis;
         if (vrstniki.length >= 8) break;
       }
       if (vrstniki.length < 8) continue;
 
-      const medCena = median(vrstniki.map((p) => num(p.cena_eur) as number)) as number;
+      // Every peer restated at this car's mileage and year before the median is
+      // taken. Without it the comparison silently asks "what do cars of this type
+      // cost", when the question is "what does THIS car cost".
+      const koef = koeficienti(vrstniki);
+      const prilagojene = vrstniki
+        .map((p) => prilagojenaCena(p, o, koef))
+        .filter((v): v is number => v !== null);
+      const medCena = median(prilagojene) as number;
       const odst = ((medCena - cena) / medCena) * 100;
       // Under 10 % below median is not a deal; over 45 % below is not a deal
       // either — it is a crashed car, an error or "cena na poziv" junk.
@@ -731,7 +893,13 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       // being looked for.
       const trgovci = vrstniki.filter((p) => p.je_dealer === true && !jeNov(p));
       const medTrgovci =
-        trgovci.length >= 5 ? (median(trgovci.map((p) => num(p.cena_eur) as number)) as number) : null;
+        trgovci.length >= 5
+          ? (median(
+              trgovci
+                .map((p) => prilagojenaCena(p, o, koef))
+                .filter((v): v is number => v !== null)
+            ) as number)
+          : null;
       const zasebnik = o.je_dealer === false;
       const odstTrgovci =
         medTrgovci !== null ? ((medTrgovci - cena) / medTrgovci) * 100 : null;
@@ -751,7 +919,7 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
         (vrstniki.length < 12 ? 8 : 0);
 
       const razlogi = [
-        `${Math.round(odst)} % pod mediano ${vrstniki.length} primerljivih (${Math.round(medCena).toLocaleString("sl-SI")} €) — ${strogost}`,
+        `${Math.round(odst)} % pod mediano ${vrstniki.length} primerljivih (${Math.round(medCena).toLocaleString("sl-SI")} €) — ${strogost}${koef.naKm !== 0 || koef.naLeto !== 0 ? ", preračunano na te km in letnik" : ""}`,
       ];
       if (zasebnik && odstTrgovci !== null && odstTrgovci > 0) {
         razlogi.push(
@@ -793,6 +961,21 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
         vzorecTrgovcev: trgovci.length,
         odstopanjeTrgovciPct: odstTrgovci === null ? null : Math.round(odstTrgovci * 10) / 10,
         strogost,
+        // Nearest by adjusted price, so the list shows the cars that actually
+        // decided the median rather than the first few in the array.
+        primerljivi: vrstniki
+          .map((v) => ({ v, prilagojena: prilagojenaCena(v, o, koef) }))
+          .filter((x): x is { v: Oglas; prilagojena: number } => x.prilagojena !== null)
+          .sort((a, b) => Math.abs(a.prilagojena - medCena) - Math.abs(b.prilagojena - medCena))
+          .slice(0, 4)
+          .map((x) => ({
+            naziv: (x.v.naziv ?? mk).slice(0, 60),
+            letnik: x.v.letnik,
+            km: x.v.km,
+            cena: Math.round(num(x.v.cena_eur) as number),
+            prilagojena: Math.round(x.prilagojena),
+            url: x.v.url,
+          })),
         cena, medianaKohorte: Math.round(medCena), odstopanjePct: Math.round(odst * 10) / 10,
         vzorec: vrstniki.length, letnik: o.letnik, km: o.km, jeDealer: o.je_dealer,
         oglediNaDan: on, delez14, kmAnomalija, tocke: Math.round(tocke * 10) / 10, razlogi,

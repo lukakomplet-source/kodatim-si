@@ -27,10 +27,18 @@ export type Deal = {
   potencial: number;
   ddvOdbitek: boolean;
   cenaBrezDdv: number | null;
+  strogost: string;
+  primerljivi: {
+    naziv: string;
+    letnik: number | null;
+    km: number | null;
+    cena: number;
+    prilagojena: number;
+    url: string;
+  }[];
   medianaTrgovcev: number | null;
   vzorecTrgovcev: number;
   odstopanjeTrgovciPct: number | null;
-  strogost: string;
   cena: number;
   medianaKohorte: number;
   odstopanjePct: number;
@@ -459,6 +467,38 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                     </li>
                   ))}
                 </ul>
+
+                {d.primerljivi?.length > 0 && (
+                  <details className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
+                    <summary className="cursor-pointer font-medium text-zinc-700">
+                      Zakaj je to posel — poglej primerljive ({d.vzorec})
+                    </summary>
+                    <p className="mt-2 text-[11px] text-zinc-500">
+                      Cene spodaj so <strong>preračunane na {d.km === null ? "te km" : `${d.km.toLocaleString("sl-SI")} km`}
+                      {d.letnik ? ` in letnik ${d.letnik}` : ""}</strong>, da so primerljive s tem vozilom. V oklepaju je
+                      cena, kot je zapisana v oglasu.
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {d.primerljivi.map((v, k) => (
+                        <li key={k} className="flex flex-wrap items-baseline gap-x-2">
+                          <a
+                            href={v.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-accent hover:underline"
+                          >
+                            {v.naziv}
+                          </a>
+                          <span className="text-zinc-500">
+                            {v.letnik ?? "?"} · {v.km === null ? "?" : `${v.km.toLocaleString("sl-SI")} km`}
+                          </span>
+                          <span className="font-semibold text-zinc-800">{eur(v.prilagojena)}</span>
+                          <span className="text-zinc-400">({eur(v.cena)})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
 
                 <div className="mt-3 flex items-center gap-4">
                   <a
