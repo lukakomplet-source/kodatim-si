@@ -302,7 +302,22 @@ export async function samopopravilo(
     const dokazi = await zberiDokaze(db, sprozil);
     const ai = await vprasajAi(dokazi);
 
-    const izbrani: Ukrep = ai?.ukrep ?? "ponovni_zagon";
+    // The model's choice, checked against the evidence.
+    //
+    // On 18.08 a database restart produced "Could not query the database for the
+    // schema cache", and the diagnosis came back "vir je vrnil 403" with the
+    // remedy "wait six hours". Nothing in the evidence said 403. A wrong cause is
+    // survivable; a wrong cause that parks collecting for a working day is not,
+    // so the expensive remedies now require the evidence to actually contain the
+    // thing they are a response to.
+    const dokazBesedilo = JSON.stringify(dokazi).toLowerCase();
+    const jeBlokada = /403|429|blokir|forbidden|too many requests/.test(dokazBesedilo);
+    let izbrani: Ukrep = ai?.ukrep ?? "ponovni_zagon";
+    let popravljeno: string | null = null;
+    if ((izbrani === "pocakaj_ure" || izbrani === "pocasneje") && !jeBlokada) {
+      popravljeno = `Model je predlagal „${izbrani}“, a v dokazih ni znaka blokade (403/429) — izvedel sem ponovni zagon.`;
+      izbrani = "ponovni_zagon";
+    }
     const izvedeno = opcije.poskusno
       ? `(poskusno — ukrep "${izbrani}" ni bil izveden)`
       : await izvedi(db, izbrani, ai?.ureCakanja ?? 0, log);
@@ -312,7 +327,9 @@ export async function samopopravilo(
       sprozil,
       vzrok: ai?.vzrok ?? "Ni bilo mogoče vprašati modela (manjka ključ ali ni odgovoril).",
       ukrep: izbrani,
-      utemeljitev: ai?.utemeljitev ?? "Privzeti varni ukrep: ponovni zagon.",
+      utemeljitev: [ai?.utemeljitev ?? "Privzeti varni ukrep: ponovni zagon.", popravljeno]
+        .filter(Boolean)
+        .join(" "),
       izvedeno,
       vir: ai ? "ai" : "privzeto",
     };

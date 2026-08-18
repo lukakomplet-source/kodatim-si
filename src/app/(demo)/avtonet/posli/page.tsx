@@ -49,6 +49,9 @@ export default async function PosliPage() {
       )}
 
       <p className="mt-8 border-t border-zinc-200 pt-4 text-xs text-zinc-400">
+        Vse cene so <strong>z DDV</strong> — torej to, kar plača navaden kupec. Kjer vir ponuja tudi
+        neto ceno („oz. X € + DDV“), je ta izpisana posebej kot „z odbitkom DDV“ in se v primerjave
+        ne šteje; drugače bi bila taka vozila videti petino cenejša od ostalih.{" "}
         „Pod mediano&ldquo; = pod sredinsko <strong>zahtevano</strong> ceno primerljivih aktivnih
         oglasov. Primerljiv pomeni isti model, gorivo, menjalnik in karoserija ter letnik ±2; kadar
         je takih vozil dovolj, še isti motor (moč ±12 %) in podobna oprema (vsaj 60 % ujemanja

@@ -25,6 +25,8 @@ export type Deal = {
   modelIme: string | null;
   zasluzek: number;
   potencial: number;
+  ddvOdbitek: boolean;
+  cenaBrezDdv: number | null;
   medianaTrgovcev: number | null;
   vzorecTrgovcev: number;
   odstopanjeTrgovciPct: number | null;
@@ -427,6 +429,11 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                       −{Math.round(d.odstopanjePct)} % pod mediano ({eur(d.medianaKohorte)})
                     </p>
                     <p className="text-xs text-zinc-500">razlika {eur(d.zasluzek)}</p>
+                    {d.ddvOdbitek && d.cenaBrezDdv !== null && (
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        z odbitkom DDV: {eur(d.cenaBrezDdv)}
+                      </p>
+                    )}
                     {d.jeDealer === false && d.medianaTrgovcev !== null && (
                       <p className="mt-0.5 text-xs font-medium text-accent">
                         trgovci: {eur(d.medianaTrgovcev)}

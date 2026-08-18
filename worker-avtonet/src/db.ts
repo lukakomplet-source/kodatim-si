@@ -50,6 +50,7 @@ export async function upsertListings(
   // read existing, insert new, update known, insert all snapshots.
   const ids = rows.map((r) => r.avtonetId);
   const natancnost = await imaNatancnost(db);
+  const zDdvStolpci = await imaDdv(db);
   // km and status join cena here because a snapshot is now written only when
   // one of the three actually changed, which needs the previous values.
   // manjka_od/vrnjen_krat so a returning advert can be recognised as returned.
@@ -57,11 +58,30 @@ export async function upsertListings(
   const stolpciObstojecih: string = natancnost
     ? "id, avtonet_id, cena_eur, km, status, manjka_od, vrnjen_krat"
     : "id, avtonet_id, cena_eur, km, status";
-  const { data: existing, error } = await db
-    .from("avtonet_oglasi")
-    .select(stolpciObstojecih)
-    .in("avtonet_id", ids);
-  if (error) throw new Error(`Branje obstoječih oglasov ni uspelo: ${error.message}`);
+  // Retried, because the failure this guards against is transient by nature.
+  //
+  // On 18.08 the database's REST layer was restarted while a sweep was running;
+  // one read came back "Could not query the database for the schema cache" and
+  // the whole research — 1.151 pages in — was marked failed. A brief hiccup in
+  // our OWN infrastructure must not cost hours of collecting: the source is the
+  // thing we cannot repeat cheaply, this read is not.
+  let existing: unknown[] | null = null;
+  let zadnjaNapaka = "";
+  for (let poskus = 1; poskus <= 3; poskus += 1) {
+    const { data, error } = await db
+      .from("avtonet_oglasi")
+      .select(stolpciObstojecih)
+      .in("avtonet_id", ids);
+    if (!error) {
+      existing = data as unknown[] | null;
+      break;
+    }
+    zadnjaNapaka = error.message;
+    if (poskus < 3) await new Promise((r) => setTimeout(r, poskus * 3000));
+  }
+  if (existing === null) {
+    throw new Error(`Branje obstoječih oglasov ni uspelo (3 poskusi): ${zadnjaNapaka}`);
+  }
 
   type ObstojecaVrstica = {
     id: string;
@@ -83,7 +103,7 @@ export async function upsertListings(
   for (const r of rows) enkratni.set(r.avtonetId, r);
 
   const zaVstavitev: Record<string, unknown>[] = [];
-  const zaPosodobitev: { id: string; row: ParsedRow; status: string }[] = [];
+  const zaPosodobitev: { id: string; row: ParsedRow; status: string; popravekDdv?: boolean }[] = [];
 
   for (const row of enkratni.values()) {
     const { znamka, model, verzija } = razdeliNaziv(row.naziv);
@@ -107,6 +127,9 @@ export async function upsertListings(
         menjalnik: row.menjalnik,
         cena_eur: row.cenaEur,
         cena_prvotna_eur: row.cenaEur,
+        ...(zDdvStolpci
+          ? { cena_brez_ddv_eur: row.cenaBrezDdvEur, ddv_odbitek: row.ddvOdbitek }
+          : {}),
         first_seen: now,
         last_seen: now,
         status,
@@ -114,10 +137,21 @@ export async function upsertListings(
       out.novi.push(row);
     } else {
       const staraCena = prev.cena_eur === null ? null : Number(prev.cena_eur);
-      if (staraCena !== null && row.cenaEur !== null && staraCena !== row.cenaEur) {
+      // A price that "rose" from exactly the net figure to the gross one is not
+      // a price change: it is this collector correcting its own earlier mistake
+      // (it used to store "14.740 € + DDV" instead of the 17.980 € asked). Left
+      // as a change it would appear as a rise on every affected car at once and
+      // poison the price history the analysis is built on.
+      const popravekDdv =
+        row.ddvOdbitek &&
+        staraCena !== null &&
+        row.cenaBrezDdvEur !== null &&
+        Math.abs(staraCena - row.cenaBrezDdvEur) <= 1;
+
+      if (!popravekDdv && staraCena !== null && row.cenaEur !== null && staraCena !== row.cenaEur) {
         out.spremembeCene.push({ row, staraCena, novaCena: row.cenaEur });
       }
-      zaPosodobitev.push({ id: prev.id as string, row, status });
+      zaPosodobitev.push({ id: prev.id as string, row, status, popravekDdv });
     }
   }
 
@@ -145,6 +179,13 @@ export async function upsertListings(
           km: u.row.km,
           status: u.status,
         };
+        // The first price we ever saw has to be corrected too, or every such car
+        // shows a permanent "price rise" against a figure nobody ever asked.
+        if (u.popravekDdv) patch.cena_prvotna_eur = u.row.cenaEur;
+        if (zDdvStolpci) {
+          patch.cena_brez_ddv_eur = u.row.cenaBrezDdvEur;
+          patch.ddv_odbitek = u.row.ddvOdbitek;
+        }
         if (natancnost) {
           const prev = known.get(u.row.avtonetId) as
             | { status?: string; manjka_od?: string | null; vrnjen_krat?: number | null }
@@ -331,6 +372,16 @@ async function imaV2(db: Db): Promise<boolean> {
     );
   }
   return v2NaVoljo;
+}
+
+/** Whether migration_avtonet_ddv.sql (cena_brez_ddv_eur, ddv_odbitek) is in. */
+let ddvNaVoljo: boolean | null = null;
+
+async function imaDdv(db: Db): Promise<boolean> {
+  if (ddvNaVoljo !== null) return ddvNaVoljo;
+  const { error } = await db.from("avtonet_oglasi").select("ddv_odbitek").limit(1);
+  ddvNaVoljo = !error;
+  return ddvNaVoljo;
 }
 
 /** Whether migration_avtonet_natancnost.sql (manjka_od, vrnjen_krat, …) is in. */

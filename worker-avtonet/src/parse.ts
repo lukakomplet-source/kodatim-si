@@ -23,6 +23,10 @@ export type ParsedRow = {
   menjalnik: string | null;
   /** The price actually asked today — the action price when one is shown. */
   cenaEur: number | null;
+  /** Net price, when the source prints one ("… oz. 14.740 € + DDV"). */
+  cenaBrezDdvEur: number | null;
+  /** True when the advert offers a VAT-deductible (net) price. */
+  ddvOdbitek: boolean;
   prodano: boolean;
   /** The whole row as text, kept so a better parser can be applied later. */
   surovo: string;
@@ -68,12 +72,34 @@ export function parseRowText(text: string, href: string): ParsedRow | null {
 
   const menjalnik = /avtomat/i.test(text) ? "avtomatski" : /ročn/i.test(text) ? "ročni" : null;
 
-  // Two prices mean an old price and an action price. The LAST one on the row
-  // is what the seller is asking today — taking the first would record a
-  // discount that is not on offer.
-  const prices = [...text.matchAll(/([\d.]+)\s*€/g)].map((m) => parsePrice(m[1]));
-  const valid = prices.filter((p): p is number => p !== null);
-  const cenaEur = valid.length > 0 ? valid[valid.length - 1] : null;
+  // Price, and only the price a private buyer would pay.
+  //
+  // The source prints two figures for a VAT-deductible car:
+  //
+  //     17.980 € oz. 14.740 € + DDV(*)
+  //
+  // The first is the real, VAT-inclusive price; the second is the net one, which
+  // only a company that can reclaim the VAT ever pays. Taking "the last price on
+  // the row" — which is what this did — stored the NET figure, so those cars sat
+  // in every comparison about a fifth too cheap: a Porsche looked 30.000 € under
+  // the market for no reason other than tax.
+  //
+  // So any figure followed by "+ DDV" (or "brez DDV") is discarded, and the last
+  // of what remains is today's asking price — keeping the old behaviour where a
+  // row shows a struck-through old price and a current one.
+  const cene: { vrednost: number; brezDdv: boolean }[] = [];
+  for (const m of text.matchAll(/([\d.]+)\s*€/g)) {
+    const vrednost = parsePrice(m[1]);
+    if (vrednost === null) continue;
+    const zaCeno = text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 14);
+    cene.push({ vrednost, brezDdv: /^\s*(?:\+\s*DDV|brez\s*DDV)/i.test(zaCeno) });
+  }
+  const zDdv = cene.filter((c) => !c.brezDdv);
+  const cenaEur = zDdv.length > 0 ? zDdv[zDdv.length - 1].vrednost : null;
+  // Worth keeping: for a dealer who can deduct, the net figure IS the price they
+  // pay, and "possible VAT deduction" is a fact about the car, not noise.
+  const brezDdv = cene.filter((c) => c.brezDdv);
+  const cenaBrezDdvEur = brezDdv.length > 0 ? brezDdv[brezDdv.length - 1].vrednost : null;
 
   // The name is the row's opening text: everything before the price AND before
   // the specification block, whichever comes first.
@@ -93,6 +119,8 @@ export function parseRowText(text: string, href: string): ParsedRow | null {
     gorivo,
     menjalnik,
     cenaEur,
+    cenaBrezDdvEur,
+    ddvOdbitek: cenaBrezDdvEur !== null,
     prodano: /prodano/i.test(text),
     surovo: text.slice(0, 1000),
   };

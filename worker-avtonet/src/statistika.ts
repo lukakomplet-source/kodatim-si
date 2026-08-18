@@ -44,6 +44,9 @@ type Oglas = {
   starost: string | null;
   /** Engine power in kW — the single best proxy for "same engine". */
   kw: number | null;
+  /** True when the source also prints a net ("+ DDV") price for this car. */
+  ddv_odbitek: boolean | null;
+  cena_brez_ddv_eur: number | string | null;
   /** Normalised equipment tags ("klima", "acc", "alu_platisca" …). */
   oprema_znacilke: string[] | null;
 };
@@ -51,7 +54,8 @@ type Oglas = {
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, gorivo, menjalnik, karoserija, barva, " +
   "cena_eur, cena_prvotna_eur, status, first_seen, status_spremenjen, source_zadnja_sprememba, " +
-  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost, kw, oprema_znacilke";
+  "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost, kw, oprema_znacilke, " +
+  "ddv_odbitek, cena_brez_ddv_eur";
 
 /**
  * Gearbox as two buckets, because that is how the market prices it.
@@ -635,6 +639,8 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
     type Deal = {
       avtonetId: string; url: string; naziv: string | null; model: string;
       znamka: string | null; modelIme: string | null; zasluzek: number; potencial: number;
+      /** Net price and the deduction flag — for a dealer this is what they pay. */
+      ddvOdbitek: boolean; cenaBrezDdv: number | null;
       /** Median of DEALER adverts in the same cohort, when there were enough. */
       medianaTrgovcev: number | null; vzorecTrgovcev: number;
       odstopanjeTrgovciPct: number | null;
@@ -781,6 +787,8 @@ export async function izracunajStatistiko(db: Db, log: Log): Promise<void> {
       deals.push({
         avtonetId: o.avtonet_id, url: o.url, naziv: o.naziv, model: mk,
         znamka: o.znamka, modelIme: o.model, zasluzek, potencial,
+        ddvOdbitek: o.ddv_odbitek === true,
+        cenaBrezDdv: num(o.cena_brez_ddv_eur),
         medianaTrgovcev: medTrgovci === null ? null : Math.round(medTrgovci),
         vzorecTrgovcev: trgovci.length,
         odstopanjeTrgovciPct: odstTrgovci === null ? null : Math.round(odstTrgovci * 10) / 10,
