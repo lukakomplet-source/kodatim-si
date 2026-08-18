@@ -78,7 +78,9 @@ export async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartic
         lokacija: (el.querySelector("h2, .title, .posr") as HTMLElement | null)?.innerText?.trim() ?? null,
         naslovVrstica: besedilo.match(/(?:Prodaja|Oddaja|Najem):\s*([^,]+(?:,\s*[^,]+)?)/)?.[0] ?? null,
         opis: el.querySelector('[itemprop="description"], [itemprop="disambiguatingDescription"]')?.textContent?.trim() ?? null,
-        cenaBesedilo: cena ? `${cena} €` : besedilo.match(/[\d.]+,\d{2}\s*€/)?.[0] ?? null,
+        // Mikropodatek pride kot golo decimalno število ("3850000.00") — brez
+        // pripete valute, da ga normaliziraj lahko loči od slovenskega zapisa.
+        cenaBesedilo: cena ?? besedilo.match(/[\d.]+,\d{2}\s*€/)?.[0] ?? null,
         telefon: (el.querySelector('a[href^="tel:"]') as HTMLAnchorElement | null)?.href?.replace("tel:", "") ?? null,
         agencija: agencija?.trim() || null,
         slika: el.querySelector("img[data-src], img[src*='img.nepremicnine']")?.getAttribute("data-src")
@@ -126,11 +128,15 @@ export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOgla
     posel: rezina.posel,
     regija: rezina.regija,
     kraj: lepKraj(r.lokacija),
-    cenaEur: r.cenaBesedilo
-      ? /^[d]+(?:.[d]{1,2})?$/.test(r.cenaBesedilo.trim())
-        ? Number(r.cenaBesedilo)
-        : cenaIz(r.cenaBesedilo)
-      : null,
+    cenaEur: (() => {
+      if (!r.cenaBesedilo) return null;
+      const cist = r.cenaBesedilo.replace(/\s*€\s*$/, "").trim();
+      // Mikropodatek uporablja decimalno PIKO ("3850000.00"), slovenski zapis pa
+      // pike kot tisočice ("3.850.000,00 €"). Branje enega s pravili drugega je
+      // naredilo cene ×100 — zato sta poti tu izrecno ločeni.
+      if (/^\d+(?:\.\d{1,2})?$/.test(cist)) return Number(cist);
+      return cenaIz(r.cenaBesedilo);
+    })(),
     povrsinaM2: iz.povrsinaM2,
     zemljisceM2: iz.zemljisceM2,
     letoIzgradnje: iz.letoIzgradnje,

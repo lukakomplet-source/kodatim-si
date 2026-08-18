@@ -140,6 +140,11 @@ export default async function NepremicninePage({
     case "zemljisce":
       qy = qy.order("zemljisce_m2", { ascending: false, nullsFirst: false });
       break;
+    case "enote":
+      qy = qy
+        .order("st_enot", { ascending: false, nullsFirst: false })
+        .order("st_enot_ocena", { ascending: false, nullsFirst: false });
+      break;
     case "novi":
     default:
       qy = qy.order("first_seen", { ascending: false });
@@ -273,6 +278,7 @@ export default async function NepremicninePage({
             <option value="cena_visja">najdražji</option>
             <option value="m2_nizja">najnižja cena/m²</option>
             <option value="zemljisce">največ zemljišča</option>
+            <option value="enote">največ enot (investitor)</option>
           </select>
         </label>
         <button type="submit" className="self-end rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
@@ -361,15 +367,24 @@ export default async function NepremicninePage({
               {v.opis && <p className="mt-2 line-clamp-3 text-xs text-zinc-500">{v.opis}</p>}
 
               {/* Velik, nespregledljiv gumb na izvirnik: slike in galerija so tam. */}
-              <a
-                href={v.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:brightness-110"
-              >
-                <ExternalLink className="h-4 w-4" />
-                ODPRI OGLAS S SLIKAMI
-              </a>
+              <div className="mt-3 flex gap-2">
+                <a
+                  href={v.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:brightness-110"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  ODPRI OGLAS S SLIKAMI
+                </a>
+                <Link
+                  href={{ pathname: "/nepremicnine/kalkulator", query: { oglas: v.id } }}
+                  title="Odpre kalkulator s ceno in enotami tega oglasa ter oceno najemnine iz naših najemnih oglasov"
+                  className="inline-flex items-center justify-center rounded-xl border-2 border-accent/40 px-3 py-3 text-sm font-bold text-accent transition hover:bg-accent/5"
+                >
+                  ANALIZIRAJ
+                </Link>
+              </div>
             </article>
           );
         })}
