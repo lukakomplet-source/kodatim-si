@@ -265,7 +265,22 @@ export async function oziviPoBlokadi(db: Db): Promise<string | null> {
     | { id: string; zadnja_napaka: string | null; strani_pregledanih: number }
     | undefined;
   if (!vrstica) return null;
-  if (!/403|429|blokir/i.test(vrstica.zadnja_napaka ?? "")) return null;
+
+  // Two kinds of failure are worth retrying, and they get different budgets.
+  //
+  // The source pushing back (403/429) is retried whenever the block expires:
+  // waiting is exactly the right response and the next attempt is free of guilt.
+  //
+  // Everything else — our database restarting, a network blip — is retried ONCE.
+  // A crash that repeats is a bug, and a bug retried in a loop burns the source's
+  // patience and hides itself; one retry recovers the common case (18.08: a
+  // PostgREST restart killed a sweep 1.151 pages in) without that risk.
+  const odVira = /403|429|blokir/i.test(vrstica.zadnja_napaka ?? "");
+  if (!odVira) {
+    const ze = await zeOzivljene(db);
+    if (ze.includes(vrstica.id)) return null;
+    await zapisiOzivljeno(db, vrstica.id);
+  }
 
   const { data: ozivljena } = await db
     .from("avtonet_raziskave")
@@ -276,4 +291,39 @@ export async function oziviPoBlokadi(db: Db): Promise<string | null> {
     .maybeSingle();
 
   return (ozivljena as { id: string } | null)?.id ?? null;
+}
+
+
+/**
+ * Which researches have already been given their one retry.
+ *
+ * Kept in the statistics row rather than a column, because it is a short list
+ * with no history value — the point is only "not twice".
+ */
+async function zeOzivljene(db: Db): Promise<string[]> {
+  try {
+    const { data } = await db
+      .from("avtonet_statistika")
+      .select("podatki")
+      .eq("kljuc", "ozivljene")
+      .maybeSingle();
+    const v = (data as { podatki: { ids?: string[] } } | null)?.podatki?.ids;
+    return Array.isArray(v) ? v : [];
+  } catch {
+    // Unreadable means "assume already retried": the safe side is doing less.
+    return ["*"];
+  }
+}
+
+async function zapisiOzivljeno(db: Db, id: string): Promise<void> {
+  try {
+    const prej = await zeOzivljene(db);
+    await db.from("avtonet_statistika").upsert({
+      kljuc: "ozivljene",
+      podatki: { ids: [id, ...prej.filter((x) => x !== "*")].slice(0, 20) },
+      izracunano: new Date().toISOString(),
+    });
+  } catch {
+    // Best effort; the worst case is one extra retry.
+  }
 }
