@@ -29,6 +29,8 @@ export type OglasZaFacelift = {
   letnik: number | null;
   registracijaMesec: number | null;
   cena: number | null;
+  /** Moč: ob prenovi motorja se spremeni (X6 30d: 190 kW F16 -> 195 kW G06). */
+  kw: number | null;
   naziv: string | null;
   opis: string | null;
   verzija: string | null;
@@ -63,12 +65,20 @@ export type Meja = {
   mejaLeto: number;
   mejaMesec: number;
   zaupanje: number;
+  /**
+   * Surova moč stopnice (vsota skokov). Zaupanje je omejeno navzgor in zato
+   * pri izbiri med sosednjimi kandidati ne loči dovolj — brez te mere je
+   * "zmagal" naključni kandidat namesto najostrejšega preloma.
+   */
+  moc: number;
   dokazi: { oprema: Dokaz[]; cenaSkokPct: number | null; izrecnihPo: number; izrecnihPred: number };
   vzorecPred: number;
   vzorecPo: number;
 };
 
 const NAJMANJ_NA_STRAN = 25;
+/** Pri močnem dokazu (skok >= 45 odstotnih točk) zadošča manjši vzorec. */
+const NAJMANJ_NA_STRAN_IZJEMA = 12;
 const NAJMANJ_SKOK = 22; // odstotnih točk
 const NAJMANJ_DOKAZOV = 2;
 /**
@@ -120,7 +130,9 @@ export function izmeriMeje(
     // Lokalno okno na vsako stran — stopnica, ne klanec.
     const pred = zIndeksom.filter((x) => x.i < meja && x.i >= meja - OKNO_MESECEV).map((x) => x.o);
     const po = zIndeksom.filter((x) => x.i >= meja && x.i < meja + OKNO_MESECEV).map((x) => x.o);
-    if (pred.length < NAJMANJ_NA_STRAN || po.length < NAJMANJ_NA_STRAN) continue;
+    // Manjši vzorec je dovoljen, a mora prinesti močnejši dokaz (spodaj).
+    if (pred.length < NAJMANJ_NA_STRAN_IZJEMA || po.length < NAJMANJ_NA_STRAN_IZJEMA) continue;
+    const majhenVzorec = pred.length < NAJMANJ_NA_STRAN || po.length < NAJMANJ_NA_STRAN;
 
     const dokazi: Dokaz[] = [];
     for (const k of kljuci) {
@@ -130,7 +142,35 @@ export function izmeriMeje(
       // Facelift opremo DODA; izginotje opreme je znak česa drugega.
       if (skok >= NAJMANJ_SKOK) dokazi.push({ oprema: k, predPct: Math.round(predPct), poPct: Math.round(poPct), skok: Math.round(skok) });
     }
-    if (dokazi.length < NAJMANJ_DOKAZOV) continue;
+
+    /**
+     * Neodvisen signal: MOČ, KI JE PREJ NI BILO.
+     *
+     * Ob prenovi proizvajalec zamenja motorje in v ponudbi se pojavijo moči,
+     * ki jih prej ni bilo (X6: 195, 250, 294 kW so vse od 2020). To zazna tudi
+     * prenovo, ki opreme ne spremeni — in prav ta primer je uporabnik prijavil.
+     */
+    const mociPred = new Set(pred.map((o) => o.kw).filter((k): k is number => k !== null));
+    const zMocjoPo = po.filter((o) => o.kw !== null);
+    if (mociPred.size > 0 && zMocjoPo.length >= 10) {
+      const nove = zMocjoPo.filter((o) => ![...mociPred].some((m) => Math.abs(m - (o.kw as number)) <= 2));
+      const delezNovih = (100 * nove.length) / zMocjoPo.length;
+      if (delezNovih >= 40) {
+        dokazi.push({ oprema: "moč, ki je prej ni bilo", predPct: 0, poPct: Math.round(delezNovih), skok: Math.round(delezNovih) });
+      }
+    }
+
+    /**
+     * Praviloma zahtevamo dva neodvisna dokaza. Izjema je zamenjava celotnega
+     * nabora motorjev: če ima 70 % ali več avtov po meji moč, ki je prej sploh
+     * ni bilo, to ni naključje — proizvajalec je zamenjal motorje, kar se v
+     * ceni pozna tudi, kadar oprema ostane ista (X6 30d: 190 kW pred, 195 kW po).
+     */
+    const zamenjaniMotorji = dokazi.find((d) => d.oprema.includes("moč") && d.skok >= 70);
+    if (dokazi.length < NAJMANJ_DOKAZOV && !zamenjaniMotorji) continue;
+    // Pri manjšem vzorcu zahtevamo vsaj en zelo močan dokaz, sicer je to lahko
+    // naključje nekaj oglasov.
+    if (majhenVzorec && !dokazi.some((d) => d.skok >= 45)) continue;
 
     const cenePred = pred.map((o) => o.cena).filter((c): c is number => c !== null && c > 0);
     const cenePo = po.map((o) => o.cena).filter((c): c is number => c !== null && c > 0);
@@ -156,6 +196,7 @@ export function izmeriMeje(
       mejaLeto: Math.floor(meja / 12),
       mejaMesec: (meja % 12) + 1,
       zaupanje,
+      moc: Math.round(dokazi.reduce((s, d) => s + d.skok, 0)),
       dokazi: { oprema: dokazi.sort((a, b) => b.skok - a.skok).slice(0, 6), cenaSkokPct, izrecnihPo, izrecnihPred },
       vzorecPred: pred.length,
       vzorecPo: po.length,
@@ -165,7 +206,7 @@ export function izmeriMeje(
   // Sosednji meseci opisujejo ISTO stopnico; obdržimo najmočnejšo in
   // zavržemo vse, ki so ji preblizu.
   const izbrane: Meja[] = [];
-  for (const m of [...najdene].sort((a, b) => b.zaupanje - a.zaupanje)) {
+  for (const m of [...najdene].sort((a, b) => b.moc - a.moc || b.zaupanje - a.zaupanje)) {
     if (m.zaupanje < 45) continue;
     const i = m.mejaLeto * 12 + m.mejaMesec;
     if (izbrane.some((z) => Math.abs(z.mejaLeto * 12 + z.mejaMesec - i) < NAJMANJ_RAZMIKA)) continue;
@@ -192,14 +233,20 @@ export type Uvrstitev = {
   mejaOpis: string | null;
 };
 
-/** V katero serijo pade ta oglas. */
+/**
+ * V katero serijo pade ta oglas.
+ *
+ * Ključ je SAMO družina modela in nikoli generacija: če bi en avto segmentirali
+ * po petih mejah, drugi pa po treh, "serija 2" pri enem ne bi pomenila istega
+ * kot pri drugem — primerjava serij bi tiho postala neveljavna. Vsi avti
+ * modela morajo videti isti nabor mej.
+ */
 export function uvrsti(o: OglasZaFacelift, meje: Map<string, MejaZaUporabo[]>): Uvrstitev {
   const faceliftTrditev = izBesedila(o);
   const prazna: Uvrstitev = { serija: null, serijaVir: null, faceliftTrditev, mejaOpis: null };
   if (!o.druzinaModela || o.letnik === null) return prazna;
 
-  const zaModel =
-    meje.get(kljucSkupine(o.druzinaModela, o.generacija)) ?? meje.get(kljucSkupine(o.druzinaModela, null));
+  const zaModel = meje.get(o.druzinaModela);
   if (!zaModel || zaModel.length === 0) return prazna;
 
   const indeks = mesecIndeks(o.letnik, o.registracijaMesec);

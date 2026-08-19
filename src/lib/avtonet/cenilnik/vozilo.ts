@@ -34,6 +34,13 @@ export type Vozilo = {
   barva: string | null;
   /** Canonical equipment slugs — the same vocabulary the worker stores. */
   znacilke: string[];
+  /**
+   * Odsek proizvodnje (facelift/nova izvedba), izmerjen v worker-avtonet
+   * (facelift.ts). Kadar je znan, se primerja SAMO znotraj iste serije:
+   * X6 30d pred prenovo (190 kW) in po njej (195 kW) sta cenovno dva
+   * različna avta — 28.587 € proti 53.996 € v naših podatkih.
+   */
+  serija?: number | null;
   /** Asking price at the source, when there is one. Never used as a filter. */
   cena: number | null;
   /** Currency of `cena`; mobile.de quotes EUR too, but say so explicitly. */
@@ -43,7 +50,7 @@ export type Vozilo = {
 export const PRAZNO_VOZILO: Vozilo = {
   znamka: null, model: null, verzija: null, letnik: null, km: null, ccm: null, kw: null,
   gorivo: null, menjalnik: null, pogon: null, karoserija: null, barva: null, znacilke: [], cena: null,
-  valuta: null,
+  valuta: null, serija: null,
 };
 
 /** Lower-case, diacritic-free comparison key. Sources disagree on both. */

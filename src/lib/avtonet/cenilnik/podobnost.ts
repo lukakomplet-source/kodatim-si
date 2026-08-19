@@ -150,7 +150,13 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
 
   // Engine: power carries most of it, displacement confirms it, fuel is a gate.
   const gorivo = enako(cilj.gorivo, kandidat.gorivo);
-  const moc = relativnaBlizina(cilj.kw, kandidat.kw, 0.35);
+  /**
+   * Moč je oznaka izvedbe motorja, ne zvezna količina: 35-odstotna toleranca
+   * je 190 kW (X6 F16) in 195 kW (X6 G06) razglasila za skoraj isti motor,
+   * čeprav gre v naših podatkih za 28.587 € proti 53.996 €. Ožja toleranca
+   * pusti skozi zaokroževanje istega motorja, ne pa druge izvedbe.
+   */
+  const moc = relativnaBlizina(cilj.kw, kandidat.kw, 0.06);
   const prostornina = relativnaBlizina(cilj.ccm, kandidat.ccm, 0.4);
   const motor = Math.round((gorivo ?? NEZNANO) * 0.4 + moc * 0.4 + prostornina * 0.2);
 

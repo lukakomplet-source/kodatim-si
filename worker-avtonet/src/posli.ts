@@ -175,15 +175,25 @@ export function ujemanje(a: Vozilo, b: Vozilo): Ujemanje {
     enako.push(ia.karoserija);
   }
 
-  // Moč: dovoljen razmik raste s stopnjo. Znotraj iste izvedenke gre navadno
-  // za lifting ali drugačno programsko opremo, ne za drug avto.
-  const mocRazlika =
-    a.kw && b.kw ? Math.abs(a.kw - b.kw) / a.kw : null;
-  if (mocRazlika !== null) {
-    if (mocRazlika <= 0.08) enako.push(`${b.kw} kW`);
-    else {
+  /**
+   * Moč je IDENTITETA motorja, ne zvezna količina.
+   *
+   * Prej je veljala 8-odstotna toleranca in prav ta je spustila skozi najhujšo
+   * napako: BMW X6 xDrive30d ima v F16 190 kW, v novi generaciji G06 pa
+   * 195 kW. To je 2,6 % razlike, ki jo je stara koda štela za "enako" — v
+   * naših podatkih pa je povprečna cena 190 kW različice 28.587 €, 195 kW
+   * različice pa 53.996 €. Proizvajalec ob prenovi motorja ne spremeni moči
+   * za nekaj kilovatov po naključju: to JE oznaka izvedbe.
+   *
+   * Dovolimo le ±2 kW, kolikor znaša zaokroževanje istega motorja pri viru.
+   */
+  const kwRazlika = a.kw && b.kw ? Math.abs(a.kw - b.kw) : null;
+  if (kwRazlika !== null) {
+    if (kwRazlika <= 2) {
+      enako.push(`${b.kw} kW`);
+    } else {
       razlika.push(`${b.kw} kW proti ${a.kw} kW`);
-      if (mocRazlika > 0.2) ovire.push("bistveno druga moč");
+      ovire.push("druga moč motorja (druga izvedba)");
     }
   }
 

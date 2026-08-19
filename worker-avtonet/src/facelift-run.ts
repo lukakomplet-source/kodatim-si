@@ -20,7 +20,7 @@ import {
  */
 
 const POLJA =
-  "id, druzina_modela, generacija, letnik, registracija_mesec, cena_eur, naziv, opis, verzija, oprema_kljucna, facelift, facelift_vir, serija, serija_opis";
+  "id, druzina_modela, generacija, letnik, registracija_mesec, cena_eur, kw, naziv, opis, verzija, oprema_kljucna, facelift, facelift_vir, serija, serija_opis";
 
 type Vrstica = {
   id: string;
@@ -29,6 +29,7 @@ type Vrstica = {
   letnik: number | null;
   registracija_mesec: number | null;
   cena_eur: number | null;
+  kw: number | null;
   naziv: string | null;
   opis: string | null;
   verzija: string | null;
@@ -62,6 +63,7 @@ const vOglas = (r: Vrstica): OglasZaFacelift => ({
   letnik: r.letnik,
   registracijaMesec: r.registracija_mesec,
   cena: r.cena_eur === null ? null : Number(r.cena_eur),
+  kw: r.kw,
   naziv: r.naziv,
   opis: r.opis,
   verzija: r.verzija,
@@ -126,13 +128,33 @@ export async function izmeriInUporabi(db: Db, samoPokazi: boolean): Promise<void
     .select("druzina_modela, generacija, meja_leto, meja_mesec, zaupanje, potrjeno")
     .order("potrjeno", { ascending: false })
     .order("zaupanje", { ascending: false });
+  /**
+   * En sam nabor mej na MODEL (ne na generacijo): serija je primerljiva le,
+   * če so vsi avti modela merjeni z istim metrom. Meje iz meritev po
+   * generacijah se zato zlijejo v isti nabor, podvojene (isti mesec) pa
+   * obdržijo najvišje zaupanje.
+   */
   const zaUporabo = new Map<string, MejaZaUporabo[]>();
   for (const m of (vseMeje ?? []) as { druzina_modela: string; generacija: string | null; meja_leto: number; meja_mesec: number; zaupanje: number }[]) {
-    const k = kljucSkupine(m.druzina_modela, m.generacija);
-    const arr = zaUporabo.get(k) ?? [];
-    arr.push({ mejaLeto: m.meja_leto, mejaMesec: m.meja_mesec, zaupanje: m.zaupanje });
-    zaUporabo.set(k, arr);
+    const arr = zaUporabo.get(m.druzina_modela) ?? [];
+    const obstojeca = arr.find((x) => x.mejaLeto === m.meja_leto && x.mejaMesec === m.meja_mesec);
+    if (obstojeca) obstojeca.zaupanje = Math.max(obstojeca.zaupanje, m.zaupanje);
+    else arr.push({ mejaLeto: m.meja_leto, mejaMesec: m.meja_mesec, zaupanje: m.zaupanje });
+    zaUporabo.set(m.druzina_modela, arr);
   }
+  // Meje bliže kot pol leta so ista stopnica, videna z dveh strani.
+  for (const [model, arr] of zaUporabo) {
+    const urejene = arr.sort((a, b) => a.mejaLeto * 12 + a.mejaMesec - (b.mejaLeto * 12 + b.mejaMesec));
+    const cist: MejaZaUporabo[] = [];
+    for (const m of urejene) {
+      const zadnja = cist[cist.length - 1];
+      const razmik = zadnja ? m.mejaLeto * 12 + m.mejaMesec - (zadnja.mejaLeto * 12 + zadnja.mejaMesec) : 99;
+      if (razmik < 6) zadnja.zaupanje = Math.max(zadnja.zaupanje, m.zaupanje);
+      else cist.push(m);
+    }
+    zaUporabo.set(model, cist);
+  }
+  console.log(`[facelift] modelov z mejami: ${zaUporabo.size}`);
 
   let spremenjenih = 0;
   const stat = { trditev: 0, serija: 0, brezSerije: 0 };

@@ -195,7 +195,7 @@ async function izBaze(id: string): Promise<BranjeRezultat | null> {
     .from("avtonet_oglasi")
     .select(
       "znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, pogon, karoserija, barva, " +
-        "oprema_znacilke, cena_eur"
+        "oprema_znacilke, cena_eur, serija"
     )
     .eq("avtonet_id", id)
     .maybeSingle();
@@ -217,6 +217,9 @@ async function izBaze(id: string): Promise<BranjeRezultat | null> {
     karoserija: normalizirajKaroserijo(r.karoserija as string),
     barva: normalizirajBarvo(r.barva as string),
     znacilke: (r.oprema_znacilke as string[]) ?? [],
+    // Serija (facelift/izvedba) pride z oglasom — brez nje bi cenitev starega
+    // avta primerjala s prenovljenim istega letnika.
+    serija: (r.serija as number | null) ?? null,
     cena: r.cena_eur === null || r.cena_eur === undefined ? null : Number(r.cena_eur),
     valuta: "EUR",
   };

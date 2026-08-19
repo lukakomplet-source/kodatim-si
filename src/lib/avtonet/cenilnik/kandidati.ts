@@ -43,6 +43,7 @@ export type KandidatVrstica = {
   pogon: string | null;
   karoserija: string | null;
   barva: string | null;
+  serija: number | null;
   oprema_znacilke: string[] | null;
   cena_eur: number | null;
   cena_prvotna_eur: number | null;
@@ -58,7 +59,7 @@ export type KandidatVrstica = {
 
 const STOLPCI_OSNOVA =
   "id, avtonet_id, url, naziv, znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, " +
-  "pogon, karoserija, barva, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
+  "pogon, karoserija, barva, serija, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
   "status_spremenjen, je_dealer, lokacija, source_zadnja_sprememba, naslednji_oglas_id";
 
 const STOLPCI = `${STOLPCI_OSNOVA}, oprema_znacilke`;
@@ -106,6 +107,7 @@ export function vVozilo(r: KandidatVrstica): Vozilo {
     karoserija: normalizirajKaroserijo(r.karoserija),
     barva: normalizirajBarvo(r.barva),
     znacilke: r.oprema_znacilke ?? [],
+    serija: r.serija,
     cena: r.cena_eur === null ? null : Number(r.cena_eur),
     valuta: "EUR",
   };
@@ -125,7 +127,7 @@ export async function najdiKandidate(cilj: Vozilo, najvec = 400): Promise<Iskanj
     return { vrstice: [], oknoLetnika: null, brezModela: false, opomba: "Znamka vozila ni znana, zato primerjave ni mogoče poiskati." };
   }
 
-  const poizvedba = (oknoLet: number | null, zModelom: boolean) => {
+  const poizvedba = (oknoLet: number | null, zModelom: boolean, zSerijo = true) => {
     let q = db
       .from("avtonet_oglasi")
       .select(brezZnacilk ? STOLPCI_OSNOVA : STOLPCI)
@@ -157,16 +159,28 @@ export async function najdiKandidate(cilj: Vozilo, najvec = 400): Promise<Iskanj
       q = q.gte("letnik", cilj.letnik - oknoLet).lte("letnik", cilj.letnik + oknoLet);
     }
 
+    /**
+     * Serija (facelift / nova izvedba) je trd filter, kadar je znana.
+     *
+     * Letnik sam tega ne ujame: X6 xDrive30d iz 4/2019 je še stara izvedba
+     * (190 kW), tisti iz 3/2020 pa nova (195 kW) — v naših podatkih 28.587 €
+     * proti 53.996 €. Če jih ne ločimo, cenitev starega avta dvigne cena
+     * novega. Kadar zadetkov zmanjka, se filter spusti in to se izrecno pove.
+     */
+    if (zSerijo && cilj.serija !== null && cilj.serija !== undefined) {
+      q = q.eq("serija", cilj.serija);
+    }
+
     return q.limit(najvec);
   };
 
   /** Runs a query, degrading once if the equipment column is not there yet. */
-  const izvedi = async (oknoLet: number | null, zModelom: boolean): Promise<KandidatVrstica[]> => {
-    const prvi = await poizvedba(oknoLet, zModelom);
+  const izvedi = async (oknoLet: number | null, zModelom: boolean, zSerijo = true): Promise<KandidatVrstica[]> => {
+    const prvi = await poizvedba(oknoLet, zModelom, zSerijo);
     if (!prvi.error) return (prvi.data ?? []) as unknown as KandidatVrstica[];
     if (prvi.error.code === NI_STOLPCA && !brezZnacilk) {
       brezZnacilk = true;
-      const drugi = await poizvedba(oknoLet, zModelom);
+      const drugi = await poizvedba(oknoLet, zModelom, zSerijo);
       if (drugi.error) throw new Error(`Iskanje primerljivih vozil ni uspelo: ${drugi.error.message}`);
       return (drugi.data ?? []) as unknown as KandidatVrstica[];
     }
@@ -174,19 +188,28 @@ export async function najdiKandidate(cilj: Vozilo, najvec = 400): Promise<Iskanj
   };
 
   const opombe: string[] = [];
+  const imaSerijo = cilj.serija !== null && cilj.serija !== undefined;
 
-  // Step 1: model + progressively wider year window.
+  // Step 1: model + progressively wider year window. Najprej ZNOTRAJ serije;
+  // šele če tako ni dovolj primerljivih, se serija spusti — in to se pove.
   if (cilj.letnik !== null) {
-    for (const okno of OKNA_LETNIKA) {
-      const vrstice = await izvedi(okno, true);
-      if (vrstice.length >= DOVOLJ) {
-        opombe.push(`letnik ±${okno} let`);
-        return { vrstice, oknoLetnika: okno, brezModela: false, opomba: opombe.join(", ") };
-      }
-      // Keep the widest attempt in case nothing ever reaches the threshold.
-      if (okno === OKNA_LETNIKA[OKNA_LETNIKA.length - 1] && vrstice.length > 0) {
-        opombe.push(`letnik ±${okno} let, vzorec je majhen`);
-        return { vrstice, oknoLetnika: okno, brezModela: false, opomba: opombe.join(", ") };
+    for (const zSerijo of imaSerijo ? [true, false] : [false]) {
+      for (const okno of OKNA_LETNIKA) {
+        const vrstice = await izvedi(okno, true, zSerijo);
+        const dovolj = vrstice.length >= DOVOLJ;
+        const zadnjeOkno = okno === OKNA_LETNIKA[OKNA_LETNIKA.length - 1];
+        // Pri zadnjem oknu brez serije vzamemo, kar je — sicer ne bi imeli nič.
+        if (dovolj || (zadnjeOkno && vrstice.length > 0 && (!zSerijo || !imaSerijo))) {
+          opombe.push(`letnik ±${okno} let${dovolj ? "" : ", vzorec je majhen"}`);
+          if (imaSerijo) {
+            opombe.push(
+              zSerijo
+                ? "samo ista izvedba (facelift/serija)"
+                : "⚠️ vključene tudi druge izvedbe (facelift), ker primerljivih iste ni dovolj"
+            );
+          }
+          return { vrstice, oknoLetnika: okno, brezModela: false, opomba: opombe.join(", ") };
+        }
       }
     }
   } else {

@@ -34,12 +34,12 @@ function skupina(mejaLeto: number, naStran: number, sum = 0): OglasZaFacelift[] 
     const staro = i < sum; // nekaj šuma: "napačna" oprema na napačni strani
     out.push({
       id: `pred-${i}`, druzinaModela: "test model", generacija: null,
-      letnik: mejaLeto - 1 - (i % 2), registracijaMesec: 3, cena: 10000, naziv: null, opis: null, verzija: null,
+      letnik: mejaLeto - 1 - (i % 2), registracijaMesec: 3, cena: 10000, kw: 140, naziv: null, opis: null, verzija: null,
       opremaKljucna: { acc: staro, keyless: staro, sedezi_gretje: false },
     });
     out.push({
       id: `po-${i}`, druzinaModela: "test model", generacija: null,
-      letnik: mejaLeto + (i % 2), registracijaMesec: 9, cena: 14000, naziv: null, opis: null, verzija: null,
+      letnik: mejaLeto + (i % 2), registracijaMesec: 9, cena: 14000, kw: 140, naziv: null, opis: null, verzija: null,
       opremaKljucna: { acc: !staro, keyless: !staro, sedezi_gretje: !staro },
     });
   }
@@ -61,7 +61,7 @@ for (let leto = 2008; leto <= 2022; leto++) {
   for (let i = 0; i < 12; i++) {
     drift.push({
       id: `d-${leto}-${i}`, druzinaModela: "drift", generacija: null, letnik: leto, registracijaMesec: (i % 12) + 1,
-      cena: 5000 + (leto - 2008) * 1200, naziv: null, opis: null, verzija: null,
+      cena: 5000 + (leto - 2008) * 1200, kw: 110, naziv: null, opis: null, verzija: null,
       opremaKljucna: { acc: i / 12 < delez, keyless: i / 12 < delez },
     });
   }
@@ -69,12 +69,42 @@ for (let leto = 2008; leto <= 2022; leto++) {
 const mejeDrift = izmeriMeje(drift, { druzina: "drift", generacija: null });
 preveri("gladek drift ne ustvari meje", mejeDrift.length === 0, `${mejeDrift.length} mej`);
 
+/**
+ * Prenova, ki opreme NE spremeni, se pozna po moči: X6 xDrive30d ima v F16
+ * 190 kW, v G06 pa 195 kW — 2,6 % razlike, a v naših podatkih 28.587 € proti
+ * 53.996 €. Prav ta primer je prijavil uporabnik.
+ */
+const zamenjavaMotorja: OglasZaFacelift[] = [];
+for (let i = 0; i < 30; i++) {
+  zamenjavaMotorja.push({
+    id: `stari-${i}`, druzinaModela: "x6", generacija: null, letnik: 2017 + (i % 3), registracijaMesec: 4,
+    cena: 30000, kw: i % 2 ? 190 : 230, naziv: null, opis: null, verzija: null,
+    opremaKljucna: { acc: true, keyless: true },
+  });
+  zamenjavaMotorja.push({
+    id: `novi-${i}`, druzinaModela: "x6", generacija: null, letnik: 2020 + (i % 3), registracijaMesec: 6,
+    cena: 54000, kw: i % 2 ? 195 : 250, naziv: null, opis: null, verzija: null,
+    opremaKljucna: { acc: true, keyless: true },
+  });
+}
+const mejeMotor = izmeriMeje(zamenjavaMotorja, { druzina: "x6", generacija: null });
+preveri(
+  "zamenjava motorjev brez spremembe opreme ustvari mejo",
+  mejeMotor.length >= 1 && mejeMotor[0].mejaLeto === 2020,
+  mejeMotor.map((m) => `${m.mejaMesec}/${m.mejaLeto}`).join(", ") || "ni meje"
+);
+preveri(
+  "dokaz navaja moč",
+  Boolean(mejeMotor[0]?.dokazi.oprema.some((d) => d.oprema.includes("moč"))),
+  mejeMotor[0]?.dokazi.oprema.map((d) => d.oprema).join(", ") ?? "-"
+);
+
 // ------------------------------------------------------------------ uvrstitev
 console.log("\nuvrstitev v serijo");
-const mejeZaUporabo = new Map([["vw golf|", [{ mejaLeto: 2016, mejaMesec: 11, zaupanje: 80 }]]]);
+const mejeZaUporabo = new Map([["vw golf", [{ mejaLeto: 2016, mejaMesec: 11, zaupanje: 80 }]]]);
 const golf = (letnik: number, mesec: number | null): OglasZaFacelift => ({
   id: "x", druzinaModela: "vw golf", generacija: null, letnik, registracijaMesec: mesec,
-  cena: 12000, naziv: "VW Golf 1.6 TDI", opis: null, verzija: null, opremaKljucna: {},
+  cena: 12000, kw: 85, naziv: "VW Golf 1.6 TDI", opis: null, verzija: null, opremaKljucna: {},
 });
 preveri("3/2016 je serija 0", uvrsti(golf(2016, 3), mejeZaUporabo).serija === 0, "pred novembrom 2016");
 preveri("12/2016 je serija 1", uvrsti(golf(2016, 12), mejeZaUporabo).serija === 1, "po novembru 2016");
