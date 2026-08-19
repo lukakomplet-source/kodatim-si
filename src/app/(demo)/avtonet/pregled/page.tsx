@@ -27,7 +27,7 @@ export default async function PregledPage() {
   }
 
   const db = createAvtonetClient();
-  const [zdravjeRes, aktivnaRes] = await Promise.all([
+  const [zdravjeRes, aktivnaRes, pdfRes, pdfStanjeRes] = await Promise.all([
     db.from("avtonet_zdravje").select("*").eq("id", "worker").maybeSingle(),
     db
       .from("avtonet_raziskave")
@@ -35,6 +35,8 @@ export default async function PregledPage() {
       .in("status", ["zahtevano", "tece"])
       .limit(1)
       .maybeSingle(),
+    db.from("avtonet_pdf_povzetek").select("datotek, bajtov, zadnji").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki").eq("kljuc", "pdf_arhiv").maybeSingle(),
   ]);
 
   const zdravje = (zdravjeRes.data ?? null) as {
@@ -48,6 +50,12 @@ export default async function PregledPage() {
   } | null;
 
   const tece = (aktivnaRes.data as { status: string } | null)?.status === "tece";
+
+  const pdfArhiv = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
+  const pdfStanje = ((pdfStanjeRes.data as { podatki?: { stanje?: string; kapicaGb?: number } } | null)?.podatki) ?? null;
+  const pdfGb = Number(pdfArhiv?.bajtov ?? 0) / 1e9;
+  const pdfKapica = Number(pdfStanje?.kapicaGb ?? 150);
+  const pdfDelez = Math.min(100, Math.round((pdfGb / pdfKapica) * 100));
 
   return (
     <div>
@@ -69,6 +77,34 @@ export default async function PregledPage() {
           novih={zdravje?.novih_zadnjic ?? null}
         />
       </header>
+
+      <div className="mt-6 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-zinc-900">
+              PDF arhiv oglasov{" "}
+              <span className="font-normal text-zinc-500">(E: disk — stran + vse slike, verzija ob vsaki spremembi cene)</span>
+            </p>
+            <p className="mt-0.5 text-sm text-zinc-600">
+              {Number(pdfArhiv?.datotek ?? 0).toLocaleString("sl-SI")} PDF-jev ·{" "}
+              <strong>{pdfGb.toFixed(1)} GB</strong> / {pdfKapica} GB
+              {pdfArhiv?.zadnji
+                ? ` · zadnji zajem ${new Date(pdfArhiv.zadnji).toLocaleString("sl-SI", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                : ""}
+              {pdfStanje?.stanje && pdfStanje.stanje !== "tece" ? ` · stanje: ${pdfStanje.stanje}` : ""}
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <div className="h-2 rounded-full bg-zinc-100">
+              <div
+                className={`h-2 rounded-full ${pdfDelez > 90 ? "bg-red-500" : pdfDelez > 70 ? "bg-amber-500" : "bg-emerald-500"}`}
+                style={{ width: `${Math.max(1, pdfDelez)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-right text-xs text-zinc-500">{pdfDelez} % kapice</p>
+          </div>
+        </div>
+      </div>
 
       <ResearchPanel />
 

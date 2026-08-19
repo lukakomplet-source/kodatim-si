@@ -64,6 +64,45 @@ export type Deal = {
 
 const KORAK = 20;
 
+/** Ena shranjena verzija PDF arhiva oglasa (ob objavi / ob spremembi cene). */
+type PdfVerzija = { id: number; razlog: string; cena: number | null; ustvarjen: string };
+
+/** avto.net id iz URL-ja oglasa — arhiv je indeksiran po njem. */
+function idIzUrla(url: string): string | null {
+  return url.match(/id=(\d+)/)?.[1] ?? null;
+}
+
+function pdfDatum(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getDate()}.${d.getMonth() + 1}.`;
+}
+
+/**
+ * Gumbi do arhiviranih PDF-jev enega oglasa: prva verzija je posnetek ob
+ * objavi, vsaka naslednja je nastala ob spremembi cene — skupaj zgodovina,
+ * ki ostane tudi, ko oglasa na avto.netu ni več.
+ */
+function PdfGumbi({ verzije }: { verzije: PdfVerzija[] | undefined }) {
+  if (!verzije || verzije.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+      {verzije.map((v, i) => (
+        <a
+          key={v.id}
+          href={`/api/avtonet/pdf/${v.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent hover:bg-accent/20"
+          title={v.razlog === "nov" ? "PDF ob objavi oglasa" : "PDF ob spremembi cene"}
+        >
+          PDF {pdfDatum(v.ustvarjen)}
+          {i === 0 ? " (objava)" : v.cena !== null ? ` (${eur(v.cena)})` : ""}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 /** The deal-specific orders, plus every order the source itself offers. */
 type PoselRazvrstitev = "potencial" | "zasluzek" | "odstotek" | "trgovci" | "hitrost";
 
@@ -91,6 +130,31 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
   // The arbitrage view: private sellers only, priced against what dealers ask.
   const [samoZasebniki, setSamoZasebniki] = useState(false);
   const [prikazanih, setPrikazanih] = useState(KORAK);
+  // PDF arhiv: id oglasa -> verzije; null = poizvedeno, arhiva ni.
+  const [pdfji, setPdfji] = useState<Record<string, PdfVerzija[] | null>>({});
+
+  // Ob odprtju razširitve enkrat poizve, kateri od prikazanih oglasov
+  // (posel + primerljivi + izginuli) imajo arhiviran PDF.
+  const naloziPdfje = (d: Deal) => {
+    const idji = [
+      d.avtonetId,
+      ...d.prodani.map((z) => idIzUrla(z.url)),
+      ...(d.primerljivi ?? []).map((v) => idIzUrla(v.url)),
+    ].filter((x): x is string => x !== null && !(x in pdfji));
+    if (idji.length === 0) return;
+    // Označi kot poizvedene takoj, da vzporedni toggli ne sprožijo dvojnih klicev.
+    setPdfji((p) => ({ ...p, ...Object.fromEntries(idji.map((i) => [i, null])) }));
+    fetch(`/api/avtonet/pdfji?ids=${idji.join(",")}`)
+      .then((r) => (r.ok ? r.json() : { verzije: {} }))
+      .then((data: { verzije: Record<string, PdfVerzija[]> }) => {
+        setPdfji((p) => {
+          const nov = { ...p };
+          for (const i of idji) nov[i] = data.verzije[i] ?? null;
+          return nov;
+        });
+      })
+      .catch(() => {});
+  };
 
   const od = letnikOd ? Number(letnikOd) : null;
   const do_ = letnikDo ? Number(letnikDo) : null;
@@ -478,7 +542,12 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                 </ul>
 
                 {d.primerljivi?.length > 0 && (
-                  <details className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
+                  <details
+                    className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200"
+                    onToggle={(e) => {
+                      if ((e.target as HTMLDetailsElement).open) naloziPdfje(d);
+                    }}
+                  >
                     <summary className="cursor-pointer font-medium text-zinc-700">
                       Zakaj je to posel — poglej primerljive ({d.vzorec})
                     </summary>
@@ -503,6 +572,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                           </span>
                           <span className="font-semibold text-zinc-800">{eur(v.prilagojena)}</span>
                           <span className="text-zinc-400">({eur(v.cena)})</span>
+                          <PdfGumbi verzije={pdfji[idIzUrla(v.url) ?? ""] ?? undefined} />
                         </li>
                       ))}
                     </ul>
@@ -534,6 +604,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                                 {z.izginil ? `izginil ${z.izginil.split("-").reverse().join(".")}` : ""}
                                 {z.dniNaTrgu !== null ? ` · ${z.dniNaTrgu} dni na trgu` : ""}
                               </span>
+                              <PdfGumbi verzije={pdfji[idIzUrla(z.url) ?? ""] ?? undefined} />
                             </li>
                           ))}
                         </ul>
@@ -551,6 +622,7 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                   >
                     Odpri oglas <ExternalLink className="h-3.5 w-3.5" />
                   </a>
+                  <PdfGumbi verzije={pdfji[d.avtonetId] ?? undefined} />
                   <a
                     href="/avtonet/cenilnik"
                     className="text-sm font-medium text-zinc-500 hover:text-zinc-900"
