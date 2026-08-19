@@ -25,7 +25,8 @@ export type NepPosel = {
   medianaVzorec: number;
   odstopanjePct: number | null;
   brutoDonosPct: number | null;
-  najemNaM2: number | null;
+  najemMesecno: number | null;
+  najemOpis: string | null;
   najemVzorec: number;
   agencija: string | null;
   telefon: string | null;
@@ -143,7 +144,10 @@ export function PosliClient({ posli }: { posli: NepPosel[] }) {
                 <div className="flex justify-between"><dt className="text-zinc-400">Proti mediani</dt><dd className={`font-medium ${p.odstopanjePct > 0 ? "text-emerald-600" : "text-zinc-600"}`}>{p.odstopanjePct > 0 ? "−" : "+"}{Math.abs(p.odstopanjePct)} %</dd></div>
               )}
               {p.brutoDonosPct !== null && (
-                <div className="flex justify-between"><dt className="text-zinc-400">Ocena bruto donosa</dt><dd className="font-medium">{p.brutoDonosPct} %</dd></div>
+                <div className="flex justify-between" title={p.najemOpis ? `Najemnina ~${p.najemMesecno} €/mes — ${p.najemOpis} (n=${p.najemVzorec})` : ""}>
+                  <dt className="text-zinc-400">Ocena bruto donosa</dt>
+                  <dd className="font-medium">{p.brutoDonosPct} %</dd>
+                </div>
               )}
               {(p.stEnot ?? p.stEnotOcena) !== null && (
                 <div className="flex justify-between"><dt className="text-zinc-400">Enot</dt><dd className="font-medium">{p.stEnot ?? `~${p.stEnotOcena}`}{p.stEnot === null ? " (ocena)" : " potrjeno"}</dd></div>

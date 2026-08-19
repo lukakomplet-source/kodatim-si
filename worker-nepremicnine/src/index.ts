@@ -104,9 +104,30 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
     }
   };
 
+  /**
+   * ROTACIJA REZIN. Vir zna po ~pol ure branja začeti zavračati (izmerjeno na
+   * bolha.com: blokada po 60 straneh). Če bi vsak pregled začel pri prvi
+   * kategoriji, bi zadnje nikoli ne prišle na vrsto. Zato si zapomnimo, kje se
+   * je pregled ustavil, in naslednjič začnemo tam — v nekaj dneh je pokrit ves
+   * katalog, brez hitrejšega branja.
+   */
+  const vseRezine = vir.rezine();
+  const { data: stanjeRezin } = await db.from("nep_statistika").select("podatki").eq("kljuc", `rezine:${vir.vir}`).maybeSingle();
+  const zacetniIndeks = Number((stanjeRezin?.podatki as { naslednja?: number } | null)?.naslednja ?? 0) % vseRezine.length;
+  const rezineVrstniRed = [...vseRezine.slice(zacetniIndeks), ...vseRezine.slice(0, zacetniIndeks)];
+  let obdelanihRezin = 0;
+  const shraniNaslednjo = async () => {
+    await db.from("nep_statistika").upsert({
+      kljuc: `rezine:${vir.vir}`,
+      podatki: { naslednja: (zacetniIndeks + obdelanihRezin) % vseRezine.length, zadnjic: new Date().toISOString() },
+      izracunano: new Date().toISOString(),
+    });
+  };
+
   try {
     browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
-    for (const rezina of vir.rezine()) {
+    if (zacetniIndeks > 0) log("info", "nadaljujem pri rezini", { vir: vir.vir, indeks: zacetniIndeks, oznaka: rezineVrstniRed[0]?.oznaka });
+    for (const rezina of rezineVrstniRed) {
       if (stopping) {
         popoln = false;
         break;
@@ -184,11 +205,17 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
           break; // druga napaka: preskoči rezino, nadaljuj s preostankom
         }
       }
+      // Rezina je za nami (dokončana ali preskočena zaradi napake): naslednji
+      // pregled naj začne za njo.
+      obdelanihRezin += 1;
+      await shraniNaslednjo();
     }
 
     // Izginotja samo po POPOLNEM pregledu TEGA vira: delen pregled ne ve, česa
-    // ni videl, in bi žive oglase razglasil za izginule.
+    // ni videl, in bi žive oglase razglasil za izginule. Pregled, ki se je
+    // začel sredi kroga (rotacija rezin), po definiciji ni popoln.
     let izginulih = 0;
+    if (zacetniIndeks !== 0 || obdelanihRezin < vseRezine.length) popoln = false;
     if (popoln && videni.size >= vir.pricakovanRazpon[0]) {
       izginulih = await oznaciIzginule(db, zacetek, vir.vir);
     } else if (videni.size < vir.pricakovanRazpon[0]) {

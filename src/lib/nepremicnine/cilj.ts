@@ -1,4 +1,5 @@
 import type { InvesticijskiCilj } from "./poizvedba";
+import { povrsinaZaIzracun } from "./verjetnost";
 
 /**
  * Ocena kandidata proti investicijskemu cilju ("10 enot po 650 €, s prenovo
@@ -28,8 +29,9 @@ export function najemMediane(
   const poRegijah = new Map<string, number[]>();
   const vse: number[] = [];
   for (const v of vrstice) {
-    if (v.cena_eur === null || v.povrsina_m2 === null || v.povrsina_m2 <= 10) continue;
-    const naM2 = Number(v.cena_eur) / Number(v.povrsina_m2);
+    const m2 = povrsinaZaIzracun("stanovanje", v.povrsina_m2);
+    if (v.cena_eur === null || m2 === null || m2 <= 10) continue;
+    const naM2 = Number(v.cena_eur) / m2;
     if (!Number.isFinite(naM2) || naM2 <= 0) continue;
     vse.push(naM2);
     if (v.regija) {
@@ -57,6 +59,7 @@ function mediana(vrednosti: number[]): number | null {
 export type KandidatZaOceno = {
   cena_eur: number | null;
   povrsina_m2: number | null;
+  tip?: string | null;
   regija: string | null;
   st_enot: number | null;
   st_enot_ocena: number | null;
@@ -92,6 +95,12 @@ export function oceniKandidata(
   mediane: NajemMediane
 ): OcenaKandidata {
   const razlogi: string[] = [];
+  // Nemogoča površina pri viru (izmerjeno: "hiša" s 239.000 m²) ne sme
+  // postati "7.966 enot" — takrat velja, kot da površine ni.
+  const povrsina = povrsinaZaIzracun(v.tip ?? null, v.povrsina_m2);
+  if (povrsina === null && v.povrsina_m2 !== null) {
+    razlogi.push(`površina ${v.povrsina_m2} m² pri viru ni mogoča — v izračunu je ne upoštevam`);
+  }
 
   // Zmožnost enot: potrjeno > ocena iz opisa > izpeljano iz m².
   let zmoznostEnot: number | null = null;
@@ -102,8 +111,8 @@ export function oceniKandidata(
   } else if (v.st_enot_ocena !== null && v.st_enot_ocena >= 2) {
     zmoznostEnot = v.st_enot_ocena;
     enoteVir = "ocena";
-  } else if (v.povrsina_m2 !== null && v.povrsina_m2 >= 2 * M2_NA_ENOTO_OCENA) {
-    zmoznostEnot = Math.floor(v.povrsina_m2 / M2_NA_ENOTO_OCENA);
+  } else if (povrsina !== null && povrsina >= 2 * M2_NA_ENOTO_OCENA) {
+    zmoznostEnot = Math.floor(povrsina / M2_NA_ENOTO_OCENA);
     enoteVir = "iz_povrsine";
   }
 
@@ -122,8 +131,8 @@ export function oceniKandidata(
   const obmocje = v.regija && mediane.has(v.regija) ? v.regija : mediane.has("") ? "" : null;
   const med = obmocje !== null ? mediane.get(obmocje)! : null;
   let najemninaEnota: number | null = null;
-  if (med && v.povrsina_m2 !== null && v.povrsina_m2 > 10) {
-    najemninaEnota = Math.round(med.naM2 * (v.povrsina_m2 / cilj.enote));
+  if (med && povrsina !== null && povrsina > 10) {
+    najemninaEnota = Math.round(med.naM2 * (povrsina / cilj.enote));
   }
   if (najemninaEnota !== null) {
     if (cilj.najemninaNaEnoto !== null) {
@@ -144,8 +153,8 @@ export function oceniKandidata(
   let zaPrenovoM2: number | null = null;
   if (cilj.proracun !== null && v.cena_eur !== null) {
     zaPrenovo = cilj.proracun - Number(v.cena_eur);
-    if (v.povrsina_m2 !== null && v.povrsina_m2 > 10) {
-      zaPrenovoM2 = Math.round(zaPrenovo / v.povrsina_m2);
+    if (povrsina !== null && povrsina > 10) {
+      zaPrenovoM2 = Math.round(zaPrenovo / povrsina);
       // 800 €/m² velja za celovito prenovo — nad tem polne točke.
       const dobljeno = zaPrenovo <= 0 ? 0 : Math.round(20 * Math.min(1, zaPrenovoM2 / 800));
       tocke += dobljeno;

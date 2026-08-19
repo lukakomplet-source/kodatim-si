@@ -35,9 +35,19 @@ const BESEDNA_STEVILA: Record<string, number> = {
   štiri: 4, stiri: 4, štirih: 4, stirih: 4, pet: 5, petih: 5, šest: 6, sest: 6,
 };
 
+/**
+ * Število iz besedila, ODPORNO NA DVA ZAPISA. Nepremicnine.net piše po
+ * slovensko ("1.208,4" = tisočice s pikami, vejica decimalka), bolha.com pa
+ * po angleško ("173.72m2"). Slepo brisanje pik je iz 173,72 m² naredilo
+ * 17.372 m² — ista past kot pri cenah ×100.
+ *
+ * Pravilo: ena sama pika z NAJVEČ dvema številkama za njo in brez vejice je
+ * decimalka (slovenske tisočice so vedno v skupinah po tri).
+ */
 function stevilo(v: string | undefined): number | null {
   if (!v) return null;
-  const n = Number(v.replace(/\./g, "").replace(",", "."));
+  const s = v.trim();
+  const n = /^\d+\.\d{1,2}$/.test(s) ? Number(s) : Number(s.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -89,10 +99,10 @@ export function izOpisa(opis: string): IzOpisa {
   };
 }
 
-/** Cena "250.000,00 €" ali "1.200 €/mesec" -> številka. */
+/** Cena "250.000,00 €", "1.200 €/mesec" ali angleško "1500.50 €" -> številka. */
 export function cenaIz(besedilo: string): number | null {
   const m = besedilo.match(/([\d.]{1,12}(?:,\d{1,2})?)\s*€/);
   if (!m) return null;
-  const n = Number(m[1].replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const n = stevilo(m[1]);
+  return n !== null && n > 0 ? n : null;
 }

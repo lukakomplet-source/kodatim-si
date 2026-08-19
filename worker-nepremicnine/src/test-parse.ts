@@ -19,5 +19,31 @@ for (const p of primeri) {
 }
 console.log("cena:", cenaIz("250.000,00 €"), "(pričakovano 250000)");
 if (cenaIz("250.000,00 €") !== 250000) napak += 1;
+
+/**
+ * Dva zapisa števil: nepremicnine.net po slovensko, bolha.com po angleško.
+ * Slepo brisanje pik je iz "173,72 m2" naredilo 17.372 m² (394 "hiš" nad
+ * 2.000 m², vključno z vilo na 29.072 m²) — tu je past zabita.
+ */
+const stevilke: [string, number | null][] = [
+  ["Hiša Kaštelir, 173.72m2", 173.72],
+  ["Lokacija hiše: Zgornja Ščavnica, 189.00 m2", 189],
+  ["94.40 m2, stanovanje", 94.4],
+  ["208,4 m2, samostojna", 208.4],
+  ["1.208,4 m2 poslovni prostor", 1208.4],
+  ["1.500 m2 hala", 1500],
+];
+for (const [besedilo, pricakovano] of stevilke) {
+  const dobil = izOpisa(besedilo).povrsinaM2;
+  const ok = dobil === pricakovano;
+  if (!ok) napak += 1;
+  console.log(`  ${ok ? "OK  " : "NAPAKA"} povrsina iz „${besedilo}" = ${dobil} (pričakovano ${pricakovano})`);
+}
+for (const [besedilo, pricakovano] of [["1500.50 €", 1500.5], ["250.000,00 €", 250000], ["1.200 €/mesec", 1200]] as [string, number][]) {
+  const dobil = cenaIz(besedilo);
+  const ok = dobil === pricakovano;
+  if (!ok) napak += 1;
+  console.log(`  ${ok ? "OK  " : "NAPAKA"} cena iz „${besedilo}" = ${dobil} (pričakovano ${pricakovano})`);
+}
 console.log(napak === 0 ? "VSE OK" : `${napak} NAPAK`);
 process.exitCode = napak === 0 ? 0 : 1;
