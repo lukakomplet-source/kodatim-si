@@ -49,6 +49,19 @@ export type NormaliziranOglas = {
   raw: Record<string, unknown>;
 };
 
+/**
+ * Zgornja meja verjetne cene. Vir zna objaviti nesmisel (izmerjeno:
+ * "431210220.00 €" za 158 m² pisarne), ena taka vrstica pa popači €/m²
+ * statistiko in lestvice. Cene ne popravljamo — označimo jo za neznano,
+ * surova kartica v raw ostane nedotaknjena, da jo je mogoče kasneje presoditi.
+ */
+const NAJVECJA_VERJETNA_CENA = 50_000_000;
+
+function verjetnaCena(cena: number | null): number | null {
+  if (cena === null) return null;
+  return cena > NAJVECJA_VERJETNA_CENA || cena <= 0 ? null : cena;
+}
+
 /** Koliko od ključnih polj je res napolnjenih — za data_quality. */
 function kakovost(o: NormaliziranOglas): number {
   const polja = [o.cenaEur, o.povrsinaM2, o.kraj, o.opis, o.slikaUrl, o.tip, o.telefon || o.agencija, o.letoIzgradnje];
@@ -61,6 +74,9 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
   const izid: IzidShranjevanja = { novih: 0, posodobljenih: 0, spremembCen: 0 };
   if (oglasi.length === 0) return izid;
   const now = new Date().toISOString();
+  // Nesmiselne cene vira postanejo "ni podatka" — takoj ob vhodu, da ne
+  // pricurljajo ne v zgodovino cen ne v statistiko.
+  oglasi = oglasi.map((o) => ({ ...o, cenaEur: verjetnaCena(o.cenaEur) }));
 
   const ids = oglasi.map((o) => o.virId);
   const { data: obstojeci, error } = await db
