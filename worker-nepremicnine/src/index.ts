@@ -284,8 +284,27 @@ function naslednjiTermin(ura: number): Date {
 async function main(): Promise<void> {
   const once = process.argv.includes("--once");
   const virArg = process.argv.find((a) => a.startsWith("--vir="))?.slice(6) ?? null;
+  /**
+   * Prevzem ŽE OBSTOJEČE vrstice pregleda (--prevzemi=<id>). Namenjeno
+   * dohitevanju iz druge seje: vrstica se v bazo vpiše s statusom "tece", zato
+   * je demon nikoli ne prevzame — ista naloga tako ne more teči dvakrat in
+   * vira ne obremenimo podvojeno.
+   */
+  const prevzemiId = process.argv.find((a) => a.startsWith("--prevzemi="))?.slice(11) ?? null;
   const db = connect();
   await zagotoviViri(db);
+
+  if (prevzemiId) {
+    const { data } = await db.from("nep_pregledi").select("id, vir, status").eq("id", prevzemiId).maybeSingle();
+    if (!data) {
+      console.error(`Pregleda ${prevzemiId} ni.`);
+      process.exit(2);
+    }
+    log("info", "prevzemam obstojeci pregled", { id: prevzemiId, vir: data.vir, status: data.status });
+    await pregled(db, prevzemiId, najdiVir((data.vir as string | null) ?? virArg));
+    await knjigovodstvo(db);
+    return;
+  }
 
   const server = once
     ? null
