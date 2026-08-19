@@ -32,12 +32,13 @@ export default async function PosliPage() {
         Posli
       </h1>
       <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-        Aktivni oglasi, katerih cena je vsaj 10 % pod mediano <strong>primerljivih</strong>{" "}
-        (isti model, gorivo, menjalnik in karoserija, nato še isti motor in podobna oprema).
-        Preračunano po vsakem pregledu trga ({(feed?.pregledanih ?? 0).toLocaleString("sl-SI")}{" "}
-        pregledanih oglasov). Na vrhu so privzeto tisti, pri katerih je največ denarja na mizi in se
-        model hitro proda — ne zgolj največji odstotek popusta. S kljukico{" "}
-        <strong>„Samo od fizičnih oseb“</strong> dobiš avte zasebnikov, primerjane s ceno trgovcev.
+        Aktivni oglasi, ki so pod tržno vrednostjo <strong>istega avtomobila</strong>. Sistem najprej
+        ugotovi, kateri avto oglas sploh je (izvedenka, generacija, pogon, menjalnik, ključna
+        oprema), nato poišče <strong>identične in zelo blizu</strong> primerljivce in šele iz njih
+        izračuna vrednost. Kjer identitete ni mogoče zanesljivo ugotoviti ali je primerljivih manj
+        kot osem, posla NI — raje nič kot napačna primerjava. Preračunano po vsakem pregledu trga
+        ({(feed?.pregledanih ?? 0).toLocaleString("sl-SI")} pregledanih oglasov). Pri vsakem poslu
+        je zapisano, s katerimi avti je primerjal in <strong>katere je zavrnil ter zakaj</strong>.
       </p>
 
       {deals.length === 0 ? (

@@ -187,7 +187,7 @@ export async function izracunajPosle(db: Db, log: Log): Promise<void> {
 
     const cene = prilagojeni.map((x) => x.cena);
     const razpr = razprsenost(cene);
-    if (razpr !== null && razpr > 0.6) {
+    if (razpr !== null && razpr > 0.45) {
       zabelezi(`trg preveč razpršen (${Math.round(razpr * 100)} %)`);
       continue;
     }
@@ -209,6 +209,18 @@ export async function izracunajPosle(db: Db, log: Log): Promise<void> {
 
     if (odstopanje < 8) {
       zabelezi("cena ni pod trgom");
+      continue;
+    }
+
+    // Posel mora obstajati tudi BREZ preračuna na km in letnik.
+    //
+    // Preračun je poštena izboljšava, dokler samo gladi razlike; kadar pa
+    // postane edini razlog za razliko v ceni, je posel izmišljen. Zato mora
+    // biti cena pod mediano tudi po surovih, nepopravljenih cenah oglasov.
+    const surovaMediana = mediana(prilagojeni.map((x) => x.v.cena)) as number;
+    const surovoOdstopanje = ((surovaMediana - k.cena) / surovaMediana) * 100;
+    if (surovoOdstopanje < 5) {
+      zabelezi("posel obstaja samo po preračunu na km in letnik");
       continue;
     }
     // Nad 45 % je skoraj vedno napaka v podatkih ali skrita okvara; kadar je

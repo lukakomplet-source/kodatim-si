@@ -166,10 +166,17 @@ export function ujemanje(a: Vozilo, b: Vozilo): Ujemanje {
   const letnikRazlika = a.letnik !== null && b.letnik !== null ? Math.abs(a.letnik - b.letnik) : null;
   const kmRazlika = a.km !== null && b.km !== null && a.km > 0 ? Math.abs(a.km - b.km) / a.km : null;
 
+  // Absolutna razlika v kilometrih je enako pomembna kot relativna: 40 % od
+  // 200.000 km je 80.000 km in to ni isti avto, čeprav odstotek prestane.
+  const kmAbs = a.km !== null && b.km !== null ? Math.abs(a.km - b.km) : null;
+
   let stopnja: Stopnja;
-  if (ovire.length === 0 && (letnikRazlika ?? 9) <= 1 && (kmRazlika ?? 9) <= 0.25 && razlikeOpreme.length === 0) {
+  if (
+    ovire.length === 0 && (letnikRazlika ?? 9) <= 1 && (kmRazlika ?? 9) <= 0.25 &&
+    (kmAbs ?? 9e9) <= 35_000 && razlikeOpreme.length === 0
+  ) {
     stopnja = 1;
-  } else if (ovire.length === 0 && (letnikRazlika ?? 9) <= 2 && (kmRazlika ?? 9) <= 0.4) {
+  } else if (ovire.length === 0 && (letnikRazlika ?? 9) <= 2 && (kmRazlika ?? 9) <= 0.35 && (kmAbs ?? 9e9) <= 60_000) {
     stopnja = 2;
   } else if (ovire.every((o) => o === "izvedenka ni znana") && (letnikRazlika ?? 9) <= 3) {
     // Neznana izvedenka je edina ovira, ki ne izključi stopnje 2 dokončno –
@@ -230,8 +237,13 @@ export function prilagojenaCena(p: Vozilo, cilj: Vozilo, k: Koeficienta): number
   let c = p.cena;
   if (p.km !== null && cilj.km !== null) c += (cilj.km - p.km) * k.naKm;
   if (p.letnik !== null && cilj.letnik !== null) c += (cilj.letnik - p.letnik) * k.naLeto;
-  // Popravek nad tretjino cene pomeni, da primerljivec ni primerljiv.
-  const meja = p.cena * 0.35;
+  // Popravek nad petino cene pomeni, da primerljivec ni primerljiv.
+  //
+  // Prej je meja stala pri 35 % in je posle USTVARJALA: X5 s 140.000 km za
+  // 49.990 € je po preračunu na kandidatovih 110.000 km postal vreden 62.143 €,
+  // s čimer je tržna vrednost zrasla nad ceno vsakega resničnega oglasa v
+  // skupini. Popravek sme razliko zgladiti, ne pa je izmisliti.
+  const meja = p.cena * 0.2;
   if (Math.abs(c - p.cena) > meja) return null;
   return Math.round(c);
 }

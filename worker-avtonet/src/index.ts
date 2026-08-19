@@ -24,6 +24,8 @@ import { runResearch, type Progress } from "./research.js";
 import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
 import { izracunajStatistiko } from "./statistika.js";
+import { normalizirajIdentitete } from "./normalizacija.js";
+import { izracunajPosle } from "./dealfeed2.js";
 import { blokiran, minutDoKonca, preberiBlokado, zabelezBlokado, zabelezUspeh } from "./blokada.js";
 import { samopopravilo } from "./samopopravilo.js";
 
@@ -397,6 +399,22 @@ async function main(): Promise<void> {
       await izracunajStatistiko(db, log);
     } catch (err) {
       log("warn", "statistika ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
+    }
+    // Identiteta vozil za nove oglase, nato posli 2.0 nad njo. Oboje bere samo
+    // lastno bazo, zato ne more povzrociti blokade pri viru; posli 2.0 pisejo
+    // deal_feed za statistiko in s tem povozijo staro razlicico.
+    try {
+      const izid = await normalizirajIdentitete(db);
+      if (izid.obdelanih > 0) {
+        log("info", "identiteta normalizirana", { oglasov: izid.obdelanih, zaupanje: izid.povprecnoZaupanje });
+      }
+    } catch (err) {
+      log("warn", "normalizacija ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
+    }
+    try {
+      await izracunajPosle(db, log);
+    } catch (err) {
+      log("warn", "posli 2.0 niso uspeli", { napaka: err instanceof Error ? err.message : String(err) });
     }
   };
 

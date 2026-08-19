@@ -36,6 +36,7 @@ export type Deal = {
     izginil: string | null;
     dniNaTrgu: number | null;
     url: string;
+    stopnja?: 1 | 2 | 3 | 4;
   }[];
   primerljivi: {
     naziv: string;
@@ -44,14 +45,43 @@ export type Deal = {
     cena: number;
     prilagojena: number;
     url: string;
+    /** 1 = identičen, 2 = zelo blizu. Motor poslov 2.0. */
+    stopnja?: 1 | 2 | 3 | 4;
+    jeDealer?: boolean | null;
+    enako?: string[];
+    razlika?: string[];
   }[];
+  /** Zavrnjeni primerljivci z razlogom — dokaz, da sistem misli pravilno. */
+  zavrnjeni?: { naziv: string | null; url: string; razlog: string }[];
+  /** Identiteta vozila (motor poslov 2.0). */
+  izvedenka?: string | null;
+  generacija?: string | null;
+  pogon?: string;
+  menjalnik?: string;
+  identitetaZaupanje?: number;
+  opremaTeza?: number;
+  kljucnaOprema?: string[];
+  /** Trg. */
+  trznaVrednost?: number;
+  medianaIdenticnih?: number | null;
+  medianaZeloBlizu?: number | null;
+  medianaZasebnikov?: number | null;
+  medianaZakljucenih?: number | null;
+  vzorecIdenticnih?: number;
+  vzorecZeloBlizu?: number;
+  razprsenostPct?: number | null;
+  zaupanjeUjemanja?: number;
+  zaupanjeTrga?: number;
+  zaupanjeSkupno?: number;
+  likvidnost?: number | null;
   medianaTrgovcev: number | null;
   vzorecTrgovcev: number;
   odstopanjeTrgovciPct: number | null;
   cena: number;
-  medianaKohorte: number;
+  /** V2: tržna vrednost; v1 je bila mediana kohorte. */
+  medianaKohorte?: number;
   odstopanjePct: number;
-  vzorec: number;
+  vzorec?: number;
   letnik: number | null;
   km: number | null;
   jeDealer: boolean | null;
@@ -129,6 +159,8 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
   const [razvrsti, setRazvrsti] = useState<Razvrstitev>("potencial");
   // The arbitrage view: private sellers only, priced against what dealers ask.
   const [samoZasebniki, setSamoZasebniki] = useState(false);
+  // Strogost primerjave in najnizje sprejemljivo zaupanje (motor poslov 2.0).
+  const [strogost, setStrogost] = useState<"vse" | "identicni" | "zanesljivi">("vse");
   const [prikazanih, setPrikazanih] = useState(KORAK);
   // PDF arhiv: id oglasa -> verzije; null = poizvedeno, arhiva ni.
   const [pdfji, setPdfji] = useState<Record<string, PdfVerzija[] | null>>({});
@@ -183,9 +215,13 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
         if (cOd !== null && Number.isFinite(cOd) && d.cena < cOd) return false;
         if (cDo !== null && Number.isFinite(cDo) && d.cena > cDo) return false;
         if (samoZasebniki && !(d.jeDealer === false && d.medianaTrgovcev !== null)) return false;
+        if (strogost === "identicni" && (d.vzorecIdenticnih ?? 0) < 5) return false;
+        if (strogost === "zanesljivi" && (d.zaupanjeSkupno ?? 0) < 80) return false;
+      if (strogost === "identicni" && (d.vzorecIdenticnih ?? 0) < 5) return false;
+      if (strogost === "zanesljivi" && (d.zaupanjeSkupno ?? 0) < 80) return false;
         return true;
       }),
-    [deals, od, do_, cOd, cDo, samoZasebniki]
+    [deals, od, do_, cOd, cDo, samoZasebniki, strogost]
   );
 
   /** Brands with a deal behind them under the current filters, most first. */
@@ -234,6 +270,8 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
       // Only worth showing here when there IS a dealer median to compare with —
       // "cheap for a private car" without that number is a weaker claim.
       if (samoZasebniki && !(d.jeDealer === false && d.medianaTrgovcev !== null)) return false;
+      if (strogost === "identicni" && (d.vzorecIdenticnih ?? 0) < 5) return false;
+      if (strogost === "zanesljivi" && (d.zaupanjeSkupno ?? 0) < 80) return false;
       return true;
     });
 
@@ -263,10 +301,10 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
         { znamka: b.znamka, naziv: b.naziv, cena_eur: b.cena, letnik: b.letnik, km: b.km }
       )
     );
-  }, [deals, znamka, model, od, do_, cOd, cDo, razvrsti, samoZasebniki]);
+  }, [deals, znamka, model, od, do_, cOd, cDo, razvrsti, samoZasebniki, strogost]);
 
   const filtriran = Boolean(
-    znamka || model || letnikOd || letnikDo || cenaOd || cenaDo || samoZasebniki
+    znamka || model || letnikOd || letnikDo || cenaOd || cenaDo || samoZasebniki || strogost !== "vse"
   );
 
   const ponastavi = () => {
@@ -415,6 +453,22 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
         </label>
 
         <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-zinc-500">Kako podobni naj bodo</span>
+          <select
+            value={strogost}
+            onChange={(e) => {
+              setStrogost(e.target.value as "vse" | "identicni" | "zanesljivi");
+              setPrikazanih(KORAK);
+            }}
+            className={`${izbira} min-w-52`}
+          >
+            <option value="vse">Vsi posli</option>
+            <option value="identicni">Samo s 5+ identičnimi avti</option>
+            <option value="zanesljivi">Samo zaupanje 80+</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-zinc-500">Razvrsti</span>
           <select
             value={razvrsti}
@@ -507,7 +561,8 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                   <div className="text-right">
                     <p className="text-xl font-semibold text-zinc-900">{eur(d.cena)}</p>
                     <p className="text-sm font-semibold text-emerald-600">
-                      −{Math.round(d.odstopanjePct)} % pod mediano ({eur(d.medianaKohorte)})
+                      −{Math.round(d.odstopanjePct)} % pod tržno vrednostjo (
+                      {eur(d.trznaVrednost ?? d.medianaKohorte ?? 0)})
                     </p>
                     <p className="text-xs text-zinc-500">razlika {eur(d.zasluzek)}</p>
                     {d.ddvOdbitek && d.cenaBrezDdv !== null && (
@@ -549,8 +604,69 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                     }}
                   >
                     <summary className="cursor-pointer font-medium text-zinc-700">
-                      Zakaj je to posel — poglej primerljive ({d.vzorec})
+                      Zakaj je to posel — poglej primerljive (
+                      {d.vzorecIdenticnih !== undefined
+                        ? `${d.vzorecIdenticnih} identičnih, ${d.vzorecZeloBlizu ?? 0} zelo blizu`
+                        : (d.vzorec ?? 0)}
+                      )
                     </summary>
+                    {d.zaupanjeSkupno !== undefined && (
+                      <div className="mt-2 rounded-lg bg-white px-3 py-2 ring-1 ring-zinc-200">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Kateri avto je to
+                        </p>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-zinc-700">
+                          {[
+                            d.izvedenka,
+                            d.generacija,
+                            d.pogon && d.pogon !== "?" ? d.pogon.toUpperCase() : null,
+                            d.menjalnik && d.menjalnik !== "?" ? d.menjalnik : null,
+                          ]
+                            .filter(Boolean)
+                            .map((x, k) => (
+                              <span key={k} className="rounded bg-zinc-100 px-1.5 py-0.5 font-medium">
+                                {x}
+                              </span>
+                            ))}
+                          <span className="text-zinc-400">
+                            identiteta {d.identitetaZaupanje ?? 0}/100
+                          </span>
+                        </p>
+                        <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+                          <span>
+                            zaupanje posla{" "}
+                            <strong
+                              className={
+                                d.zaupanjeSkupno >= 80
+                                  ? "text-emerald-700"
+                                  : d.zaupanjeSkupno >= 60
+                                    ? "text-zinc-700"
+                                    : "text-amber-700"
+                              }
+                            >
+                              {d.zaupanjeSkupno}/100
+                            </strong>
+                          </span>
+                          <span>ujemanje {d.zaupanjeUjemanja ?? 0}/100</span>
+                          <span>trg {d.zaupanjeTrga ?? 0}/100</span>
+                          {d.razprsenostPct !== null && d.razprsenostPct !== undefined && (
+                            <span>razpršenost cen {d.razprsenostPct} %</span>
+                          )}
+                          {d.likvidnost !== null && d.likvidnost !== undefined && (
+                            <span>{d.likvidnost} % takih izgine v ≤ 3 tednih</span>
+                          )}
+                        </p>
+                        {(d.medianaIdenticnih || d.medianaZasebnikov || d.medianaZakljucenih) && (
+                          <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+                            {d.medianaIdenticnih ? <span>identični: {eur(d.medianaIdenticnih)}</span> : null}
+                            {d.medianaZeloBlizu ? <span>zelo blizu: {eur(d.medianaZeloBlizu)}</span> : null}
+                            {d.medianaZasebnikov ? <span>zasebniki: {eur(d.medianaZasebnikov)}</span> : null}
+                            {d.medianaTrgovcev ? <span>trgovci: {eur(d.medianaTrgovcev)}</span> : null}
+                            {d.medianaZakljucenih ? <span>že prodani: {eur(d.medianaZakljucenih)}</span> : null}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <p className="mt-2 text-[11px] text-zinc-500">
                       Cene spodaj so <strong>preračunane na {d.km === null ? "te km" : `${d.km.toLocaleString("sl-SI")} km`}
                       {d.letnik ? ` in letnik ${d.letnik}` : ""}</strong>, da so primerljive s tem vozilom. V oklepaju je
@@ -559,6 +675,22 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                     <ul className="mt-1.5 space-y-1">
                       {d.primerljivi.map((v, k) => (
                         <li key={k} className="flex flex-wrap items-baseline gap-x-2">
+                          {v.stopnja !== undefined && (
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                v.stopnja === 1
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-sky-100 text-sky-800"
+                              }`}
+                              title={
+                                v.enako?.length
+                                  ? `Enako: ${v.enako.join(", ")}${v.razlika?.length ? ` · Razlika: ${v.razlika.join(", ")}` : ""}`
+                                  : undefined
+                              }
+                            >
+                              {v.stopnja === 1 ? "IDENTIČEN" : "ZELO BLIZU"}
+                            </span>
+                          )}
                           <a
                             href={v.url}
                             target="_blank"
@@ -576,6 +708,34 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                         </li>
                       ))}
                     </ul>
+                    {d.zavrnjeni && d.zavrnjeni.length > 0 && (
+                      <>
+                        <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Zavrnjeni kot primerljivci
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                          Isti model, a nekaj bistvenega se razlikuje — zato v izračun ne gredo.
+                        </p>
+                        <ul className="mt-1.5 space-y-1">
+                          {d.zavrnjeni.slice(0, 6).map((z, k) => (
+                            <li key={k} className="flex flex-wrap items-baseline gap-x-2">
+                              <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600">
+                                IZLOČEN
+                              </span>
+                              <a
+                                href={z.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-zinc-600 hover:underline"
+                              >
+                                {z.naziv}
+                              </a>
+                              <span className="text-amber-700">{z.razlog}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                     {d.prodani?.length > 0 && (
                       <>
                         <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
