@@ -113,26 +113,33 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
    */
   const vseRezine = vir.rezine();
   const { data: stanjeRezin } = await db.from("nep_statistika").select("podatki").eq("kljuc", `rezine:${vir.vir}`).maybeSingle();
-  const zacetniIndeks = Number((stanjeRezin?.podatki as { naslednja?: number } | null)?.naslednja ?? 0) % vseRezine.length;
+  const stanje = (stanjeRezin?.podatki ?? {}) as { naslednja?: number; stran?: number };
+  const zacetniIndeks = Number(stanje.naslednja ?? 0) % vseRezine.length;
+  const zacetnaStran = Math.max(1, Number(stanje.stran ?? 1));
   const rezineVrstniRed = [...vseRezine.slice(zacetniIndeks), ...vseRezine.slice(0, zacetniIndeks)];
   let obdelanihRezin = 0;
-  const shraniNaslednjo = async () => {
+  /** Kje naj začne NASLEDNJI pregled: rezina in stran znotraj nje. */
+  const shraniNadaljevanje = async (indeks: number, stran: number) => {
     await db.from("nep_statistika").upsert({
       kljuc: `rezine:${vir.vir}`,
-      podatki: { naslednja: (zacetniIndeks + obdelanihRezin) % vseRezine.length, zadnjic: new Date().toISOString() },
+      podatki: { naslednja: indeks % vseRezine.length, stran, zadnjic: new Date().toISOString() },
       izracunano: new Date().toISOString(),
     });
   };
 
+  let dosezenaKvota = false;
   try {
     browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
     if (zacetniIndeks > 0) log("info", "nadaljujem pri rezini", { vir: vir.vir, indeks: zacetniIndeks, oznaka: rezineVrstniRed[0]?.oznaka });
-    for (const rezina of rezineVrstniRed) {
+    for (const [zaporedna, rezina] of rezineVrstniRed.entries()) {
+      if (dosezenaKvota) break;
       if (stopping) {
         popoln = false;
         break;
       }
-      let stran = 1;
+      const absolutniIndeks = (zacetniIndeks + zaporedna) % vseRezine.length;
+      // Samo prva rezina tega pregleda nadaljuje sredi paginacije.
+      let stran = zaporedna === 0 ? zacetnaStran : 1;
       let zadnja: number | null = null;
       let praznihZapored = 0;
       let praznaPrvaPoskusov = 0;
@@ -193,6 +200,14 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
           });
           if (zadnja !== null && stran >= zadnja) break;
           if (kartice.length === 0 && praznihZapored >= 2) break;
+          // Dnevna kvota strani: raje se ustavimo sami, kot da nas vir ustavi.
+          if (vir.najvecStrani !== undefined && p.strani >= vir.najvecStrani) {
+            log("info", "dosezena kvota strani za ta pregled", { vir: vir.vir, strani: p.strani, rezina: rezina.oznaka, naslednjaStran: stran + 1 });
+            dosezenaKvota = true;
+            // Naslednjič nadaljuj TOČNO tu — rezina se ne preskoči.
+            await shraniNadaljevanje(absolutniIndeks, stran + 1);
+            break;
+          }
           stran += 1;
           await sleep(vir.omejitve.zamikMs);
         } catch (err) {
@@ -206,19 +221,22 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
         }
       }
       // Rezina je za nami (dokončana ali preskočena zaradi napake): naslednji
-      // pregled naj začne za njo.
-      obdelanihRezin += 1;
-      await shraniNaslednjo();
+      // pregled naj začne za njo, od prve strani.
+      if (!dosezenaKvota) {
+        obdelanihRezin += 1;
+        await shraniNadaljevanje(absolutniIndeks + 1, 1);
+      }
     }
 
     // Izginotja samo po POPOLNEM pregledu TEGA vira: delen pregled ne ve, česa
     // ni videl, in bi žive oglase razglasil za izginule. Pregled, ki se je
     // začel sredi kroga (rotacija rezin), po definiciji ni popoln.
     let izginulih = 0;
-    if (zacetniIndeks !== 0 || obdelanihRezin < vseRezine.length) popoln = false;
+    const delnaRezina = zacetniIndeks !== 0 || zacetnaStran > 1 || obdelanihRezin < vseRezine.length || dosezenaKvota;
+    if (delnaRezina) popoln = false;
     if (popoln && videni.size >= vir.pricakovanRazpon[0]) {
       izginulih = await oznaciIzginule(db, zacetek, vir.vir);
-    } else if (videni.size < vir.pricakovanRazpon[0]) {
+    } else if (!delnaRezina && videni.size < vir.pricakovanRazpon[0]) {
       log("warn", "premalo najdenih - verjetno sprememba selektorjev", {
         vir: vir.vir,
         najdenih: videni.size,
@@ -231,22 +249,37 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
     }
 
     await objavi({ status: "koncano", konec: new Date().toISOString(), izginulih });
+    // Zdravje: pri DELNEM pregledu (kvota, rotacija) je merilo, ali smo sploh
+    // kaj dobili — ne število, ki velja za cel katalog. Sicer bi vljudno
+    // odmerjen pregled vsak dan lažno kričal "degraded".
+    const zdravo = delnaRezina ? videni.size > 0 : videni.size >= vir.pricakovanRazpon[0];
     await db
       .from("nep_viri")
       .update({
-        zdravje: videni.size >= vir.pricakovanRazpon[0] ? "healthy" : "degraded",
+        zdravje: zdravo ? "healthy" : "degraded",
         zadnji_pregled: new Date().toISOString(),
         zadnjic_najdenih: videni.size,
+        ...(zdravo ? { opomba: delnaRezina ? `Delni pregled (kvota ${vir.najvecStrani ?? "-"} strani): ${videni.size} oglasov` : null } : {}),
       })
       .eq("vir", vir.vir);
     log("info", "pregled koncan", { vir: vir.vir, ...p, unikatnih: videni.size, popoln });
   } catch (err) {
-    await objavi({
-      status: "napaka",
-      konec: new Date().toISOString(),
-      zadnja_napaka: err instanceof Error ? err.message : String(err),
-    });
-    log("error", "pregled padel", { vir: vir.vir, napaka: err instanceof Error ? err.message : String(err) });
+    const sporocilo = err instanceof Error ? err.message : String(err);
+    await objavi({ status: "napaka", konec: new Date().toISOString(), zadnja_napaka: sporocilo });
+    log("error", "pregled padel", { vir: vir.vir, napaka: sporocilo });
+    // Blokado spoštujemo: vir pustimo pri miru, dokler hlajenje ne poteče.
+    // Nikoli je ne poskušamo obiti — počasneje in kasneje, ne drugače.
+    if (/vir blokira|HTTP 403|HTTP 429/.test(sporocilo)) {
+      const ur = vir.hlajenjeUr ?? 6;
+      const doKdaj = new Date(Date.now() + ur * 3_600_000).toISOString();
+      await db.from("nep_statistika").upsert({
+        kljuc: `blokada:${vir.vir}`,
+        podatki: { do: doKdaj, razlog: sporocilo },
+        izracunano: new Date().toISOString(),
+      });
+      await db.from("nep_viri").update({ zdravje: "degraded", opomba: `Vir zavrača; počakamo do ${doKdaj}` }).eq("vir", vir.vir);
+      log("warn", "vir blokira - hlajenje", { vir: vir.vir, do: doKdaj });
+    }
   } finally {
     if (skupni.ctx) await skupni.ctx.close().catch(() => {});
     if (browser) await browser.close().catch(() => {});
@@ -298,7 +331,24 @@ async function zagotoviViri(db: Db): Promise<void> {
 async function vklopljeniViri(db: Db): Promise<string[]> {
   const { data } = await db.from("nep_viri").select("vir, omogocen").eq("omogocen", true);
   const vBazi = new Set((data ?? []).map((v) => v.vir as string));
-  return VIRI.filter((v) => vBazi.has(v.vir)).map((v) => v.vir);
+  const zdaj = Date.now();
+  const pripravljeni: string[] = [];
+  for (const v of VIRI) {
+    if (!vBazi.has(v.vir)) continue;
+    if (await vHlajenju(db, v.vir, zdaj)) {
+      log("info", "vir je v hlajenju - danes ga preskocim", { vir: v.vir });
+      continue;
+    }
+    pripravljeni.push(v.vir);
+  }
+  return pripravljeni;
+}
+
+/** Ali vir še počiva po blokadi? */
+async function vHlajenju(db: Db, vir: string, zdaj: number): Promise<boolean> {
+  const { data } = await db.from("nep_statistika").select("podatki").eq("kljuc", `blokada:${vir}`).maybeSingle();
+  const doKdaj = (data?.podatki as { do?: string } | null)?.do;
+  return Boolean(doKdaj && new Date(doKdaj).getTime() > zdaj);
 }
 
 function naslednjiTermin(ura: number): Date {
@@ -412,8 +462,19 @@ async function main(): Promise<void> {
       .limit(1);
     const naloga = (data ?? [])[0];
     if (naloga) {
-      await pregled(db, naloga.id as string, najdiVir((naloga.vir as string | null) ?? null));
-      await knjigovodstvo(db);
+      const virNaloge = najdiVir((naloga.vir as string | null) ?? null);
+      if (await vHlajenju(db, virNaloge.vir, Date.now())) {
+        // Tudi ročna zahteva spoštuje hlajenje — sicer bi jo lahko uporabili
+        // za obhod blokade, kar je točno tisto, česar nočemo.
+        await db
+          .from("nep_pregledi")
+          .update({ status: "preklicano", konec: new Date().toISOString(), zadnja_napaka: "vir je v hlajenju po blokadi" })
+          .eq("id", naloga.id as string);
+        log("warn", "zahteva preklicana - vir v hlajenju", { vir: virNaloge.vir });
+      } else {
+        await pregled(db, naloga.id as string, virNaloge);
+        await knjigovodstvo(db);
+      }
     }
     await sleep(POLL_MS);
   }

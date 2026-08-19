@@ -138,7 +138,13 @@ export const adapter: VirAdapter = {
   // blokada). Odgovor je počasnejše branje in spoštovanje blokade, nikoli
   // poskus obhoda.
   omejitve: { zamikMs: 10_000 },
-  pricakovanRazpon: [3000, 40000],
+  // Vir zavrne po ~50-60 straneh v eni seji (izmerjeno dvakrat) in blokada
+  // drži več ur. Zato vsak dan vzamemo le rezino: 40 strani (~1.500 oglasov)
+  // v ~7 minutah, ostalo pride naslednji dan prek rotacije rezin. Katalog je
+  // tako pokrit v nekaj dneh, ne da bi vir kdaj pritisnil na zavoro.
+  najvecStrani: 40,
+  hlajenjeUr: 12,
+  pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
   rezine: () => KATEGORIJE,

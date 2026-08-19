@@ -38,6 +38,14 @@ export type VirAdapter = {
   slikePolitika: "referenca" | "lokalno";
   /** Svež brskalniški kontekst za vsako stran (Cloudflare strategija ipd.). */
   svezKontekstNaStran: boolean;
+  /**
+   * Največ strani na en pregled. Vir, ki po določenem obsegu začne zavračati,
+   * se ne prebere hitreje, ampak v več dneh: vsak dan vzamemo rezino in se
+   * ustavimo, preden postanemo nadležni. Brez omejitve = ni meje.
+   */
+  najvecStrani?: number;
+  /** Koliko ur počakamo, če vir vseeno zavrne (spoštovanje blokade). */
+  hlajenjeUr?: number;
   rezine(): Rezina[];
   seznamUrl(r: Rezina, stran: number): string;
   preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;

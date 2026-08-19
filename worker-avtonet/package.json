@@ -41,7 +41,10 @@
     "test:ddv": "tsx src/test-ddv.ts",
     "test:samopopravilo": "tsx src/test-samopopravilo.ts",
     "pdf": "tsx src/pdf-arhiv.ts",
-    "pdf:test": "tsx src/pdf-arhiv.ts --test 5"
+    "pdf:test": "tsx src/pdf-arhiv.ts --test 5",
+    "normaliziraj": "tsx src/normaliziraj.ts",
+    "test:identiteta": "tsx src/test-identiteta.ts",
+    "posli": "tsx src/posli-once.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
