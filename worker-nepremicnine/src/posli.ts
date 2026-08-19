@@ -81,21 +81,44 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
   const medianeM2 = new Map<string, { m2: number; vzorec: number }>();
   for (const [k, arr] of skupine) if (arr.length >= 8) medianeM2.set(k, { m2: mediana(arr)!, vzorec: arr.length });
 
-  const najemPoRegiji = new Map<string, number[]>();
-  const najemVsi: number[] = [];
+  /**
+   * Najemnine po VELIKOSTNEM RAZREDU, ne čez vse: garsonjera se odda za ~15
+   * €/m², 250 m² hiša pa nikoli ne za 15 €/m². Brez razredov je mediana
+   * majhnih stanovanj velikim hišam napihnila oceno donosa.
+   */
+  const razred = (m2: number) => (m2 < 50 ? "<50" : m2 < 80 ? "50-80" : m2 < 120 ? "80-120" : m2 < 200 ? "120-200" : ">200");
+  const najemVzorci = new Map<string, number[]>();
+  const dodajNajem = (kljuc: string, v: number) => {
+    const arr = najemVzorci.get(kljuc) ?? [];
+    arr.push(v);
+    najemVzorci.set(kljuc, arr);
+  };
   for (const n of najemni) {
     if (n.cena_eur === null || n.povrsina_m2 === null || Number(n.povrsina_m2) <= 10) continue;
-    const naM2 = Number(n.cena_eur) / Number(n.povrsina_m2);
-    najemVsi.push(naM2);
+    const m2 = Number(n.povrsina_m2);
+    const naM2 = Number(n.cena_eur) / m2;
+    dodajNajem("", naM2);
+    dodajNajem(`|${razred(m2)}`, naM2);
     if (n.regija) {
-      const arr = najemPoRegiji.get(n.regija) ?? [];
-      arr.push(naM2);
-      najemPoRegiji.set(n.regija, arr);
+      dodajNajem(n.regija, naM2);
+      dodajNajem(`${n.regija}|${razred(m2)}`, naM2);
     }
   }
   const najemMediane = new Map<string, { naM2: number; vzorec: number }>();
-  for (const [r, arr] of najemPoRegiji) if (arr.length >= 5) najemMediane.set(r, { naM2: mediana(arr)!, vzorec: arr.length });
-  if (najemVsi.length >= 5) najemMediane.set("", { naM2: mediana(najemVsi)!, vzorec: najemVsi.length });
+  for (const [k, arr] of najemVzorci) if (arr.length >= 5) najemMediane.set(k, { naM2: mediana(arr)!, vzorec: arr.length });
+
+  /** Od najbolj specifičnega (regija + razred) do najbolj splošnega. */
+  const najdiNajem = (regija: string | null, m2: number | null) => {
+    const r = m2 === null ? null : razred(m2);
+    const kljuci = [regija && r ? `${regija}|${r}` : null, r ? `|${r}` : null, regija, ""].filter(
+      (k): k is string => k !== null
+    );
+    for (const k of kljuci) {
+      const m = najemMediane.get(k);
+      if (m) return { ...m, kljuc: k || "vsa Slovenija" };
+    }
+    return null;
+  };
 
   const zdaj = Date.now();
   const posli: NepPosel[] = [];
@@ -117,7 +140,15 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       }
     }
 
-    const najem = (o.regija ? najemMediane.get(o.regija) : null) ?? najemMediane.get("") ?? null;
+    /**
+     * Donos ima smisel samo tam, kjer se kvadratni meter res odda kot bivalna
+     * površina. Mediana €/m² prihaja iz NAJEMNIH oglasov stanovanj; če jo
+     * uporabimo na 4.145 m² zazidljive parcele, dobimo "1.222 % donosa" —
+     * izmerjeno na živih podatkih. Zemljišča, garaže in parkirna mesta zato
+     * ocene najemnine ne dobijo.
+     */
+    const najemSmiseln = o.tip === "stanovanje" || o.tip === "hisa";
+    const najem = najemSmiseln ? najdiNajem(o.regija, povrsina) : null;
     let brutoDonosPct: number | null = null;
     if (najem && povrsina !== null && povrsina > 10) {
       brutoDonosPct = Math.round(((najem.naM2 * povrsina * 12) / cena) * 1000) / 10;
