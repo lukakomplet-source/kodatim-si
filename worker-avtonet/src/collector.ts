@@ -271,14 +271,25 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
       // spec row instead and stored "rabljeno" as the version.
       const h1 = document.querySelector("h1")?.textContent ?? "";
       const naslov = (h1 || document.title || "").replace(/\s+/g, " ").trim();
-      // First few gallery image URLs — a visual fingerprint for same-vehicle
-      // matching (sellers reuse the exact photos on a relist) and a manual
-      // check for linked adverts. URLs only; nothing is downloaded.
+      /**
+       * CELOTNA galerija kot seznam URL-jev — nič se ne prenaša.
+       *
+       * Prej smo vzeli le prve tri kot vizualni prstni odtis (prodajalci ob
+       * ponovni objavi uporabijo iste fotografije). Zdaj vzamemo vse, ker je
+       * to edini način, da uporabnik vidi cel oglas pri nas, slike pa vseeno
+       * ostanejo pri viru — prikaz s sklicem, ne kopija.
+       *
+       * Vir isto fotografijo postreže dvakrat: pomanjšano s pripono `_small`
+       * (sličica pod glavno sliko) in v polni velikosti. Pripono odstranimo in
+       * podvojene odstranimo, sicer bi galerija vsako sliko štela dvakrat
+       * (izmerjeno: 18 zapisov za 9 fotografij).
+       */
       const slike = Array.from(document.querySelectorAll("img"))
-        .map((im) => im.getAttribute("src") ?? "")
+        .map((im) => im.getAttribute("src") ?? im.getAttribute("data-src") ?? "")
         .filter((s) => /images\.avto\.net|avtonet.*\/(foto|image|slik)/i.test(s))
+        .map((s) => s.replace(/_small(\.[a-z]+)$/i, "$1"))
         .filter((s, i, a) => a.indexOf(s) === i)
-        .slice(0, 3);
+        .slice(0, 40);
       return { pairs, naslov, slike, text: (document.body.innerText ?? "").replace(/\r/g, "") };
     }));
   } finally {

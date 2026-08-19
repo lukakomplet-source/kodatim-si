@@ -117,6 +117,38 @@ export default async function OglasPage({ params }: { params: Promise<{ id: stri
         </div>
       </header>
 
+      {/* Galerija: slike ostajajo PRI VIRU (prikaz s sklicem, ne kopija) —
+          zato ni ne prostora ne vprašanja avtorskih pravic. Če vir sliko
+          umakne, se ne prikaže; povezava na izvirnik je tik ob njej. */}
+      {Array.isArray(o.slike_urls) && o.slike_urls.length > 0 && (
+        <section className="mt-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">Slike ({o.slike_urls.length})</h2>
+            <p className="text-xs text-zinc-400">Slike so pri viru; klik odpre izvirnik v novem oknu.</p>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {(o.slike_urls as string[]).map((src, i) => (
+              <a
+                key={src}
+                href={typeof o.url === "string" && o.url ? o.url : src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={`${o.znamka ?? ""} ${o.model ?? ""} — slika ${i + 1}`}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="aspect-[4/3] w-full object-cover transition group-hover:brightness-105"
+                />
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Kartica naslov="Osnovni podatki">
