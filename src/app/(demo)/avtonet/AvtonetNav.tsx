@@ -11,6 +11,7 @@ import {
   LineChart,
   Sparkles,
   Store,
+  PackageCheck,
   Target,
   TerminalSquare,
   TrendingUp,
@@ -43,6 +44,7 @@ const JAVNO = [
 const UPORABNIK = [
   { href: "/avtonet/cenilnik", label: "Oceni vozilo", icon: Calculator },
   { href: "/avtonet/posli", label: "Posli", icon: Target },
+  { href: "/avtonet/prodani", label: "Prodani", icon: PackageCheck },
   { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
 ];
 
