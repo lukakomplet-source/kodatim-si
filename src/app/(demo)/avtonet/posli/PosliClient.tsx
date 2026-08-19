@@ -56,6 +56,10 @@ export type Deal = {
   /** Identiteta vozila (motor poslov 2.0). */
   izvedenka?: string | null;
   generacija?: string | null;
+  /** Odsek proizvodnje (facelift / nova izvedba) — meje izmerjene iz naših oglasov. */
+  serija?: number | null;
+  serijaOpis?: string | null;
+  faceliftTrditev?: boolean | null;
   pogon?: string;
   menjalnik?: string;
   identitetaZaupanje?: number;
@@ -619,6 +623,10 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                           {[
                             d.izvedenka,
                             d.generacija,
+                            // Serija loči facelift od predfaceliftа istega letnika —
+                            // brez nje sta bila cenovno različna avta v isti kohorti.
+                            d.serijaOpis ?? (d.serija !== null && d.serija !== undefined ? `serija ${d.serija}` : null),
+                            d.faceliftTrditev === true ? "oglas navaja facelift" : d.faceliftTrditev === false ? "oglas navaja pred faceliftom" : null,
                             d.pogon && d.pogon !== "?" ? d.pogon.toUpperCase() : null,
                             d.menjalnik && d.menjalnik !== "?" ? d.menjalnik : null,
                           ]

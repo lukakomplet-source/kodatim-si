@@ -25,6 +25,7 @@ import { pociistiStareVnose } from "./retention.js";
 import { poveziVozila } from "./vozila.js";
 import { izracunajStatistiko } from "./statistika.js";
 import { normalizirajIdentitete } from "./normalizacija.js";
+import { izmeriInUporabi } from "./facelift-run.js";
 import { izracunajPosle } from "./dealfeed2.js";
 import { blokiran, minutDoKonca, preberiBlokado, zabelezBlokado, zabelezUspeh } from "./blokada.js";
 import { samopopravilo } from "./samopopravilo.js";
@@ -410,6 +411,14 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       log("warn", "normalizacija ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
+    }
+    try {
+      // Meje faceliftov se izmerijo iz naših oglasov (skok v razširjenosti
+      // opreme) in uvrstijo vsak avto v serijo. Mora teči PO identiteti (rabi
+      // druzina_modela in oprema_kljucna) in PRED posli, ki serijo uporabijo.
+      await izmeriInUporabi(db, false);
+    } catch (err) {
+      log("warn", "meritev faceliftov ni uspela", { napaka: err instanceof Error ? err.message : String(err) });
     }
     try {
       await izracunajPosle(db, log);

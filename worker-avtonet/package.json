@@ -44,6 +44,9 @@
     "pdf:test": "tsx src/pdf-arhiv.ts --test 5",
     "normaliziraj": "tsx src/normaliziraj.ts",
     "test:identiteta": "tsx src/test-identiteta.ts",
+    "test:facelift": "tsx src/test-facelift.ts",
+    "facelift": "tsx src/facelift-run.ts",
+    "facelift:pokazi": "tsx src/facelift-run.ts --pokazi",
     "posli": "tsx src/posli-once.ts"
   },
   "dependencies": {

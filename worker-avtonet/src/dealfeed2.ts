@@ -21,7 +21,7 @@ const POLJA =
   "cena_eur, je_dealer, status, status_spremenjen, first_seen, oprema, opis, oprema_znacilke, " +
   "dodatni_podatki, ddv_odbitek, cena_brez_ddv_eur, druzina_modela, generacija, izvedenka, " +
   "izvedenka_vir, identiteta_zaupanje, pogon_norm, menjalnik_druzina, vin, oprema_kljucna, " +
-  "oprema_teza, prstni_odtis, cena_primerljiva, razlog_izkljucitve";
+  "oprema_teza, prstni_odtis, cena_primerljiva, razlog_izkljucitve, serija, serija_opis, facelift";
 
 type Vrstica = {
   id: string; avtonet_id: string; url: string; naziv: string | null; znamka: string | null;
@@ -36,6 +36,7 @@ type Vrstica = {
   menjalnik_druzina: string | null; vin: string | null;
   oprema_kljucna: Record<string, boolean> | null; oprema_teza: number | null;
   prstni_odtis: string | null; cena_primerljiva: boolean | null; razlog_izkljucitve: string | null;
+  serija: number | null; serija_opis: string | null; facelift: boolean | null;
 };
 
 const num = (v: number | string | null): number | null => {
@@ -70,6 +71,7 @@ function vVozilo(r: Vrstica): Vozilo | null {
     model: r.model, letnik: r.letnik, km: r.km, kw: r.kw, cena,
     jeDealer: r.je_dealer, status: r.status, statusSpremenjen: r.status_spremenjen,
     firstSeen: r.first_seen, identiteta: i,
+    serija: r.serija, serijaOpis: r.serija_opis, faceliftTrditev: r.facelift,
     cenaPrimerljiva: r.cena_primerljiva ?? true,
     razlogIzkljucitve: r.razlog_izkljucitve,
     ddvOdbitek: r.ddv_odbitek === true,
@@ -312,6 +314,7 @@ export async function izracunajPosle(db: Db, log: Log): Promise<void> {
       model: k.identiteta.druzinaModela, cena: k.cena, letnik: k.letnik, km: k.km,
       jeDealer: k.jeDealer, ddvOdbitek: k.ddvOdbitek, cenaBrezDdv: k.cenaBrezDdv,
       izvedenka: k.identiteta.izvedenka, generacija: k.identiteta.generacija,
+      serija: k.serija, serijaOpis: k.serijaOpis, faceliftTrditev: k.faceliftTrditev,
       pogon: k.identiteta.pogon, menjalnik: k.identiteta.menjalnikDruzina,
       identitetaZaupanje: k.identiteta.zaupanje, opremaTeza: k.identiteta.opremaTeza,
       kljucnaOprema: Object.keys(k.identiteta.oprema),

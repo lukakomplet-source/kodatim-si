@@ -29,6 +29,15 @@ export type Vozilo = {
   statusSpremenjen: string | null;
   firstSeen: string;
   identiteta: Identiteta;
+  /**
+   * Serija = odsek proizvodnje med izmerjenima prelomoma (facelift ali nova
+   * generacija). Glej facelift.ts: meje se izmerijo iz naših oglasov po skoku
+   * v razširjenosti opreme, ne ugibajo.
+   */
+  serija: number | null;
+  serijaOpis: string | null;
+  /** Kar o faceliftu trdi sam oglas — dodatna informacija, ne merilo. */
+  faceliftTrditev: boolean | null;
   cenaPrimerljiva: boolean;
   razlogIzkljucitve: string | null;
   ddvOdbitek: boolean;
@@ -94,6 +103,30 @@ export function ujemanje(a: Vozilo, b: Vozilo): Ujemanje {
       razlika.push(`generacija ${ib.generacija} proti ${ia.generacija}`);
       ovire.push("druga generacija");
     }
+  }
+
+  /**
+   * Serija (facelift / nova izvedba znotraj istega letnika).
+   *
+   * To je razlika, ki je kohorti manjkala najbolj: dva avta istega modela in
+   * ISTEGA LETNIKA sta lahko eden pred faceliftom in drugi po njem, kar je
+   * cenovno drug avto — prav zato je sistem prej kazal "pod tržno ceno" tam,
+   * kjer je šlo le za starejšo izvedbo. Meje so izmerjene iz naših oglasov
+   * (skok v razširjenosti opreme okoli enega meseca), ne ugibane.
+   */
+  if (a.serija !== null && b.serija !== null) {
+    if (a.serija === b.serija) {
+      enako.push(b.serijaOpis ?? `serija ${b.serija}`);
+    } else {
+      razlika.push(
+        `druga serija: ${b.serijaOpis ?? `serija ${b.serija}`} proti ${a.serijaOpis ?? `serija ${a.serija}`}`
+      );
+      ovire.push("druga serija (facelift ali generacija)");
+    }
+  } else if (a.faceliftTrditev !== null && b.faceliftTrditev !== null && a.faceliftTrditev !== b.faceliftTrditev) {
+    // Meje ni, a oglasa sama trdita nasprotno — to je dovolj za oviro.
+    razlika.push(b.faceliftTrditev ? "oglas navaja facelift" : "oglas navaja pred faceliftom");
+    ovire.push("različna izvedba po navedbi oglasa");
   }
 
   if (ia.izvedenka && ib.izvedenka) {
@@ -303,6 +336,10 @@ export type Posel = {
   /** Identiteta, na kateri stoji vse ostalo. */
   izvedenka: string | null;
   generacija: string | null;
+  /** Odsek proizvodnje (facelift/nova izvedba) — glej facelift.ts. */
+  serija: number | null;
+  serijaOpis: string | null;
+  faceliftTrditev: boolean | null;
   pogon: string;
   menjalnik: string;
   identitetaZaupanje: number;
