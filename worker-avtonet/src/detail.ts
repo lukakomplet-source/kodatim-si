@@ -477,7 +477,11 @@ export function parseDetail(raw: DetailRaw): DetailData {
 
     source_zadnja_sprememba: extractZadnjaSprememba(text),
     ogledov: extractOgledov(text),
-    slike_urls: raw.slike && raw.slike.length > 0 ? raw.slike.slice(0, 3) : null,
+    // CELA galerija, ne prve tri: URL-ji so edino, kar rabimo, da uporabnik
+    // vidi ves oglas (slike ostanejo pri viru). Prej je bilo tu rezanje na
+    // tri, ker so služile samo kot vizualni prstni odtis ponovne objave —
+    // in prav to rezanje je izničilo zajem cele galerije v collector.ts.
+    slike_urls: raw.slike && raw.slike.length > 0 ? raw.slike : null,
   };
 }
 

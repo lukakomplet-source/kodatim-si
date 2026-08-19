@@ -40,10 +40,16 @@ Dvoje, kar se pokaže šele iz meritve:
 oglas, zato je vse kazalo na ~9. Ko sem zajel celo galerijo (glej 1.5), so oglasi pokazali
 12, 34, 40 in 12 fotografij.
 
+⚠️ **Stolpec `nep_oglasi.st_slik` je nezanesljiv.** Porazdelitev je dvovrhova (6.919 vrstic
+ima 1–2, 223 vrstic pa 31–94), živa preverba pa je pri oglasih, ki jim baza pripisuje 2
+sliki, našla 8–22. Vsota 28.115 torej podcenjuje resnično število za 2,4- do 4-krat. Za
+nepremičnine je zato v izračunu uporabljena delovna številka 15, ne vrednost iz baze.
+
 ## 1.3 Koliko prostora bi to vzelo
 
-Prostor: **C: 46 GB prostega od 224 GB**, **E: 229 GB prostega od 233 GB**. Baza je 635 MB.
-Slike sodijo na **E:**, nikoli na sistemski disk.
+Prostor: **C: 46 GB prostega od 224 GB**, **E: 229 GB prostega od 233 GB**. Baza je 635 MB,
+od tega `avtonet_oglasi` 527 MB. Slike sodijo na **E:**, nikoli na sistemski disk — na C:
+teče tudi Docker z bazo in tam 46 GB ni rezerva, s katero bi se igrali.
 
 | Scenarij | Zasedenost |
 |---|---|
