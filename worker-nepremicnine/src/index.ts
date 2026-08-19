@@ -114,6 +114,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
       let stran = 1;
       let zadnja: number | null = null;
       let praznihZapored = 0;
+      let praznaPrvaPoskusov = 0;
 
       for (;;) {
         if (stopping) {
@@ -122,6 +123,25 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter): Promise<void
         }
         try {
           const { kartice, zadnjaStran } = await preberiStran(vir.seznamUrl(rezina, stran));
+
+          /**
+           * PRVA stran kategorije ni nikoli prazna. Če je, vir tiho zavrača
+           * (mehka blokada) ali so se spremenili selektorji — oboje je treba
+           * povedati, ne pa prebrati kot "konec kategorije". Izmerjeno na
+           * bolha.com: po ~25 hitrih straneh začne vračati strani brez kartic,
+           * svež brskalnik pa isti naslov ta hip postreže normalno. Zato en
+           * daljši premor in ponovni poskus, sicer pregled ustavimo.
+           */
+          if (stran === 1 && kartice.length === 0) {
+            praznaPrvaPoskusov += 1;
+            if (praznaPrvaPoskusov <= 1) {
+              log("warn", "prazna prva stran - premor 60 s in ponovni poskus", { vir: vir.vir, rezina: rezina.oznaka });
+              await sleep(60_000);
+              continue;
+            }
+            throw new Error("vir blokira (prazna prva stran tudi po premoru)");
+          }
+
           zadnja = zadnjaStran ?? zadnja;
           p.strani += 1;
           zadnjiPremik = Date.now();

@@ -134,7 +134,10 @@ function normaliziraj(r: SurovaKartica, rezina: BolhaRezina): NormaliziranOglas 
 
 export const adapter: VirAdapter = {
   vir: VIR,
-  omejitve: { zamikMs: 6000 },
+  // 10 s: pri 6 s je vir po ~25 straneh začel vračati prazne strani (mehka
+  // blokada). Odgovor je počasnejše branje in spoštovanje blokade, nikoli
+  // poskus obhoda.
+  omejitve: { zamikMs: 10_000 },
   pricakovanRazpon: [3000, 40000],
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
