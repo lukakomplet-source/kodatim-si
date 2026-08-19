@@ -753,6 +753,16 @@ function prilagojenaCena(
       odstopanjeTrgovciPct: number | null;
       /** How strict the comparison behind the numbers was. */
       strogost: string;
+      /** Same cars that LEFT the board: last asking price before disappearing. */
+      prodani: {
+        naziv: string;
+        letnik: number | null;
+        km: number | null;
+        zadnjaCena: number;
+        izginil: string | null;
+        dniNaTrgu: number | null;
+        url: string;
+      }[];
       /**
        * A few of the cars the median came from — price, year, mileage, link.
        *
@@ -802,6 +812,18 @@ function prilagojenaCena(
     }
 
     const leto = new Date().getFullYear();
+
+    // Zakljuceni oglasi po istih kohortah: "za koliko so sli taki isti" — zadnja
+    // cena pred izginotjem je najboljsi priblizek prodajne cene, ki ga vir da.
+    const bazenZakljucenih = new Map<string, Oglas[]>();
+    for (const z of zakljuceni) {
+      if (!modelKljuc(z)) continue;
+      const k = kohorta(z);
+      const arr = bazenZakljucenih.get(k) ?? [];
+      arr.push(z);
+      bazenZakljucenih.set(k, arr);
+    }
+
     const deals: Deal[] = [];
 
     for (const o of aktivni) {
@@ -868,6 +890,23 @@ function prilagojenaCena(
         vrstniki = vrstnikiZa(st.let_, st.kw, st.km, st.oprema);
         strogost = st.opis;
         if (vrstniki.length >= 8) break;
+      }
+      // Isti fizicni avto, objavljen dvakrat (ista cena, km, letnik, naziv), v
+      // kohorti ne sme steti dvakrat: "122 primerljivih" z dvojniki je napihnjen
+      // vzorec in vsak dvojnik vlece mediano k svoji ceni.
+      {
+        const kljuci = new Set<string>();
+        vrstniki = vrstniki.filter((v) => {
+          const k = [
+            (v.naziv ?? "").toLowerCase().replace(/s+/g, " ").trim().slice(0, 60),
+            num(v.cena_eur),
+            v.km,
+            v.letnik,
+          ].join("|");
+          if (kljuci.has(k)) return false;
+          kljuci.add(k);
+          return true;
+        });
       }
       if (vrstniki.length < 8) continue;
 
@@ -961,13 +1000,49 @@ function prilagojenaCena(
         vzorecTrgovcev: trgovci.length,
         odstopanjeTrgovciPct: odstTrgovci === null ? null : Math.round(odstTrgovci * 10) / 10,
         strogost,
+        // The same cars that recently disappeared, with the last price they asked.
+        // "Prodano" the source confirms only sometimes; for the rest, the last
+        // asking price before vanishing is the honest proxy — and it is labelled
+        // as that, never as a confirmed sale price.
+        prodani: (bazenZakljucenih.get(kohorta(o)) ?? [])
+          .filter(
+            (z) =>
+              z.letnik !== null && o.letnik !== null && Math.abs(z.letnik - o.letnik) <= 2 &&
+              z.km !== null && o.km !== null && Math.abs(z.km - o.km) / o.km <= 0.5 &&
+              num(z.cena_eur) !== null
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.status_spremenjen ?? 0).getTime() - new Date(a.status_spremenjen ?? 0).getTime()
+          )
+          .filter((z, i, arr) => {
+            const k = [(z.naziv ?? "").toLowerCase().replace(/s+/g, " ").slice(0, 60), z.km, z.letnik].join("|");
+            return arr.findIndex((y) => [(y.naziv ?? "").toLowerCase().replace(/s+/g, " ").slice(0, 60), y.km, y.letnik].join("|") === k) === i;
+          })
+          .slice(0, 5)
+          .map((z) => ({
+            naziv: (z.naziv ?? mk).slice(0, 60),
+            letnik: z.letnik,
+            km: z.km,
+            zadnjaCena: Math.round(num(z.cena_eur) as number),
+            izginil: z.status_spremenjen ? z.status_spremenjen.slice(0, 10) : null,
+            dniNaTrgu:
+              z.status_spremenjen && z.first_seen
+                ? Math.max(0, Math.round((new Date(z.status_spremenjen).getTime() - new Date(z.first_seen).getTime()) / 86_400_000))
+                : null,
+            url: z.url,
+          })),
         // Nearest by adjusted price, so the list shows the cars that actually
         // decided the median rather than the first few in the array.
         primerljivi: vrstniki
           .map((v) => ({ v, prilagojena: prilagojenaCena(v, o, koef) }))
           .filter((x): x is { v: Oglas; prilagojena: number } => x.prilagojena !== null)
           .sort((a, b) => Math.abs(a.prilagojena - medCena) - Math.abs(b.prilagojena - medCena))
-          .slice(0, 4)
+          .filter((x, i, arr) => {
+            const k = [(x.v.naziv ?? "").toLowerCase().replace(/s+/g, " ").slice(0, 60), x.v.km, x.v.letnik].join("|");
+            return arr.findIndex((y) => [(y.v.naziv ?? "").toLowerCase().replace(/s+/g, " ").slice(0, 60), y.v.km, y.v.letnik].join("|") === k) === i;
+          })
+          .slice(0, 6)
           .map((x) => ({
             naziv: (x.v.naziv ?? mk).slice(0, 60),
             letnik: x.v.letnik,

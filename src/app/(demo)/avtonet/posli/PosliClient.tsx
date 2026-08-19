@@ -28,6 +28,15 @@ export type Deal = {
   ddvOdbitek: boolean;
   cenaBrezDdv: number | null;
   strogost: string;
+  prodani: {
+    naziv: string;
+    letnik: number | null;
+    km: number | null;
+    zadnjaCena: number;
+    izginil: string | null;
+    dniNaTrgu: number | null;
+    url: string;
+  }[];
   primerljivi: {
     naziv: string;
     letnik: number | null;
@@ -497,6 +506,39 @@ export function PosliClient({ deals }: { deals: Deal[] }) {
                         </li>
                       ))}
                     </ul>
+                    {d.prodani?.length > 0 && (
+                      <>
+                        <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Taki isti, ki so ze sli z oglasnika
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                          Zadnja zahtevana cena pred izginotjem — najboljsi priblizek prodajne cene,
+                          ki ga vir da (prodaje ne potrdi vedno).
+                        </p>
+                        <ul className="mt-1.5 space-y-1">
+                          {d.prodani.map((z, k) => (
+                            <li key={k} className="flex flex-wrap items-baseline gap-x-2">
+                              <a
+                                href={z.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-zinc-700 hover:underline"
+                              >
+                                {z.naziv}
+                              </a>
+                              <span className="text-zinc-500">
+                                {z.letnik ?? "?"} · {z.km === null ? "?" : `${z.km.toLocaleString("sl-SI")} km`}
+                              </span>
+                              <span className="font-semibold text-emerald-700">{eur(z.zadnjaCena)}</span>
+                              <span className="text-zinc-400">
+                                {z.izginil ? `izginil ${z.izginil.split("-").reverse().join(".")}` : ""}
+                                {z.dniNaTrgu !== null ? ` · ${z.dniNaTrgu} dni na trgu` : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </details>
                 )}
 
