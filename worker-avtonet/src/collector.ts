@@ -254,7 +254,7 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
     const status = response?.status() ?? 0;
     if (status === 403 || status === 429) throw new BlockedError(status);
 
-    return await zOmejitvijo("page.evaluate(detajl)", page.evaluate(() => {
+    const raw = await zOmejitvijo("page.evaluate(detajl)", page.evaluate(() => {
       const pairs: Record<string, string> = {};
       for (const tr of Array.from(document.querySelectorAll("table tr"))) {
         const cells = Array.from(tr.querySelectorAll("td,th")).map((c) =>
@@ -292,6 +292,30 @@ export async function fetchDetailPage(browser: Browser, url: string): Promise<De
         .slice(0, 40);
       return { pairs, naslov, slike, text: (document.body.innerText ?? "").replace(/\r/g, "") };
     }));
+
+    /**
+     * Galerija se vstavi z JavaScriptom šele po `domcontentloaded`, zato je v
+     * DOM ob branju pogosto ni (izmerjeno: 0 slik prek `img`, medtem ko jih
+     * ima stran devet). URL-ji pa so v HTML izvorno prisotni, zato jih
+     * poberemo še iz besedila strani — to je odporno na to, kako in kdaj jih
+     * stran pripne.
+     */
+    const html = await zOmejitvijo("page.content", page.content(), 20_000).catch(() => "");
+    const izHtml = [...html.matchAll(/https?:\/\/images\.avto\.net\/photo\/[^"'\s\\)]+?\.(?:jpg|jpeg|png|webp)/gi)].map(
+      (m) => m[0]
+    );
+    /**
+     * Samo slike TEGA oglasa: stran spodaj ponuja še druge avtomobile in
+     * njihove fotografije so v istem HTML (izmerjeno: 40 zadetkov, od tega 2
+     * tuja). Vsaka pot vsebuje številko oglasa, zato je ločnica zanesljiva.
+     */
+    const idOglasa = url.match(/[?&]id=(\d+)/i)?.[1] ?? null;
+    const slike = [...raw.slike, ...izHtml]
+      .map((s) => s.replace(/_small(\.[a-z]+)$/i, "$1"))
+      .filter((s) => (idOglasa ? s.includes(`/photo/${idOglasa}/`) : true))
+      .filter((s, i, a) => a.indexOf(s) === i)
+      .slice(0, 40);
+    return { ...raw, slike };
   } finally {
     await zapri(context);
   }

@@ -19,8 +19,13 @@ const VELIKOST = {
   izvirnik: 146.2,
 };
 
-/** Koliko slik ima povprečen oglas (izmerjeno na vzorcu detajlne strani). */
-const SLIK_NA_OGLAS = { avti: 9, nepremicnine: 15 };
+/**
+ * Koliko slik ima povprečen oglas — IZMERJENO na resničnih detajlnih straneh
+ * (src/galerije.ts): avtomobilski oglasi imajo 12–40 fotografij, povprečno 25;
+ * nepremičninski okoli 15 (preverjeno na oglasu z 12 v galeriji).
+ * Prej je tu pisalo 9 za avte, ker so se štele samo tri shranjene sličice.
+ */
+const SLIK_NA_OGLAS = { avti: 25, nepremicnine: 15 };
 
 const gb = (kb: number) => Math.round((kb / 1024 / 1024) * 10) / 10;
 
