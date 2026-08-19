@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { KlepetSprememb } from "@/components/KlepetSprememb";
+import { PogovorPopravkov } from "@/components/PogovorPopravkov";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -54,12 +54,11 @@ export default function RootLayout({
         />
         {children}
         {/*
-          The change chat, on every page. It asks once who is signed in and
-          renders nothing for a visitor, so putting it here costs an anonymous
-          reader one small request and nothing else — and a request to fix
-          something is worth most on the page where it was noticed.
+          Pogovora o popravkih (Nik levo, Benjamin desno), na vsaki strani.
+          Za neprijavljene se ne izrise nic, zato sme ziveti tu: pripomba je
+          najvec vredna na strani, kjer je bila opazena.
         */}
-        <KlepetSprememb />
+        <PogovorPopravkov />
       </body>
     </html>
   );
