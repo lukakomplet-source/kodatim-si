@@ -1,6 +1,9 @@
 import type { Page } from "playwright";
 import { cenaIz, izOpisa } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
+import type { Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
+
+export type { SurovaKartica } from "./vmesnik.js";
 
 /**
  * Adapter za nepremicnine.net — bere SEZNAME, ne detajlov.
@@ -28,11 +31,13 @@ export const REGIJE = [
 export const TIPI = ["stanovanje", "hisa", "posest", "poslovni-prostor", "garaza", "vikend", "pocitniski-objekt"];
 export const POSLI = ["prodaja", "oddaja"] as const;
 
-export type Rezina = { posel: (typeof POSLI)[number]; regija: string; tip: string };
+export type Rezina = BazniRezina & { posel: (typeof POSLI)[number]; regija: string; tip: string };
 
 export function vseRezine(): Rezina[] {
   const out: Rezina[] = [];
-  for (const posel of POSLI) for (const regija of REGIJE) for (const tip of TIPI) out.push({ posel, regija, tip });
+  for (const posel of POSLI)
+    for (const regija of REGIJE)
+      for (const tip of TIPI) out.push({ oznaka: `${posel}/${regija}/${tip}`, posel, regija, tip });
   return out;
 }
 
@@ -40,19 +45,6 @@ export function seznamUrl(r: Rezina, stran: number): string {
   const osnova = `https://www.nepremicnine.net/oglasi-${r.posel}/${r.regija}/${r.tip}/`;
   return stran <= 1 ? osnova : `${osnova}${stran}/`;
 }
-
-export type SurovaKartica = {
-  url: string;
-  virId: string;
-  lokacija: string | null;
-  naslovVrstica: string | null;
-  opis: string | null;
-  cenaBesedilo: string | null;
-  telefon: string | null;
-  agencija: string | null;
-  slika: string | null;
-  stSlik: number | null;
-};
 
 /** Prebere kartice s trenutno naložene strani seznama. */
 export async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }> {
@@ -158,3 +150,20 @@ export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOgla
     raw: r as unknown as Record<string, unknown>,
   };
 }
+
+/**
+ * Formalni adapter za register virov. Cloudflare tega vira pusti skozi PRVO
+ * zahtevo konteksta, vsako naslednjo pošlje na izziv — zato svež kontekst za
+ * vsako stran. Slike so izrecno "referenca" (robots.txt use=reference).
+ */
+export const adapter: VirAdapter = {
+  vir: VIR,
+  omejitve: OMEJITVE,
+  pricakovanRazpon: PRICAKOVAN_RAZPON,
+  slikePolitika: "referenca",
+  svezKontekstNaStran: true,
+  rezine: vseRezine,
+  seznamUrl: (r, stran) => seznamUrl(r as Rezina, stran),
+  preberiSeznam,
+  normaliziraj: (k, r) => normaliziraj(k, r as Rezina),
+};

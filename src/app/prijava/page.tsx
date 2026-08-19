@@ -41,8 +41,11 @@ function LoginForm() {
         .eq("id", data.user.id)
         .single();
 
+      // Samo poti znotraj te strani: "//zlo.si" in "/\zlo.si" brskalnik bere
+      // kot zunanji naslov, zato bi ?redirect po prijavi odnesel drugam.
+      const varenRedirect = redirectTo && /^\/(?![/\\])/.test(redirectTo) ? redirectTo : null;
       const destination =
-        redirectTo ?? (profile?.role === "admin" ? "/admin" : "/partner");
+        varenRedirect ?? (profile?.role === "admin" ? "/admin" : "/partner");
       router.push(destination);
       router.refresh();
     } catch (err) {

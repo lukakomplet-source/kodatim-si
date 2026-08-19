@@ -5,6 +5,7 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { oceniNajemnino } from "@/lib/nepremicnine/najemnina";
 import { KalkulatorClient } from "./KalkulatorClient";
+import { NepNav } from "../NepNav";
 
 /**
  * Investicijski kalkulator, po želji predizpolnjen iz oglasa (?oglas=id).
@@ -20,19 +21,33 @@ export const metadata = { title: "Investicijski kalkulator — SBN Nepremičnine
 export default async function KalkulatorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ oglas?: string }>;
+  searchParams: Promise<{ oglas?: string; enot?: string; najemnina?: string; prenova?: string }>;
 }) {
   const dostop = await preberiDostop();
   if (!dostop.jeUporabnik) redirect(prijavaZa("/nepremicnine/kalkulator"));
+  const jeAdmin = dostop.jeAdmin;
 
-  const { oglas } = await searchParams;
+  const sp = await searchParams;
+  const oglas = sp.oglas;
+  const cel = (v: string | undefined) => {
+    const n = Number(v);
+    return v !== undefined && v !== "" && Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+  };
+  // Cilj iz iskanja ("10 enot po 650 €, prenova do proračuna") pride kot
+  // parametri. To so uporabnikove PREDPOSTAVKE — prepišejo podatke oglasa,
+  // a ohranijo tržno oceno vidno, da je primerjava vedno pri roki.
+  const ciljEnot = cel(sp.enot);
+  const ciljNajemnina = cel(sp.najemnina);
+  const ciljPrenova = cel(sp.prenova);
+
   let zacetek: {
     cena: number | null;
     enot: number | null;
     naziv: string | null;
     najemnina: number | null;
     najemninaVir: string | null;
-  } = { cena: null, enot: null, naziv: null, najemnina: null, najemninaVir: null };
+    prenova: number | null;
+  } = { cena: null, enot: null, naziv: null, najemnina: null, najemninaVir: null, prenova: null };
 
   if (oglas) {
     const db = createAvtonetClient();
@@ -52,7 +67,7 @@ export default async function KalkulatorPage({
         st_enot: number | null;
         st_enot_ocena: number | null;
       };
-      const enot = v.st_enot ?? v.st_enot_ocena ?? 1;
+      const enot = ciljEnot ?? v.st_enot ?? v.st_enot_ocena ?? 1;
       const najemnina = await oceniNajemnino(db, {
         tip: v.tip,
         regija: v.regija,
@@ -63,13 +78,23 @@ export default async function KalkulatorPage({
         cena: v.cena_eur,
         enot,
         naziv: [v.naslov, v.kraj].filter(Boolean).join(" · ") || null,
-        najemnina: najemnina?.mesecna ?? null,
-        najemninaVir: najemnina
-          ? `Najemnina ${najemnina.mesecna} €/mes je OCENA iz ${najemnina.vzorec} najemnih oglasov (${najemnina.opis}) — preveri in popravi.`
-          : "Ocene najemnine ni (premalo najemnih oglasov) — vpiši svojo.",
+        najemnina: ciljNajemnina ?? najemnina?.mesecna ?? null,
+        najemninaVir:
+          ciljNajemnina !== null
+            ? najemnina
+              ? `Najemnina ${ciljNajemnina} €/mes je TVOJ cilj (predpostavka). Ocena iz ${najemnina.vzorec} najemnih oglasov: ${najemnina.mesecna} €/mes (${najemnina.opis}).`
+              : `Najemnina ${ciljNajemnina} €/mes je TVOJ cilj (predpostavka) — tržne ocene ni (premalo najemnih oglasov).`
+            : najemnina
+              ? `Najemnina ${najemnina.mesecna} €/mes je OCENA iz ${najemnina.vzorec} najemnih oglasov (${najemnina.opis}) — preveri in popravi.`
+              : "Ocene najemnine ni (premalo najemnih oglasov) — vpiši svojo.",
+        prenova: ciljPrenova,
       };
     }
   }
+  // Cilj deluje tudi brez (najdenega) oglasa.
+  if (zacetek.enot === null && ciljEnot !== null) zacetek.enot = ciljEnot;
+  if (zacetek.najemnina === null && ciljNajemnina !== null) zacetek.najemnina = ciljNajemnina;
+  if (zacetek.prenova === null && ciljPrenova !== null) zacetek.prenova = ciljPrenova;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -89,6 +114,7 @@ export default async function KalkulatorPage({
         slovenskih bančnih pravilih (Banka Slovenije), denarni tok in donos na vloženi denar. Vsak
         drsnik takoj preračuna vse.
       </p>
+      <NepNav aktiven="/nepremicnine/kalkulator" jeAdmin={jeAdmin} />
       <KalkulatorClient zacetek={zacetek} />
     </div>
   );

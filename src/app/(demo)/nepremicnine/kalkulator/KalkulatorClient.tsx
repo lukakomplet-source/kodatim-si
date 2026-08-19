@@ -39,11 +39,12 @@ export function KalkulatorClient({
     naziv: string | null;
     najemnina: number | null;
     najemninaVir: string | null;
+    prenova: number | null;
   };
 }) {
   // nakup
   const [cena, setCena] = useState(zacetek.cena ?? 300000);
-  const [prenova, setPrenova] = useState(0);
+  const [prenova, setPrenova] = useState(zacetek.prenova ?? 0);
   const [stroskiNakupa, setStroskiNakupa] = useState(Math.round((zacetek.cena ?? 300000) * 0.03));
   // prihodki
   const [enot, setEnot] = useState(zacetek.enot ?? 1);

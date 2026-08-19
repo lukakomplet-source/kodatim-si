@@ -132,7 +132,7 @@ create table if not exists public.nep_viri (
 insert into public.nep_viri (vir) values ('nepremicnine.net') on conflict do nothing;
 
 -- updated_at sprožilca
-create trigger nep_oglasi_set_updated_at before update on public.nep_oglasi
+create or replace trigger nep_oglasi_set_updated_at before update on public.nep_oglasi
   for each row execute function public.set_updated_at();
-create trigger nep_pregledi_set_updated_at before update on public.nep_pregledi
+create or replace trigger nep_pregledi_set_updated_at before update on public.nep_pregledi
   for each row execute function public.set_updated_at();

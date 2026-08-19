@@ -9,6 +9,12 @@
  * zunanje modele.
  */
 
+import { createHash } from "node:crypto";
+
+/** Kratek odtis opisa za zaznavo sprememb (ne za varnost). */
+export const opisHash = (opis: string | null): string | null =>
+  opis ? createHash("sha256").update(opis).digest("hex").slice(0, 16) : null;
+
 export type IzOpisa = {
   povrsinaM2: number | null;
   zemljisceM2: number | null;
