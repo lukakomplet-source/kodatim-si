@@ -71,8 +71,13 @@ export async function normalizirajIdentitete(
       return {
         id: v.id,
         avtonet_id: v.avtonet_id,
-        // url je NOT NULL; upsert ga potrebuje, zato ga prenesemo nespremenjenega.
-        url: v.url,
+        // url je NOT NULL, zato ga upsert zahteva; prenesemo ga nespremenjenega.
+        //
+        // Prva različica te skripte ga je poslala prazen in ga nameravala
+        // dopolniti iz druge poizvedbe — dopolnitev ni prijela in upsert je
+        // izpraznil 60.500 povezav do oglasov. Zato se tu nikoli ne pošlje
+        // prazna vrednost: če je manjka, se sestavi iz avtonet_id.
+        url: v.url && v.url.length > 10 ? v.url : `https://www.avto.net/Ads/details.asp?id=${v.avtonet_id}`,
         druzina_modela: i.druzinaModela,
         generacija: i.generacija,
         izvedenka: i.izvedenka,
