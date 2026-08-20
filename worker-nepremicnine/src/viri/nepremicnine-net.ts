@@ -1,7 +1,7 @@
 import type { Page } from "playwright";
 import { cenaIz, izOpisa } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
-import type { Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
+import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
 export type { SurovaKartica } from "./vmesnik.js";
 
@@ -152,6 +152,134 @@ export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOgla
 }
 
 /**
+ * 2. FAZA — detajlna stran oglasa.
+ *
+ * Kar je tu in česar na seznamu ni: število spalnic in kopalnic, energetska
+ * izkaznica, ogrevanje, oprema, parkirišče, cela galerija (izmerjeno 20 slik
+ * proti eni na kartici) in poln opis. Brez tega filtriranje po teh poljih ni
+ * mogoče — kar je bila glavna zahteva.
+ *
+ * Struktura je preverjena na resnični strani (oglas 7384060, 20. 8. 2026), ne
+ * uganjena: `ul#atributi > li` je seznam kratkih trditev v prosti obliki
+ * ("Št. spalnic: 2", "Balkon", "Ogrevanje na elektriko", "EI: Izračun ni
+ * mogoč"), zato se bere z vzorci nad besedilom in ne s pozicijskimi selektorji,
+ * ki bi jih vsaka preureditev razbila.
+ *
+ * Vse, česar stran ne pove, ostane prazno. Galerija se hrani kot URL-ji na
+ * izvirnik; datotek ne kopiramo.
+ *
+ * DELITEV DELA: v brskalniku se samo POBERE besedilo, razčleni pa se v Node.
+ * Dvoje razlogov. Prvi je praktičen — tsx/esbuild v `page.evaluate` prevede
+ * pomožne funkcije v klic `__name`, ki v brskalniku ne obstaja, in cela
+ * funkcija pade z "ReferenceError". Drugi je boljši: razčlenitev, ki teče v
+ * Node, se da testirati brez brskalnika in brez omrežja.
+ */
+
+/** Kar brskalnik vrne — samo besedilo, brez logike. */
+export type SurovDetajl = {
+  vrstice: string[];
+  slike: string[];
+  prodajalec: string | null;
+  cena: string | null;
+  telefon: string | null;
+  opis: string | null;
+};
+
+/**
+ * Razčlenitev seznama lastnosti. Vrstice so proste povedi ("Št. spalnic: 2",
+ * "Balkon", "Ogrevanje na elektriko"), zato se bere z vzorci nad besedilom in
+ * ne s pozicijo v seznamu, ki jo vsaka preureditev strani razbije.
+ */
+export function detajlIzSurovega(s: SurovDetajl): Detajl {
+  const vrstice = s.vrstice;
+  const najdi = (re: RegExp): string | null => vrstice.find((v) => re.test(v)) ?? null;
+  /** Vse ujemajoče vrstice, združene ("Ogrevanje na elektriko, na drva"). */
+  const vse = (re: RegExp): string | null => {
+    const v = vrstice.filter((x) => re.test(x));
+    return v.length > 0 ? v.join(", ") : null;
+  };
+  const stevilka = (re: RegExp): number | null => {
+    const v = najdi(re);
+    // Vzorec se mora začeti s ŠTEVKO. Prejšnji `[\d.]+` je v "Št. spalnic: 2"
+    // pobral piko iz okrajšave "Št." in vrnil 0 — tiho, brez napake, za vsak
+    // tak oglas. Zato je prva števka obvezna.
+    const m = v?.match(/(\d[\d.]*(?:,\d+)?)/);
+    if (!m) return null;
+    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+  /** Zastavica: prisotna vrstica pomeni "da", odsotna pomeni "ne vemo". */
+  const zastavica = (re: RegExp): boolean | null => (najdi(re) ? true : null);
+
+  const lastnosti: Record<string, string> = {};
+  for (const v of vrstice) {
+    const m = v.match(/^([^:]{2,40}):\s*(.+)$/);
+    if (m) lastnosti[m[1].trim()] = m[2].trim();
+    else lastnosti[v] = "da";
+  }
+
+  const cena = s.cena !== null && /^\d+(?:\.\d+)?$/.test(s.cena) ? Number(s.cena) : null;
+  const slike = [...new Set(s.slike)];
+
+  return {
+    povrsinaM2: stevilka(/^Velikost:/i),
+    zemljisceM2: stevilka(/^Zemljišče:/i),
+    stSob: stevilka(/^Št\.?\s*sob:/i),
+    stSpalnic: stevilka(/^Št\.?\s*spalnic:/i),
+    stKopalnic: stevilka(/^Št\.?\s*kopalnic:/i),
+    nadstropje: najdi(/^Nadstropje:/i)?.replace(/^Nadstropje:\s*/i, "") ?? null,
+    letoIzgradnje: stevilka(/^Zgrajen(?:o|a)?\s*l\./i),
+    letoAdaptacije: stevilka(/^Adaptiran(?:o|a)?\s*l\./i),
+    // Energetska izkaznica ima pri tem viru DVA zapisa: "EI: Izračun ni mogoč"
+    // in "D (85 - 120 kWh/m2a)". Iskanje samo po "EI:" je drugega spregledalo.
+    // Vrednost se pusti dobesedno — izluščen "razred D" iz besedila, ki ga ne
+    // vsebuje, bi bil izmišljotina.
+    energetskiRazred: najdi(/^EI:|kWh\/m2a/i)?.replace(/^EI:\s*/i, "") ?? null,
+    ogrevanje: vse(/ogrevanj/i),
+    opremljenost: najdi(/opremljen/i),
+    stanje: vse(/^(?:Novogradnja|Vseljivo|V izgradnji|Za adaptacijo|Za rušenje)/i),
+    parkirno: vse(/parkirn|garaž/i),
+    balkon: zastavica(/^Balkon\b/i),
+    terasa: zastavica(/^Terasa\b/i),
+    vrt: zastavica(/^(?:Vrt|Atrij)\b/i),
+    klet: zastavica(/^(?:Klet|Shramba)\b/i),
+    dvigalo: zastavica(/^Dvigalo\b/i),
+    lastnistvo: najdi(/lastnišk/i),
+    agencija: s.prodajalec && !/zasebna ponudba/i.test(s.prodajalec) ? s.prodajalec : null,
+    telefon: s.telefon?.replace(/^tel:/, "").trim() || null,
+    opis: s.opis || null,
+    cenaEur: cena,
+    slikeUrls: slike.length > 0 ? slike : null,
+    lastnosti,
+  };
+}
+
+export async function preberiDetajl(page: Page): Promise<Detajl> {
+  const surovo = (await page.evaluate(() => ({
+    vrstice: Array.from(document.querySelectorAll("ul#atributi li"))
+      .map((li) => (li as HTMLElement).innerText.replace(/\s+/g, " ").trim())
+      .filter((v) => v.length > 0),
+    // Galerija: vsaka slika je povezava fancybox na izvirnik. Slick podvoji
+    // prve in zadnje diapozitive (slick-cloned) — podvojene odstrani Node.
+    slike: Array.from(document.querySelectorAll("a[data-fancybox]"))
+      .map((a) => a.getAttribute("data-src") ?? (a as HTMLAnchorElement).href ?? "")
+      .filter((u) => u.includes("img.nepremicnine.net")),
+    prodajalec:
+      document.querySelector('[itemprop="seller"] [itemprop="name"]')?.getAttribute("content") ??
+      document.querySelector('[itemprop="seller"] [itemprop="name"]')?.textContent?.trim() ??
+      null,
+    cena: document.querySelector('meta[itemprop="price"]')?.getAttribute("content") ?? null,
+    telefon:
+      (document.querySelector('#agent-phones a[href^="tel:"]') as HTMLAnchorElement | null)?.getAttribute("href") ??
+      null,
+    opis:
+      (document.querySelector('[itemprop="disambiguatingDescription"]') as HTMLElement | null)?.innerText?.trim() ??
+      null,
+  }))) as SurovDetajl;
+  return detajlIzSurovega(surovo);
+}
+
+/**
  * Formalni adapter za register virov. Cloudflare tega vira pusti skozi PRVO
  * zahtevo konteksta, vsako naslednjo pošlje na izziv — zato svež kontekst za
  * vsako stran. Slike so izrecno "referenca" (robots.txt use=reference).
@@ -162,6 +290,12 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: PRICAKOVAN_RAZPON,
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
+  crawlDelayS: 0,
+  pravno:
+    "Pogoji (avg. 2020) prepovedujejo meta-iskanje in robote; izjema velja samo za SPLOŠNE iskalnike. Za komercialno rabo je predviden predhoden dogovor z MEGANET. Slik ne kopiramo, oglas vedno kaže na izvirnik.",
+  // 2. faza je pri tem viru dražja od seznamov (Cloudflare pusti skozi prvo
+  // zahtevo vsakega konteksta), zato majhna kvota in isti razmik kot seznami.
+  detajli: { zamikMs: 6000, kvota: 250, preberi: preberiDetajl },
   rezine: vseRezine,
   seznamUrl: (r, stran) => seznamUrl(r as Rezina, stran),
   preberiSeznam,

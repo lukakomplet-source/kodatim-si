@@ -1,7 +1,7 @@
 import type { Page } from "playwright";
 import { cenaIz, izOpisa } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
-import type { Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
+import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
 /**
  * Adapter za bolha.com (kategorija Nepremičnine).
@@ -51,6 +51,12 @@ async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; za
       const povezava = li.querySelector('h3.entity-title a[href*="-oglas-"]') as HTMLAnchorElement | null;
       if (!povezava) continue;
       const url = povezava.href;
+      // Bolha med kartice kategorije vrine tudi priporočene oglase iz DRUGIH
+      // kategorij. Brez te preverbe so v nepremičninski bazi pristali romani,
+      // znamke, harmonike, iPhone in traktorski priključek — vsi zavedeni kot
+      // "hiša" s ceno, ki bi popačila vsak izračun €/m². Nepremičninski oglas
+      // je vedno pod /nepremicnine/.
+      if (!/\/nepremicnine\//.test(url)) continue;
       const virId = url.match(/-oglas-(\d+)/)?.[1];
       if (!virId) continue;
 
@@ -132,6 +138,125 @@ function normaliziraj(r: SurovaKartica, rezina: BolhaRezina): NormaliziranOglas 
   };
 }
 
+/**
+ * 2. FAZA — detajlna stran bolhe.
+ *
+ * Bolha ima za razliko od nepremicnine.net pravo tabelo lastnosti
+ * (`dt`/`dd` v `.ClassifiedDetailBasicDetails-list`), zato se prebere kot
+ * slovar in šele nato preslika v naša polja. Vsak ključ, ki ga ne poznamo,
+ * ostane v `lastnosti` — nov podatek tako ne zahteva nove migracije in se ne
+ * izgubi, dokler zanj ne najdemo mesta.
+ *
+ * Telefona NE odklepamo: skrit je za gumbom in razkrije se šele s klikom.
+ * Klik bi bil obhod namerne ovire, poleg tega pa hramba telefonskih številk
+ * zasebnikov ni brez posledic po GDPR — zato ostane prazen.
+ *
+ * Preverjeno na resnični strani (oglas 15780363, 20. 8. 2026).
+ */
+
+/** Kar brskalnik vrne — samo besedilo; razčlenitev teče v Node (glej opombo). */
+export type SurovDetajlBolha = {
+  /** Izmenično ključ, vrednost, ključ, vrednost … iz tabele lastnosti. */
+  pari: string[];
+  skupine: { naslov: string; postavke: string[] }[];
+  cena: string | null;
+  sifra: string | null;
+  posrednik: string | null;
+  opis: string | null;
+  slike: string[];
+};
+
+export function detajlIzSurovegaBolha(s: SurovDetajlBolha): Detajl {
+  const lastnosti: Record<string, string> = {};
+  for (let i = 0; i + 1 < s.pari.length; i += 2) {
+    const kljuc = s.pari[i].trim();
+    if (kljuc) lastnosti[kljuc] = s.pari[i + 1].trim();
+  }
+  for (const g of s.skupine) {
+    if (g.naslov && g.postavke.length > 0) lastnosti[g.naslov] = g.postavke.join(", ");
+  }
+
+  const najdi = (...kljuci: string[]): string | null => {
+    for (const k of kljuci) {
+      for (const [ime, vrednost] of Object.entries(lastnosti)) {
+        if (ime.toLowerCase().includes(k.toLowerCase())) return vrednost;
+      }
+    }
+    return null;
+  };
+  const stevilka = (...kljuci: string[]): number | null => {
+    const v = najdi(...kljuci);
+    const m = v?.match(/([\d.]+(?:,\d+)?)/);
+    if (!m) return null;
+    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const balkonTerasa = najdi("Balkon / terasa", "Balkon") ?? "";
+  const cenaStevilo = Number((s.cena ?? "").replace(/[^\d,]/g, "").replace(",", "."));
+  const slike = [...new Set(s.slike)];
+
+  return {
+    povrsinaM2: stevilka("Bivalna površina", "Površina stanovanja", "Površina"),
+    zemljisceM2: stevilka("Površina parcele", "Velikost parcele"),
+    stSob: stevilka("Število sob"),
+    stKopalnic: stevilka("Število kopalnic"),
+    letoIzgradnje: stevilka("Leto izgradnje"),
+    letoAdaptacije: stevilka("Leto adaptacije", "Leto prenove"),
+    nadstropje: najdi("Nadstropje"),
+    etaznost: najdi("Število nadstropij", "Etažnost"),
+    energetskiRazred: najdi("Energetska izkaznica", "Energetski razred"),
+    ogrevanje: najdi("Ogrevanje"),
+    opremljenost: najdi("Opremljenost"),
+    stanje: najdi("Stanje nepremičnine", "Stanje"),
+    lastnistvo: najdi("Lastništvo"),
+    parkirno: najdi("Število parkirnih mest", "Parkirno mesto", "Garaža"),
+    balkon: /balkon/i.test(balkonTerasa) ? true : null,
+    terasa: /teras/i.test(balkonTerasa) ? true : null,
+    vrt: /atrij|vrt/i.test(balkonTerasa) ? true : null,
+    klet: najdi("Klet") ? true : null,
+    dvigalo: najdi("Dvigalo") ? true : null,
+    sifraOglasa: s.sifra?.replace(/^\s*Šifra oglasa:\s*/i, "").trim() || null,
+    kraj: najdi("Lokacija"),
+    // Telefon namerno ostane prazen — glej opombo nad preberiDetajl.
+    telefon: null,
+    posrednik: s.posrednik,
+    opis: s.opis || null,
+    cenaEur: Number.isFinite(cenaStevilo) && cenaStevilo > 0 ? cenaStevilo : null,
+    slikeUrls: slike.length > 0 ? slike : null,
+    lastnosti,
+  };
+}
+
+export async function preberiDetajl(page: Page): Promise<Detajl> {
+  const surovo = (await page.evaluate(() => ({
+    pari: Array.from(
+      document.querySelectorAll(
+        ".ClassifiedDetailBasicDetails-listTerm, .ClassifiedDetailBasicDetails-listDefinition"
+      )
+    ).map((el) => (el as HTMLElement).innerText.replace(/\s+/g, " ").trim()),
+    skupine: Array.from(document.querySelectorAll(".ClassifiedDetailPropertyGroups-group")).map((g) => ({
+      naslov:
+        (g.querySelector(".ClassifiedDetailPropertyGroups-groupTitle") as HTMLElement | null)?.innerText?.trim() ?? "",
+      postavke: Array.from(g.querySelectorAll(".ClassifiedDetailPropertyGroups-groupListItem"))
+        .map((li) => (li as HTMLElement).innerText.replace(/\s+/g, " ").trim())
+        .filter((v) => v.length > 0),
+    })),
+    cena:
+      (document.querySelector(".ClassifiedDetailSummary-priceDomestic") as HTMLElement | null)?.innerText?.trim() ??
+      null,
+    sifra: (document.querySelector(".ClassifiedDetailSummary-adCode") as HTMLElement | null)?.innerText?.trim() ?? null,
+    posrednik:
+      (document.querySelector(".ClassifiedDetailOwnerDetails-title") as HTMLElement | null)?.innerText?.trim() ?? null,
+    opis:
+      (document.querySelector(".ClassifiedDetailDescription-text") as HTMLElement | null)?.innerText?.trim() ?? null,
+    slike: Array.from(document.querySelectorAll("img.ClassifiedDetailGallery-slideImage"))
+      .map((i) => i.getAttribute("data-src") ?? i.getAttribute("src") ?? "")
+      .filter((u) => u.includes("bolha.com/image")),
+  }))) as SurovDetajlBolha;
+  return detajlIzSurovegaBolha(surovo);
+}
+
 export const adapter: VirAdapter = {
   vir: VIR,
   // 10 s: pri 6 s je vir po ~25 straneh začel vračati prazne strani (mehka
@@ -147,6 +272,12 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
+  crawlDelayS: 0,
+  pravno:
+    "Pogoji (27. 10. 2025) splošne prepovedi scrapinga NIMAJO; prepovedano je kopiranje vsebine brez pisnega dovoljenja. robots.txt prepoveduje /search in slikovne endpointe — beremo samo kategorijske strani.",
+  // Vir po ~50 straneh zavrne; detajli so zato skromno kvotirani in gredo v
+  // istem taktu kot seznami.
+  detajli: { zamikMs: 10_000, kvota: 120, preberi: preberiDetajl },
   rezine: () => KATEGORIJE,
   seznamUrl: (r, stran) => seznamUrl(r as BolhaRezina, stran),
   preberiSeznam,

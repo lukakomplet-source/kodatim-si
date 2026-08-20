@@ -24,6 +24,59 @@ export type SurovaKartica = {
 /** Enota dela: en seznam z lastno paginacijo. Adapter vanjo skrije svoje. */
 export type Rezina = { oznaka: string };
 
+/**
+ * Kar je na detajlni strani in česar kartica na seznamu nima.
+ *
+ * Vsa polja so izbirna in vsako se zapiše SAMO, kadar je bilo res prebrano.
+ * `undefined` pomeni "vir tega ne pove" in pusti obstoječo vrednost pri miru;
+ * `null` pomeni "vir izrecno pravi, da tega ni". Nič se ne ugiba iz opisa in
+ * nič ne pride iz modela — prazno polje je poštenejše od izmišljenega.
+ */
+export type Detajl = {
+  stSob?: number | null;
+  /** Spalnice niso sobe — vir ju loči, zato ju ločimo tudi mi. */
+  stSpalnic?: number | null;
+  stKopalnic?: number | null;
+  povrsinaM2?: number | null;
+  zemljisceM2?: number | null;
+  letoIzgradnje?: number | null;
+  letoAdaptacije?: number | null;
+  nadstropje?: string | null;
+  etaznost?: string | null;
+  energetskiRazred?: string | null;
+  ogrevanje?: string | null;
+  stanje?: string | null;
+  opremljenost?: string | null;
+  lastnistvo?: string | null;
+  parkirno?: string | null;
+  balkon?: boolean | null;
+  terasa?: boolean | null;
+  vrt?: boolean | null;
+  klet?: boolean | null;
+  dvigalo?: boolean | null;
+  sifraOglasa?: string | null;
+  datumObjave?: string | null;
+  posrednik?: string | null;
+  agencija?: string | null;
+  telefon?: string | null;
+  opis?: string | null;
+  cenaEur?: number | null;
+  kraj?: string | null;
+  /** URL-ji slik na izvirniku. Datotek NE kopiramo (slikePolitika). */
+  slikeUrls?: string[] | null;
+  /** Surova tabela lastnosti, kakor jo stran pove — brez izgube pri prevodu. */
+  lastnosti?: Record<string, string>;
+};
+
+/** Kako se pri viru bere 2. faza. Brez tega adapter detajlov nima. */
+export type DetajlPolitika = {
+  /** Razmik med detajlnimi stranmi. Nikoli manj od Crawl-delay vira. */
+  zamikMs: number;
+  /** Največ detajlnih strani na en krog — baza se polni v dneh, ne v uri. */
+  kvota: number;
+  preberi(page: Page): Promise<Detajl>;
+};
+
 export type VirAdapter = {
   /** Identiteta v bazi (nep_viri.vir, nep_oglasi.vir). */
   vir: string;
@@ -46,6 +99,15 @@ export type VirAdapter = {
   najvecStrani?: number;
   /** Koliko ur počakamo, če vir vseeno zavrne (spoštovanje blokade). */
   hlajenjeUr?: number;
+  /**
+   * 2. faza: branje detajlnih strani. Adapter brez tega ostane enofazen —
+   * glavna zanka ga preprosto preskoči, namesto da bi ugibala selektorje.
+   */
+  detajli?: DetajlPolitika;
+  /** Kar vir zahteva v robots.txt; samo za prikaz v konzoli (s = sekunde). */
+  crawlDelayS?: number;
+  /** Kaj o zajemu pravijo pogoji uporabe tega vira — vidno v konzoli. */
+  pravno?: string;
   rezine(): Rezina[];
   seznamUrl(r: Rezina, stran: number): string;
   preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;

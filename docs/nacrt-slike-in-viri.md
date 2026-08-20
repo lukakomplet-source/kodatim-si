@@ -402,3 +402,96 @@ Vse spodnje je mogoče graditi naprej brez pravnih zadržkov, in prav tu je najv
 Če bi se hoteli povsem izogniti tveganju, bi bila zanimiva različica izdelka, ki stoji samo
 na teh štirih: dosežene cene + dražbe + register vozil je kombinacija, ki je noben oglasnik
 nima — in ki je nihče ne more prepovedati.
+
+---
+
+# DEL 4 — Kaj je bilo preverjeno 20. 8. 2026 (in kaj je bilo umaknjeno)
+
+Ta del je nastal ob gradnji Research konzole za nepremičnine. Zapisano je samo tisto, kar je
+bilo dejansko preneseno in prebrano; kjer podatka ni, to piše.
+
+## 4.1 Popravek razlage robots.txt na nepremicnine.net
+
+V vmesnem poročilu se je pojavila trditev, da ima nepremicnine.net za `User-agent: *` na
+koncu `Disallow: /` in da torej celoten naš zajem krši robots.txt. **Trditev ne drži.**
+Preneseno neposredno: datoteka ima dve skupini za `*`. Prva je Cloudflareova
+(`Content-Signal: search=yes,ai-train=no,use=reference`, `Allow: /`), druga pa seznam
+dovoljenih poti, ki se konča z `Disallow: /`. Med dovoljenimi so izrecno **`/oglasi-prodaja/`
+in `/oglasi-oddaja/`** — natanko poti, ki jih beremo, in daljše ujemanje po RFC 9309 premaga
+splošni `Disallow: /`. Detajlne strani oglasov so pod istima predponama, torej so dovoljene
+tudi one.
+
+Drži pa, da je **`User-agent: ClaudeBot` v celoti prepovedan**. Naš zbiralnik se ne predstavlja
+kot ClaudeBot in ni Anthropicov pajek, a to je še en razlog več, da User-Agent nekoč postane
+iskren (glej priporočilo 1 v 3.7): iskreno ime bi padlo pod `*`, kjer so naše poti dovoljene.
+
+Ločeno od robots.txt ostane v veljavi vse iz 3.5: **pogodbeni** pogoji nepremicnine.net robote
+dovoljujejo samo splošnim iskalnikom.
+
+## 4.2 Bolha je uvedla CAPTCHA na detajlnih straneh
+
+Pri prvem zajemu detajlnih strani je bolha.com vrnila stran Radware Bot Managerja s CAPTCHA —
+**s statusom HTTP 200** in 20 kB odgovora. Zbiralnik je to bral kot „stran brez podatkov" in
+bi skozi celo kvoto vztrajal, s čimer bi blokado samo poglabljal.
+
+Rešeno v `worker-nepremicnine/src/izziv.ts`: znani zasloni preverjanja se prepoznajo po
+naslovu in prvih 500 znakih besedila ter obravnavajo **enako kot HTTP 403** — hlajenje in
+vljuden odhod. CAPTCHE ne rešujemo in ne obhajamo; to je meja, ne ovira.
+
+## 4.3 Bolha je v nepremičninsko bazo vnašala tuje kategorije
+
+V `nep_oglasi` je bilo **76 vrstic, ki niso nepremičnine**: romani, znamke, harmonike,
+iPhone, pnevmatike, traktorski priključek — vse zavedeno kot `tip = 'hisa'`. Vzrok: bolha med
+kartice kategorije vrine priporočene oglase iz drugih kategorij, adapter pa je jemal vsako
+povezavo z `-oglas-`. Nobena od teh vrstic ni imela cene ali površine, zato statistike niso
+popačile, so pa vsaka ustvarile svojo kanonično nepremičnino.
+
+Popravljeno na dva načina: adapter zdaj sprejme samo povezave pod `/nepremicnine/`, obstoječih
+76 vrstic (in 76 osirotelih kanoničnih nepremičnin) pa je pobrisanih.
+
+## 4.4 Novi viri — preverjeno stanje
+
+| Vir | Dostop | Obseg | Odločitev |
+|---|---|---|---|
+| **nepremicnine.siol.net** | statični HTML, brez zaščite; `?page=N`, 30/stran | 2.887 skupaj, 498 stanovanj v prodaji | **Adapter napisan, vir IZKLOPLJEN** |
+| **oglasi.svet24.si** (Salomon) | statični HTML, brez zaščite; `?onPage=100` | 1.188 oglasov, od tega 1.171 ponudb | **Adapter napisan, vir IZKLOPLJEN** |
+| **mojikvadrati.com** | **403 programskim odjemalcem** (Cloudflare) | 7.719 | **Adapterja ni** |
+| **nepremicnine.si21.com** | Cloudflare bot-zaščita | 1.870 slovenskih | **Adapterja ni** |
+
+Zakaj sta prva dva izklopljena in zakaj druga dva sploh nista napisana:
+
+- **siol** ima v splošnih pogojih (razdelek 8) prepoved „uporabe avtomatskih poizvedb ali
+  drugih robotov", z izjemo **samo za splošne iskalnike** — vertikalni so izvzeti. Enako
+  besedilo kot nepremicnine.net.
+- **mojikvadrati** ima praktično isto besedilo pogojev, poleg tega pa programskim odjemalcem
+  vrača 403. To je dejaven tehničen ukrep; obiti ga z brskalnikom bi bilo natanko tisto, česar
+  ne počnemo. Ob `Crawl-delay: 30` in odsotnosti paginacije (neskončno drsenje) bi cel obhod
+  trajal ~69 ur.
+- **si21** ima poglavje z naslovom „Pravice do baze podatkov in prepoved 'scrapinga'", ki
+  dobesedno prepoveduje „gradnjo lastnih baz podatkov iz podatkov Platforme".
+- **Salomon** scrapinga ne omenja, prepoveduje pa vsebino „prepisovati, ponovno objavljati in
+  razširjati" brez pisnega dovoljenja. Ker to ni izrecno dovoljenje, velja isto pravilo kot za
+  vse nove vire: vpiše se izklopljen.
+
+Pravilo, ki iz tega sledi in je zdaj vgrajeno v kodo: **nov vir se nikoli ne vklopi sam.**
+`zagotoviViri()` ga vpiše z `omogocen = false`, konzola pa ob gumbu za vklop izpiše, kaj o
+zajemu pravijo pogoji tistega vira. Odločitev je človekova in je vidna, ne skrita v registru
+adapterjev.
+
+## 4.5 Umaknjeno kot nepreverjeno
+
+Med raziskavo je bil sestavljen tudi širši seznam dodatnih virov (AJPES eObjave, e-dražbe,
+CeneNepremicnin, DSU/SDH, RE/MAX, INSA in drugi) s konkretnimi številkami oglasov. **Te
+številke in funkcionalne trditve so umaknjene** — niso bile pridobljene s prenosom strani.
+Preverjeni so ostali samo robots.txt zapisi in nekaj negativnih ugotovitev:
+
+- `habitat.si` je podjetje za zaključna gradbena dela, `vitanest.si` prodaja klimatske
+  naprave — nobeno ni nepremičninska agencija.
+- `remax-slovenia.si` in `edrazbe.sodisce.si` se ne razrešita; `stoja-trade.si` vrne 403.
+- `novogradnje.com` je sestrska stran si21 (isti robots.txt, isti upravljavec KABI d.o.o.),
+  torej podvojena vsebina.
+- `realtracing.com` v robots.txt izrecno prepoveduje ClaudeBot, GPTBot in Scrapy.
+- `abc-nepremicnine.si` prepoveduje `/ponudba/`, kar je najverjetneje ravno pot do oglasov.
+
+Če bo seznam dodatnih virov kdaj potreben, ga je treba narediti znova — s prenosi in s
+številkami, ki imajo vir.
