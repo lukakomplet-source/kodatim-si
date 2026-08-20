@@ -325,6 +325,27 @@ Ali browse-wrap pogoji zavezujejo že z brskanjem, je v EU sporno in slovenske p
 ni. Ne glede na to: pri obeh naših glavnih virih pogodbeni pogoji našo rabo prepovedujejo,
 pri bolhi pa je prepovedano kopiranje vsebine brez pisnega dovoljenja.
 
+### Dobra novica za morebiten dogovor: portala smeta pravice prenesti naprej
+
+Druga, neodvisna preverba pogojev je našla določbo, ki je pri prvi ni bilo. **Oba portala si
+od oglaševalcev izgovorita pravico, da pridobljene pravice prenašata na tretje osebe** — in
+prav to je tisto, kar mora portal imeti, da nam sme karkoli licencirati:
+
+> nepremicnine.net: „uporabnik izrecno in nepreklicno dovoljuje MEGANET, da te pravice v
+> celotnem pridobljenem obsegu **prenaša na tretje osebe**, ki lahko te oglase reproducirajo
+> in predstavljajo javnosti na poljubne načine (preko računalnika, tiska…)"
+
+> avto.net: „uporabnik izrecno in nepreklicno dovoljuje AVTONET, da te pravice v celotnem
+> pridobljenem obsegu **prenaša na tretje osebe** …"
+
+Pomembna omejitev: **fotografije oglaševalec prenese le za 12 mesecev** (pri avto.netu
+„neodplačno in izključno za obdobje 12 mesecev", pri nepremicnine.net enako). Portal torej
+ne more licencirati več, kot ima sam — pri starejših oglasih pravice ugasnejo. To je
+argument več, da naj trajni arhiv fotografij ne bo del izdelka.
+
+Obe strani si tudi izgovorita označevanje fotografij: nepremicnine.net z vodnim tiskom,
+avto.net z oznako „Copyright © www.Avto.net".
+
 ## 3.6 GDPR — telefonske številke zasebnikov
 
 Hranimo imena in telefonske številke fizičnih oseb, trajno, brez roka hrambe, jih uporabljamo
@@ -356,7 +377,9 @@ strani `/avtonet/trg` in `/avtonet/analiza` so v tem razredu.
 7. **Pogovor z Meganetom in AVTONET-om o dogovoru.** Oba v pogojih predvidita pot: „za vsako
    komercialno uporabo … predhoden dogovor" oziroma „v kolikor to ni izrecno dovoljeno na
    podlagi pisnega dogovora". Ker gradimo izdelek za stranko in ne skrivamo, kaj počnemo, je
-   to najbolj trajna rešitev — in edina, ki odpre vrata tudi slikam.
+   to najbolj trajna rešitev — in edina, ki odpre vrata tudi slikam. Oba si izrecno
+   izgovorita tudi **prenos pravic na tretje osebe**, kar pomeni, da nam smeta licencirati;
+   pri fotografijah v mejah 12-mesečnega prenosa, ki ga imata od oglaševalcev.
 
 ## 3.8 Kje smo brez vsakega dvoma na varnem
 
