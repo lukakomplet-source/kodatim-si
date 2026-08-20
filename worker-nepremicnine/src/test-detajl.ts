@@ -17,6 +17,10 @@ import { vrsticaIzDetajla } from "./detajli.js";
 
 const virIme = process.argv[2] ?? "nepremicnine.net";
 const vir = najdiVir(virIme);
+if (!vir) {
+  console.error(`Vira "${virIme}" ni v registru adapterjev.`);
+  process.exit(2);
+}
 const detajli = vir.detajli;
 if (!detajli) {
   console.error(`Vir ${vir.vir} nima detajlnega bralnika.`);

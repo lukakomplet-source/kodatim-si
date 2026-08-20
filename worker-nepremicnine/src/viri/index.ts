@@ -22,7 +22,17 @@ import { adapter as salomon } from "./salomon.js";
  */
 export const VIRI: VirAdapter[] = [nepremicnineNet, bolha, siol, salomon];
 
-/** Adapter po imenu; null/neznano ime -> prvi (zapuščinski pregledi brez vira). */
-export function najdiVir(vir: string | null): VirAdapter {
-  return VIRI.find((v) => v.vir === vir) ?? VIRI[0];
+/**
+ * Adapter po imenu. Prazno ime pomeni zapuščinski pregled izpred časa, ko je
+ * bil vir sploh zapisan — takrat je bil edini vir nepremicnine.net, zato je
+ * prvi v registru pravilen odgovor.
+ *
+ * Ime, ki ga v registru NI, pa vrne null in ne prvega vira: tiho pregledati
+ * nepremicnine.net, ker je nekdo zahteval vir, ki je bil medtem odstranjen, bi
+ * pomenilo obiskati stran, ki je nihče ni zahteval, in v zgodovino zapisati
+ * napačen vir.
+ */
+export function najdiVir(vir: string | null): VirAdapter | null {
+  if (!vir) return VIRI[0];
+  return VIRI.find((v) => v.vir === vir) ?? null;
 }

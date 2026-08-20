@@ -13,7 +13,12 @@ import { zajemiDetajle } from "./detajli.js";
 const virIme = process.argv[2] ?? "nepremicnine.net";
 const kvota = Number(process.argv[3] ?? 5);
 const vir = najdiVir(virIme);
-if (!vir.detajli) {
+if (!vir) {
+  console.error(`Vira "${virIme}" ni v registru adapterjev.`);
+  process.exit(2);
+}
+const detajli = vir.detajli;
+if (!detajli) {
   console.error(`Vir ${vir.vir} nima detajlnega bralnika.`);
   process.exit(2);
 }
@@ -24,7 +29,7 @@ const log = (lvl: string, msg: string, extra?: Record<string, unknown>) =>
 
 const izid = await zajemiDetajle(
   db,
-  { ...vir, detajli: { ...vir.detajli, kvota } },
+  { ...vir, detajli: { ...detajli, kvota } },
   log,
   async (p) => console.log("  napredek:", JSON.stringify(p)),
   () => {},

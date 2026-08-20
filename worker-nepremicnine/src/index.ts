@@ -551,7 +551,12 @@ async function main(): Promise<void> {
       process.exit(2);
     }
     log("info", "prevzemam obstojeci pregled", { id: prevzemiId, vir: data.vir, status: data.status });
-    await pregled(db, prevzemiId, najdiVir((data.vir as string | null) ?? virArg), urnikOb.detajlovNaKrog);
+    const virPrevzema = najdiVir((data.vir as string | null) ?? virArg);
+    if (!virPrevzema) {
+      console.error(`Vira "${data.vir ?? virArg}" ni v registru adapterjev.`);
+      process.exit(2);
+    }
+    await pregled(db, prevzemiId, virPrevzema, urnikOb.detajlovNaKrog);
     await knjigovodstvo(db);
     return;
   }
@@ -599,6 +604,10 @@ async function main(): Promise<void> {
 
   if (once) {
     const vir = najdiVir(virArg);
+    if (!vir) {
+      console.error(`Vira "${virArg}" ni v registru. Na voljo: ${VIRI.map((v) => v.vir).join(", ")}`);
+      process.exit(2);
+    }
     const { data } = await db.from("nep_pregledi").insert({ status: "zahtevano", vir: vir.vir }).select("id").maybeSingle();
     if (data) await pregled(db, data.id as string, vir, urnikOb.detajlovNaKrog);
     await knjigovodstvo(db);
@@ -676,6 +685,23 @@ async function main(): Promise<void> {
     const naloga = (data ?? [])[0];
     if (naloga) {
       const virNaloge = najdiVir((naloga.vir as string | null) ?? null);
+      if (!virNaloge) {
+        // Zahtevan vir ni v registru (odstranjen adapter, tipkarska napaka).
+        // Zahteva se zaključi z razlago — nikoli je ne izpolnimo z drugim
+        // virom, ker bi to pomenilo obiskati stran, ki je nihče ni zahteval.
+        await db
+          .from("nep_pregledi")
+          .update({
+            status: "preklicano",
+            konec: new Date().toISOString(),
+            opozorilo: `Vira "${naloga.vir}" ni v registru adapterjev — zahteva ni bila izpolnjena.`,
+            zadnja_napaka: "neznan vir",
+          })
+          .eq("id", naloga.id as string);
+        log("warn", "zahteva za neznan vir - preklicana", { vir: naloga.vir });
+        await sleep(POLL_MS);
+        continue;
+      }
       const doKdaj = await hlajenjeDo(db, virNaloge.vir);
       if (doKdaj) {
         // Tudi ročna zahteva spoštuje hlajenje — sicer bi jo lahko uporabili

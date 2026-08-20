@@ -15,8 +15,8 @@ import { preveriIzziv } from "./izziv.js";
 const virIme = process.argv[2] ?? "nepremicnine.siol.net";
 const kolikoRezin = Number(process.argv[3] ?? 1);
 const vir = najdiVir(virIme);
-if (vir.vir !== virIme) {
-  console.error(`Vira "${virIme}" ni v registru. Na voljo: ${najdiVir(null).vir} …`);
+if (!vir) {
+  console.error(`Vira "${virIme}" ni v registru adapterjev.`);
   process.exit(2);
 }
 

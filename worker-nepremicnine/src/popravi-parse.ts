@@ -48,6 +48,9 @@ async function main() {
           return;
         }
         const adapter = najdiVir(o.vir);
+        // Oglas vira, ki ga v registru ni več, se pusti pri miru — ponovno
+        // razčleniti ga z adapterjem drugega portala bi ga pokvarilo.
+        if (!adapter) return;
         // Rezino potrebuje samo za posel/tip, ki ju že imamo v vrstici.
         const rezina = adapter.rezine().find((r) => r.oznaka === `${o.posel}/${o.tip}`) ?? adapter.rezine()[0];
         let nov;
