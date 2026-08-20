@@ -46,6 +46,27 @@ type Oglas = {
   agencija: string | null;
   telefon: string | null;
   st_slik: number | null;
+  slike_urls: string[] | null;
+  detajl_zajet: string | null;
+  st_sob: number | null;
+  st_spalnic: number | null;
+  st_kopalnic: number | null;
+  energetski_razred: string | null;
+  ogrevanje: string | null;
+  stanje: string | null;
+  opremljenost: string | null;
+  lastnistvo: string | null;
+  parkirno: string | null;
+  balkon: boolean | null;
+  terasa: boolean | null;
+  vrt: boolean | null;
+  klet: boolean | null;
+  dvigalo: boolean | null;
+  etaznost: string | null;
+  sifra_oglasa: string | null;
+  datum_objave: string | null;
+  posrednik: string | null;
+  detajl_raw: Record<string, string> | null;
   lat: number | null;
   lng: number | null;
   lokacija_natancnost: string | null;
@@ -244,6 +265,86 @@ export default async function OglasPage({ params }: { params: Promise<{ id: stri
               ]}
             />
           </Kartica>
+
+          {/* Kar je samo na oglasni strani in ne na kartici seznama. Kartica se
+              pokaže šele, ko je 2. faza ta oglas res obiskala — prazna tabela
+              polj bi izgledala kot okvara, ne kot "še ni na vrsti". */}
+          {o.detajl_zajet && (
+            <Kartica naslov="Podrobnosti z oglasne strani">
+              <Mreza
+                vnosi={[
+                  ["Sob", o.st_sob],
+                  ["Spalnic", o.st_spalnic],
+                  ["Kopalnic", o.st_kopalnic],
+                  ["Energetska izkaznica", o.energetski_razred],
+                  ["Ogrevanje", o.ogrevanje],
+                  ["Stanje", o.stanje],
+                  ["Opremljenost", o.opremljenost],
+                  ["Lastništvo", o.lastnistvo],
+                  ["Parkirno", o.parkirno],
+                  ["Etažnost", o.etaznost],
+                  ["Balkon", o.balkon === null ? null : o.balkon ? "da" : "ne"],
+                  ["Terasa", o.terasa === null ? null : o.terasa ? "da" : "ne"],
+                  ["Vrt / atrij", o.vrt === null ? null : o.vrt ? "da" : "ne"],
+                  ["Klet / shramba", o.klet === null ? null : o.klet ? "da" : "ne"],
+                  ["Dvigalo", o.dvigalo === null ? null : o.dvigalo ? "da" : "ne"],
+                  ["Šifra oglasa", o.sifra_oglasa],
+                  ["Objavljen", o.datum_objave ? new Date(o.datum_objave).toLocaleDateString("sl-SI") : null],
+                  ["Posrednik", o.posrednik],
+                ]}
+              />
+              <p className="mt-3 text-[11px] text-zinc-400">
+                Zajeto {new Date(o.detajl_zajet).toLocaleString("sl-SI")}. Prazno polje pomeni, da ga vir ne navaja —
+                ničesar ne ugibamo iz opisa.
+              </p>
+              {o.detajl_raw && Object.keys(o.detajl_raw).length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                    Vse lastnosti, kot jih navaja vir ({Object.keys(o.detajl_raw).length})
+                  </summary>
+                  <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+                    {Object.entries(o.detajl_raw).map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-3">
+                        <dt className="text-zinc-400">{k}</dt>
+                        <dd className="text-right text-zinc-700">{String(v)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+              )}
+            </Kartica>
+          )}
+
+          {/* Galerija: slike ostajajo PRI VIRU (prikaz s sklicem, ne kopija) —
+              zato ni ne prostora ne vprašanja avtorskih pravic. Če vir sliko
+              umakne, se ne prikaže; klik odpre izvirni oglas. */}
+          {Array.isArray(o.slike_urls) && o.slike_urls.length > 0 && (
+            <Kartica naslov={`Slike (${o.slike_urls.length})`}>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {o.slike_urls.map((src, i) => (
+                  <a
+                    key={src}
+                    href={o.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={`${o.naslov ?? o.kraj ?? "Oglas"} — slika ${i + 1}`}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      className="aspect-[4/3] w-full object-cover transition group-hover:brightness-105"
+                    />
+                  </a>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-zinc-400">
+                Slike so pri viru in se od tam tudi naložijo — kopij ne hranimo. Klik odpre izvirni oglas.
+              </p>
+            </Kartica>
+          )}
 
           <Kartica naslov="Gibanje cene">
             <GrafCen tocke={tockeGrafa} />

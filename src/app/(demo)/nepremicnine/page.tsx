@@ -156,6 +156,13 @@ export default async function NepremicninePage({
   const zaInvesticijo = st("zaInvesticijo") === "1" || ai.zaInvesticijo === true;
   const noviDni = num("noviDni") ?? ai.noviDni ?? null;
   const enotMin = num("enotMin") ?? ai.enotMin ?? null;
+  // Polja z oglasne strani (2. faza). Filtrirajo samo tiste oglase, ki jih je
+  // detajlni zajem že obiskal — dokler se vrsta prazni, jih je vsak dan več.
+  const sobMin = num("sobMin");
+  const oprema = new Set(
+    (Array.isArray(sp.oprema) ? sp.oprema : sp.oprema ? [sp.oprema] : []).map((v) => String(v))
+  );
+  const samoSPodrobnostmi = st("sPodrobnostmi") === "1" || sobMin !== null || oprema.size > 0;
   const razvrsti = st("razvrsti") || ai.razvrsti || "novi";
   // Razvrstitev po padcu brez filtra padca bi vrnila oglase brez padca.
   const padecCene = st("padecCene") === "1" || ai.padecCene === true || razvrsti === "padec";
@@ -180,6 +187,14 @@ export default async function NepremicninePage({
   // Padec cene: izračunani stolpec padec_pct (PostgREST ne zna primerjati
   // dveh stolpcev — prejšnja različica je vračala HTTP 400).
   if (padecCene) qy = qy.not("padec_pct", "is", null);
+  if (samoSPodrobnostmi) qy = qy.not("detajl_zajet", "is", null);
+  // Sobe ali spalnice: vira ju navajata različno (nepremicnine.net pozna samo
+  // spalnice, bolha samo sobe), zato zadošča kateri koli od obeh.
+  if (sobMin !== null) qy = qy.or(`st_sob.gte.${sobMin},st_spalnic.gte.${sobMin}`);
+  for (const polje of ["balkon", "terasa", "vrt", "klet", "dvigalo"]) {
+    if (oprema.has(polje)) qy = qy.eq(polje, true);
+  }
+  if (oprema.has("parkirno")) qy = qy.not("parkirno", "is", null);
   // Cilj: kandidata ne določa značka iz opisa (nosi jo le peščica oglasov),
   // ampak ZMOŽNOST — dovolj m² za ciljne enote ali že zaznane enote.
   if (cilj) {
@@ -314,11 +329,16 @@ export default async function NepremicninePage({
     noviDni: noviDni?.toString() ?? "",
     enotMin: enotMin?.toString() ?? "",
     padecCene: padecCene ? "1" : "",
+    sobMin: sobMin?.toString() ?? "",
+    sPodrobnostmi: st("sPodrobnostmi") === "1" ? "1" : "",
     razvrsti,
   };
   const povezava = (spremembe: Record<string, string>) => {
-    const query: Record<string, string> = {};
+    const query: Record<string, string | string[]> = {};
     for (const [k, v] of Object.entries({ ...trenutni, ...spremembe })) if (v) query[k] = v;
+    // Oprema je edini večvrednostni parameter; brez tega bi ga vsak klik na
+    // naslednjo stran tiho izgubil.
+    if (oprema.size > 0) query.oprema = [...oprema];
     return { pathname: "/nepremicnine", query };
   };
 
@@ -418,14 +438,38 @@ export default async function NepremicninePage({
           Zemljišče od (m²)
           <input name="zemljisceMin" type="number" defaultValue={zemljisceMin ?? ""} className="w-24 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm" />
         </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-zinc-500">
+          Sob od
+          <input name="sobMin" type="number" min={1} max={20} defaultValue={sobMin ?? ""} className="w-20 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm" />
+        </label>
         {[
           { ime: "vecEnot", oznaka: "več enot", vklop: vecEnot },
           { ime: "zaObnovo", oznaka: "za obnovo", vklop: zaObnovo },
           { ime: "zaInvesticijo", oznaka: "investicijsko", vklop: zaInvesticijo },
           { ime: "padecCene", oznaka: "znižana cena", vklop: padecCene },
+          { ime: "sPodrobnostmi", oznaka: "s podrobnostmi", vklop: st("sPodrobnostmi") === "1" },
         ].map((c) => (
           <label key={c.ime} className="flex items-center gap-1.5 self-end rounded-lg border border-zinc-200 px-2.5 py-2 text-xs">
             <input type="checkbox" name={c.ime} value="1" defaultChecked={c.vklop} className="h-3.5 w-3.5" />
+            {c.oznaka}
+          </label>
+        ))}
+        {/* Oprema z oglasne strani. Vsaka kljukica hkrati pomeni "samo oglasi,
+            ki jih je detajlni zajem že obiskal" — sicer bi filter tiho izločil
+            vse, česar še nismo pogledali, in izgledal kot prazen rezultat. */}
+        {[
+          { ime: "balkon", oznaka: "balkon" },
+          { ime: "terasa", oznaka: "terasa" },
+          { ime: "vrt", oznaka: "vrt / atrij" },
+          { ime: "klet", oznaka: "klet" },
+          { ime: "dvigalo", oznaka: "dvigalo" },
+          { ime: "parkirno", oznaka: "parkirišče" },
+        ].map((c) => (
+          <label
+            key={c.ime}
+            className="flex items-center gap-1.5 self-end rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs"
+          >
+            <input type="checkbox" name="oprema" value={c.ime} defaultChecked={oprema.has(c.ime)} className="h-3.5 w-3.5" />
             {c.oznaka}
           </label>
         ))}

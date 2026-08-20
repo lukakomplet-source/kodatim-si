@@ -41,10 +41,7 @@ const TIPI: { id: number; tip: string }[] = [
 
 function vseRezine(): SiolRezina[] {
   const out: SiolRezina[] = [];
-  for (const [posel, listingType] of [
-    ["prodaja", 1],
-    ["oddaja", 2],
-  ] as const) {
+  for (const posel of ["prodaja", "oddaja"] as const) {
     for (const t of TIPI) {
       out.push({ oznaka: `${posel}/${t.tip}`, posel, tipId: t.id, tip: t.tip });
     }

@@ -148,6 +148,9 @@ export async function zajemiDetajle(
     return izid;
   }
   log("info", "2. faza zacetek", { vir: vir.vir, vVrsti: vrsta.length, sePreostane: izid.ostalo });
+  // Skupno število objavimo TAKOJ, ne šele na koncu: brez tega konzola ves čas
+  // 2. faze deli z ničlo in trak napredka se sploh ne pokaže.
+  await objavi({ detajlov_skupaj: izid.ostalo, detajlov_obdelanih: 0 });
 
   let browser: Browser | null = null;
   const skupni: { ctx: BrowserContext | null } = { ctx: null };
