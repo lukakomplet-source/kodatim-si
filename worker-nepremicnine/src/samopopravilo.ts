@@ -243,23 +243,92 @@ export async function sprostiZataknjenoVrsto(db: Db, vir: string): Promise<numbe
   return parkiranih;
 }
 
-/** Ali vir še počiva po blokadi (in do kdaj). */
-export async function hlajenjeDo(db: Db, vir: string): Promise<string | null> {
-  const { data } = await db
-    .from("nep_statistika")
-    .select("podatki")
-    .eq("kljuc", `blokada:${vir}`)
-    .maybeSingle();
-  const doKdaj = (data?.podatki as { do?: string } | null)?.do ?? null;
-  return doKdaj && new Date(doKdaj).getTime() > Date.now() ? doKdaj : null;
+/**
+ * Spomin na blokado posameznega vira.
+ *
+ * `faktor` je pomembnejši od `do`: pove, KOLIKO počasneje beremo, ko se
+ * vrnemo. Pri avtomobilih je bilo izmerjeno, da vsak poskus v aktivno blokado
+ * naslednjo prinese prej (403 po 631 straneh, nato po 953, nato po 31), in da
+ * vrnitev na polno hitrost po enem čistem pregledu privede naravnost v naslednjo
+ * blokado. Zato: blokada podvoji razmike, hitrost pa se vrača po korakih in
+ * šele po TREH čistih pregledih.
+ */
+export type StanjeBlokade = {
+  do: string | null;
+  /** Koliko blokad zapored — določa dolžino premora. */
+  stopnja: number;
+  /** Množitelj razmikov ob naslednjem pregledu (1 = nastavljena hitrost). */
+  faktor: number;
+  /** Čistih pregledov po zadnji blokadi; trije vrnejo korak hitrosti. */
+  cistih: number;
+  zadnja: string | null;
+  razlog: string | null;
+};
+
+const PRAZNO: StanjeBlokade = { do: null, stopnja: 0, faktor: 1, cistih: 0, zadnja: null, razlog: null };
+/** Premor po prvi, drugi, tretji … zaporedni blokadi. */
+const STOPNJE_UR = [6, 12, 24, 48];
+
+export async function preberiBlokado(db: Db, vir: string): Promise<StanjeBlokade> {
+  try {
+    const { data } = await db
+      .from("nep_statistika")
+      .select("podatki")
+      .eq("kljuc", `blokada:${vir}`)
+      .maybeSingle();
+    const p = (data as { podatki: Partial<StanjeBlokade> } | null)?.podatki;
+    if (!p) return { ...PRAZNO };
+    return {
+      do: p.do ?? null,
+      stopnja: Number(p.stopnja ?? 0),
+      faktor: Math.max(1, Number(p.faktor ?? 1)),
+      cistih: Number(p.cistih ?? 0),
+      zadnja: p.zadnja ?? null,
+      razlog: p.razlog ?? null,
+    };
+  } catch {
+    return { ...PRAZNO };
+  }
 }
 
-/** Zabeleži blokado in vira do izteka ne obiskujemo — nikoli je ne obidemo. */
-export async function zabelezBlokado(db: Db, vir: string, ur: number, razlog: string): Promise<string> {
+/** Ali vir še počiva po blokadi (in do kdaj). */
+export async function hlajenjeDo(db: Db, vir: string): Promise<string | null> {
+  const s = await preberiBlokado(db, vir);
+  return s.do && new Date(s.do).getTime() > Date.now() ? s.do : null;
+}
+
+/** Za koliko naj bodo razmiki daljši od nastavljenih pri tem viru. */
+export async function faktorHitrosti(db: Db, vir: string): Promise<number> {
+  return (await preberiBlokado(db, vir)).faktor;
+}
+
+/**
+ * Zabeleži blokado: vira do izteka ne obiskujemo in se vrnemo počasneje.
+ * Nikoli je ne obidemo — počasneje in kasneje, ne drugače.
+ *
+ * `osnovnaUr` je adapterjeva ocena (hlajenjeUr) in velja za PRVO blokado;
+ * vsaka nadaljnja zapored premor podaljša.
+ */
+export async function zabelezBlokado(db: Db, vir: string, osnovnaUr: number, razlog: string): Promise<string> {
+  const prej = await preberiBlokado(db, vir);
+  const stopnja = Math.min(prej.stopnja + 1, STOPNJE_UR.length);
+  // Prva stopnja spoštuje adapterjevo nastavitev, nadaljnje pa lestvico —
+  // vzamemo daljše od obojega, da vir z dolgim hlajenjem ne dobi krajšega.
+  const ur = stopnja === 1 ? osnovnaUr : Math.max(osnovnaUr, STOPNJE_UR[stopnja - 1]);
   const doKdaj = new Date(Date.now() + ur * 3_600_000).toISOString();
+  const novo: StanjeBlokade = {
+    do: doKdaj,
+    stopnja,
+    faktor: Math.min(4, prej.faktor * 2),
+    // Blokada ponastavi štetje čistih pregledov: hitrost, ki nas je pripeljala
+    // do nje, ni hitrost, ki si je zaslužila zaupanje.
+    cistih: 0,
+    zadnja: new Date().toISOString(),
+    razlog,
+  };
   await db.from("nep_statistika").upsert({
     kljuc: `blokada:${vir}`,
-    podatki: { do: doKdaj, razlog },
+    podatki: novo,
     izracunano: new Date().toISOString(),
   });
   await db
@@ -271,7 +340,50 @@ export async function zabelezBlokado(db: Db, vir: string, ur: number, razlog: st
     vir,
     vzrok: razlog,
     ukrep: "pocakaj_ure",
-    izvedeno: `Vir počiva ${ur} h (do ${new Date(doKdaj).toLocaleString("sl-SI")}). Vsak poskus vmes bi blokado podaljšal.`,
+    izvedeno:
+      `Vir počiva ${ur} h (do ${new Date(doKdaj).toLocaleString("sl-SI")}), ` +
+      `nato bere ${novo.faktor}× počasneje. Vsak poskus vmes bi blokado podaljšal.` +
+      (stopnja > 1 ? ` To je ${stopnja}. blokada zapored.` : ""),
   });
   return doKdaj;
+}
+
+/**
+ * Pregled je šel skozi brez blokade: pozabi premor, hitrost pa vračaj počasi.
+ *
+ * En čist pregled pri zmanjšani hitrosti je dokaz, da zmanjšana hitrost
+ * deluje — ne, da bi delovala polna. Zato trije zaporedni, in po en korak.
+ */
+export async function zabelezUspeh(db: Db, vir: string): Promise<void> {
+  const prej = await preberiBlokado(db, vir);
+  if (prej.stopnja === 0 && prej.faktor === 1 && !prej.do) return;
+
+  const cistih = prej.cistih + 1;
+  const spusti = cistih >= 3 && prej.faktor > 1;
+  const novo: StanjeBlokade = {
+    do: null,
+    stopnja: 0,
+    faktor: spusti ? Math.max(1, prej.faktor / 2) : prej.faktor,
+    cistih: spusti ? 0 : cistih,
+    zadnja: prej.zadnja,
+    razlog: spusti
+      ? null
+      : prej.faktor > 1
+        ? `Zbiranje ostaja počasnejše (${prej.faktor}×) — po treh čistih pregledih se pospeši (${cistih}/3).`
+        : null,
+  };
+  await db.from("nep_statistika").upsert({
+    kljuc: `blokada:${vir}`,
+    podatki: novo,
+    izracunano: new Date().toISOString(),
+  });
+  if (spusti) {
+    await zabelezi(db, {
+      sprozil: "trije čisti pregledi zapored",
+      vir,
+      vzrok: `Vir je trikrat zapored zdržal branje pri ${prej.faktor}× razmikih.`,
+      ukrep: "nic",
+      izvedeno: `Razmiki zmanjšani na ${novo.faktor}×.`,
+    });
+  }
 }

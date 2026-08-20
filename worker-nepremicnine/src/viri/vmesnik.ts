@@ -110,6 +110,25 @@ export type VirAdapter = {
   pravno?: string;
   rezine(): Rezina[];
   seznamUrl(r: Rezina, stran: number): string;
-  preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;
+  /**
+   * `skupajZadetkov` je število, ki ga o rezini pove VIR SAM (npr.
+   * "Št. ustreznih oglasov: 0"). Loči dve stanji, ki sta na videz enaki in
+   * imata nasprotni rešitvi:
+   *
+   *   0 zadetkov  = kategorija je res prazna (garaž na Koroškem ni) -> pojdi naprej
+   *   ni podatka  = stran brez kartic je lahko mehka blokada        -> previdno, premor
+   *
+   * 20. 8. 2026 je ta razlika stala cel obhod: rotacija rezin je pristala na
+   * prazni kategoriji, zbiralnik jo je razglasil za blokado, prekinil pregled
+   * in viru zapisal šesturno hlajenje — vir pa nas sploh ni oviral.
+   *
+   * Adapter, ki tega števila ne zna prebrati, vrne null in obdrži previdno
+   * vedenje.
+   */
+  preberiSeznam(page: Page): Promise<{
+    kartice: SurovaKartica[];
+    zadnjaStran: number | null;
+    skupajZadetkov?: number | null;
+  }>;
   normaliziraj(k: SurovaKartica, r: Rezina): NormaliziranOglas;
 };

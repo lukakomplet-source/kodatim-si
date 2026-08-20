@@ -80,7 +80,15 @@ type Vir = {
 };
 
 type Stanje = { vir: string; aktivnih: number; zDetajli: number; parkiranih: number };
-type Blokada = { vir: string; do?: string; razlog?: string };
+type Blokada = {
+  vir: string;
+  do: string | null;
+  razlog: string | null;
+  /** Množitelj razmikov: 2 pomeni, da beremo dvakrat počasneje kot običajno. */
+  faktor: number;
+  stopnja: number;
+  pociva: boolean;
+};
 type Popravilo = { ob: string; sprozil: string; vir: string | null; vzrok: string; ukrep: string; izvedeno: string };
 type Napaka = { ob: string; vir: string | null; tip: string; sporocilo: string; url: string | null };
 
@@ -254,31 +262,43 @@ export function NepKonzola() {
       {(odziv.blokade ?? []).length > 0 && (
         <div className="rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200">
           <p className="flex items-center gap-2 text-sm font-semibold text-amber-900">
-            <ShieldAlert className="h-4 w-4" /> Vir nas trenutno ustavlja
+            <ShieldAlert className="h-4 w-4" /> Odnos z virom
           </p>
-          <ul className="mt-2 space-y-1 text-sm text-amber-900">
+          <ul className="mt-2 space-y-1.5 text-sm text-amber-900">
             {(odziv.blokade ?? []).map((b) => (
               <li key={b.vir} className="flex flex-wrap items-center gap-2">
                 <strong>{b.vir}</strong>
-                <span>
-                  počiva še{" "}
-                  {b.do && now > 0 ? Math.max(0, Math.round((new Date(b.do).getTime() - now) / 60_000)) : "?"} min
-                </span>
-                <span className="text-xs text-amber-700">({b.razlog ?? "vir zavrača"})</span>
-                <button
-                  type="button"
-                  disabled={delam}
-                  onClick={() => void ukaz(() => odkleniVir(b.vir))}
-                  className="rounded-lg border border-amber-300 px-2 py-0.5 text-xs font-medium hover:bg-amber-100 disabled:opacity-50"
-                >
-                  Odkleni
-                </button>
+                {b.pociva ? (
+                  <span>
+                    počiva še{" "}
+                    {b.do && now > 0 ? Math.max(0, Math.round((new Date(b.do).getTime() - now) / 60_000)) : "?"} min
+                    {b.stopnja > 1 && <span className="text-xs text-amber-700"> ({b.stopnja}. blokada zapored)</span>}
+                  </span>
+                ) : (
+                  <span className="text-emerald-700">premor je mimo</span>
+                )}
+                {b.faktor > 1 && (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                    bere {b.faktor}× počasneje
+                  </span>
+                )}
+                {b.razlog && <span className="text-xs text-amber-700">({b.razlog})</span>}
+                {b.pociva && (
+                  <button
+                    type="button"
+                    disabled={delam}
+                    onClick={() => void ukaz(() => odkleniVir(b.vir))}
+                    className="rounded-lg border border-amber-300 px-2 py-0.5 text-xs font-medium hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    Odkleni
+                  </button>
+                )}
               </li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-700">
-            Blokade ne obidemo. Vsak poskus vmes bi jo podaljšal, zato zbiralnik počaka in nato nadaljuje tam, kjer je
-            ostal. Zbrani podatki ostanejo nedotaknjeni.
+            Blokade ne obidemo. Vsak poskus vmes bi jo podaljšal, zato zbiralnik počaka in se vrne počasneje — hitrost
+            si prisluži nazaj šele po treh pregledih brez blokade. Zbrani podatki ostanejo nedotaknjeni.
           </p>
         </div>
       )}
@@ -690,7 +710,7 @@ function VirKartica({
           className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${
             !v.omogocen
               ? "bg-zinc-100 text-zinc-500"
-              : blokada
+              : blokada?.pociva
                 ? "bg-amber-50 text-amber-700"
                 : v.zdravje === "healthy"
                   ? "bg-emerald-50 text-emerald-700"
@@ -699,7 +719,7 @@ function VirKartica({
                     : "bg-zinc-100 text-zinc-500"
           }`}
         >
-          {!v.omogocen ? "izklopljen" : blokada ? "počiva" : (v.zdravje ?? "neznano")}
+          {!v.omogocen ? "izklopljen" : blokada?.pociva ? "počiva" : (v.zdravje ?? "neznano")}
         </span>
       </div>
 

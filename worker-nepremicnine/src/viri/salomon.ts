@@ -62,7 +62,11 @@ function seznamUrl(r: SalomonRezina, stran: number): string {
   return `https://oglasi.svet24.si/oglasi/nepremicnine/${r.pot}?${q.toString()}`;
 }
 
-async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }> {
+async function preberiSeznam(page: Page): Promise<{
+  kartice: SurovaKartica[];
+  zadnjaStran: number | null;
+  skupajZadetkov: number | null;
+}> {
   return page.evaluate(
     (naStran: number) => {
       const kartice: SurovaKartica[] = [];
@@ -104,11 +108,12 @@ async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; za
       // izračunamo iz skupnega števila zadetkov.
       const besedilo = document.body.innerText;
       const najdenih = Number((besedilo.match(/Najdenih oglasov[:\s]*([\d.]+)/i)?.[1] ?? "").replace(/\./g, ""));
-      const zadnjaStran = Number.isFinite(najdenih) && najdenih > 0 ? Math.ceil(najdenih / naStran) : null;
-      return { kartice, zadnjaStran };
+      const veljavno = Number.isFinite(najdenih);
+      const zadnjaStran = veljavno && najdenih > 0 ? Math.ceil(najdenih / naStran) : null;
+      return { kartice, zadnjaStran, skupajZadetkov: veljavno ? najdenih : null };
     },
     NA_STRAN
-  ) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;
+  ) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null }>;
 }
 
 /** "Lokacija: Ljubljana" ali prvi del opisa do vejice — brez ugibanja. */

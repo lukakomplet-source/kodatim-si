@@ -20,7 +20,19 @@ if (!vir) {
   process.exit(2);
 }
 
-const rezine = vir.rezine().slice(0, kolikoRezin);
+/**
+ * Tretji argument je lahko oznaka konkretne rezine ("prodaja/koroska/garaza").
+ * Prav prazne rezine so tiste, ki se v produkciji obnesejo najslabše, zato
+ * mora biti mogoče preveriti točno tisto, ki je nekaj podrla.
+ */
+const izbrana = process.argv[4] ?? null;
+const rezine = izbrana
+  ? vir.rezine().filter((r) => r.oznaka === izbrana)
+  : vir.rezine().slice(0, kolikoRezin);
+if (rezine.length === 0) {
+  console.error(`Rezine "${izbrana}" pri viru ${vir.vir} ni.`);
+  process.exit(2);
+}
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const ctx = await browser.newContext({
   locale: "sl-SI",
@@ -37,8 +49,12 @@ for (const rezina of rezine) {
     console.log(`\n=== ${rezina.oznaka} — HTTP ${r?.status()} ===\n${url}`);
     await page.waitForTimeout(2000);
     await preveriIzziv(page);
-    const { kartice, zadnjaStran } = await vir.preberiSeznam(page);
-    console.log(`kartic: ${kartice.length}, zadnja stran: ${zadnjaStran ?? "?"}`);
+    const { kartice, zadnjaStran, skupajZadetkov } = await vir.preberiSeznam(page);
+    console.log(
+      `kartic: ${kartice.length}, zadnja stran: ${zadnjaStran ?? "?"}, vir pravi zadetkov: ${
+        skupajZadetkov === null || skupajZadetkov === undefined ? "ne pove" : skupajZadetkov
+      }`
+    );
     for (const k of kartice.slice(0, 3)) {
       const n = vir.normaliziraj(k, rezina);
       console.log(
@@ -47,8 +63,10 @@ for (const rezina of rezine) {
     }
     // Prva stran kategorije s praznim seznamom pomeni pokvarjen selektor ali
     // tiho zavračanje — oboje je treba videti zdaj, ne šele v produkciji.
-    if (kartice.length > 0) uspelo += 1;
-    else console.log("  OPOZORILO: nobene kartice — selektor ali mehka blokada");
+    // Prazna rezina je veljaven izid, ČE jo vir sam prizna (0 zadetkov).
+    // Prazna brez tega priznanja je pokvarjen selektor ali mehka blokada.
+    if (kartice.length > 0 || skupajZadetkov === 0) uspelo += 1;
+    else console.log("  OPOZORILO: nobene kartice in vir ne pove števila — selektor ali mehka blokada");
   } catch (e) {
     console.log(`  NAPAKA: ${e instanceof Error ? e.message : String(e)}`);
   } finally {

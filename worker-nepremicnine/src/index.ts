@@ -10,10 +10,12 @@ import { preveriIskanja } from "./iskanja.js";
 import { zajemiDetajle } from "./detajli.js";
 import { preveriIzziv } from "./izziv.js";
 import {
+  faktorHitrosti,
   hlajenjeDo,
   oceniZakljucek,
   sprostiZataknjenoVrsto,
   zabelezBlokado,
+  zabelezUspeh,
   zabelezi,
   zapriOsirotele,
   type IzidPregleda,
@@ -87,8 +89,16 @@ async function zOmejitvijo<T>(kaj: string, delo: Promise<T>, ms = 60_000): Promi
  * 1. FAZA — seznami. Vrne izid; o statusu vrstice odloči klicatelj, da je
  * pravilo "kdaj je to napaka" na enem mestu (samopopravilo.oceniZakljucek).
  */
-async function pregledSeznamov(db: Db, pregledId: string, vir: VirAdapter): Promise<IzidPregleda> {
+async function pregledSeznamov(
+  db: Db,
+  pregledId: string,
+  vir: VirAdapter,
+  /** Množitelj razmikov po prejšnjih blokadah (1 = nastavljena hitrost). */
+  faktor: number
+): Promise<IzidPregleda> {
   const zacetek = new Date().toISOString();
+  const zamikMs = Math.round(vir.omejitve.zamikMs * Math.max(1, faktor));
+  if (faktor > 1) log("info", "berem pocasneje po prejsnji blokadi", { vir: vir.vir, faktor, zamikMs });
   const p = { strani: 0, najdenih: 0, novih: 0, posodobljenih: 0, sprememb_cen: 0, napak: 0 };
   const objavi = async (dodatno: Record<string, unknown> = {}) => {
     await db.from("nep_pregledi").update({ ...p, ...dodatno, updated_at: new Date().toISOString() }).eq("id", pregledId);
@@ -190,20 +200,37 @@ async function pregledSeznamov(db: Db, pregledId: string, vir: VirAdapter): Prom
           break;
         }
         try {
-          const { kartice, zadnjaStran } = await preberiStran(vir.seznamUrl(rezina, stran));
+          const { kartice, zadnjaStran, skupajZadetkov } = await preberiStran(vir.seznamUrl(rezina, stran));
 
           /**
-           * PRVA stran kategorije ni nikoli prazna. Če je, vir tiho zavrača
-           * (mehka blokada) ali so se spremenili selektorji — oboje je treba
-           * povedati, ne pa prebrati kot "konec kategorije". Izmerjeno na
-           * bolha.com: po ~25 hitrih straneh začne vračati strani brez kartic,
-           * svež brskalnik pa isti naslov ta hip postreže normalno. Zato en
-           * daljši premor in ponovni poskus, sicer pregled ustavimo.
+           * PRAZNA PRVA STRAN — dve stanji, ki sta na videz enaki.
+           *
+           * (a) Rezina je RES prazna. 13 regij krat 7 tipov krat dva posla da
+           *     182 kombinacij in nekatere so prazne — garaž naprodaj na
+           *     Koroškem preprosto ni. Vir to pove sam: "Št. ustreznih
+           *     oglasov: 0". Takrat gremo mirno naprej.
+           *
+           * (b) Vir tiho zavrača (mehka blokada) ali so se spremenili
+           *     selektorji. Izmerjeno na bolha.com: po ~25 hitrih straneh
+           *     začne vračati strani brez kartic, svež brskalnik pa isti
+           *     naslov ta hip postreže normalno. Takrat premor in ponovni
+           *     poskus, sicer pregled ustavimo.
+           *
+           * 20. 8. 2026 sta bili stanji zliti v eno in je (a) prekinila cel
+           * obhod ter viru po krivem zapisala šesturno hlajenje.
            */
           if (stran === 1 && kartice.length === 0) {
+            if (skupajZadetkov === 0) {
+              log("info", "rezina je prazna (vir pove 0 zadetkov)", { vir: vir.vir, rezina: rezina.oznaka });
+              break;
+            }
             praznaPrvaPoskusov += 1;
             if (praznaPrvaPoskusov <= 1) {
-              log("warn", "prazna prva stran - premor 60 s in ponovni poskus", { vir: vir.vir, rezina: rezina.oznaka });
+              log("warn", "prazna prva stran - premor 60 s in ponovni poskus", {
+                vir: vir.vir,
+                rezina: rezina.oznaka,
+                skupajZadetkov,
+              });
               await sleep(60_000);
               continue;
             }
@@ -250,7 +277,7 @@ async function pregledSeznamov(db: Db, pregledId: string, vir: VirAdapter): Prom
             break;
           }
           stran += 1;
-          await sleep(vir.omejitve.zamikMs);
+          await sleep(zamikMs);
         } catch (err) {
           p.napak += 1;
           popoln = false;
@@ -348,9 +375,12 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     prekinjeno: false,
   };
   let detajli = { obdelanih: 0, ostalo: 0, napak: 0, izginulih: 0, blokada: null as string | null };
+  // Kako počasi beremo ta krog: po vsaki blokadi se razmiki podvojijo in se
+  // vračajo šele po treh čistih pregledih (samopopravilo.ts).
+  const faktor = await faktorHitrosti(db, vir.vir);
 
   try {
-    izid = await pregledSeznamov(db, pregledId, vir);
+    izid = await pregledSeznamov(db, pregledId, vir, faktor);
 
     // 2. faza samo, kadar je 1. potekla brez blokade: če nas vir ravnokar
     // ustavlja, je odpiranje detajlnih strani natanko tisto, česar ne smemo.
@@ -371,7 +401,14 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
       const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog);
       const izidDetajlov = await zajemiDetajle(
         db,
-        { ...vir, detajli: { ...vir.detajli, kvota } },
+        {
+          ...vir,
+          detajli: {
+            ...vir.detajli,
+            kvota,
+            zamikMs: Math.round(vir.detajli.zamikMs * Math.max(1, faktor)),
+          },
+        },
         log,
         async (podatki) => {
           await db.from("nep_pregledi").update({ ...podatki, updated_at: new Date().toISOString() }).eq("id", pregledId);
@@ -422,7 +459,12 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     // Nikoli je ne poskušamo obiti — počasneje in kasneje, ne drugače.
     if (izid.blokada) {
       await zabelezBlokado(db, vir.vir, vir.hlajenjeUr ?? 6, izid.blokada);
-    } else if (z.status === "napaka") {
+    } else if (z.status === "koncano" || z.status === "koncano_delno") {
+      // Krog brez blokade je edini dokaz, da je trenutna hitrost vzdržna.
+      // Trije taki vrnejo korak hitrosti; en sam ne.
+      await zabelezUspeh(db, vir.vir);
+    }
+    if (!izid.blokada && z.status === "napaka") {
       await zabelezi(db, {
         sprozil: "zaključek pregleda",
         vir: vir.vir,

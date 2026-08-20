@@ -47,7 +47,11 @@ export function seznamUrl(r: Rezina, stran: number): string {
 }
 
 /** Prebere kartice s trenutno naložene strani seznama. */
-export async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }> {
+export async function preberiSeznam(page: Page): Promise<{
+  kartice: SurovaKartica[];
+  zadnjaStran: number | null;
+  skupajZadetkov: number | null;
+}> {
   return page.evaluate(() => {
     const kartice: SurovaKartica[] = [];
     for (const el of Array.from(document.querySelectorAll("div.property-box"))) {
@@ -83,8 +87,16 @@ export async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartic
     // paginacija: "1/23"
     const stevec = document.body.innerText.match(/(\d+)\s*\/\s*(\d+)/);
     const zadnjaStran = stevec ? Number(stevec[2]) : null;
-    return { kartice, zadnjaStran };
-  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;
+    // Vir sam pove, koliko oglasov ustreza rezini: "Št. ustreznih oglasov: 0".
+    // Nič je nič — in ne blokada.
+    const cnt = (document.querySelector(".oglasi_cnt") as HTMLElement | null)?.innerText ?? "";
+    // Vzorec se MORA začeti s števko: "Št. ustreznih oglasov: 385" ima piko že
+    // v okrajšavi "Št.", zato je [\d.]+ pobral njo in vrnil 0 — polna
+    // kategorija bi se predstavila kot prazna. Ista past kot pri "Št. spalnic".
+    const najdeno = cnt.match(/(\d[\d.]*)/);
+    const skupajZadetkov = najdeno ? Number(najdeno[1].replace(/\./g, "")) : null;
+    return { kartice, zadnjaStran, skupajZadetkov: Number.isFinite(skupajZadetkov as number) ? skupajZadetkov : null };
+  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null }>;
 }
 
 /** Slovenska velika začetnica krajev ("BISTRICA OB DRAVI" -> "Bistrica ob Dravi"). */

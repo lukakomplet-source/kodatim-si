@@ -133,12 +133,27 @@ export async function GET() {
   const statistika = Object.fromEntries(
     ((statRes.data ?? []) as { kljuc: string; podatki: unknown }[]).map((s) => [s.kljuc, s.podatki])
   );
-  // Hlajenja po blokadi so v ključih "blokada:<vir>" — konzola mora znati
-  // povedati "vir nas ustavlja", ne pokazati rdeče napake, ki izgleda kot naša.
+  /**
+   * Hlajenja po blokadi so v ključih "blokada:<vir>". Konzola mora znati
+   * povedati "vir nas ustavlja" in ne pokazati rdeče napake, ki izgleda kot
+   * naša. Zapis ostane tudi po izteku premora, ker nosi `faktor` — koliko
+   * počasneje beremo, dokler si hitrosti ne prislužimo nazaj. Prav ta podatek
+   * pojasni, zakaj pregled traja dlje kot prejšnji teden.
+   */
   const blokade = Object.entries(statistika)
     .filter(([k]) => k.startsWith("blokada:"))
-    .map(([k, v]) => ({ vir: k.slice(8), ...(v as { do?: string; razlog?: string }) }))
-    .filter((b) => b.do && new Date(b.do).getTime() > Date.now());
+    .map(([k, v]) => {
+      const p = (v ?? {}) as { do?: string; razlog?: string; faktor?: number; stopnja?: number };
+      return {
+        vir: k.slice(8),
+        do: p.do ?? null,
+        razlog: p.razlog ?? null,
+        faktor: Number(p.faktor ?? 1),
+        stopnja: Number(p.stopnja ?? 0),
+        pociva: Boolean(p.do && new Date(p.do).getTime() > Date.now()),
+      };
+    })
+    .filter((b) => b.pociva || b.faktor > 1);
 
   return NextResponse.json({
     jeAdmin: true,

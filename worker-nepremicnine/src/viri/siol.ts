@@ -80,7 +80,11 @@ export function datumIzSlovenskega(besedilo: string | null): string | null {
 }
 
 /** Prebere kartice s trenutno naložene strani seznama. */
-async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }> {
+async function preberiSeznam(page: Page): Promise<{
+  kartice: SurovaKartica[];
+  zadnjaStran: number | null;
+  skupajZadetkov: number | null;
+}> {
   return page.evaluate(() => {
     const kartice: SurovaKartica[] = [];
     for (const el of Array.from(document.querySelectorAll("div.item[data-listingPk]"))) {
@@ -117,9 +121,12 @@ async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; za
     // navigaciji ni vedno vse, zato ga raje izračunamo iz skupnega števila.
     const povzetek = (document.querySelector("p.pagination_page_count") as HTMLElement | null)?.innerText ?? "";
     const skupaj = Number((povzetek.match(/od\s+([\d.]+)/)?.[1] ?? "").replace(/\./g, ""));
-    const zadnjaStran = Number.isFinite(skupaj) && skupaj > 0 ? Math.ceil(skupaj / 30) : null;
-    return { kartice, zadnjaStran };
-  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;
+    const veljavno = Number.isFinite(skupaj);
+    const zadnjaStran = veljavno && skupaj > 0 ? Math.ceil(skupaj / 30) : null;
+    // Isto število pove tudi, ali je rezina res prazna (0) ali stran brez
+    // kartic pomeni težavo (števila ni).
+    return { kartice, zadnjaStran, skupajZadetkov: veljavno ? skupaj : null };
+  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null }>;
 }
 
 function normaliziraj(r: SurovaKartica, rezina: SiolRezina): NormaliziranOglas {
