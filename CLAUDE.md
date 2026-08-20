@@ -41,6 +41,11 @@ Glavni deli:
 - **Javna stran** — kratka 6-sekcijska domača stran (Hero, AI Business Consultant, References Preview, Why Choose Us/garancija, Partner Program Preview, Final CTA). Druge strani (`/resitve`, `/reference`, `/partnerji`, `/cenik`, `/o-nas`) so ločene namenske strani.
 - **Lead Intelligence** (`/admin/lead-intelligence`) — CRM baza leadov: ročni vnos, AI uvoz iz slik (multi-podjetje detekcija), AI web-search auto-complete (Firecrawl, nikoli ne izmišljuje podatkov), SKD šifra+naziv, inline urejanje, brisanje, filtri (vključno z novim date-range + status tabs, glej spodaj).
 - **Promocije** (`/admin/promocije`) — Sales & Marketing OS: kampanje, AI Sales Consultant, AI Company Analysis, AI Proposal Generator, kanban pipeline, naloge (tasks), email sekvence (Resend), poročila.
+- **Demo modula za SBN** (route group `(demo)`): `/avtonet` (SBN Auto) in `/nepremicnine` (SBN Nepremičnine). Vsak ima svoj zbiralnik v ločenem procesu (`worker-avtonet`, vrata 8080; `worker-nepremicnine`, vrata 8081) in svojo Research konzolo za administratorje (`/avtonet/pregled`, `/nepremicnine/pregled`). Podatki so v LOKALNEM Postgresu prek PostgREST-a, ne v Supabase oblaku.
+
+Dve pravili teh dveh modulov, ki nista razvidni iz kode:
+- **Nov vir se nikoli ne vklopi sam.** Adapter se v `nep_viri` vpiše z `omogocen = false`; konzola ob gumbu za vklop izpiše, kaj o zajemu pravijo pogoji uporabe tistega vira. Odločitev je uporabnikova.
+- **Blokade in CAPTCHE se nikoli ne obhajajo.** Zaznana blokada (HTTP 403/429 ali zaslon preverjanja, ki zna priti s statusom 200) pomeni hlajenje — počasneje in kasneje, nikoli drugače. Pregled, ki se ob tem vljudno ustavi, dobi status `koncano_delno` in ne `napaka`.
 
 Stanje, ki še čaka:
 - `supabase/migration_promocije.sql` je treba pognati ročno v Supabase SQL Editorju (po `migration_lead_intelligence.sql`, ki naj bi že bila pognana).
