@@ -169,6 +169,8 @@ prebran dobesedno.
 | **bolha.com — avto-moto** | 5.155 vozil | kategorije dovoljene, `/search` ne | zbiralnik že imamo; 1.603 karamboliranih vozil je segment, ki ga avto.net nima |
 | **OPSI: tehnični pregledi** | ZIP ~373 MB/leto | `Disallow: /dataset/*/resource/*/download/` | **stanje števca kilometrov za vsako registrirano vozilo** → odkrivanje zavrtenih števcev; prenos ročno, ne s crawlerjem |
 | **OPSI: registrirana vozila** | CSV v ZIP | isto | imenovalec za likvidnost: koliko primerkov modela sploh vozi po Sloveniji |
+| **oglasi.svet24.si (Salomon)** | ~1.100–1.300 | prepovedani `/admin`, `/oddaja`, `/moj-salomon` | **najcenejši vir po številu zahtevkov**: podpira `?onPage=200`, cel obhod je ~6 klicev |
+| **nepremicnine.si21.com** | ~309 izmerjeno v eni kategoriji | `Crawl-delay: 10` | oglaševanih 96.000 ni preverljivih; blokira bote po imenu (MJ12bot, Nutch, SemrushBot …) — naš UA ne sme vsebovati teh nizov |
 
 ## 2.3 Kar se ne splača ali ne gre
 
@@ -195,6 +197,12 @@ prebran dobesedno.
    zapisati v politiko projekta, ker je izrecen pridržek pravic.
 5. **bolha.com prepoveduje slikovne poti** (`/image-200x150` in druge) — slik s tega vira
    torej ne prenašamo; edino, kar ponuja seznam, je tako ali tako sličica 200×150.
+6. **Preverjeno 20. 8. 2026: naš zajem Bolhe je skladen.** Bere izključno kategorijske poti
+   (`/prodaja-hise`, `/oddaja-stanovanja` …) in nikoli `/search`, `/hitro-iskanje` ali
+   `/brza-pretraga`, ki so v robots.txt prepovedani. Preverjen je tudi sporni del: bolha
+   res ima `Disallow: /*-oglas-`, a **samo za skupino AI-učnih crawlerjev** (GPTBot,
+   ClaudeBot, CCBot, Bytespider …). Naš zbiralnik ni med njimi in pade pod `User-agent: *`,
+   kjer strani oglasov niso prepovedane — signal lastnika pa je vseeno jasen.
 
 ## 2.5 Predlagan vrstni red dela (glej tudi DEL 3)
 
