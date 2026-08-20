@@ -260,12 +260,70 @@ pridobitev, ne v ustvarjanje podatkov; oglase prispevajo oglaševalci). Proti na
 Latvia C-762/19**, katerega izrek opisuje naš sistem skoraj dobesedno. Merilo ni količina,
 ampak ali ogrožamo povrnitev naložbe vira.
 
-## 3.5 Pogoji uporabe
+## 3.5 Pogoji uporabe — dobesedno
 
-nepremicnine.net po izvlečkih prepoveduje avtomatske poizvedbe in robote, **izjemo pa daje
-samo univerzalnim iskalnikom** — specializirani (vertikalni) iskalniki so iz izjeme izrecno
-izvzeti. Naš sistem je vertikalni iskalnik. avto.net prepoveduje uporabo elementov strani za
-vse razen lastne nekomercialne rabe. Pogojev bolha.com ni bilo mogoče pridobiti.
+Pogoji vseh treh portalov so bili pridobljeni v celoti (z navadnim brskalnikom; pri
+nepremicnine.net in bolha.com skriptni dostop ovirata Cloudflare oziroma Radware Bot Manager —
+kar je samostojno pomembno dejstvo: oba imata **dejavne tehnične ukrepe**, ki iz robots.txt
+niso razvidni).
+
+### nepremicnine.net (Meganet d.o.o., pogoji avgust 2020) — najostrejši za nas
+
+> „Prepovedano je »meta« iskanje po portalu nepremicnine.net. Prepovedana je uporaba
+> avtomatskih poizvedb ali drugih robotov, ki avtomatsko pridobivajo podatke iz portala
+> nepremicnine.net … Prepoved »meta« iskanja in prepoved uporabe robotov **ne velja za splošne
+> spletne iskalnike** (universal search engines). … niso omejeni glede na vsebino, panogo …
+> **kot je to pri vertikalnih/specializiranih iskalnikih**. … Za vsako komercialno uporabo
+> portala nepremicnine.net je potrebno skleniti predhoden dogovor z MEGANET."
+
+Naš sistem je po tej definiciji vertikalni iskalnik, torej iz izjeme izvzet. Vsebina je
+razglašena za varovano „kot individualne stvaritve **oziroma kot podatkovne zbirke**".
+Robots.txt vsebuje **izrecen pridržek pravic po členu 4 Direktive 2019/790** (TDM opt-out) —
+edini med tremi. Opomba: na portalu sta hkrati v živo dve različici pogojev (2018 in 2020).
+
+### avto.net (AVTONET d.o.o., pravno obvestilo **v veljavi od 1. 8. 2026**) — scraping poimensko
+
+> „Za nedopustno uporabo spletne strani se šteje zlasti: … uporaba raznih programov …
+> uporabljenih za dostop do vsebine (podatkov) … (npr. črpanje podatkov v source code obliki,
+> **page oz. screen scraping**, auto form filler …)"
+
+> „uporaba podatkov, objavljenih na spletni strani, **v komercialne ali nekomercialne namene**,
+> v kolikor to ni izrecno dovoljeno na podlagi pisnega dogovora"
+
+Dodatno si AVTONET v čl. 6.1 pridržuje **avtorsko pravico na samem oglasu**.
+
+**Pri avto.netu sta robots.txt in pogodbeni pogoji v neposrednem nasprotju:** robots.txt
+dovoljuje vse (`Disallow:` prazno, `Crawl-delay: 10`), pogoji pa scraping izrecno
+prepovedujejo. Sklicevanje „robots.txt mi je dovolil" pogodbene prepovedi ne izniči — obratno
+pa odsotnost tehnične ovire slabi njihov položaj pri očitku o obhodu zaščite.
+
+### bolha.com (Styria, pogoji 27. 10. 2025) — najbolj permisivni glede zajema
+
+Splošne prepovedi scrapinga, robotov ali pajkov **v pogojih ni** (edina omemba robotov se
+nanaša na pošiljanje sporočil med uporabniki). Prepovedano pa je:
+
+> „**kopiranje, uporaba kateregakoli dela Spletnega mesta www.bolha.com, vključno z vsemi
+> podatki, ki jih priskrbijo Uporabniki** ter vključevanje v drugo spletno stran, brez
+> vnaprejšnjega pisnega dovoljenja Upravljavca"
+
+Zanimivo protislovje: bolha hkrati izrecno navaja, da se „vsebina oglasa **ne smatra za
+avtorsko delo**", za spletno mesto kot celoto pa zatrjuje avtorskopravno varstvo. Njihov
+robots.txt prepoveduje `/search` vsem, strani oglasov (`/*-oglas-`) pa posebej
+AI-učnim crawlerjem, ter v celoti blokira pet komercialnih agregatorjev podatkov.
+
+### Kaj iz tega sledi
+
+| | nepremicnine.net | bolha.com | avto.net |
+|---|---|---|---|
+| prepoved robotov v pogojih | **da**, razen splošnih iskalnikov | ne | **da**, poimensko scraping |
+| prepoved komercialne rabe | da | le za kontaktiranje | **da, tudi nekomercialne** |
+| TDM pridržek (čl. 4 DSM) | **da, v robots.txt** | delno (AI boti) | ne |
+| robots.txt do nas | allowlist, oglasi dovoljeni | oglasi dovoljeni, `/search` ne | vse dovoljeno, 10 s |
+| tehnični ukrepi | Cloudflare | Radware Bot Manager | delno (403 na nekatere zahtevke) |
+
+Ali browse-wrap pogoji zavezujejo že z brskanjem, je v EU sporno in slovenske prakse o tem
+ni. Ne glede na to: pri obeh naših glavnih virih pogodbeni pogoji našo rabo prepovedujejo,
+pri bolhi pa je prepovedano kopiranje vsebine brez pisnega dovoljenja.
 
 ## 3.6 GDPR — telefonske številke zasebnikov
 
@@ -295,3 +353,21 @@ strani `/avtonet/trg` in `/avtonet/analiza` so v tem razredu.
    modelov ne), slik ne kopiramo brez licence, osebne podatke hranimo omejen čas.
 6. Če želimo slike zares hraniti: **pisno dovoljenje portala** — pri čemer je treba preveriti,
    ali portal sploh sme podeliti pravice naprej (od oglaševalcev jih ima za objavo pri sebi).
+7. **Pogovor z Meganetom in AVTONET-om o dogovoru.** Oba v pogojih predvidita pot: „za vsako
+   komercialno uporabo … predhoden dogovor" oziroma „v kolikor to ni izrecno dovoljeno na
+   podlagi pisnega dogovora". Ker gradimo izdelek za stranko in ne skrivamo, kaj počnemo, je
+   to najbolj trajna rešitev — in edina, ki odpre vrata tudi slikam.
+
+## 3.8 Kje smo brez vsakega dvoma na varnem
+
+Vse spodnje je mogoče graditi naprej brez pravnih zadržkov, in prav tu je največ vrednosti:
+
+- **GURS ETN** (dosežene cene) in **OPSI** (tehnični pregledi, register vozil) — CC BY 4.0,
+  komercialna raba dovoljena z navedbo vira.
+- **sodnedrazbe.si** — uradni portal Vrhovnega sodišča, robots.txt brez omejitev, javni API.
+- **Agregirana analitika brez osebnih podatkov** — zunaj dosega GDPR.
+- **Prikaz slik s sklicem** na izvirni oglas.
+
+Če bi se hoteli povsem izogniti tveganju, bi bila zanimiva različica izdelka, ki stoji samo
+na teh štirih: dosežene cene + dražbe + register vozil je kombinacija, ki je noben oglasnik
+nima — in ki je nihče ne more prepovedati.
