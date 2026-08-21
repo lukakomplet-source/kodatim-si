@@ -132,6 +132,8 @@ async function pregledSeznamov(
   const zamikMs = Math.round(vir.omejitve.zamikMs * Math.max(1, faktor));
   if (faktor > 1) log("info", "berem pocasneje po prejsnji blokadi", { vir: vir.vir, faktor, zamikMs });
   const p = { strani: 0, najdenih: 0, novih: 0, posodobljenih: 0, sprememb_cen: 0, napak: 0 };
+  // Loceno od p: p gre v celoti v bazo (...p), stolpca za to ni.
+  let zahtevkov = 0;
   const objavi = async (dodatno: Record<string, unknown> = {}) => {
     await db.from("nep_pregledi").update({ ...p, ...dodatno, updated_at: new Date().toISOString() }).eq("id", pregledId);
   };
@@ -173,6 +175,7 @@ async function pregledSeznamov(
     try {
       const page = await zOmejitvijo("newPage", ctx.newPage());
       try {
+        zahtevkov += 1;
         const r = await zOmejitvijo("goto", page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 }), 60_000);
         const status = r?.status() ?? 0;
         if (status === 403 || status === 429) throw new Error("HTTP " + status + " - vir blokira");
@@ -584,11 +587,12 @@ async function pregledSeznamov(
     })
     .eq("vir", vir.vir);
 
-  log("info", "1. faza koncana", { vir: vir.vir, ...p, unikatnih: videni.size, popoln, blokada });
+  log("info", "1. faza koncana", { vir: vir.vir, ...p, zahtevkov, unikatnih: videni.size, popoln, blokada });
   return {
     strani: p.strani,
     najdenih: p.najdenih,
     napak: p.napak,
+    zahtevkov,
     izginulih,
     popoln,
     blokada,
@@ -608,6 +612,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     strani: 0,
     najdenih: 0,
     napak: 0,
+    zahtevkov: 0,
     izginulih: 0,
     popoln: false,
     blokada: null,
@@ -741,7 +746,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
      * Šteti samo uspešne bi pomenilo, da neuspešen krog ne stane nič — in
      * prav neuspešni krogi so tisti, ki jih vir šteje najbolj.
      */
-    await dodajPorabo(db, vir.vir, izid.strani + detajli.obdelanih + detajli.napak);
+    await dodajPorabo(db, vir.vir, izid.zahtevkov + detajli.obdelanih + detajli.napak);
     const z = oceniZakljucek(izid);
 
     /**

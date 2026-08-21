@@ -87,6 +87,16 @@ export type IzidPregleda = {
   strani: number;
   najdenih: number;
   napak: number;
+  /**
+   * Koliko strani smo pri viru DEJANSKO zahtevali — vključno s tistimi, ki so
+   * se končale z zavrnitvijo, prazno stranjo ali zaslonom preverjanja.
+   *
+   * `strani` šteje uspešno prebrane strani in je zato napačna mera vljudnosti:
+   * krog, ki ga vir dvakrat zavrne, ima `strani = 0` in bi po tistem števcu
+   * dnevni proračun stal nič — čeprav so bili prav ti zahtevki tisti, ki jih
+   * vir šteje. Proračun se zato porablja po tem številu.
+   */
+  zahtevkov: number;
   /** Koliko oglasov je 1. faza označila za izginule (0, če pregled ni bil popoln). */
   izginulih: number;
   /** Ali je pregled videl cel katalog vira. */
@@ -193,6 +203,9 @@ export async function zapriOsirotele(
       strani: p.strani ?? 0,
       najdenih: p.najdenih ?? 0,
       napak: 0,
+      // Osiroteli vrstici ne moremo pripisati zahtevkov: proces, ki bi jih
+      // znal prešteti, se ni oglasil. Poraba je bila zabelezena ali pa ne.
+      zahtevkov: 0,
       izginulih: 0,
       popoln: false,
       blokada: null,
