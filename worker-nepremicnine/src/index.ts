@@ -293,6 +293,24 @@ async function pregledSeznamov(
           const { kartice, zadnjaStran, skupajZadetkov } = await preberiStran(vir.seznamUrl(rezina, stran));
 
           /**
+           * Ali znamo prebrati stevilo zadetkov, se pokaze SAMO na pravi
+           * strani vira -- shranjenih seznamskih strani nimamo, med hlajenjem
+           * pa novih ne smemo zahtevati. Zato ga zabelezimo takrat, ko smo pri
+           * viru itak: prva stran vsake rezine, en dnevnik vec, nic zahtevkov
+           * vec. Ce je v dnevniku "null" tam, kjer so kartice, vzorec ne drzi
+           * in varovalka proti lazni blokadi je mrtva.
+           */
+          if (stran === 1) {
+            log("info", "rezina: stevilo zadetkov po viru", {
+              vir: vir.vir,
+              rezina: rezina.oznaka,
+              skupajZadetkov: skupajZadetkov ?? null,
+              kartic: kartice.length,
+              zadnjaStran,
+            });
+          }
+
+          /**
            * PRAZNA PRVA STRAN — dve stanji, ki sta na videz enaki.
            *
            * (a) Rezina je RES prazna. 13 regij krat 7 tipov krat dva posla da
