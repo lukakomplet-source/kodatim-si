@@ -31,10 +31,32 @@ ki jo njihov lastni ponudnik zaščite priporoča spuščati.
 
 - **Podjetje:** Styria digital marketplaces, spletni marketing in spletno
   oglaševanje, d.o.o., Verovškova ulica 55, 1000 Ljubljana
-- **E-pošta podpore:** `[preveri na bolha.com — v virih se pojavlja
-  podpora@bolha.com, a tega nismo mogli potrditi]`
+- **E-pošta podpore:** `podpora@bolha.com` — najdeno v poslovnih imenikih
+  (bizi.si, companywall.si, itis.siol.net), **ne** na bolha.com, ker se vira
+  med hlajenjem nismo dotikali. Pred pošiljanjem potrdi na njihovi strani.
+- **Telefon:** `01 420 16 40` (isti vir, ista pripomba).
 - Če obstaja poslovni/partnerski kontakt, je ta boljši naslovnik od splošne
   podpore.
+
+### Prosi za PRAVO stvar
+
+Bolha je okoli 2007–2009 imela XML endpointe (`/xml/izvoz/navadni.php`,
+`/xml/test/html2xmlNepremicnine.php?agenc=…`) in tudi danes obstajajo
+integracije prek partnerjev. Vse tečejo v **nasprotno smer**: to so kanali, po
+katerih agencije in trgovci oglase *objavljajo* na Bolho. Tudi če bi jutri
+dobili dostop do takega XML-a, naš bralnik od tega ne bi imel nič.
+
+Prositi je torej treba za **dostop do podatkov** (licenčni/podatkovni dogovor
+ali uvrstitev na dovoljeni seznam), ne za priklop na oglaševalski XML uvoz. Ta
+razlika naj bo v pogovoru izrečena zgodaj.
+
+### Česa NE počnemo, tudi če se ponudi samo od sebe
+
+Arhiv kaže sledi nedokumentiranih notranjih poti (`api.bolha.com`,
+`/api/*.json`). To **ni** zakonita alternativa. „Ni javne dokumentacije" se
+zlahka bere kot povabilo, naj poiščemo skriti vmesnik — ni. Uporaba
+nerazkritega vmesnika je izkoriščanje nenamerno izpostavljene poti in po
+pravilu projekta neuporabna ne glede na to, ali bi tehnično delovala.
 
 ---
 
