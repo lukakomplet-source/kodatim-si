@@ -37,7 +37,11 @@ export async function GET(
   const v = data as { avtonet_id: string; datoteka: string; razlog: string; ustvarjen: string } | null;
   if (!v?.datoteka) return NextResponse.json({ napaka: "ni arhiva" }, { status: 404 });
 
-  const osnova = resolve(MAPA);
+  // turbopackIgnore: brez tega Turbopack ob gradnji poskusi izslediti, katere
+  // datoteke ta pot lahko doseže, in ker je koren zunanji disk iz okolja,
+  // posledično posledično potegne v sledenje cel projekt — gradnja je nato
+  // pri preverjanju tipov ostala brez pomnilnika (koda 134).
+  const osnova = resolve(/* turbopackIgnore: true */ MAPA);
   const pot = resolve(join(osnova, v.datoteka));
   if (!pot.startsWith(osnova)) return NextResponse.json({ napaka: "neveljavna pot" }, { status: 400 });
 
