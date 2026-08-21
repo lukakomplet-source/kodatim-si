@@ -2,6 +2,7 @@ import "dotenv/config";
 import { chromium } from "playwright";
 import { najdiVir } from "./viri/index.js";
 import { preveriIzziv } from "./izziv.js";
+import { uporabniskiAgent } from "./identiteta.js";
 
 /**
  * Prehodi prvih N strani ene rezine in izpiše, koliko NOVIH oglasov prinese
@@ -36,8 +37,7 @@ let skupajPovedano: number | null = null;
 for (let stran = 1; stran <= doStrani; stran++) {
   const ctx = await browser.newContext({
     locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    userAgent: uporabniskiAgent(),
   });
   const page = await ctx.newPage();
   const url = vir.seznamUrl(rezina, stran);

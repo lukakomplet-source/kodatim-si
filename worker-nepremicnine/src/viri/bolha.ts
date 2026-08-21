@@ -41,7 +41,11 @@ function seznamUrl(r: BolhaRezina, stran: number): string {
 }
 
 /** Prebere kartice s trenutno naložene kategorijske strani. */
-async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }> {
+async function preberiSeznam(page: Page): Promise<{
+  kartice: SurovaKartica[];
+  zadnjaStran: number | null;
+  skupajZadetkov: number | null;
+}> {
   return page.evaluate(() => {
     const kartice: SurovaKartica[] = [];
     for (const li of Array.from(document.querySelectorAll("li.EntityList-item"))) {
@@ -86,8 +90,43 @@ async function preberiSeznam(page: Page): Promise<{ kartice: SurovaKartica[]; za
       const n = Number((g.getAttribute("data-href") ?? "").match(/[?&]page=(\d+)/)?.[1] ?? NaN);
       if (Number.isFinite(n) && (zadnjaStran === null || n > zadnjaStran)) zadnjaStran = n;
     }
-    return { kartice, zadnjaStran };
-  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null }>;
+
+    /**
+     * KOLIKO ZADETKOV IMA REZINA — varovalka proti temu, da prazno kategorijo
+     * razglasimo za blokado.
+     *
+     * Doslej je bolhin adapter tega števila NI vračal, zato je bila varovalka,
+     * ki jo glavna zanka ima, zanjo mrtva: vsaka res prazna kombinacija
+     * (oddaja garaž, počitniški objekti) je stala 60-sekundni premor, en
+     * zavržen zahtevek in nato zapisano hlajenje vira — torej "zavrnitev", ki
+     * je vir nikoli ni izrekel. Del blokad, ki smo jih pripisali bolhi, je bil
+     * lahko naš.
+     *
+     * Število iščemo v več oblikah, ker točnega zapisa ne moremo preveriti med
+     * hlajenjem; kadar ga ne najdemo, vrnemo null in obvelja previdno vedenje.
+     */
+    const besedilo = document.body.innerText;
+    const vzorci = [
+      /(\d[\d.]*)\s*(?:oglas(?:ov|a|i)?)\b/i,
+      /Najden(?:ih|o)[^\d]{0,20}(\d[\d.]*)/i,
+      /Prikazan(?:ih|o)[^\d]{0,30}od\s*(\d[\d.]*)/i,
+    ];
+    let skupajZadetkov: number | null = null;
+    for (const v of vzorci) {
+      const m = besedilo.match(v);
+      if (m) {
+        const n = Number(m[1].replace(/\./g, ""));
+        if (Number.isFinite(n)) {
+          skupajZadetkov = n;
+          break;
+        }
+      }
+    }
+    // Kadar kartice so, njihovo število nikoli ne sme biti razglašeno za nič.
+    if (skupajZadetkov === 0 && kartice.length > 0) skupajZadetkov = null;
+
+    return { kartice, zadnjaStran, skupajZadetkov };
+  }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null }>;
 }
 
 /** "94.40 m2" (pika = decimalka) ali "94,40 m2" ali "160 m2" -> 94.4 / 160. */
@@ -314,7 +353,24 @@ export const adapter: VirAdapter = {
   razvrsceniPoNovosti: false,
   pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
-  svezKontekstNaStran: true,
+  /**
+   * OBSTOJNA SEJA, ne nova za vsako stran.
+   *
+   * Do 21. 8. 2026 je tu pisalo `true` — torej isti konstrukt, zaradi katerega
+   * je bil isti dan izklopljen nepremicnine.net. Dve nasprotni sodbi za isti
+   * vzorec ne gresta skupaj.
+   *
+   * Radware Bot Manager, ki bolho ščiti, v svoji dokumentaciji navaja, da se
+   * ocena obiskovalca nosi v piškotkih (__uzma/__uzmb/__uzmc) in da spremlja
+   * "attempts to spoof or reverse-engineer cookies, which is typical bot
+   * behaviour". Zavreči sejo pred vsako stranjo torej ni le obhod po NAŠEM
+   * pravilu, ampak natanko tisto vedenje, ki ga vir šteje za botovsko.
+   *
+   * Stranski učinek `true` je bil še en: prazen predpomnilnik ob vsaki strani
+   * pomeni, da se vse skripte prenesejo znova. "30 zahtevkov na dan" v našem
+   * knjigovodstvu je bilo za vir lahko nekajkrat toliko.
+   */
+  svezKontekstNaStran: false,
   // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);
   // null pomeni "ni predpisan", ne "nič sekund". Naš razmik je v omejitve.zamikMs.
   crawlDelayS: null,

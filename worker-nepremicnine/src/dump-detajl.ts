@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright";
+import { uporabniskiAgent } from "./identiteta.js";
 import { connect } from "./db.js";
 
 /**
@@ -41,8 +42,7 @@ console.log(`odpiram ${data.url}`);
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const ctx = await browser.newContext({
   locale: "sl-SI",
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  userAgent: uporabniskiAgent(),
 });
 const page = await ctx.newPage();
 const res = await page.goto(data.url as string, { waitUntil: "domcontentloaded", timeout: 45_000 });

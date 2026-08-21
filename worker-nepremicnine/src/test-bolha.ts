@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
 import { adapter } from "./viri/bolha.js";
+import { uporabniskiAgent } from "./identiteta.js";
 
 /**
  * Nadzorovani test Bolha adapterja: prebere 1. stran dveh kategorij v ŽIVO
@@ -15,8 +16,7 @@ async function main() {
     for (const rezina of rezine) {
       const ctx = await browser.newContext({
         locale: "sl-SI",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        userAgent: uporabniskiAgent(),
       });
       const page = await ctx.newPage();
       const url = adapter.seznamUrl(rezina, 1);

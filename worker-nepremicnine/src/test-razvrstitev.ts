@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { chromium } from "playwright";
+import { uporabniskiAgent } from "./identiteta.js";
 import { connect } from "./db.js";
 import { najdiVir } from "./viri/index.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
@@ -64,8 +65,7 @@ const meritve: { stran: number; kartic: number; znanih: number; povprecje: numbe
 for (const stran of [1, 2, 3]) {
   const ctx = await browser.newContext({
     locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    userAgent: uporabniskiAgent(),
   });
   await razbremeniKontekst(ctx).catch(() => {});
   const page = await ctx.newPage();

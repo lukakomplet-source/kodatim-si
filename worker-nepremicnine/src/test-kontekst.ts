@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { chromium } from "playwright";
+import { uporabniskiAgent } from "./identiteta.js";
 import { connect } from "./db.js";
 import { najdiVir } from "./viri/index.js";
 import { jeIzziv, razbremeniKontekst } from "./izziv.js";
@@ -66,8 +67,7 @@ const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const noviKontekst = async () => {
   const c = await browser.newContext({
     locale: "sl-SI",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    userAgent: uporabniskiAgent(),
   });
   if (brezPodvirov) await razbremeniKontekst(c).catch(() => {});
   return c;

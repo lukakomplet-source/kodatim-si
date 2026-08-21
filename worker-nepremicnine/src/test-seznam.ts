@@ -2,6 +2,7 @@ import "dotenv/config";
 import { chromium } from "playwright";
 import { najdiVir } from "./viri/index.js";
 import { preveriIzziv } from "./izziv.js";
+import { uporabniskiAgent } from "./identiteta.js";
 
 /**
  * Prebere PRVO stran prve rezine izbranega vira in izpiše, kaj je razbral.
@@ -36,8 +37,7 @@ if (rezine.length === 0) {
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const ctx = await browser.newContext({
   locale: "sl-SI",
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  userAgent: uporabniskiAgent(),
 });
 
 let uspelo = 0;

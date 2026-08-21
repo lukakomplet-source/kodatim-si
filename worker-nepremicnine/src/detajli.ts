@@ -2,6 +2,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 import type { Db } from "./db.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import type { Detajl, VirAdapter } from "./viri/vmesnik.js";
+import { uporabniskiAgent } from "./identiteta.js";
 
 /**
  * 2. FAZA — detajlne strani oglasov.
@@ -159,28 +160,48 @@ export async function zajemiDetajle(
       .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lt.${zdaj}`);
 
   /**
-   * VRSTA JE MEŠANA, NE SAMO NAJNOVEJŠA.
+   * VRSTA IMA PREDNOSTNI RED, NE ZAPOREDJA.
    *
-   * Če vsak krog vzame N najnovejših, rep zaostanka nikoli ne pride na vrsto:
-   * dokler vir objavlja več novih oglasov na dan, kot jih kvota zmore, se
-   * najstarejši čakajoči ne premakne nikoli. Zato gre četrtina kvote
-   * najstarejšim — najprej tisti, ki čakajo najdlje.
+   * Izmerjeno pri bolhi: 2.829 od 3.203 aktivnih oglasov ima ceno IN površino
+   * že s seznama — €/m² je torej izračunljiv brez detajlne strani. Za teh
+   * 88 % detajl ne spremeni nobene številke, ki jo prikazujemo ali računamo;
+   * doda samo postranske lastnosti. Zajemati jih po vrsti pomeni 3.200
+   * zahtevkov za kozmetiko, medtem ko 152 oglasov, ki jim manjka površina,
+   * čaka nekje zadaj.
+   *
+   * Zato trije razredi po padajoči koristi:
+   *   1. MANJKA KLJUČNI PODATEK — cena brez površine (ali oboje prazno).
+   *      Detajl tu odklene €/m², primerjavo in posle.
+   *   2. NAJNOVEJŠI — oglas, ki ga kdo išče danes.
+   *      3. REP — najdlje čakajoči, da zaostanek ne strada za vedno.
    */
   const kvota = vir.detajli.kvota;
-  const zaRep = Math.max(1, Math.floor(kvota / 4));
-  const [noviRes, stariRes] = await Promise.all([
-    osnova().order("first_seen", { ascending: false }).limit(kvota - zaRep),
+  const zaRep = Math.max(1, Math.floor(kvota / 5));
+  const [manjkaRes, noviRes, stariRes] = await Promise.all([
+    osnova().is("povrsina_m2", null).order("cena_eur", { ascending: false, nullsFirst: false }).limit(kvota),
+    osnova().order("first_seen", { ascending: false }).limit(kvota),
     osnova().order("first_seen", { ascending: true }).limit(zaRep),
   ]);
+  if (manjkaRes.error) throw new Error(`Branje prednostne vrste ni uspelo: ${manjkaRes.error.message}`);
   if (noviRes.error) throw new Error(`Branje vrste detajlov ni uspelo: ${noviRes.error.message}`);
   if (stariRes.error) throw new Error(`Branje repa vrste ni uspelo: ${stariRes.error.message}`);
 
-  // Oba seznama se lahko prekrivata, kadar je čakajočih malo.
+  // Razredi se prekrivajo; vrstni red vstavljanja določi prednost.
   const poId = new Map<string, Vrstica>();
-  for (const v of [...((noviRes.data ?? []) as Vrstica[]), ...((stariRes.data ?? []) as Vrstica[])]) {
+  for (const v of [
+    ...((manjkaRes.data ?? []) as Vrstica[]),
+    ...((stariRes.data ?? []) as Vrstica[]),
+    ...((noviRes.data ?? []) as Vrstica[]),
+  ]) {
+    if (poId.size >= kvota) break;
     poId.set(v.id, v);
   }
   const vrsta = [...poId.values()];
+  log("info", "prednostna vrsta 2. faze", {
+    vir: vir.vir,
+    brezPovrsine: (manjkaRes.data ?? []).length,
+    skupajVKrogu: vrsta.length,
+  });
   const { count: skupajCaka } = await db
     .from("nep_oglasi")
     .select("id", { count: "exact", head: true })
@@ -205,8 +226,7 @@ export async function zajemiDetajle(
       "newContext",
       browser!.newContext({
         locale: "sl-SI",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        userAgent: uporabniskiAgent(),
       })
     );
     // Galerijo hranimo kot NASLOVE slik; datotek ne potrebujemo in vira z

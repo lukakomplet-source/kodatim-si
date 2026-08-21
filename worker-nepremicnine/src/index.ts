@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createServer } from "node:http";
 import { chromium, type Browser, type BrowserContext } from "playwright";
+import { seIskrenoPredstavljamo, uporabniskiAgent } from "./identiteta.js";
 import { connect, oznaciIzginule, shraniOglase, type Db } from "./db.js";
 import { VIRI, najdiVir } from "./viri/index.js";
 import type { VirAdapter } from "./viri/vmesnik.js";
@@ -128,8 +129,7 @@ async function pregledSeznamov(
       "newContext",
       browser!.newContext({
         locale: "sl-SI",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        userAgent: uporabniskiAgent(),
       })
     );
     // Slik, pisav in slogov ne zahtevamo: podatke beremo iz HTML-ja, vir pa
@@ -775,6 +775,7 @@ async function main(): Promise<void> {
             heartbeatAgeMs: Date.now() - zadnjiPremik,
             faza: trenutnaFaza.faza,
             vir: trenutnaFaza.vir,
+            iskrenaIdentiteta: seIskrenoPredstavljamo(),
           })
         );
       });
@@ -809,6 +810,10 @@ async function main(): Promise<void> {
     ure: urnikOb.ure,
     urnikOmogocen: urnikOb.omogocen,
     viri: VIRI.map((v) => v.vir),
+    // Kako se predstavljamo, mora biti v dnevniku: to je edini podatek, ki ga
+    // vir o nas dobi, in dolgo je bil neresničen.
+    predstavljamoSe: uporabniskiAgent(),
+    iskreno: seIskrenoPredstavljamo(),
   });
 
   if (once) {
