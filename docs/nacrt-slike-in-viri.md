@@ -495,3 +495,42 @@ Preverjeni so ostali samo robots.txt zapisi in nekaj negativnih ugotovitev:
 
 Če bo seznam dodatnih virov kdaj potreben, ga je treba narediti znova — s prenosi in s
 številkami, ki imajo vir.
+
+---
+
+# DEL 5 — Meritev, ki je 21. 8. 2026 ustavila zbiranje z nepremicnine.net
+
+Adversarni pregled nove kode je opozoril, da `svezKontekstNaStran: true` ni
+tehnična podrobnost, ampak način izogibanja zaščiti. Namesto razpravljanja je
+bila stvar izmerjena (`npm run test:kontekst` v `worker-nepremicnine`).
+
+| seja | podviri | razmik med zahtevki | izid |
+|---|---|---|---|
+| ena obstojna | dovoljeni | 10 s | **HTTP 403 od 2. zahtevka** |
+| ena obstojna | dovoljeni | 60 s | **HTTP 403 od 2. zahtevka** |
+| svež kontekst za vsako stran | blokirani | 10 s | vse 200 |
+
+Ločena kontrola je bila nujna: prva različica testa je merila sejo IN blokado
+podvirov hkrati, zato bi zavrnitev, ki bi jo povzročila blokada slogov,
+pripisala seji. Tretja vrstica pokaže, da blokada podvirov na zavrnitev ne
+vpliva.
+
+**Kaj iz tega sledi.** Šestdesetsekundni razmik ne spremeni ničesar, kar
+izključi razlago „beremo prehitro". Vir ne omejuje hitrosti — zavrne sejo po
+prvem zahtevku. Zbiranje je torej delovalo izključno zato, ker smo sejo pred
+vsako stranjo zavrgli in se predstavili kot nov obiskovalec. To ni prilagoditev
+tempa, ampak izogibanje zavrnitvi.
+
+Vir je zato izklopljen. Podatki ostanejo: 10.159 oglasov, zgodovina cen,
+kanonične nepremičnine — iskalnik, kalkulator in posli delujejo naprej.
+Ustavljeno je samo nadaljnje zbiranje.
+
+**Kaj bi to odprlo nazaj.** Samo dogovor z upravljavcem. Pogoji nepremicnine.net
+(razdelek 3.5) pot pisnega dogovora izrecno predvidijo — „za vsako komercialno
+uporabo … predhoden dogovor z MEGANET" — in isti dogovor je edini, ki odpre
+tudi vprašanje fotografij (DEL 1 in 3). Tehnične poti, ki bi bila hkrati
+učinkovita in poštena, ni: en zahtevek na sejo pomeni eno stran na sejo.
+
+**Isto je treba izmeriti za bolha.com**, ki uporablja enako nastavitev. 21. 8.
+je bila v hlajenju po CAPTCHA-i, zato je nisem preizkušal — preizkušanje vira
+med hlajenjem bi bilo natanko tisto, čemur se ta odločitev izogiba.
