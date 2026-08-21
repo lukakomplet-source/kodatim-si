@@ -1,4 +1,5 @@
 import type { Db } from "./db.js";
+import { VIRI } from "./viri/index.js";
 
 /**
  * Samopopravilo — da pregled nikoli ne obstane in nikoli ne laže.
@@ -52,9 +53,18 @@ export const UKREP_OPIS: Record<Ukrep, string> = {
   nic: "brez posega",
 };
 
-/** Zgodovina popravil, najnovejše prvo, omejena na 30 zapisov. */
+/**
+ * Zgodovina popravil, najnovejše prvo, omejena na 30 zapisov.
+ *
+ * Zapisi za vir, ki ga ni v registru, se ZAVRŽEJO. Povod: test spomina na
+ * blokado uporablja izmišljen vir in je s tem v konzolo administratorja
+ * napisal vrstice o "test-vir.example", ki so med resničnimi dogodki videti
+ * kot resnični dogodki. Dnevnik incidentov, ki vsebuje izmišljene incidente,
+ * je slabši od praznega.
+ */
 export async function zabelezi(db: Db, z: Omit<Zapis, "ob">): Promise<Zapis> {
   const zapis: Zapis = { ob: new Date().toISOString(), ...z };
+  if (z.vir !== null && !VIRI.some((v) => v.vir === z.vir)) return zapis;
   try {
     const { data } = await db
       .from("nep_statistika")

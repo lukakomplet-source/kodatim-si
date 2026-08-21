@@ -79,7 +79,16 @@ type Vir = {
   opomba_pravno: string | null;
 };
 
-type Stanje = { vir: string; aktivnih: number; zDetajli: number; parkiranih: number };
+type Stanje = {
+  vir: string;
+  aktivnih: number;
+  zDetajli: number;
+  parkiranih: number;
+  /** Koliko dni do polnega zajema podrobnosti pri sedanjem proračunu; null = ni ocene. */
+  dniDoPolnega: number | null;
+  detajlovNaKrog: number;
+  krogovNaDan: number;
+};
 type Blokada = {
   vir: string;
   do: string | null;
@@ -759,6 +768,20 @@ function VirKartica({
             {stevilo(stanje.aktivnih)} aktivnih · {stevilo(stanje.zDetajli)} s podrobnostmi ({odstotek} %)
             {stanje.parkiranih > 0 && ` · ${stevilo(stanje.parkiranih)} parkiranih po neuspehu`}
           </p>
+          {/* Koliko časa bo trajalo, da bodo VSI oglasi imeli podrobnosti, pri
+              proračunu zahtevkov, ki ga vir prenese. Ta številka je pogosto
+              neprijetna — in prav zato mora biti napisana. Če je predolga, je
+              odgovor dogovor z virom, ne hitrejše branje. */}
+          {stanje.dniDoPolnega !== null && stanje.dniDoPolnega > 0 && (
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Pri {stanje.detajlovNaKrog} podrobnostih na krog in {stanje.krogovNaDan}{" "}
+              {stanje.krogovNaDan === 1 ? "krogu" : "krogih"} na dan bo baza polna čez{" "}
+              <strong className={stanje.dniDoPolnega > 90 ? "text-amber-700" : "text-zinc-700"}>
+                {stanje.dniDoPolnega > 400 ? "več kot leto" : `${stevilo(stanje.dniDoPolnega)} dni`}
+              </strong>
+              .
+            </p>
+          )}
         </>
       )}
 

@@ -285,16 +285,33 @@ export async function preberiDetajl(page: Page): Promise<Detajl> {
 
 export const adapter: VirAdapter = {
   vir: VIR,
-  // 10 s: pri 6 s je vir po ~25 straneh začel vračati prazne strani (mehka
-  // blokada). Odgovor je počasnejše branje in spoštovanje blokade, nikoli
-  // poskus obhoda.
-  omejitve: { zamikMs: 10_000 },
-  // Vir zavrne po ~50-60 straneh v eni seji (izmerjeno dvakrat) in blokada
-  // drži več ur. Zato vsak dan vzamemo le rezino: 40 strani (~1.500 oglasov)
-  // v ~7 minutah, ostalo pride naslednji dan prek rotacije rezin. Katalog je
-  // tako pokrit v nekaj dneh, ne da bi vir kdaj pritisnil na zavoro.
-  najvecStrani: 40,
+  // 15 s. Pot do te številke: 6 s -> mehka blokada po ~25 straneh; 10 s ->
+  // nekaj krogov je šlo skozi, nato spet zavrnitve in nazadnje CAPTCHA na
+  // detajlnih straneh. Vsaka stopnja je bila odgovor na zavrnitev z
+  // ZMANJŠANJEM, nikoli s poskusom drugačnega dostopa.
+  omejitve: { zamikMs: 15_000 },
+  /**
+   * PRORAČUN ZAHTEVKOV ZA CEL KROG — obe fazi skupaj (glej index.ts).
+   *
+   * Izmerjeno: vir zavrne po ~50–60 zahtevkih v eni seji. Prej je bila kvota
+   * 40 STRANI, 2. faza pa je dodala še do 120 detajlnih strani — torej 160
+   * obiskov tam, kjer je meja 50. Zdaj je meja ena in je 30: udobno pod
+   * izmerjeno mejo, tudi če se ta med dnevi premakne.
+   *
+   * Posledica je počasnejše polnjenje in to je pošteno povedati, ne skriti:
+   * konzola pokaže, koliko dni pri tem tempu traja, da bodo vsi oglasi imeli
+   * podrobnosti. Če je to predolgo, je odgovor dogovor z virom — ne hitrejše
+   * branje.
+   */
+  najvecStrani: 30,
   hlajenjeUr: 12,
+  /**
+   * Ali je seznam razvrščen od najnovejšega, še NI izmerjeno
+   * (`npm run test:razvrstitev bolha.com`). Dokler ni, inkrementalnega
+   * branja ne vklapljamo: zgodnja ustavitev pri pomešanem seznamu tiho
+   * izpusti del trga.
+   */
+  razvrsceniPoNovosti: false,
   pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
@@ -303,9 +320,10 @@ export const adapter: VirAdapter = {
   crawlDelayS: null,
   pravno:
     "Pogoji (27. 10. 2025) splošne prepovedi scrapinga NIMAJO; prepovedano je kopiranje vsebine brez pisnega dovoljenja. robots.txt prepoveduje /search in slikovne endpointe — beremo samo kategorijske strani.",
-  // Vir po ~50 straneh zavrne; detajli so zato skromno kvotirani in gredo v
-  // istem taktu kot seznami.
-  detajli: { zamikMs: 10_000, kvota: 120, preberi: preberiDetajl },
+  // Detajli jemljejo iz istega proračuna kot seznami (najvecStrani), zato je
+  // ta številka zgornja meja in ne obljuba — kar 1. faza porabi, detajlom
+  // ostane manj.
+  detajli: { zamikMs: 15_000, kvota: 30, preberi: preberiDetajl },
   rezine: () => KATEGORIJE,
   seznamUrl: (r, stran) => seznamUrl(r as BolhaRezina, stran),
   preberiSeznam,

@@ -94,6 +94,11 @@ export async function GET() {
    * vrstica pregleda pove samo, kaj je naredil TA krog.
    */
   const viri = (viriRes.data ?? []) as { vir: string }[];
+  const urnikVrstica = (urnikRes.data ?? null) as { ure?: string; detajlov_na_krog?: number } | null;
+  const urnikUre = String(urnikVrstica?.ure ?? "4")
+    .split(/[,\s]+/)
+    .map((h) => Number(h))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
   const stanjePoVirih = await Promise.all(
     viri.map(async (v) => {
       const [aktivnih, zDetajli, zaustavljeni] = await Promise.all([
@@ -112,11 +117,29 @@ export async function GET() {
           .is("detajl_zajet", null)
           .gt("detajl_naslednji_poskus", new Date().toISOString()),
       ]);
+      /**
+       * Koliko dni do polnega zajema podrobnosti pri sedanjem proračunu.
+       *
+       * Vir, ki zavrne po ~50 zahtevkih v seji, ne dovoli hitrega polnjenja —
+       * in ta številka je pogosto neprijetna. Prav zato mora biti izpisana:
+       * skrita bi pomenila obljubo popolnosti, ki je ne moremo držati.
+       * Merilo je namerno preprosto (preostanek / kvota / krogi na dan) in
+       * ne upošteva blokad, zato je to najboljši možni scenarij, ne napoved.
+       */
+      const preostanek = Math.max(0, (aktivnih.count ?? 0) - (zDetajli.count ?? 0));
+      const detajlovNaKrog = Math.max(1, Number(urnikVrstica?.detajlov_na_krog ?? 400));
+      const krogovNaDan = Math.max(1, urnikUre.length);
+      const dniDoPolnega =
+        preostanek > 0 ? Math.ceil(preostanek / (detajlovNaKrog * krogovNaDan)) : 0;
+
       return {
         vir: v.vir,
         aktivnih: aktivnih.count ?? 0,
         zDetajli: zDetajli.count ?? 0,
         parkiranih: zaustavljeni.count ?? 0,
+        dniDoPolnega,
+        detajlovNaKrog,
+        krogovNaDan,
       };
     })
   );

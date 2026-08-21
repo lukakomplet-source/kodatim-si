@@ -182,6 +182,28 @@ async function pregledSeznamov(
   };
   await objavi({ rezin_skupaj: vseRezine.length, rezin_koncanih: 0 });
 
+  /**
+   * INKREMENTALNO ALI POLNO. Vsakodnevno branje celega kataloga je tisto, kar
+   * vir spravi do zavračanja; nove oglase pa dobimo s prvih nekaj strani.
+   * Zato: vsak dan inkrementalno, enkrat na teden pa vseeno cel obhod, ker
+   * inkrementalno branje po definiciji ne vidi tega, kar se je spremenilo
+   * globlje v katalogu (in brez polnega obhoda ni mogoče sklepati o izginulih).
+   */
+  const POLNI_OBHOD_DNI = 7;
+  const { data: polniZapis } = await db
+    .from("nep_statistika")
+    .select("podatki")
+    .eq("kljuc", `polni:${vir.vir}`)
+    .maybeSingle();
+  const zadnjiPolni = (polniZapis?.podatki as { ob?: string } | null)?.ob ?? null;
+  const casZaPolniObhod =
+    !zadnjiPolni || Date.now() - new Date(zadnjiPolni).getTime() > POLNI_OBHOD_DNI * 86_400_000;
+  const inkrementalno = vir.razvrsceniPoNovosti === true && !casZaPolniObhod;
+  log("info", inkrementalno ? "inkrementalni pregled (samo novo)" : "polni obhod kataloga", {
+    vir: vir.vir,
+    zadnjiPolni,
+  });
+
   let dosezenaKvota = false;
   try {
     browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
@@ -198,6 +220,8 @@ async function pregledSeznamov(
       let zadnja: number | null = null;
       let praznihZapored = 0;
       let praznaPrvaPoskusov = 0;
+      /** Zaporedne strani, ki niso prinesle nobenega oglasa, novega za BAZO. */
+      let brezNovihZapored = 0;
 
       for (;;) {
         if (stopping) {
@@ -264,6 +288,31 @@ async function pregledSeznamov(
               p.novih += izid.novih;
               p.posodobljenih += izid.posodobljenih;
               p.sprememb_cen += izid.spremembCen;
+              /**
+               * INKREMENTALNA USTAVITEV. Pri viru, ki seznam razvrsti od
+               * najnovejšega, stran brez enega samega oglasa, ki ga BAZA še ne
+               * pozna, pomeni, da smo se dohiteli — vse za njo že imamo.
+               * Dve taki zapored (ena bi lahko bila naključje pri oglasu, ki
+               * se je ravno vrnil) ustavita rezino.
+               *
+               * Pri viru, ki ni razvrščen po novosti, je to prepovedano: novi
+               * in stari so pomešani in ustavili bi se sredi kataloga.
+               */
+              if (inkrementalno) {
+                if (izid.novih === 0) {
+                  brezNovihZapored += 1;
+                  if (brezNovihZapored >= 2) {
+                    log("info", "rezina dohitena (dve strani brez novega)", {
+                      vir: vir.vir,
+                      rezina: rezina.oznaka,
+                      stran,
+                    });
+                    break;
+                  }
+                } else {
+                  brezNovihZapored = 0;
+                }
+              }
             }
           }
 
@@ -328,8 +377,20 @@ async function pregledSeznamov(
   // ni videl, in bi žive oglase razglasil za izginule. Pregled, ki se je
   // začel sredi kroga (rotacija rezin), po definiciji ni popoln.
   let izginulih = 0;
-  const delnaRezina = zacetniIndeks !== 0 || zacetnaStran > 1 || obdelanihRezin < vseRezine.length || dosezenaKvota;
+  // Inkrementalni pregled po definiciji NI popoln: namenoma ni pogledal
+  // globlje od prvih strani, zato o izginulih ne more sklepati ničesar.
+  const delnaRezina =
+    zacetniIndeks !== 0 || zacetnaStran > 1 || obdelanihRezin < vseRezine.length || dosezenaKvota || inkrementalno;
   if (delnaRezina || blokada || napaka) popoln = false;
+  // Polni obhod se zabeleži samo, če je res prišel do konca — sicer bi teden
+  // dni inkrementalnih pregledov tekel na podlagi obhoda, ki se ni zgodil.
+  if (!inkrementalno && popoln) {
+    await db.from("nep_statistika").upsert({
+      kljuc: `polni:${vir.vir}`,
+      podatki: { ob: new Date().toISOString(), rezin: obdelanihRezin, najdenih: videni.size },
+      izracunano: new Date().toISOString(),
+    });
+  }
   if (popoln && videni.size >= vir.pricakovanRazpon[0]) {
     izginulih = await oznaciIzginule(db, zacetek, vir.vir);
   } else if (!delnaRezina && !blokada && !napaka && videni.size < vir.pricakovanRazpon[0]) {

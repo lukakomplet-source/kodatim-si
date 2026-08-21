@@ -97,6 +97,22 @@ export type VirAdapter = {
    * ustavimo, preden postanemo nadležni. Brez omejitve = ni meje.
    */
   najvecStrani?: number;
+  /**
+   * INKREMENTALNO BRANJE — najmočnejši vzvod, ki ga imamo.
+   *
+   * Če vir seznam razvrsti od najnovejšega, so novi oglasi na prvih straneh.
+   * Takrat se ni treba prebiti skozi cel katalog: ko dve strani zapored ne
+   * prineseta niti enega oglasa, ki ga BAZA še ne pozna, smo se dohiteli in
+   * ostalo je že pri nas. Pri bolhi to pomeni ~15 zahtevkov na dan namesto
+   * ~160 — in prav količina je tisto, kar je vir spravilo do zavračanja.
+   *
+   * Zastavica je zato TRDITEV O VIRU in ne nastavitev okusa: vklopi se šele,
+   * ko je razvrstitev izmerjena (`npm run test:razvrstitev`). Če seznam ni
+   * razvrščen po novosti, so novi in stari oglasi pomešani in zgodnja
+   * ustavitev bi tiho izpustila del trga — natanko napaka, ki nas je pri
+   * števcu strani stala dve tretjini kataloga.
+   */
+  razvrsceniPoNovosti?: boolean;
   /** Koliko ur počakamo, če vir vseeno zavrne (spoštovanje blokade). */
   hlajenjeUr?: number;
   /**

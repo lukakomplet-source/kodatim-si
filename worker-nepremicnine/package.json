@@ -12,6 +12,7 @@
     "test:izziv": "tsx src/test-izziv.ts",
     "test:adapterji": "tsx src/test-adapterji.ts",
     "test:kontekst": "tsx src/test-kontekst.ts",
+    "test:razvrstitev": "tsx src/test-razvrstitev.ts",
     "test:paginacija": "tsx src/test-paginacija.ts",
     "test:zakljucek": "tsx src/test-zakljucek.ts",
     "test:blokada": "tsx src/test-blokada.ts",
