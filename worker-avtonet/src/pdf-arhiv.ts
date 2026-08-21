@@ -37,6 +37,32 @@ const MIN_PROSTO_GB = 5;
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const LOG = process.env.AVTONET_PDF_LOG ?? "C:\\Users\\lukak\\avtonet-db\\pdf-arhiv.log";
+/**
+ * Utrip za NADZORNIK: datoteka, ki jo arhivar osveži vsaj enkrat na minuto,
+ * tudi med vsemi oblikami počitka. Nadzornik meri njeno starost — proces, ki
+ * je "živ" (okno odprto, node teče), a utripa ne piše, je obešen in ga
+ * nadzornik pobije ter zažene znova.
+ */
+const UTRIP = process.env.AVTONET_PDF_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\pdf-arhiv.utrip";
+
+function utrip(stanje: string): void {
+  try {
+    writeFileSync(UTRIP, `${new Date().toISOString()} ${stanje}`);
+  } catch {
+    // Utrip ni razlog za padec.
+  }
+}
+
+/** Počitek, ki vsak\u00e0 minuto osveži utrip — da dolg premor ni videti kot obesitev. */
+async function spanecZUtripom(ms: number, stanje: string): Promise<void> {
+  const konec = Date.now() + ms;
+  for (;;) {
+    utrip(stanje);
+    const ostane = konec - Date.now();
+    if (ostane <= 0) return;
+    await spanec(Math.min(55_000, ostane));
+  }
+}
 /** Lestvica počitka ob lastni blokadi (minute). */
 const LASTNA_LESTVICA = [30, 60, 120, 240];
 
@@ -52,6 +78,33 @@ function log(msg: string): void {
 
 function spanec(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Trda časovna omejitev okoli celotnega zajema enega oglasa.
+ *
+ * Playwrightovi posamezni klici imajo svoje omejitve, a ne vsi: newContext,
+ * newPage in evaluate znajo obviseti za vedno — glavni zbiralnik je to isto
+ * lekcijo plačal z 90-minutnim obeskom in jo rešil s svojim zOmejitvijo.
+ * Arhivar te zaščite ni imel: 21. 8. ob 11:01 je en tak klic obvisel in
+ * proces je bil "živ" ter popolnoma mrtev sedem ur in pol. Obešena obljuba
+ * se ne da prekiniti, zato se ob izteku brskalnik ubije — s tem pade tudi
+ * obešeni klic, zanka pa gre naprej s svežim.
+ */
+function zOmejitvijo<T>(p: Promise<T>, ms: number, oznaka: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${oznaka}: obtičal ${Math.round(ms / 1000)} s`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
 }
 
 type Kandidat = { avtonet_id: string; url: string; cena_eur: number | null; razlog: string };
@@ -263,7 +316,7 @@ async function main(): Promise<void> {
         const min = minutDoKonca(skupna);
         log(`Vir je blokiran (skupno stanje, še ${min} min) — arhivar počiva.`);
         await objaviStanje(db, { stanje: "blokada", doMinut: min });
-        await spanec(Math.min(min, 15) * 60_000 + 30_000);
+        await spanecZUtripom(Math.min(min, 15) * 60_000 + 30_000, "skupna-blokada");
         continue;
       }
 
@@ -272,13 +325,13 @@ async function main(): Promise<void> {
       if (z.bajtov / 1e9 >= KAPICA_GB * 0.97) {
         log(`Arhiv je pri kapici (${(z.bajtov / 1e9).toFixed(1)} / ${KAPICA_GB} GB) — zajem ustavljen. Povečaj AVTONET_PDF_KAPICA_GB ali disk.`);
         await objaviStanje(db, { stanje: "polno" });
-        await spanec(60 * 60_000);
+        await spanecZUtripom(60 * 60_000, "kapica");
         continue;
       }
       if (prostoNaDiskuGb() < MIN_PROSTO_GB) {
         log(`Na disku je manj kot ${MIN_PROSTO_GB} GB prostora — zajem ustavljen.`);
         await objaviStanje(db, { stanje: "disk_poln" });
-        await spanec(60 * 60_000);
+        await spanecZUtripom(60 * 60_000, "disk-poln");
         continue;
       }
 
@@ -288,7 +341,7 @@ async function main(): Promise<void> {
         log("Vrsta je prazna — vse aktivno je arhivirano. Preverim čez 15 min.");
         await objaviStanje(db, { stanje: "vse_arhivirano" });
         if (testnih !== null) break;
-        await spanec(15 * 60_000);
+        await spanecZUtripom(15 * 60_000, "vrsta-prazna");
         continue;
       }
 
@@ -296,8 +349,13 @@ async function main(): Promise<void> {
 
       for (const k of vrsta) {
         const zacetek = Date.now();
+        utrip("zajem " + k.avtonet_id);
         try {
-          const rezultat = await zajemi(browser, k);
+          // Brskalnik je lahko padel ali bil ubit ob prejšnji obesitvi.
+          browser ??= await chromium.launch({ args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+          // Cel zajem enega oglasa pod trdo omejitvijo — obeseni klic brskalnika
+          // sicer ustavi ves arhiv, proces pa je videti ziv.
+          const rezultat = await zOmejitvijo(zajemi(browser, k), 180_000, k.avtonet_id);
           if (rezultat === "nedosegljiv") {
             await nagrobnik(db, k);
             log(`  ${k.avtonet_id} ni več dosegljiv (verjetno ravno izginil) — preskočen.`);
@@ -317,10 +375,17 @@ async function main(): Promise<void> {
             await objaviStanje(db, { stanje: "lastna_blokada", pavzaMin: pavza });
             await browser?.close().catch(() => {});
             browser = null;
-            await spanec(pavza * 60_000);
+            await spanecZUtripom(pavza * 60_000, "lastna-blokada");
             break;
           }
-          log(`  Napaka pri ${k.avtonet_id}: ${e instanceof Error ? e.message : String(e)}`);
+          const sporocilo = e instanceof Error ? e.message : String(e);
+          log(`  Napaka pri ${k.avtonet_id}: ${sporocilo}`);
+          if (sporocilo.includes("obtičal")) {
+            // Obesenega klica se ne da prekiniti; pade sele, ko pade brskalnik.
+            await browser?.close().catch(() => {});
+            browser = null;
+            log("  Brskalnik ubit zaradi obesitve — nadaljujem s svezim.");
+          }
         }
         odZagona++;
         if (odZagona % 10 === 0) await objaviStanje(db, { stanje: "tece", obdelanihOdZagona: odZagona });
