@@ -242,6 +242,8 @@ async function pregledSeznamov(
   });
 
   let dosezenaKvota = false;
+  /** Zaporedne rezine, ki so sredi kroga vrnile prazno prvo stran. */
+  let praznihRezinZapored = 0;
 
   /**
    * Ena rezina, od dane strani naprej.
@@ -307,8 +309,37 @@ async function pregledSeznamov(
           if (stran === 1 && kartice.length === 0) {
             if (skupajZadetkov === 0) {
               log("info", "rezina je prazna (vir pove 0 zadetkov)", { vir: vir.vir, rezina: rezina.oznaka });
+              praznihRezinZapored = 0;
               break;
             }
+
+            /**
+             * Vir, ki nam je pravkar postregel dvajset strani, nas na prvi
+             * strani sedme rezine ne blokira. Prazna prva stran SREDI kroga je
+             * zato najprej sumljiva rezina, ne blokada — nekatere kombinacije
+             * (počitniški objekti za oddajo) so pri viru res prazne, njihovega
+             * števila zadetkov pa ne znamo vedno prebrati.
+             *
+             * Blokada je nekaj drugega: ustavi VSE. Zato jo prepozna šele
+             * DRUGA prazna rezina zapored — to stane en zahtevek več, prihrani
+             * pa dvanajsturno hlajenje, zapisano zaradi kategorije brez
+             * oglasov. Prav ta zamenjava je 20. 8. prekinila cel obhod.
+             */
+            if (p.strani > 0) {
+              praznihRezinZapored += 1;
+              if (praznihRezinZapored < 2) {
+                log("warn", "prazna prva stran sredi kroga - preskocim rezino", {
+                  vir: vir.vir,
+                  rezina: rezina.oznaka,
+                  zeprebranihStrani: p.strani,
+                });
+                break;
+              }
+              throw new Error("vir blokira (dve prazni rezini zapored sredi kroga)");
+            }
+
+            // Na ZAČETKU kroga nimamo primerjave, zato ostane previdno
+            // vedenje: en daljši premor in en ponovni poskus.
             praznaPrvaPoskusov += 1;
             if (praznaPrvaPoskusov <= 1) {
               log("warn", "prazna prva stran - premor 60 s in ponovni poskus", {
@@ -325,6 +356,7 @@ async function pregledSeznamov(
           zadnja = zadnjaStran ?? zadnja;
           p.strani += 1;
           straniTu += 1;
+          praznihRezinZapored = 0;
           utrip();
 
           // "Prazna" je tudi stran brez ENE nove kartice: vir za stranmi čez
