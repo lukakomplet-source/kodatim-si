@@ -166,7 +166,20 @@ export function oceniZakljucek(i: IzidPregleda): Zakljucek {
  * Zaključi se kot delni pregled, ne kot napaka — delo, ki ga je opravil,
  * je v bazi in je resnično.
  */
-export async function zapriOsirotele(db: Db, minut = 45): Promise<number> {
+export async function zapriOsirotele(
+  db: Db,
+  minut = 45,
+  /**
+   * `tiho` zapre pregled brez vpisa v dnevnik samopopravil.
+   *
+   * Obstaja zaradi testa: ta vstavi lažno zataknjeno vrstico (17 strani, 210
+   * oglasov), preveri, da jo nadzor zapre, in jo pobriše — zapis v skupnem
+   * dnevniku pa je ostal. V konzoli administratorja je bilo zato sedem
+   * vrstic o incidentu, ki se ni zgodil, ob pravem imenu vira. Dnevnik
+   * incidentov, ki vsebuje izmišljene incidente, je slabši od praznega.
+   */
+  opcije: { tiho?: boolean } = {}
+): Promise<number> {
   const meja = new Date(Date.now() - minut * 60_000).toISOString();
   const { data } = await db
     .from("nep_pregledi")
@@ -197,6 +210,7 @@ export async function zapriOsirotele(db: Db, minut = 45): Promise<number> {
       })
       .eq("id", p.id)
       .eq("status", "tece");
+    if (opcije.tiho) continue;
     await zabelezi(db, {
       sprozil: "nadzor osirotelih pregledov",
       vir: p.vir,
@@ -398,5 +412,55 @@ export async function zabelezUspeh(db: Db, vir: string): Promise<void> {
       ukrep: "nic",
       izvedeno: `Razmiki zmanjšani na ${novo.faktor}×.`,
     });
+  }
+}
+
+/**
+ * DNEVNA PORABA ZAHTEVKOV NA VIR.
+ *
+ * Proračun je bil doslej na KROG, ne na dan. Ko je urnik dobil štiri termine,
+ * je to pomenilo 120 obiskov strani dnevno namesto 30 — in bolha je 21. 8.
+ * 2026 po ~60 zahtevkih v dnevu (meritve + trije krogi) začela vračati strani
+ * brez kartic. Krog je bil vsak zase vljuden; dan ni bil.
+ *
+ * Števec teče po lokalnem dnevu in se ob novem dnevu sam ponastavi.
+ */
+export type PorabaDneva = { dan: string; strani: number };
+
+function danesKljuc(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export async function porabaDanes(db: Db, vir: string): Promise<number> {
+  try {
+    const { data } = await db
+      .from("nep_statistika")
+      .select("podatki")
+      .eq("kljuc", `poraba:${vir}`)
+      .maybeSingle();
+    const p = (data?.podatki ?? null) as Partial<PorabaDneva> | null;
+    if (!p || p.dan !== danesKljuc()) return 0;
+    return Math.max(0, Number(p.strani ?? 0));
+  } catch {
+    // Ob negotovosti raje predpostavi, da je poraba visoka: neznanje ne sme
+    // postati dovoljenje za več zahtevkov.
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+export async function dodajPorabo(db: Db, vir: string, koliko: number): Promise<void> {
+  if (koliko <= 0) return;
+  const dan = danesKljuc();
+  const doslej = await porabaDanes(db, vir);
+  const skupaj = Number.isFinite(doslej) ? doslej + koliko : koliko;
+  try {
+    await db.from("nep_statistika").upsert({
+      kljuc: `poraba:${vir}`,
+      podatki: { dan, strani: skupaj },
+      izracunano: new Date().toISOString(),
+    });
+  } catch {
+    // Knjigovodstvo porabe ne sme podreti zbiranja.
   }
 }

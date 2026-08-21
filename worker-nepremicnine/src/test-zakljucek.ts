@@ -124,7 +124,8 @@ if ((aktiven ?? []).length > 0) {
     padlo += 1;
   } else {
     const id = vrstica.id as string;
-    const zaprtih = await zapriOsirotele(db, 45);
+    // tiho: test ne sme pisati v dnevnik popravil administratorja.
+    const zaprtih = await zapriOsirotele(db, 45, { tiho: true });
     const { data: po } = await db
       .from("nep_pregledi")
       .select("status, pregled_popoln, opozorilo")

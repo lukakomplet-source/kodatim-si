@@ -343,6 +343,13 @@ export const adapter: VirAdapter = {
    * branje.
    */
   najvecStrani: 30,
+  /**
+   * DNEVNA MEJA. 21. 8. 2026 izmerjeno: po ~60 obiskih strani v enem dnevu
+   * (meritve in trije krogi) je vir začel vračati strani brez kartic, čeprav
+   * je bil vsak krog zase pod mejo. 40 je udobno pod tem in velja za VSE
+   * kroge dneva skupaj -- štirje termini si jo delijo, ne pomnožijo.
+   */
+  dnevnaMejaStrani: 40,
   hlajenjeUr: 12,
   /**
    * IZMERJENO 21. 8. 2026 (`npm run test:razvrstitev bolha.com`): od 30 kartic

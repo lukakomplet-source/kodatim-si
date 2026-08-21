@@ -98,6 +98,15 @@ export type VirAdapter = {
    */
   najvecStrani?: number;
   /**
+   * Največ obiskov strani na DAN, čez vse kroge skupaj.
+   *
+   * Ločeno od `najvecStrani`, ki velja za en krog. Ko je urnik dobil štiri
+   * termine, je bil vsak krog zase vljuden (30 obiskov), dan pa ne (120) — in
+   * vir je začel vračati strani brez kartic. Vljudnost se meri po dnevu, ker
+   * jo tako meri tudi vir.
+   */
+  dnevnaMejaStrani?: number;
+  /**
    * INKREMENTALNO BRANJE — najmočnejši vzvod, ki ga imamo.
    *
    * Če vir seznam razvrsti od najnovejšega, so novi oglasi na prvih straneh.

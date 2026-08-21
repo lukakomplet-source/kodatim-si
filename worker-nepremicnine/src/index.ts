@@ -11,8 +11,10 @@ import { preveriIskanja } from "./iskanja.js";
 import { zajemiDetajle } from "./detajli.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import {
+  dodajPorabo,
   faktorHitrosti,
   hlajenjeDo,
+  porabaDanes,
   oceniZakljucek,
   sprostiZataknjenoVrsto,
   zabelezBlokado,
@@ -95,12 +97,24 @@ async function zOmejitvijo<T>(kaj: string, delo: Promise<T>, ms = 60_000): Promi
  * ob znižanju še vedno računalo z adapterjevo številko — 2. faza je tako
  * dobila 24 zahtevkov, ko je bil cel proračun 6.
  */
-function proracunZaVir(vir: VirAdapter): number | undefined {
+async function proracunZaVir(db: Db, vir: VirAdapter): Promise<number | undefined> {
+  const meje: number[] = [];
+  if (vir.najvecStrani !== undefined) meje.push(vir.najvecStrani);
+
   const izOkolja = Number(process.env.NEP_NAJVEC_STRANI ?? NaN);
-  if (Number.isFinite(izOkolja) && izOkolja > 0) {
-    return Math.min(izOkolja, vir.najvecStrani ?? izOkolja);
+  if (Number.isFinite(izOkolja) && izOkolja > 0) meje.push(izOkolja);
+
+  /**
+   * DNEVNA MEJA je merodajna za VSE kroge dneva skupaj. Brez nje je urnik s
+   * štirimi termini pomenil štirikrat toliko obiskov, vsak krog pa je bil
+   * zase videti vljuden — dokler vir ni začel vračati strani brez kartic.
+   */
+  if (vir.dnevnaMejaStrani !== undefined) {
+    const porabljeno = await porabaDanes(db, vir.vir);
+    meje.push(Math.max(0, vir.dnevnaMejaStrani - (Number.isFinite(porabljeno) ? porabljeno : vir.dnevnaMejaStrani)));
   }
-  return vir.najvecStrani;
+
+  return meje.length > 0 ? Math.min(...meje) : undefined;
 }
 
 /**
@@ -219,7 +233,7 @@ async function pregledSeznamov(
   const preletNovih = vir.razvrsceniPoNovosti === true;
   /** Postane true, ko rotacija sklene krog med tem zagonom. */
   let krogSklenjen = false;
-  const proracunStrani = proracunZaVir(vir);
+  const proracunStrani = await proracunZaVir(db, vir);
   log("info", "1. faza", {
     vir: vir.vir,
     preletNovih,
@@ -569,11 +583,44 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     prekinjeno: false,
   };
   let detajli = { obdelanih: 0, ostalo: 0, napak: 0, izginulih: 0, blokada: null as string | null };
+  /** Krog se sploh ni začel (dnevni proračun) — zaključni blok ga ne sme oceniti. */
+  let preskocen = false;
   // Kako počasi beremo ta krog: po vsaki blokadi se razmiki podvojijo in se
   // vračajo šele po treh čistih pregledih (samopopravilo.ts).
   const faktor = await faktorHitrosti(db, vir.vir);
 
   try {
+    /**
+     * Dnevni proračun je porabljen: krog se sploh ne začne. To NI napaka in ne
+     * sme biti videti kot napaka — je natanko tisto, kar mora sistem početi,
+     * da vir ne pride do zavračanja.
+     */
+    const naVoljo = await proracunZaVir(db, vir);
+    if (naVoljo !== undefined && naVoljo <= 0) {
+      const porabljeno = await porabaDanes(db, vir.vir);
+      log("info", "dnevni proracun je porabljen - krog se preskoci", {
+        vir: vir.vir,
+        porabljeno,
+        dnevnaMeja: vir.dnevnaMejaStrani,
+      });
+      await db
+        .from("nep_pregledi")
+        .update({
+          status: "preklicano",
+          konec: new Date().toISOString(),
+          pregled_popoln: false,
+          opozorilo:
+            `Dnevni proračun ${vir.dnevnaMejaStrani} obiskov strani je za danes porabljen ` +
+            `(${porabljeno}). Naslednji krog jutri — tako vir ne pride do zavračanja.`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pregledId);
+      // Zaključni blok tega kroga NE sme oceniti: `finally` teče tudi ob
+      // return in bi status "preklicano" povozil z "napaka" (nič strani).
+      preskocen = true;
+      return;
+    }
+
     izid = await pregledSeznamov(db, pregledId, vir, faktor);
 
     // 2. faza samo, kadar je 1. potekla brez blokade: če nas vir ravnokar
@@ -602,7 +649,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
        * kjer je meja 50 — trikrat čez tisto, kar smo si sami postavili.
        * Detajli zato jemljejo iz istega proračuna, kar od njega ostane.
        */
-      const proracun = proracunZaVir(vir);
+      const proracun = await proracunZaVir(db, vir);
       const preostanek = proracun !== undefined ? Math.max(0, proracun - izid.strani) : Number.POSITIVE_INFINITY;
       const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog, preostanek);
       if (kvota <= 0) {
@@ -655,6 +702,14 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     log("error", "pregled padel", { vir: vir.vir, napaka: izid.napaka });
   } finally {
     trenutnaFaza = { vir: null, faza: 0 };
+    if (preskocen) return;
+    /**
+     * Poraba dneva se zabeleži ZA OBE FAZI skupaj in tudi takrat, ko se je
+     * krog končal z napako: zahtevki, ki so bili narejeni, so bili narejeni.
+     * Šteti samo uspešne bi pomenilo, da neuspešen krog ne stane nič — in
+     * prav neuspešni krogi so tisti, ki jih vir šteje najbolj.
+     */
+    await dodajPorabo(db, vir.vir, izid.strani + detajli.obdelanih + detajli.napak);
     const z = oceniZakljucek(izid);
 
     /**
