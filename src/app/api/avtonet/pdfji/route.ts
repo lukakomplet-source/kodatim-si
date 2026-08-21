@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => /^\d+$/.test(s))
-    .slice(0, 60);
+    .slice(0, 150);
   if (ids.length === 0) return NextResponse.json({ verzije: {} });
 
   const db = createAvtonetClient();

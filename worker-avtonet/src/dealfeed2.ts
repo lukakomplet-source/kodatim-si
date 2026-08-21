@@ -287,7 +287,9 @@ export async function izracunajPosle(db: Db, log: Log): Promise<void> {
       .map((z) => ({ z, u: ujemanje(k, z) }))
       .filter((x) => x.u.stopnja <= 2 && x.z.cenaPrimerljiva)
       .sort((a, b) => a.u.stopnja - b.u.stopnja)
-      .filter((x, i, arr) => arr.findIndex((y) => y.z.naziv === x.z.naziv && y.z.cena === x.z.cena && y.z.km === x.z.km) === i)
+      // Ponovne objave: isti naziv, km in letnik je isti avto, tudi ce je cena med
+      // objavami drugacna — zadnja objava je zadnja beseda.
+      .filter((x, i, arr) => arr.findIndex((y) => y.z.naziv === x.z.naziv && y.z.km === x.z.km && y.z.letnik === x.z.letnik) === i)
       .slice(0, 5);
     const medZakljucenih = mediana(zakljuceniIsti.map((x) => x.z.cena));
 

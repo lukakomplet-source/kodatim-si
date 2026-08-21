@@ -17,6 +17,10 @@ import { FiltriVozilForm, type ZnamkaZModeli } from "../FiltriVozilForm";
 
 export type Prodan = {
   avtonetId: string;
+  /** Vse objave istega fizicnega avta — za PDF arhiv. */
+  vsiAvtonetIds: string[];
+  /** Kolikokrat je bil avto objavljen (relist). */
+  objav: number;
   url: string;
   naziv: string | null;
   znamka: string | null;
@@ -142,11 +146,11 @@ export function ProdaniClient({
   // Arhiv za vse prikazane vrstice v enem klicu; brez tega bi vsaka vrstica
   // sprožila svojo poizvedbo ob vsakem izrisu.
   useEffect(() => {
-    const idji = prodani.map((p) => p.avtonetId);
+    const idji = [...new Set(prodani.flatMap((p) => p.vsiAvtonetIds))];
     if (idji.length === 0) return;
     let odpovedano = false;
     const t = setTimeout(() => {
-      fetch(`/api/avtonet/pdfji?ids=${idji.slice(0, 60).join(",")}`)
+      fetch(`/api/avtonet/pdfji?ids=${idji.slice(0, 150).join(",")}`)
         .then((r) => (r.ok ? r.json() : { verzije: {} }))
         .then((data: { verzije: Record<string, PdfVerzija[]> }) => {
           if (odpovedano) return;
@@ -368,7 +372,8 @@ export function ProdaniClient({
       ) : (
         <ul className="mt-5 space-y-2">
           {prodani.map((p) => {
-            const verzije = pdfji[p.avtonetId];
+            const verzije = p.vsiAvtonetIds.flatMap((a) => pdfji[a] ?? []).sort((x, y) => x.ustvarjen.localeCompare(y.ustvarjen));
+            const nalozeno = p.vsiAvtonetIds.some((a) => pdfji[a] !== undefined);
             const veriga = p.zgodovinaCen.length > 1 ? p.zgodovinaCen : null;
             const znizanje =
               p.prvotnaCena !== null && p.prvotnaCena > p.zadnjaCena
@@ -411,6 +416,7 @@ export function ProdaniClient({
                     <p className="text-xs text-zinc-500">
                       izginil {datum(p.izginil)}
                       {p.dniNaTrgu !== null ? ` · ${p.dniNaTrgu} dni na trgu` : ""}
+                      {p.objav > 1 ? ` · objavljen ${p.objav}×` : ""}
                     </p>
                     {p.oznacenProdano && (
                       <p className="text-[11px] font-medium text-emerald-700">vir označil: prodano</p>
@@ -453,7 +459,7 @@ export function ProdaniClient({
                       {jeOdprt ? "skrij opremo" : `oprema (${p.oprema.length})`}
                     </button>
                   )}
-                  {verzije && verzije.length > 0 ? (
+                  {verzije.length > 0 ? (
                     verzije.map((v, i) => (
                       <a
                         key={v.id}
@@ -468,7 +474,7 @@ export function ProdaniClient({
                     ))
                   ) : (
                     <span className="text-[11px] text-zinc-400">
-                      {verzije === undefined ? "…" : "PDF ni bil arhiviran (oglas je izginil pred arhivom)"}
+                      {!nalozeno ? "…" : "PDF ni bil arhiviran (oglas je izginil pred arhivom)"}
                     </span>
                   )}
                   <a

@@ -11,6 +11,7 @@ import {
   mediana,
   type Zrnatost,
 } from "@/lib/avtonet/konfiguracije";
+import { zdruziPonovneObjave, dniNaTrguZdruzeno, type Zdruzeno } from "@/lib/avtonet/ponovneObjave";
 import type { ZnamkaZModeli } from "../FiltriVozilForm";
 import { KonfiguracijeClient, type Skupina, type Primerek } from "./KonfiguracijeClient";
 
@@ -61,25 +62,20 @@ type Vrstica = {
   oprema_kljucna: Record<string, boolean> | null;
   oprema_teza: number | null;
   cena_primerljiva: boolean | null;
+  vin: string | null;
 };
 
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, kw, ccm, gorivo, karoserija, cena_eur, " +
   "cena_prvotna_eur, status, first_seen, status_spremenjen, je_dealer, lokacija, prstni_odtis, " +
   "druzina_modela, generacija, serija_opis, izvedenka, pogon_norm, menjalnik_druzina, " +
-  "oprema_kljucna, oprema_teza, cena_primerljiva";
+  "oprema_kljucna, oprema_teza, cena_primerljiva, vin";
 
 const num = (v: number | string | null): number | null => {
   if (v === null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
-
-function dniNaTrgu(v: Vrstica): number | null {
-  if (!v.status_spremenjen) return null;
-  const d = (new Date(v.status_spremenjen).getTime() - new Date(v.first_seen).getTime()) / 86_400_000;
-  return d >= 0 && d < 3000 ? Math.round(d) : null;
-}
 
 const seznam = (v: string | string[] | undefined): string[] =>
   typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -192,28 +188,34 @@ export default async function KonfiguracijePage({
     return true;
   });
 
+  // Ponovne objave istega fizičnega avta (isti naziv, km, letnik oz. isti VIN)
+  // se najprej zlijejo v en avto: brez tega je en Ford, objavljen trikrat,
+  // štel kot trije avti, vsak "prodan" v dveh dneh — in lestvico hitrosti so
+  // vodili trgovci, ki oglase najpogosteje obnavljajo.
+  const vozila = zdruziPonovneObjave(izbrani);
+
   // Skupine po prstnem odtisu (+ letnik, + razred km).
-  const skupineMap = new Map<string, Vrstica[]>();
-  for (const v of izbrani) {
-    const k = kljucSkupine(v, zrnatost);
+  const skupineMap = new Map<string, Zdruzeno<Vrstica>[]>();
+  for (const z of vozila) {
+    const k = kljucSkupine(z.vrstica, zrnatost);
     if (!k) continue;
-    (skupineMap.get(k) ?? skupineMap.set(k, []).get(k)!).push(v);
+    (skupineMap.get(k) ?? skupineMap.set(k, []).get(k)!).push(z);
   }
 
   const skupine: Skupina[] = [];
   for (const [kljuc, clani] of skupineMap) {
     if (clani.length < najmanjVzorec) continue;
-    const dnevi = clani.map(dniNaTrgu).filter((d): d is number => d !== null);
-    const cene = clani.map((v) => num(v.cena_eur) as number);
-    const znizali = clani.filter((v) => {
-      const p = num(v.cena_prvotna_eur);
-      const c = num(v.cena_eur);
+    const dnevi = clani.map(dniNaTrguZdruzeno).filter((d): d is number => d !== null);
+    const cene = clani.map((z) => num(z.vrstica.cena_eur) as number);
+    const znizali = clani.filter((z) => {
+      const p = num(z.vrstica.cena_prvotna_eur);
+      const c = num(z.vrstica.cena_eur);
       return p !== null && c !== null && p > c;
     });
     // Oprema, ki jo ima vsaj polovica avtov v skupini — po tem se skupini vidi
     // "kakšna je bila opremljenost", ne da bi jo bilo treba odpirati.
     const stetje = new Map<string, number>();
-    for (const v of clani) for (const o of Object.keys(v.oprema_kljucna ?? {})) {
+    for (const z of clani) for (const o of Object.keys(z.vrstica.oprema_kljucna ?? {})) {
       stetje.set(o, (stetje.get(o) ?? 0) + 1);
     }
     const znacilnaOprema = [...stetje.entries()]
@@ -224,8 +226,8 @@ export default async function KonfiguracijePage({
 
     skupine.push({
       kljuc,
-      ime: imeSkupine(clani[0], zrnatost),
-      znamka: clani[0].znamka,
+      ime: imeSkupine(clani[0].vrstica, zrnatost),
+      znamka: clani[0].vrstica.znamka,
       stevilo: clani.length,
       medianaDni: mediana(dnevi),
       hitrih7: dnevi.length ? Math.round((dnevi.filter((d) => d <= 7).length / dnevi.length) * 100) : null,
@@ -234,8 +236,8 @@ export default async function KonfiguracijePage({
       najnizja: Math.min(...cene),
       najvisja: Math.max(...cene),
       znizaliPct: Math.round((znizali.length / clani.length) * 100),
-      zasebnikovPct: Math.round((clani.filter((v) => v.je_dealer === false).length / clani.length) * 100),
-      medianaKm: mediana(clani.map((v) => v.km).filter((x): x is number => x !== null)),
+      zasebnikovPct: Math.round((clani.filter((z) => z.vrstica.je_dealer === false).length / clani.length) * 100),
+      medianaKm: mediana(clani.map((z) => z.vrstica.km).filter((x): x is number => x !== null)),
       znacilnaOprema,
     });
   }
@@ -250,44 +252,55 @@ export default async function KonfiguracijePage({
     }
   });
 
-  // Podrobnosti odprte skupine: vsi primerki s ceno, potjo cene in PDF-ji.
+  // Podrobnosti odprte skupine: vsak FIZIČNI avto enkrat, z zgodovino cen čez
+  // vse svoje objave in s PDF-ji vseh objav.
   let primerki: Primerek[] = [];
   if (odprta && skupineMap.has(odprta)) {
-    const clani = skupineMap.get(odprta)!;
+    const clani = skupineMap.get(odprta)!.slice(0, 100);
+    const vsiIdji = clani.flatMap((z) => z.ids).slice(0, 300);
     const zgodovina = new Map<string, { cena: number; ob: string }[]>();
     const { data } = await db
       .from("avtonet_posnetki")
       .select("oglas_id, cena_eur, zajeto")
-      .in("oglas_id", clani.slice(0, 120).map((v) => v.id))
+      .in("oglas_id", vsiIdji)
       .order("zajeto", { ascending: true })
-      .limit(3000);
+      .limit(4000);
     for (const p of (data ?? []) as { oglas_id: string; cena_eur: number | string | null; zajeto: string }[]) {
       const c = num(p.cena_eur);
       if (c === null) continue;
       const s = zgodovina.get(p.oglas_id) ?? [];
-      if (s.length === 0 || s[s.length - 1].cena !== c) s.push({ cena: c, ob: p.zajeto.slice(0, 10) });
+      s.push({ cena: c, ob: p.zajeto.slice(0, 10) });
       zgodovina.set(p.oglas_id, s);
     }
     primerki = clani
-      .slice(0, 120)
-      .sort((a, b) => (dniNaTrgu(a) ?? 9999) - (dniNaTrgu(b) ?? 9999))
-      .map((v) => ({
-        avtonetId: v.avtonet_id,
-        url: v.url,
-        naziv: v.naziv,
-        letnik: v.letnik,
-        km: v.km,
-        kw: v.kw,
-        cena: num(v.cena_eur) as number,
-        prvotnaCena: num(v.cena_prvotna_eur),
-        zgodovinaCen: zgodovina.get(v.id) ?? [],
-        izginil: v.status_spremenjen?.slice(0, 10) ?? null,
-        objavljen: v.first_seen.slice(0, 10),
-        dniNaTrgu: dniNaTrgu(v),
-        jeDealer: v.je_dealer,
-        lokacija: v.lokacija,
-        oprema: Object.keys(v.oprema_kljucna ?? {}),
-      }));
+      .sort((a, b) => (dniNaTrguZdruzeno(a) ?? 9999) - (dniNaTrguZdruzeno(b) ?? 9999))
+      .map((z) => {
+        const v = z.vrstica;
+        // Zlita pot cene čez vse objave, kronološko, brez zaporednih ponovitev.
+        const tocke = z.ids
+          .flatMap((id) => zgodovina.get(id) ?? [])
+          .sort((a, b) => a.ob.localeCompare(b.ob))
+          .filter((t, i, arr) => i === 0 || arr[i - 1].cena !== t.cena);
+        return {
+          avtonetId: v.avtonet_id,
+          vsiAvtonetIds: z.avtonetIds,
+          url: v.url,
+          naziv: v.naziv,
+          letnik: v.letnik,
+          km: v.km,
+          kw: v.kw,
+          cena: num(v.cena_eur) as number,
+          prvotnaCena: num(v.cena_prvotna_eur),
+          zgodovinaCen: tocke,
+          izginil: v.status_spremenjen?.slice(0, 10) ?? null,
+          objavljen: z.prvaObjava.slice(0, 10),
+          dniNaTrgu: dniNaTrguZdruzeno(z),
+          objav: z.objav,
+          jeDealer: v.je_dealer,
+          lokacija: v.lokacija,
+          oprema: Object.keys(v.oprema_kljucna ?? {}),
+        };
+      });
   }
 
   const izvedenke = [

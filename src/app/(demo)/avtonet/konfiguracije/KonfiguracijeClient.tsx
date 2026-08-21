@@ -33,6 +33,10 @@ export type Skupina = {
 
 export type Primerek = {
   avtonetId: string;
+  /** Vse objave istega fizicnega avta — za PDF arhiv. */
+  vsiAvtonetIds: string[];
+  /** Kolikokrat je bil avto objavljen (relist). */
+  objav: number;
   url: string;
   naziv: string | null;
   letnik: number | null;
@@ -147,7 +151,7 @@ export function KonfiguracijeClient({
 
   useEffect(() => {
     if (primerki.length === 0) return;
-    const idji = primerki.map((p) => p.avtonetId).slice(0, 60);
+    const idji = [...new Set(primerki.flatMap((p) => p.vsiAvtonetIds))].slice(0, 150);
     let odpovedano = false;
     const t = setTimeout(() => {
       fetch(`/api/avtonet/pdfji?ids=${idji.join(",")}`)
@@ -533,7 +537,8 @@ export function KonfiguracijeClient({
 
           <ul className="divide-y divide-zinc-100">
             {primerki.map((p) => {
-              const verzije = pdfji[p.avtonetId];
+              const verzije = p.vsiAvtonetIds.flatMap((a) => pdfji[a] ?? []).sort((x, y) => x.ustvarjen.localeCompare(y.ustvarjen));
+              const nalozeno = p.vsiAvtonetIds.some((a) => pdfji[a] !== undefined);
               const veriga = p.zgodovinaCen.length > 1 ? p.zgodovinaCen : null;
               const znizanje =
                 p.prvotnaCena !== null && p.prvotnaCena > p.cena
@@ -560,6 +565,7 @@ export function KonfiguracijeClient({
                       )}
                       <p className="text-[11px] text-zinc-500">
                         {p.dniNaTrgu !== null ? `${p.dniNaTrgu} dni` : ""} · izginil {datum(p.izginil)}
+                        {p.objav > 1 ? ` · objavljen ${p.objav}×` : ""}
                       </p>
                     </div>
                   </div>
@@ -588,7 +594,7 @@ export function KonfiguracijeClient({
                   )}
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    {verzije && verzije.length > 0 ? (
+                    {verzije.length > 0 ? (
                       verzije.map((v, i) => (
                         <a
                           key={v.id}
@@ -603,7 +609,7 @@ export function KonfiguracijeClient({
                       ))
                     ) : (
                       <span className="text-[11px] text-zinc-400">
-                        {verzije === undefined ? "…" : "PDF ni bil arhiviran"}
+                        {!nalozeno ? "…" : "PDF ni bil arhiviran"}
                       </span>
                     )}
                     <a
