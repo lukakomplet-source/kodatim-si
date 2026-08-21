@@ -237,11 +237,33 @@ async function pregledSeznamov(
   /** Postane true, ko rotacija sklene krog med tem zagonom. */
   let krogSklenjen = false;
   const proracunStrani = await proracunZaVir(db, vir);
+  /**
+   * REZERVA ZA 2. FAZO.
+   *
+   * Proracun je eden za cel krog, obe fazi skupaj. Polni obhod (del B) pa
+   * bere, dokler ima kaj brati -- torej do zadnjega zahtevka. Posledica je
+   * bila tiha in popolna: detajlom je vsakic ostalo `proracun - strani` = 0
+   * in 2. faza se ni izvedla NIKOLI. Baza bi tako do konca casa imela samo
+   * to, kar pise na karticah seznama.
+   *
+   * Obhod se zato ustavi tretjino proracuna pred koncem. Inkrementalni
+   * prelet (del A) rezerve NE spostuje: novi oglasi so nujnejsi od detajlov
+   * starih in prelet se ustavi sam, ko se dohiti. Kadar prelet rezervo poje,
+   * del B ta krog preprosto ne napreduje -- kar je pravilno zaporedje.
+   */
+  const rezervaZaDetajle =
+    vir.detajli && proracunStrani !== undefined
+      ? Math.min(Math.floor(proracunStrani / 3), vir.detajli.kvota)
+      : 0;
+  const mejaZaObhod = proracunStrani !== undefined ? proracunStrani - rezervaZaDetajle : undefined;
+  /** Meja, ki velja za del, ki tece zdaj (A: cel proracun, B: brez rezerve). */
+  let mejaStrani = proracunStrani;
   log("info", "1. faza", {
     vir: vir.vir,
     preletNovih,
     zadnjiSklenjenKrog: zadnjiPolni,
     proracunStrani: proracunStrani ?? "brez meje",
+    rezervaZaDetajle,
   });
 
   let dosezenaKvota = false;
@@ -440,8 +462,8 @@ async function pregledSeznamov(
           // videl nikoli — kar je natanko stradanje, ki ga rotacija rešuje.
           if (straniTu >= najvecStraniTu) break;
           // Dnevna kvota strani: raje se ustavimo sami, kot da nas vir ustavi.
-          if (proracunStrani !== undefined && p.strani >= proracunStrani) {
-            log("info", "dosezena kvota strani za ta pregled", { vir: vir.vir, strani: p.strani, proracun: proracunStrani, rezina: rezina.oznaka, naslednjaStran: stran + 1 });
+          if (mejaStrani !== undefined && p.strani >= mejaStrani) {
+            log("info", "dosezena kvota strani za ta pregled", { vir: vir.vir, strani: p.strani, proracun: mejaStrani, rezina: rezina.oznaka, naslednjaStran: stran + 1 });
             dosezenaKvota = true;
             // Naslednjič nadaljuj TOČNO tu — rezina se ne preskoči. Velja
             // samo za polni obhod; inkrementalni prelet kazalca ne premika.
@@ -507,6 +529,8 @@ async function pregledSeznamov(
       // Dve strani na rezino: prva pokaže novo, druga potrdi, da za njo ni
       // več novega. Globina je naloga polnega obhoda, ne preleta.
       const STRANI_NA_REZINO_V_PRELETU = 2;
+      // Prelet sme do celega proracuna -- rezerva velja samo za obhod.
+      mejaStrani = proracunStrani;
       log("info", "A: inkrementalni prelet vseh rezin", {
         vir: vir.vir,
         rezin: vseRezine.length,
@@ -517,7 +541,7 @@ async function pregledSeznamov(
         // Proračun se preverja tudi PRED novo rezino. Znotraj rezine ga
         // preskoči ustavitev po globini (prelet bere po dve strani), zato bi
         // se sicer prekoračil za toliko strani, kolikor je rezin.
-        if (proracunStrani !== undefined && p.strani >= proracunStrani) {
+        if (mejaStrani !== undefined && p.strani >= mejaStrani) {
           dosezenaKvota = true;
           break;
         }
@@ -527,15 +551,16 @@ async function pregledSeznamov(
     }
 
     if (!dosezenaKvota && !blokada && !stopping) {
+      mejaStrani = mejaZaObhod;
       log("info", "B: nadaljujem polni obhod", {
         vir: vir.vir,
         odRezine: zacetniIndeks,
         odStrani: zacetnaStran,
-        preostanekProracuna: proracunStrani !== undefined ? proracunStrani - p.strani : "brez meje",
+        preostanekProracuna: mejaStrani !== undefined ? mejaStrani - p.strani : "brez meje",
       });
       for (const [zaporedna, rezina] of rezineVrstniRed.entries()) {
         if (stopping || dosezenaKvota || blokada) break;
-        if (proracunStrani !== undefined && p.strani >= proracunStrani) {
+        if (mejaStrani !== undefined && p.strani >= mejaStrani) {
           dosezenaKvota = true;
           break;
         }
@@ -705,7 +730,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
        * Detajli zato jemljejo iz istega proračuna, kar od njega ostane.
        */
       const proracun = await proracunZaVir(db, vir);
-      const preostanek = proracun !== undefined ? Math.max(0, proracun - izid.strani) : Number.POSITIVE_INFINITY;
+      const preostanek = proracun !== undefined ? Math.max(0, proracun - izid.zahtevkov) : Number.POSITIVE_INFINITY;
       const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog, preostanek);
       if (kvota <= 0) {
         log("info", "2. faza preskocena - proracun zahtevkov je porabila 1. faza", {
