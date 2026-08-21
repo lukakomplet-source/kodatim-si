@@ -84,18 +84,37 @@ export async function preberiSeznam(page: Page): Promise<{
         stSlik: Array.from(el.querySelectorAll("img[src*='img.nepremicnine'], img[data-src*='img.nepremicnine']")).length || null,
       });
     }
-    // paginacija: "1/23"
-    const stevec = document.body.innerText.match(/(\d+)\s*\/\s*(\d+)/);
-    const zadnjaStran = stevec ? Number(stevec[2]) : null;
-    // Vir sam pove, koliko oglasov ustreza rezini: "Št. ustreznih oglasov: 0".
-    // Nič je nič — in ne blokada.
+    /**
+     * Koliko oglasov ustreza rezini — vir to pove sam: "Št. ustreznih
+     * oglasov: 385". Vzorec se MORA začeti s števko, ker ima okrajšava "Št."
+     * piko in jo je `[\d.]+` pobral namesto številke (polna kategorija se je
+     * predstavila kot prazna — ista past kot pri "Št. spalnic: 2").
+     */
     const cnt = (document.querySelector(".oglasi_cnt") as HTMLElement | null)?.innerText ?? "";
-    // Vzorec se MORA začeti s števko: "Št. ustreznih oglasov: 385" ima piko že
-    // v okrajšavi "Št.", zato je [\d.]+ pobral njo in vrnil 0 — polna
-    // kategorija bi se predstavila kot prazna. Ista past kot pri "Št. spalnic".
     const najdeno = cnt.match(/(\d[\d.]*)/);
-    const skupajZadetkov = najdeno ? Number(najdeno[1].replace(/\./g, "")) : null;
-    return { kartice, zadnjaStran, skupajZadetkov: Number.isFinite(skupajZadetkov as number) ? skupajZadetkov : null };
+    const skupaj = najdeno ? Number(najdeno[1].replace(/\./g, "")) : null;
+    const skupajZadetkov = skupaj !== null && Number.isFinite(skupaj) ? skupaj : null;
+
+    /**
+     * ZADNJA STRAN SE IZRAČUNA, NE PREBERE.
+     *
+     * Prej se je brala z `document.body.innerText.match(/(\d+)\s*\/\s*(\d+)/)`
+     * — torej iz prvega zapisa "x/y" kjer koli v besedilu strani. Izmerjeno na
+     * osmih zaporednih straneh iste kategorije: 10, 3, 6, 7, 3, 4, 3, 3.
+     * Vsakič druga številka in nobena ni bila prava. Zanka se je ob "3"
+     * ustavila pri tretji strani od šestnajstih, zato je bilo v bazi 128
+     * oglasov od 385, ki jih vir premore — dve tretjini trga sta tiho manjkali
+     * in v nobenem dnevniku to ni bilo videti kot napaka.
+     *
+     * Zdaj: skupno število deljeno z velikostjo strani. Pri delni zadnji
+     * strani (manj kartic) izračun raje PRECENI število strani — odvečna
+     * stran stane eno zahtevo, premalo strani pa stane podatke; zanka se
+     * ustavi sama, ko dve strani zapored ne prineseta nič novega.
+     */
+    const naStran = kartice.length > 0 ? Math.min(kartice.length, 25) : 25;
+    const zadnjaStran = skupajZadetkov !== null && skupajZadetkov > 0 ? Math.ceil(skupajZadetkov / naStran) : null;
+
+    return { kartice, zadnjaStran, skupajZadetkov };
   }) as Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null }>;
 }
 
