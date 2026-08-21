@@ -61,7 +61,8 @@ export async function GET() {
   const db = createAvtonetClient();
   const vceraj = new Date(Date.now() - 86_400_000).toISOString();
 
-  const [zbiralnik, aktivnaRes, zgodovinaRes, viriRes, urnikRes, napakeRes, statRes] = await Promise.all([
+  const [zbiralnik, aktivnaRes, zgodovinaRes, viriRes, urnikRes, napakeRes, statRes, izginuliRes] =
+    await Promise.all([
     zbiralnikZiv(),
     db
       .from("nep_pregledi")
@@ -85,6 +86,20 @@ export async function GET() {
       .order("ob", { ascending: false })
       .limit(20),
     db.from("nep_statistika").select("kljuc, podatki, izracunano"),
+    /**
+     * Izginuli oglasi — tisti, ki jih sklenjen obhod ni več našel.
+     *
+     * Zavestno brez paginacije in omejeno na 50: to ni katalog, ampak
+     * kontrolni seznam. Če jih je nenadoma sto, ni odšlo sto stanovanj —
+     * pokvaril se je selektor ali pa je vir vrnil krajše sezname, in prav
+     * to mora administrator videti na prvi pogled.
+     */
+    db
+      .from("nep_oglasi")
+      .select("id, vir, naslov, kraj, cena_eur, povrsina_m2, first_seen, last_seen, url, posel")
+      .eq("status", "izginil")
+      .order("last_seen", { ascending: false })
+      .limit(50),
   ]);
 
   // Manjkajoča tabela pomeni samo, da migracija še ni pognana — ne okvara.
@@ -223,5 +238,6 @@ export async function GET() {
       .map(([k, v]) => ({ vir: k.slice(7), ...(v as { naslednja?: number; stran?: number }) })),
     samopopravila: (statistika["samopopravila"] as { zapisi?: unknown[] } | undefined)?.zapisi ?? [],
     napake: napakeRes.data ?? [],
+    izginuli: izginuliRes.data ?? [],
   });
 }

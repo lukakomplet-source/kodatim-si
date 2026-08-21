@@ -101,6 +101,20 @@ type Blokada = {
 type Popravilo = { ob: string; sprozil: string; vir: string | null; vzrok: string; ukrep: string; izvedeno: string };
 type Napaka = { ob: string; vir: string | null; tip: string; sporocilo: string; url: string | null };
 
+
+/** Oglas, ki ga sklenjen obhod ni vec nasel. */
+type Izginuli = {
+  id: string;
+  vir: string;
+  naslov: string | null;
+  kraj: string | null;
+  cena_eur: number | string | null;
+  povrsina_m2: number | string | null;
+  posel: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  url: string | null;
+};
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
@@ -112,6 +126,7 @@ type Odziv = {
   urnik?: { omogocen: boolean; ure: string; detajlov_na_krog: number };
   skupno?: { vsehOglasov: number; izginulih: number; kandidatov: number };
   prostor?: { uporabljeno: number | null; limit: number };
+  izginuli?: Izginuli[];
   blokade?: Blokada[];
   samopopravila?: Popravilo[];
   napake?: Napaka[];
@@ -325,7 +340,12 @@ export function NepKonzola() {
 
       <Urnik urnik={odziv.urnik} onShrani={(o, u, d) => ukaz(() => shraniUrnik(o, u, d))} delam={delam} />
 
-      <BazaSkupno skupno={odziv.skupno} prostor={odziv.prostor} stanja={odziv.stanjePoVirih ?? []} />
+      <BazaSkupno
+        skupno={odziv.skupno}
+        prostor={odziv.prostor}
+        stanja={odziv.stanjePoVirih ?? []}
+        izginuli={odziv.izginuli ?? []}
+      />
 
       <section>
         <h2 className="text-sm font-semibold text-zinc-900">Viri</h2>
@@ -530,13 +550,44 @@ function Napredek({
   );
 }
 
-function Stat({ label, value, tone = "zinc" }: { label: string; value: string; tone?: "zinc" | "emerald" | "amber" | "red" }) {
+function Stat({
+  label,
+  value,
+  tone = "zinc",
+  onClick,
+  odprto,
+}: {
+  label: string;
+  value: string;
+  tone?: "zinc" | "emerald" | "amber" | "red";
+  /** Kadar je podan, je števec gumb, ki odpre podrobnejši seznam. */
+  onClick?: () => void;
+  odprto?: boolean;
+}) {
   const barva = { zinc: "text-zinc-900", emerald: "text-emerald-600", amber: "text-amber-600", red: "text-red-600" }[tone];
-  return (
-    <div className="rounded-lg bg-white px-3 py-2 ring-1 ring-zinc-200">
-      <p className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</p>
+  const vsebina = (
+    <>
+      <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+        {label}
+        {onClick && <span className="ml-1 text-zinc-400">{odprto ? "▾" : "▸"}</span>}
+      </p>
       <p className={`mt-0.5 text-lg font-semibold tabular-nums ${barva}`}>{value}</p>
-    </div>
+    </>
+  );
+  if (!onClick) {
+    return <div className="rounded-lg bg-white px-3 py-2 ring-1 ring-zinc-200">{vsebina}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={odprto}
+      className={`rounded-lg bg-white px-3 py-2 text-left ring-1 transition hover:bg-zinc-50 ${
+        odprto ? "ring-accent" : "ring-zinc-200"
+      }`}
+    >
+      {vsebina}
+    </button>
   );
 }
 
@@ -668,11 +719,14 @@ function BazaSkupno({
   skupno,
   prostor,
   stanja,
+  izginuli,
 }: {
   skupno?: { vsehOglasov: number; izginulih: number; kandidatov: number };
   prostor?: { uporabljeno: number | null; limit: number };
   stanja: Stanje[];
+  izginuli: Izginuli[];
 }) {
+  const [odprtiIzginuli, setOdprtiIzginuli] = useState(false);
   const aktivnih = stanja.reduce((v, s) => v + s.aktivnih, 0);
   const zDetajli = stanja.reduce((v, s) => v + s.zDetajli, 0);
   const odstotek = aktivnih > 0 ? Math.round((zDetajli / aktivnih) * 100) : 0;
@@ -688,9 +742,17 @@ function BazaSkupno({
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Vseh oglasov" value={stevilo(skupno?.vsehOglasov)} />
         <Stat label="Aktivnih" value={stevilo(aktivnih)} tone="emerald" />
-        <Stat label="Izginulih" value={stevilo(skupno?.izginulih)} tone="amber" />
+        <Stat
+          label="Izginulih"
+          value={stevilo(skupno?.izginulih)}
+          tone="amber"
+          onClick={() => setOdprtiIzginuli((v) => !v)}
+          odprto={odprtiIzginuli}
+        />
         <Stat label="Kandidatov za združitev" value={stevilo(skupno?.kandidatov)} />
       </div>
+
+      {odprtiIzginuli && <IzginuliSeznam vrstice={izginuli} skupaj={skupno?.izginulih ?? 0} />}
 
       <div className="mt-4">
         <div className="h-2 overflow-hidden rounded-full bg-zinc-200">
@@ -710,6 +772,81 @@ function BazaSkupno({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Kaj je izginilo iz kataloga.
+ *
+ * Oglas dobi `status = "izginil"` samo takrat, ko ga SKLENJEN obhod ni več
+ * našel — delni pregled tega ne sme trditi, ker ni videl vsega. Seznam je
+ * zato kontrolni in ne katalog: nenaden skok pomeni prej pokvarjen selektor
+ * ali krajše sezname pri viru kot to, da je toliko nepremičnin res odšlo.
+ *
+ * Naslov vodi na NAŠO stran oglasa, ne na izvirnik: izvirnik je praviloma
+ * odstranjen in bi vrnil 404, zadnje, kar smo videli, pa imamo shranjeno.
+ */
+function IzginuliSeznam({ vrstice, skupaj }: { vrstice: Izginuli[]; skupaj: number }) {
+  if (vrstice.length === 0) {
+    return (
+      <p className="mt-4 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 ring-1 ring-zinc-200">
+        Doslej ni izginil noben oglas. Izginotje zabeleži šele sklenjen obhod vira — dokler se prvi ne
+        sklene, je ta seznam prazen tudi, če se je pri viru kaj spremenilo.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4 rounded-lg ring-1 ring-amber-200">
+      <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+        <p className="text-xs text-amber-900">
+          Oglasi, ki jih sklenjen obhod ni več našel — prodano, oddano ali umaknjeno. Prikazanih{" "}
+          {stevilo(vrstice.length)} od {stevilo(skupaj)}.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-zinc-500">
+              <th className="px-3 py-2 font-medium">Oglas</th>
+              <th className="px-3 py-2 font-medium">Kraj</th>
+              <th className="px-3 py-2 text-right font-medium">Cena</th>
+              <th className="px-3 py-2 text-right font-medium">m²</th>
+              <th className="px-3 py-2 font-medium">Prvič viden</th>
+              <th className="px-3 py-2 font-medium">Zadnjič viden</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {vrstice.map((o) => {
+              const cena = o.cena_eur === null ? null : Number(o.cena_eur);
+              const m2 = o.povrsina_m2 === null ? null : Number(o.povrsina_m2);
+              return (
+                <tr key={o.id} className="align-top">
+                  <td className="px-3 py-2">
+                    <a href={`/nepremicnine/oglas/${o.id}`} className="font-medium text-zinc-800 hover:text-accent">
+                      {o.naslov ?? "(brez naslova)"}
+                    </a>
+                    <span className="ml-1.5 text-zinc-400">
+                      {o.vir}
+                      {o.posel ? ` · ${o.posel}` : ""}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-zinc-600">{o.kraj ?? "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
+                    {cena !== null && Number.isFinite(cena) ? `${stevilo(Math.round(cena))} €` : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
+                    {m2 !== null && Number.isFinite(m2) ? m2.toLocaleString("sl-SI") : "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{datumUra(o.first_seen)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{datumUra(o.last_seen)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
