@@ -87,12 +87,24 @@ export const OPREMA_SLOVAR: [string, RegExp, number][] = [
   ["paket_m_sport", /\bm[\s-]*(sport|paket|package)\b|\bmsport\b|m[\s-]*sportpaket/i, 2],
   ["paket_amg", /amg[\s-]*(line|paket|package|sport|styling)/i, 2],
   ["paket_sline", /\bs[\s-]*line\b|\bsline\b/i, 2],
+  // Virtualni kokpit je pri 15.473 aktivnih oglasih omenjen v besedilu in ga
+  // vir sam nikoli ne označi — prav zato ga je vredno brati tu.
+  ["virtualni_kokpit", /virtual\s*cockpit|virtualni\s*kokpit|digitaln\w*\s*(merilnik|armatur|kokpit|instrument)|digital\s*cockpit|\bvirtual\b/i, 2],
+  ["velika_platisca", /\b(1[89]|2[0-3])\s*(?:col|"|cole|palc)|alu\s*(1[89]|2[0-3])\b|\br(1[89]|2[0-3])\b/i, 1],
   ["acc", /\bacc\b|adaptiv\w*\s*tempomat|adaptive\s*cruise|distronic|radar\s*tempomat/i, 1],
+  ["lane_assist", /lane\s*assist|asistenc\w*\s*za\s*vozni\s*pas|opozorilo\s*na\s*vozni\s*pas|ohranjanj\w*\s*pasu/i, 1],
+  ["blind_spot", /blind\s*spot|mrtvi\s*kot|mrtvem\s*kotu/i, 1],
+  ["ambientna", /ambientn\w*\s*(osvetlit|luč|luc)|ambient\s*light/i, 1],
+  ["adaptive_light", /adaptivn\w*\s*(luč|luc|žaromet|zaromet|osvetlit)|adaptive\s*(light|headl)/i, 1],
   ["streha_odpiranje", /(son[cč]n\w*|pomi[cč]n\w*|odpira\w*|steklen\w*)\s*streh|sunroof|schiebedach/i, 1],
   ["memory_sedezi", /memory\s*(sede|seat|paket|funkcij)|spomin\w*\s*sede/i, 1],
   ["vlecna", /vle[cč]n\w*\s*(kljuk|napra)|\bkljuka\b|anh[aä]nger|towbar/i, 1],
   ["keyless", /keyless|brezkl[ju][cč]|comfort\s*access|smart\s*(entry|key)/i, 1],
   ["sedezi_gretje", /gret\w*\s*sede|ogrevan\w*\s*sede|heated\s*seat/i, 1],
+  ["navigacija", /navigacij|\bnavi\b|\bnav\b/i, 1],
+  ["carplay", /apple\s*carplay|android\s*auto|\bcarplay\b/i, 1],
+  ["el_prtljaznik", /el(?:\.|ektri[cč]n\w*)?\s*prtlja[zž]nik|power\s*tailgate|hands?\s*free\s*prtlja/i, 1],
+  ["alu_platisca", /alu\s*plati|platišč|platisc|alloy/i, 1],
 ];
 
 /** Oznake, ki jih vir sam že normalizira — jemljemo jih kot dejstvo. */
@@ -112,6 +124,15 @@ const ZNACILKE_PRESLIKAVA: Record<string, string> = {
   vlecna: "vlecna",
   streha: "streha_odpiranje",
   sportni_sedezi: "skoljkasti_sedezi",
+  lane_assist: "lane_assist",
+  blind_spot: "blind_spot",
+  ambientna: "ambientna",
+  adaptive_light: "adaptive_light",
+  alu_platisca: "alu_platisca",
+  navigacija: "navigacija",
+  el_prtljaznik: "el_prtljaznik",
+  apple_carplay: "carplay",
+  android_auto: "carplay",
 };
 
 export function preberiOpremo(o: OglasZaIdentiteto): { oprema: Record<string, boolean>; teza: number } {

@@ -7,6 +7,7 @@ import {
   Bell,
   Calculator,
   Database,
+  Layers,
   Lightbulb,
   LineChart,
   Sparkles,
@@ -45,6 +46,7 @@ const UPORABNIK = [
   { href: "/avtonet/cenilnik", label: "Oceni vozilo", icon: Calculator },
   { href: "/avtonet/posli", label: "Posli", icon: Target },
   { href: "/avtonet/prodani", label: "Prodani", icon: PackageCheck },
+  { href: "/avtonet/konfiguracije", label: "Konfiguracije", icon: Layers },
   { href: "/avtonet", label: "Moja spremljanja", icon: Bell },
 ];
 
