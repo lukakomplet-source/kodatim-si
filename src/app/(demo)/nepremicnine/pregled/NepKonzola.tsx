@@ -104,7 +104,7 @@ type Napaka = { ob: string; vir: string | null; tip: string; sporocilo: string; 
 type Odziv = {
   jeAdmin: boolean;
   migracijaManjka?: boolean;
-  zbiralnik?: { ziv: boolean; mirujeMs: number | null };
+  zbiralnik?: { ziv: boolean; mirujeMs: number | null; iskrenaIdentiteta?: boolean | null };
   aktivna: Pregled | null;
   zgodovina: Pregled[];
   viri?: Vir[];
@@ -363,7 +363,7 @@ function ZdravjeZbiralnika({
   aktivna,
   now,
 }: {
-  zbiralnik?: { ziv: boolean; mirujeMs: number | null };
+  zbiralnik?: { ziv: boolean; mirujeMs: number | null; iskrenaIdentiteta?: boolean | null };
   aktivna: Pregled | null;
   now: number;
 }) {
@@ -387,6 +387,15 @@ function ZdravjeZbiralnika({
             ? "Proces na vratih 8081 odgovarja. Zahteve iz konzole pobere v ~15 sekundah."
             : "Proces na vratih 8081 se ne oglaša — zahteve bodo obležale v vrsti, dokler se ne zažene. Zahteva se ne izgubi."}
         </p>
+        {/* Kako se predstavljamo virom, je odločitev s posledicami — zato je
+            napisana, ne skrita v konstanti. */}
+        {ziv && zbiralnik?.iskrenaIdentiteta !== null && zbiralnik?.iskrenaIdentiteta !== undefined && (
+          <p className={`mt-1 text-xs ${zbiralnik.iskrenaIdentiteta ? "text-emerald-700" : "text-amber-700"}`}>
+            {zbiralnik.iskrenaIdentiteta
+              ? "Virom se predstavljamo z lastnim imenom (KodaTimBot)."
+              : "Virom se predstavljamo kot navaden brskalnik — prikrivamo, da gre za robota."}
+          </p>
+        )}
       </div>
       {aktivna && (
         <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">

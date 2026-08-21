@@ -28,17 +28,27 @@ const POLJA =
  * Zbiralnik odgovarja na 127.0.0.1:8081; če ne odgovori v sekundi in pol, ga
  * ni. Napaka se namenoma požre: konzola mora delati tudi brez zbiralnika.
  */
-async function zbiralnikZiv(): Promise<{ ziv: boolean; mirujeMs: number | null }> {
+async function zbiralnikZiv(): Promise<{
+  ziv: boolean;
+  mirujeMs: number | null;
+  iskrenaIdentiteta: boolean | null;
+}> {
   try {
     const res = await fetch(`http://127.0.0.1:${process.env.NEP_WORKER_PORT ?? 8081}/`, {
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
     });
-    if (!res.ok) return { ziv: false, mirujeMs: null };
-    const telo = (await res.json()) as { heartbeatAgeMs?: number };
-    return { ziv: true, mirujeMs: Number(telo.heartbeatAgeMs ?? 0) };
+    if (!res.ok) return { ziv: false, mirujeMs: null, iskrenaIdentiteta: null };
+    const telo = (await res.json()) as { heartbeatAgeMs?: number; iskrenaIdentiteta?: boolean };
+    return {
+      ziv: true,
+      mirujeMs: Number(telo.heartbeatAgeMs ?? 0),
+      // Kako se predstavljamo virom, je odločitev z posledicami in mora biti
+      // vidna. Starejši zbiralnik tega polja ne pošlje — takrat je null.
+      iskrenaIdentiteta: typeof telo.iskrenaIdentiteta === "boolean" ? telo.iskrenaIdentiteta : null,
+    };
   } catch {
-    return { ziv: false, mirujeMs: null };
+    return { ziv: false, mirujeMs: null, iskrenaIdentiteta: null };
   }
 }
 
