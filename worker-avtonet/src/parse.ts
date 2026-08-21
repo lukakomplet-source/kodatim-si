@@ -87,12 +87,27 @@ export function parseRowText(text: string, href: string): ParsedRow | null {
   // So any figure followed by "+ DDV" (or "brez DDV") is discarded, and the last
   // of what remains is today's asking price — keeping the old behaviour where a
   // row shows a struck-through old price and a current one.
+  // Oblik, v katerih vir napiše drugo, nižjo ceno, je več kot ena:
+  //
+  //     17.980 € oz. 14.740 € + DDV(*)
+  //     21.850 € oz. 17.909 € Export(*)
+  //
+  // Prva različica tega pravila je poznala samo "+ DDV" in "brez DDV", zato je
+  // pri 2.215 oglasih shranila IZVOZNO ceno kot ceno vozila — BMW 320d za
+  // 21.850 € je bil v bazi 17.909 € in je zato v vsaki primerjavi izpadel za
+  // petino prepoceni. Zato tu ne lovimo več posameznih oznak, ampak dejstvo,
+  // ki je vsem skupno: karkoli stoji za "oz.", je alternativna cena za nekoga
+  // drugega (podjetje, izvoznik), ne cena, ki jo plača navaden kupec.
   const cene: { vrednost: number; brezDdv: boolean }[] = [];
   for (const m of text.matchAll(/([\d.]+)\s*€/g)) {
     const vrednost = parsePrice(m[1]);
     if (vrednost === null) continue;
-    const zaCeno = text.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 14);
-    cene.push({ vrednost, brezDdv: /^\s*(?:\+\s*DDV|brez\s*DDV)/i.test(zaCeno) });
+    const zac = m.index ?? 0;
+    const zaCeno = text.slice(zac + m[0].length, zac + m[0].length + 14);
+    const predCeno = text.slice(Math.max(0, zac - 6), zac);
+    const alternativna =
+      /^\s*(?:\+\s*DDV|brez\s*DDV|Export|izvoz|neto)/i.test(zaCeno) || /\boz\.\s*$/i.test(predCeno);
+    cene.push({ vrednost, brezDdv: alternativna });
   }
   const zDdv = cene.filter((c) => !c.brezDdv);
   const cenaEur = zDdv.length > 0 ? zDdv[zDdv.length - 1].vrednost : null;

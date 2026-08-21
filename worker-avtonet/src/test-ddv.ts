@@ -25,6 +25,27 @@ const primeri: { besedilo: string; pricakovano: number; neto: number | null }[] 
     pricakovano: 8900,
     neto: null,
   },
+  {
+    // Izvozna cena: vir jo pise kot "Export(*)", ne kot "+ DDV". Prva razlicica
+    // pravila je te ni poznala in je shranila 17.909 namesto 21.850 €.
+    besedilo:
+      "BMW serija 3: LIMUZ-20d-AUT-SPORT 1.registracija 2021 Prevozenih 67151 km Gorivo diesel motor Menjalnik avtomatski menjalnik Motor 1995 ccm, 110 kW / 150 KM 21.850 € oz. 17.909 € Export(*) 21.850 € oz. 17.909 € Export(*)",
+    pricakovano: 21850,
+    neto: 17909,
+  },
+  {
+    besedilo:
+      "Peugeot 208 1.registracija 2021 Prevozenih 45000 km Gorivo bencinski motor Menjalnik rocni menjalnik Motor 1199 ccm, 74 kW / 100 KM 10.480 € oz. 8.590 € Export(*) 10.480 € oz. 8.590 € Export(*)",
+    pricakovano: 10480,
+    neto: 8590,
+  },
+  {
+    // Mesecni obrok za ceno ne sme steti; cena vozila je 4.950 €.
+    besedilo:
+      "Renault Clio 1.registracija 2015 Prevozenih 120000 km Gorivo bencinski motor Menjalnik rocni menjalnik Motor 898 ccm, 66 kW / 90 KM 4.950 € oz. 80,00 EUR / mesec (*)",
+    pricakovano: 4950,
+    neto: null,
+  },
 ];
 
 let napak = 0;

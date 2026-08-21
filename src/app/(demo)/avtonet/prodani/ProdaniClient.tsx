@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, FileText, TrendingDown } from "lucide-react";
+import { ChevronDown, ExternalLink, FileText, TrendingDown } from "lucide-react";
 import { eur } from "@/lib/avtonet/analiza";
+import type { FiltriVozil } from "@/lib/avtonet/filtriVozil";
+import { FiltriVozilForm, type ZnamkaZModeli } from "../FiltriVozilForm";
 
 /**
- * Seznam prodanih (izginulih) avtov z opremo, gibanjem cene in PDF arhivom.
+ * Seznam prodanih (izginulih) avtov: filtri kot na avto.netu, zgodovina cene,
+ * oprema in PDF arhiv.
  *
  * Filtri gredo skozi URL (GET obrazec), ker se podatki berejo na strežniku in
  * se stran lahko deli ali osveži brez izgube izbire. PDF-ji se dobijo v enem
@@ -24,6 +27,8 @@ export type Prodan = {
   gorivo: string | null;
   zadnjaCena: number;
   prvotnaCena: number | null;
+  /** Veriga cen, kot jo je zabeležil zbiralnik — samo dejanske spremembe. */
+  zgodovinaCen: { cena: number; ob: string }[];
   izginil: string | null;
   objavljen: string;
   dniNaTrgu: number | null;
@@ -48,6 +53,11 @@ type Povzetek = {
   znizaliPct: number | null;
   povprecnoZnizanje: number | null;
   zasebnikovPct: number | null;
+};
+
+type Hitrost = {
+  kosi: { oznaka: string; stevilo: number; delez: number }[];
+  razredi: { oznaka: string; stevilo: number; medianaDni: number | null; medianaCene: number | null }[];
 };
 
 const LEPA_OPREMA: Record<string, string> = {
@@ -90,7 +100,7 @@ function lepo(k: string): string {
 }
 
 function datum(iso: string | null): string {
-  return iso ? iso.split("-").reverse().join(".") : "—";
+  return iso ? iso.split("-").reverse().slice(0, 2).join(".") + "." : "—";
 }
 
 const izbira =
@@ -98,29 +108,36 @@ const izbira =
 
 export function ProdaniClient({
   prodani,
-  znamke,
-  izbranaZnamka,
-  izbranModel,
+  znamkeModeli,
+  privzetiFiltri,
+  steviloFiltrov,
   dni,
+  razvrsti,
+  razvrstitve,
   stran,
   naStran,
   skupaj,
   povzetek,
+  hitrost,
   opremaUcinek,
 }: {
   prodani: Prodan[];
-  znamke: string[];
-  izbranaZnamka: string;
-  izbranModel: string;
+  znamkeModeli: ZnamkaZModeli[];
+  privzetiFiltri: FiltriVozil;
+  steviloFiltrov: number;
   dni: number;
+  razvrsti: string;
+  razvrstitve: { kljuc: string; oznaka: string }[];
   stran: number;
   naStran: number;
   skupaj: number;
   povzetek: Povzetek;
+  hitrost: Hitrost;
   opremaUcinek: { ime: string; hitriPct: number; pocasniPct: number; razlika: number }[];
 }) {
   const [pdfji, setPdfji] = useState<Record<string, PdfVerzija[] | null>>({});
   const [odprt, setOdprt] = useState<string | null>(null);
+  const [filtriOdprti, setFiltriOdprti] = useState(steviloFiltrov > 0);
 
   // Arhiv za vse prikazane vrstice v enem klicu; brez tega bi vsaka vrstica
   // sprožila svojo poizvedbo ob vsakem izrisu.
@@ -144,64 +161,74 @@ export function ProdaniClient({
   }, [prodani]);
 
   const strani = Math.ceil(skupaj / naStran);
-  const povezava = (p: Record<string, string | number>) => {
-    const u = new URLSearchParams();
-    if (izbranaZnamka) u.set("znamka", izbranaZnamka);
-    if (izbranModel) u.set("model", izbranModel);
-    u.set("dni", String(dni));
-    for (const [k, v] of Object.entries(p)) u.set(k, String(v));
+
+  /** Trenutni URL z eno spremenjeno vrednostjo — filtri ostanejo. */
+  const povezava = (sprememba: Record<string, string | number>) => {
+    const u = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+    for (const [k, v] of Object.entries(sprememba)) u.set(k, String(v));
     return `/avtonet/prodani?${u.toString()}`;
   };
 
   return (
     <div className="mt-6">
-      <form method="get" className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-zinc-500">Znamka</span>
-          <select name="znamka" defaultValue={izbranaZnamka} className={`${izbira} min-w-44`}>
-            <option value="">Vse znamke</option>
-            {znamke.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-zinc-500">Model</span>
-          <input
-            name="model"
-            defaultValue={izbranModel}
-            placeholder="npr. serija 5"
-            className={`${izbira} w-44`}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-zinc-500">Obdobje</span>
-          <select name="dni" defaultValue={String(dni)} className={`${izbira} min-w-40`}>
-            <option value="7">zadnjih 7 dni</option>
-            <option value="30">zadnjih 30 dni</option>
-            <option value="90">zadnjih 90 dni</option>
-            <option value="365">zadnje leto</option>
-            <option value="3650">vse, kar imamo</option>
-          </select>
-        </label>
-        <button
-          type="submit"
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          Pokaži
-        </button>
+      <form method="get" className="rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-zinc-500">Obdobje</span>
+            <select name="dni" defaultValue={String(dni)} className={`${izbira} min-w-40`}>
+              <option value="7">zadnjih 7 dni</option>
+              <option value="30">zadnjih 30 dni</option>
+              <option value="90">zadnjih 90 dni</option>
+              <option value="365">zadnje leto</option>
+              <option value="3650">vse, kar imamo</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-zinc-500">Razvrsti</span>
+            <select name="razvrsti" defaultValue={razvrsti} className={`${izbira} min-w-52`}>
+              {razvrstitve.map((r) => (
+                <option key={r.kljuc} value={r.kljuc}>
+                  {r.oznaka}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => setFiltriOdprti((o) => !o)}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-accent"
+          >
+            Podrobni filtri
+            {steviloFiltrov > 0 && (
+              <span className="rounded bg-accent px-1.5 text-xs font-semibold text-white">
+                {steviloFiltrov}
+              </span>
+            )}
+            <ChevronDown className={`h-4 w-4 transition-transform ${filtriOdprti ? "rotate-180" : ""}`} />
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Pokaži
+          </button>
+          {steviloFiltrov > 0 && (
+            <a href={`/avtonet/prodani?dni=${dni}`} className="text-sm text-zinc-500 hover:text-accent hover:underline">
+              Počisti ({steviloFiltrov})
+            </a>
+          )}
+        </div>
+
+        {/* Isti nabor filtrov kot Baza in avto.net — deljena komponenta. */}
+        <div className={filtriOdprti ? "mt-4" : "hidden"}>
+          <FiltriVozilForm znamkeModeli={znamkeModeli} privzeto={privzetiFiltri} />
+        </div>
       </form>
 
       <div className="mt-5 grid gap-px overflow-hidden rounded-xl bg-zinc-200 ring-1 ring-zinc-200 sm:grid-cols-3 lg:grid-cols-5">
         {[
           { o: "Šlo z oglasnika", v: skupaj.toLocaleString("sl-SI"), p: "v izbranem obdobju" },
-          {
-            o: "Mediana cene",
-            v: povzetek.medianaCene !== null ? eur(povzetek.medianaCene) : "—",
-            p: "zadnja zahtevana",
-          },
+          { o: "Mediana cene", v: povzetek.medianaCene !== null ? eur(povzetek.medianaCene) : "—", p: "zadnja zahtevana" },
           {
             o: "Mediana dni na trgu",
             v: povzetek.medianaDni !== null ? `${povzetek.medianaDni}` : "—",
@@ -226,8 +253,74 @@ export function ProdaniClient({
         ))}
       </div>
 
+      {hitrost.kosi.some((k) => k.stevilo > 0) && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+            <p className="text-sm font-semibold text-zinc-900">Kdaj so šli z oglasnika</p>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Od objave do izginotja. Mediana je{" "}
+              <strong className="text-zinc-700">
+                {povzetek.medianaDni !== null ? `${povzetek.medianaDni} dni` : "neznana"}
+              </strong>
+              .
+            </p>
+            <ul className="mt-3 space-y-1.5">
+              {hitrost.kosi.map((k) => (
+                <li key={k.oznaka} className="flex items-center gap-2 text-xs">
+                  <span className="w-20 flex-none text-zinc-600">{k.oznaka}</span>
+                  <span className="h-3 flex-1 overflow-hidden rounded bg-zinc-100">
+                    <span
+                      className="block h-3 rounded bg-accent/70"
+                      style={{ width: `${Math.max(k.delez > 0 ? 2 : 0, k.delez)}%` }}
+                    />
+                  </span>
+                  <span className="w-24 flex-none text-right tabular-nums text-zinc-500">
+                    {k.delez} % ({k.stevilo})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {hitrost.razredi.length > 0 && (
+            <div className="rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+              <p className="text-sm font-semibold text-zinc-900">Hitrost po cenovnem razredu</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Mediana dni na trgu za vsak razred — poceni avti gredo drugače kot dragi.
+              </p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[340px] text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                      <th className="pb-1 pr-3 font-medium">Razred</th>
+                      <th className="pb-1 pr-3 text-right font-medium">Avtov</th>
+                      <th className="pb-1 pr-3 text-right font-medium">Mediana cene</th>
+                      <th className="pb-1 text-right font-medium">Mediana dni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hitrost.razredi.map((r) => (
+                      <tr key={r.oznaka} className="border-t border-zinc-100">
+                        <td className="py-1 pr-3 text-zinc-800">{r.oznaka}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums text-zinc-500">{r.stevilo}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums text-zinc-600">
+                          {r.medianaCene !== null ? eur(r.medianaCene) : "—"}
+                        </td>
+                        <td className="py-1 text-right font-semibold tabular-nums text-zinc-800">
+                          {r.medianaDni !== null ? r.medianaDni : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {opremaUcinek.length > 0 && (
-        <details className="mt-5 rounded-xl bg-white px-4 py-3 ring-1 ring-zinc-200">
+        <details className="mt-4 rounded-xl bg-white px-4 py-3 ring-1 ring-zinc-200">
           <summary className="cursor-pointer text-sm font-medium text-zinc-800">
             Katera oprema je bila na avtih, ki so šli hitro
           </summary>
@@ -276,6 +369,7 @@ export function ProdaniClient({
         <ul className="mt-5 space-y-2">
           {prodani.map((p) => {
             const verzije = pdfji[p.avtonetId];
+            const veriga = p.zgodovinaCen.length > 1 ? p.zgodovinaCen : null;
             const znizanje =
               p.prvotnaCena !== null && p.prvotnaCena > p.zadnjaCena
                 ? Math.round(((p.prvotnaCena - p.zadnjaCena) / p.prvotnaCena) * 100)
@@ -293,7 +387,12 @@ export function ProdaniClient({
                       {p.lokacija ? ` · ${p.lokacija}` : ""}
                     </p>
                     <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      {[p.izvedenka, p.serijaOpis ?? p.generacija, p.pogon !== "?" ? p.pogon?.toUpperCase() : null, p.menjalnik !== "?" ? p.menjalnik : null]
+                      {[
+                        p.izvedenka,
+                        p.serijaOpis ?? p.generacija,
+                        p.pogon && p.pogon !== "?" ? p.pogon.toUpperCase() : null,
+                        p.menjalnik && p.menjalnik !== "?" ? p.menjalnik : null,
+                      ]
                         .filter(Boolean)
                         .map((x, i) => (
                           <span key={i} className="rounded bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-700">
@@ -306,8 +405,7 @@ export function ProdaniClient({
                     <p className="text-lg font-semibold text-zinc-900">{eur(p.zadnjaCena)}</p>
                     {znizanje !== null && (
                       <p className="flex items-center justify-end gap-1 text-xs font-medium text-amber-700">
-                        <TrendingDown className="h-3.5 w-3.5" />
-                        z {eur(p.prvotnaCena as number)} (−{znizanje} %)
+                        <TrendingDown className="h-3.5 w-3.5" />−{znizanje} % od objave
                       </p>
                     )}
                     <p className="text-xs text-zinc-500">
@@ -319,6 +417,32 @@ export function ProdaniClient({
                     )}
                   </div>
                 </div>
+
+                {/* Pot cene od objave do izginotja — samo dejanske spremembe. */}
+                {veriga && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-[11px]">
+                    <span className="font-medium uppercase tracking-wide text-zinc-400">Pot cene</span>
+                    {veriga.map((t, i) => (
+                      <span key={i} className="flex items-center gap-1.5">
+                        {i > 0 && <span className="text-zinc-300">→</span>}
+                        <span
+                          className={
+                            i === veriga.length - 1
+                              ? "font-semibold text-zinc-900"
+                              : i > 0 && t.cena < veriga[i - 1].cena
+                                ? "text-amber-700"
+                                : "text-zinc-600"
+                          }
+                        >
+                          {eur(t.cena)}
+                          <span className="ml-0.5 text-zinc-400">{datum(t.ob)}</span>
+                        </span>
+                      </span>
+                    ))}
+                    <span className="text-zinc-300">→</span>
+                    <span className="font-medium text-emerald-700">izginil {datum(p.izginil)}</span>
+                  </div>
+                )}
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   {p.oprema.length > 0 && (

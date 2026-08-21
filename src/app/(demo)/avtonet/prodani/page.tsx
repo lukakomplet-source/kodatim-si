@@ -3,6 +3,14 @@ import { PackageCheck } from "lucide-react";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { createAvtonetClient } from "@/lib/avtonet/db";
 import { mejaObdobja } from "@/lib/avtonet/analiza";
+import { preberiStatistike } from "@/lib/avtonet/statistikaBranje";
+import {
+  filtriIzParams,
+  steviloFiltrov,
+  uporabiFiltre,
+  type FiltrirljivaPoizvedba,
+} from "@/lib/avtonet/filtriVozil";
+import type { ZnamkaZModeli } from "../FiltriVozilForm";
 import { ProdaniClient, type Prodan } from "./ProdaniClient";
 
 /**
@@ -13,9 +21,8 @@ import { ProdaniClient, type Prodan } from "./ProdaniClient";
  * dosežene cene, ki ga vir da, in je izrecno tako označena — avto.net prodaje
  * ne potrdi, zato je "izginil" tu vedno "izginil", nikoli "prodan za X".
  *
- * Zraven stoji oprema, ki jo je avto imel, ker se prav po njej loči, zakaj sta
- * dva enaka avta šla po različni ceni. Kjer obstaja PDF arhiv, se odpre kopija
- * oglasa s slikami — takrat izvirnika ni več.
+ * Filtri so ISTI kot na Bazi in kot jih pozna avto.net (skupni filtriVozil.ts),
+ * da se iskanje po prodanih in po aktivnih nikoli ne razideta.
  */
 
 export const dynamic = "force-dynamic";
@@ -24,6 +31,7 @@ export const metadata = { title: "Prodani — SBN Auto" };
 const NA_STRAN = 60;
 
 type Vrstica = {
+  id: string;
   avtonet_id: string;
   url: string;
   naziv: string | null;
@@ -33,6 +41,7 @@ type Vrstica = {
   km: number | null;
   kw: number | null;
   gorivo: string | null;
+  menjalnik: string | null;
   cena_eur: number | string | null;
   cena_prvotna_eur: number | string | null;
   status: string;
@@ -51,9 +60,9 @@ type Vrstica = {
 };
 
 const POLJA =
-  "avtonet_id, url, naziv, znamka, model, letnik, km, kw, gorivo, cena_eur, cena_prvotna_eur, " +
-  "status, first_seen, status_spremenjen, je_dealer, lokacija, izvedenka, generacija, serija_opis, " +
-  "pogon_norm, menjalnik_druzina, oprema_kljucna, oprema_teza, cena_primerljiva";
+  "id, avtonet_id, url, naziv, znamka, model, letnik, km, kw, gorivo, menjalnik, cena_eur, " +
+  "cena_prvotna_eur, status, first_seen, status_spremenjen, je_dealer, lokacija, izvedenka, " +
+  "generacija, serija_opis, pogon_norm, menjalnik_druzina, oprema_kljucna, oprema_teza, cena_primerljiva";
 
 const num = (v: number | string | null): number | null => {
   if (v === null) return null;
@@ -74,6 +83,20 @@ function mediana(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** Razvrstitve, ki imajo smisel šele, ko je oglas že šel z oglasnika. */
+const RAZVRSTITVE = [
+  { kljuc: "izginil", oznaka: "Nazadnje izginuli" },
+  { kljuc: "najhitrejsi", oznaka: "Najhitreje prodani" },
+  { kljuc: "najpocasnejsi", oznaka: "Najdlje na trgu" },
+  { kljuc: "padec", oznaka: "Največji padec cene" },
+  { kljuc: "cena_visja", oznaka: "Cena: najvišja" },
+  { kljuc: "cena_nizja", oznaka: "Cena: najnižja" },
+  { kljuc: "km_manj", oznaka: "Kilometri: najmanj" },
+  { kljuc: "letnik_novejsi", oznaka: "Letnik: najnovejši" },
+] as const;
+
+type Razvrstitev = (typeof RAZVRSTITVE)[number]["kljuc"];
+
 export default async function ProdaniPage({
   searchParams,
 }: {
@@ -84,31 +107,32 @@ export default async function ProdaniPage({
 
   const sp = await searchParams;
   const naj = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
-  const znamka = naj("znamka");
-  const model = naj("model");
-  const dni = Number(naj("dni") || 90);
+  const dni = Number(naj("dni") || 90) || 90;
   const stran = Math.max(1, Number(naj("stran") || 1));
+  const razvrsti = (RAZVRSTITVE.find((r) => r.kljuc === naj("razvrsti"))?.kljuc ?? "izginil") as Razvrstitev;
+  const filtri = filtriIzParams(sp);
 
   const db = createAvtonetClient();
   const odKdaj = mejaObdobja(dni);
 
-  // Celoten nabor za izbrano obdobje: 6–7 tisoč vrstic je dovolj malo, da se
-  // statistika in stran izračunata iz istih podatkov (in ne razideta).
+  const st = await preberiStatistike(["modeli_seznam"]);
+  const znamkeModeli = ((st.modeli_seznam as { znamke: ZnamkaZModeli[] } | null)?.znamke ??
+    []) as ZnamkaZModeli[];
+
+  // Celoten nabor za obdobje in filtre: povzetek in seznam morata izhajati iz
+  // istih vrstic, sicer števci zgoraj ne ustrezajo temu, kar je spodaj.
   const vrstice: Vrstica[] = [];
   for (let od = 0; ; od += 1000) {
-    let q = db
+    const osnova = db
       .from("avtonet_oglasi")
       .select(POLJA)
       .in("status", ["izginil", "prodano"])
-      .gte("status_spremenjen", odKdaj)
-      .order("status_spremenjen", { ascending: false })
-      .range(od, od + 999);
-    if (znamka) q = q.eq("znamka", znamka);
-    if (model) q = q.eq("model", model);
-    const { data } = await q;
+      .gte("status_spremenjen", odKdaj);
+    const q = uporabiFiltre(osnova as unknown as FiltrirljivaPoizvedba, filtri) as unknown as typeof osnova;
+    const { data } = await q.order("status_spremenjen", { ascending: false }).range(od, od + 999);
     const paket = (data ?? []) as unknown as Vrstica[];
     vrstice.push(...paket);
-    if (paket.length < 1000 || vrstice.length >= 8000) break;
+    if (paket.length < 1000 || vrstice.length >= 9000) break;
   }
 
   const uporabni = vrstice.filter((v) => num(v.cena_eur) !== null && v.cena_primerljiva !== false);
@@ -120,9 +144,44 @@ export default async function ProdaniPage({
     return p !== null && c !== null && p > c;
   });
 
+  // Kako hitro so šli: razporeditev, ne le mediana. Mediana 4 dni in mediana
+  // 4 dni z repom pri 200 dneh sta dva različna trga.
+  const kosi = [
+    { oznaka: "≤ 7 dni", od: 0, do: 7 },
+    { oznaka: "8–14 dni", od: 8, do: 14 },
+    { oznaka: "15–30 dni", od: 15, do: 30 },
+    { oznaka: "31–90 dni", od: 31, do: 90 },
+    { oznaka: "nad 90 dni", od: 91, do: 99_999 },
+  ].map((k) => {
+    const n = dnevi.filter((d) => d >= k.od && d <= k.do).length;
+    return { oznaka: k.oznaka, stevilo: n, delez: dnevi.length ? Math.round((n / dnevi.length) * 100) : 0 };
+  });
+
+  // Mediana dni po cenovnem razredu — odgovor na "kdaj so se prodali" tam, kjer
+  // je razlika največja: poceni avti gredo drugače kot dragi.
+  const razredi = [
+    { oznaka: "do 5.000 €", od: 0, do: 5000 },
+    { oznaka: "5–15.000 €", od: 5000, do: 15_000 },
+    { oznaka: "15–30.000 €", od: 15_000, do: 30_000 },
+    { oznaka: "30–60.000 €", od: 30_000, do: 60_000 },
+    { oznaka: "nad 60.000 €", od: 60_000, do: 9_999_999 },
+  ]
+    .map((r) => {
+      const v = uporabni.filter((x) => {
+        const c = num(x.cena_eur) as number;
+        return c >= r.od && c < r.do;
+      });
+      const d = v.map(dniNaTrgu).filter((x): x is number => x !== null);
+      return {
+        oznaka: r.oznaka,
+        stevilo: v.length,
+        medianaDni: mediana(d),
+        medianaCene: mediana(v.map((x) => num(x.cena_eur) as number)),
+      };
+    })
+    .filter((r) => r.stevilo >= 5);
+
   // Katera oprema se pojavlja pri HITRO prodanih pogosteje kot pri počasnih.
-  // To je edina poštena oblika te primerjave: absolutna pogostost bi izmerila
-  // le, kaj je na trgu splošno, ne kaj prodajo pospeši.
   const hitri = uporabni.filter((v) => (dniNaTrgu(v) ?? 99) <= 14);
   const pocasni = uporabni.filter((v) => (dniNaTrgu(v) ?? 0) >= 45);
   const opremaUcinek: { ime: string; hitriPct: number; pocasniPct: number; razlika: number }[] = [];
@@ -138,12 +197,51 @@ export default async function ProdaniPage({
     opremaUcinek.sort((a, b) => b.razlika - a.razlika);
   }
 
-  const znamke = [...new Set(vrstice.map((v) => v.znamka).filter((z): z is string => Boolean(z)))].sort(
-    (a, b) => a.localeCompare(b, "sl")
-  );
+  const padec = (v: Vrstica): number => {
+    const p = num(v.cena_prvotna_eur);
+    const c = num(v.cena_eur);
+    return p !== null && c !== null && p > c ? (p - c) / p : 0;
+  };
+  const urejeni = [...uporabni].sort((a, b) => {
+    switch (razvrsti) {
+      case "najhitrejsi": return (dniNaTrgu(a) ?? 9999) - (dniNaTrgu(b) ?? 9999);
+      case "najpocasnejsi": return (dniNaTrgu(b) ?? -1) - (dniNaTrgu(a) ?? -1);
+      case "padec": return padec(b) - padec(a);
+      case "cena_visja": return (num(b.cena_eur) as number) - (num(a.cena_eur) as number);
+      case "cena_nizja": return (num(a.cena_eur) as number) - (num(b.cena_eur) as number);
+      case "km_manj": return (a.km ?? 9e9) - (b.km ?? 9e9);
+      case "letnik_novejsi": return (b.letnik ?? 0) - (a.letnik ?? 0);
+      default:
+        return (b.status_spremenjen ?? "").localeCompare(a.status_spremenjen ?? "");
+    }
+  });
 
   const zacetek = (stran - 1) * NA_STRAN;
-  const prikazani: Prodan[] = uporabni.slice(zacetek, zacetek + NA_STRAN).map((v) => ({
+  const stranske = urejeni.slice(zacetek, zacetek + NA_STRAN);
+
+  // Zgodovina cen za prikazane vrstice: ena poizvedba, ne ena na vrstico.
+  // Posnetek se zapiše samo ob spremembi, zato je to točno veriga cen.
+  const zgodovina = new Map<string, { cena: number; ob: string }[]>();
+  if (stranske.length > 0) {
+    const { data } = await db
+      .from("avtonet_posnetki")
+      .select("oglas_id, cena_eur, zajeto")
+      .in("oglas_id", stranske.map((v) => v.id))
+      .order("zajeto", { ascending: true })
+      .limit(2000);
+    for (const p of (data ?? []) as { oglas_id: string; cena_eur: number | string | null; zajeto: string }[]) {
+      const c = num(p.cena_eur);
+      if (c === null) continue;
+      const seznam = zgodovina.get(p.oglas_id) ?? [];
+      // Samo dejanske spremembe: zaporedne enake cene so isti podatek.
+      if (seznam.length === 0 || seznam[seznam.length - 1].cena !== c) {
+        seznam.push({ cena: c, ob: p.zajeto.slice(0, 10) });
+      }
+      zgodovina.set(p.oglas_id, seznam);
+    }
+  }
+
+  const prikazani: Prodan[] = stranske.map((v) => ({
     avtonetId: v.avtonet_id,
     url: v.url,
     naziv: v.naziv,
@@ -155,6 +253,7 @@ export default async function ProdaniPage({
     gorivo: v.gorivo,
     zadnjaCena: num(v.cena_eur) as number,
     prvotnaCena: num(v.cena_prvotna_eur),
+    zgodovinaCen: zgodovina.get(v.id) ?? [],
     izginil: v.status_spremenjen?.slice(0, 10) ?? null,
     objavljen: v.first_seen.slice(0, 10),
     dniNaTrgu: dniNaTrgu(v),
@@ -177,18 +276,20 @@ export default async function ProdaniPage({
         Prodani
       </h1>
       <p className="mt-1.5 max-w-3xl text-sm text-zinc-500">
-        Avti, ki so <strong>šli z oglasnika</strong> — z zadnjo zahtevano ceno pred izginotjem,
-        dnevi na trgu in opremo, ki so jo imeli. Vir prodaje ne potrdi, zato je to najboljši
-        približek dosežene cene, ne potrjena prodajna cena. Kjer imamo arhiviran PDF, si oglas
-        lahko ogledaš s slikami tudi potem, ko ga na avto.netu ni več.
+        Avti, ki so <strong>šli z oglasnika</strong> — z zgodovino cene, dnevi na trgu in opremo, ki
+        so jo imeli. Vir prodaje ne potrdi, zato je zadnja zahtevana cena najboljši približek
+        dosežene, ne potrjena prodajna cena. Filtri so isti kot na avto.netu; kjer imamo arhiviran
+        PDF, si oglas ogledaš s slikami tudi potem, ko ga na avto.netu ni več.
       </p>
 
       <ProdaniClient
         prodani={prikazani}
-        znamke={znamke}
-        izbranaZnamka={znamka}
-        izbranModel={model}
+        znamkeModeli={znamkeModeli}
+        privzetiFiltri={filtri}
+        steviloFiltrov={steviloFiltrov(filtri)}
         dni={dni}
+        razvrsti={razvrsti}
+        razvrstitve={RAZVRSTITVE.map((r) => ({ kljuc: r.kljuc, oznaka: r.oznaka }))}
         stran={stran}
         naStran={NA_STRAN}
         skupaj={uporabni.length}
@@ -201,7 +302,8 @@ export default async function ProdaniPage({
             znizali.length > 0
               ? Math.round(
                   (znizali.reduce(
-                    (s, v) => s + ((num(v.cena_prvotna_eur) as number) - (num(v.cena_eur) as number)) / (num(v.cena_prvotna_eur) as number),
+                    (s, v) =>
+                      s + ((num(v.cena_prvotna_eur) as number) - (num(v.cena_eur) as number)) / (num(v.cena_prvotna_eur) as number),
                     0
                   ) /
                     znizali.length) *
@@ -213,6 +315,7 @@ export default async function ProdaniPage({
               ? Math.round((uporabni.filter((v) => v.je_dealer === false).length / uporabni.length) * 100)
               : null,
         }}
+        hitrost={{ kosi, razredi }}
         opremaUcinek={opremaUcinek}
       />
     </div>

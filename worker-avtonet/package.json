@@ -47,7 +47,8 @@
     "test:facelift": "tsx src/test-facelift.ts",
     "facelift": "tsx src/facelift-run.ts",
     "facelift:pokazi": "tsx src/facelift-run.ts --pokazi",
-    "posli": "tsx src/posli-once.ts"
+    "posli": "tsx src/posli-once.ts",
+    "popravi:izvozne": "tsx src/popravi-izvozne.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
