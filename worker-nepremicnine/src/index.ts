@@ -87,6 +87,23 @@ async function zOmejitvijo<T>(kaj: string, delo: Promise<T>, ms = 60_000): Promi
 }
 
 /**
+ * Proračun zahtevkov za CEL krog tega vira — obe fazi skupaj.
+ *
+ * `NEP_NAJVEC_STRANI` ga zniža (nikoli zviša): namenjeno preizkusu spremembe
+ * v živo, da se za preverbo delovanja ne porabi cel dnevni proračun vira.
+ * Ena sama funkcija zato, ker sta jo prej brali dve mesti in eno od njiju je
+ * ob znižanju še vedno računalo z adapterjevo številko — 2. faza je tako
+ * dobila 24 zahtevkov, ko je bil cel proračun 6.
+ */
+function proracunZaVir(vir: VirAdapter): number | undefined {
+  const izOkolja = Number(process.env.NEP_NAJVEC_STRANI ?? NaN);
+  if (Number.isFinite(izOkolja) && izOkolja > 0) {
+    return Math.min(izOkolja, vir.najvecStrani ?? izOkolja);
+  }
+  return vir.najvecStrani;
+}
+
+/**
  * 1. FAZA — seznami. Vrne izid; o statusu vrstice odloči klicatelj, da je
  * pravilo "kdaj je to napaka" na enem mestu (samopopravilo.oceniZakljucek).
  */
@@ -183,45 +200,70 @@ async function pregledSeznamov(
   await objavi({ rezin_skupaj: vseRezine.length, rezin_koncanih: 0 });
 
   /**
-   * INKREMENTALNO ALI POLNO. Vsakodnevno branje celega kataloga je tisto, kar
-   * vir spravi do zavračanja; nove oglase pa dobimo s prvih nekaj strani.
-   * Zato: vsak dan inkrementalno, enkrat na teden pa vseeno cel obhod, ker
-   * inkrementalno branje po definiciji ne vidi tega, kar se je spremenilo
-   * globlje v katalogu (in brez polnega obhoda ni mogoče sklepati o izginulih).
+   * SKLENJEN KROG, NE "POPOLN PREGLED".
+   *
+   * Polni obhod se meri po rotaciji, ne po enem zagonu: krog je sklenjen, ko
+   * kazalec rezin pride nazaj na začetek. Pri bolhi to pri proračunu 30
+   * zahtevkov na krog traja ~13 dni. Prejšnja različica je polni obhod
+   * zabeležila samo, če ga je EN zagon opravil do konca — kar se pri takem
+   * proračunu ne zgodi nikoli, zato se tudi inkrementalno branje ni nikoli
+   * vklopilo.
    */
-  const POLNI_OBHOD_DNI = 7;
   const { data: polniZapis } = await db
     .from("nep_statistika")
     .select("podatki")
     .eq("kljuc", `polni:${vir.vir}`)
     .maybeSingle();
   const zadnjiPolni = (polniZapis?.podatki as { ob?: string } | null)?.ob ?? null;
-  const casZaPolniObhod =
-    !zadnjiPolni || Date.now() - new Date(zadnjiPolni).getTime() > POLNI_OBHOD_DNI * 86_400_000;
-  const inkrementalno = vir.razvrsceniPoNovosti === true && !casZaPolniObhod;
-  log("info", inkrementalno ? "inkrementalni pregled (samo novo)" : "polni obhod kataloga", {
+  /** Ali ta krog vključi inkrementalni prelet vseh rezin (del A). */
+  const preletNovih = vir.razvrsceniPoNovosti === true;
+  /** Postane true, ko rotacija sklene krog med tem zagonom. */
+  let krogSklenjen = false;
+  const proracunStrani = proracunZaVir(vir);
+  log("info", "1. faza", {
     vir: vir.vir,
-    zadnjiPolni,
+    preletNovih,
+    zadnjiSklenjenKrog: zadnjiPolni,
+    proracunStrani: proracunStrani ?? "brez meje",
   });
 
   let dosezenaKvota = false;
-  try {
-    browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
-    if (zacetniIndeks > 0) log("info", "nadaljujem pri rezini", { vir: vir.vir, indeks: zacetniIndeks, oznaka: rezineVrstniRed[0]?.oznaka });
-    for (const [zaporedna, rezina] of rezineVrstniRed.entries()) {
-      if (dosezenaKvota) break;
-      if (stopping) {
-        popoln = false;
-        break;
-      }
-      const absolutniIndeks = (zacetniIndeks + zaporedna) % vseRezine.length;
-      // Samo prva rezina tega pregleda nadaljuje sredi paginacije.
-      let stran = zaporedna === 0 ? zacetnaStran : 1;
+
+  /**
+   * Ena rezina, od dane strani naprej.
+   *
+   * `samoNovo` pomeni inkrementalni način: ustavi se, ko dve strani zapored ne
+   * prineseta oglasa, ki ga baza še ne pozna. `premikajKazalec` pove, ali ta
+   * prehod šteje v rotacijo — inkrementalni prelet kazalca ne premika, ker ne
+   * prebere cele rezine in bi jo s tem preskočil.
+   */
+  const predelajRezino = async (
+    rezina: { oznaka: string },
+    absolutniIndeks: number,
+    odStrani: number,
+    samoNovo: boolean,
+    premikajKazalec: boolean,
+    /** Največ strani v tem prehodu čez rezino; brez omejitve = do konca. */
+    najvecStraniTu = Number.POSITIVE_INFINITY
+  ): Promise<void> => {
+      let straniTu = 0;
+      let stran = odStrani;
       let zadnja: number | null = null;
       let praznihZapored = 0;
       let praznaPrvaPoskusov = 0;
       /** Zaporedne strani, ki niso prinesle nobenega oglasa, novega za BAZO. */
       let brezNovihZapored = 0;
+      /**
+       * Kar smo videli V TEM PREHODU čez to rezino — ločeno od `videni`, ki
+       * velja za cel pregled.
+       *
+       * Razlika ni kozmetična: varovalka proti viru, ki za koncem kataloga
+       * vrača vsebino prve strani, se sproži, ko stran ne prinese nič novega.
+       * Če bi merila po `videni`, bi del B vsako rezino, ki jo je del A že
+       * preletel, po dveh straneh razglasil za izčrpano in jo preskočil —
+       * torej bi polni obhod bral samo tiste rezine, ki jih prelet ni videl.
+       */
+      const vTemPrehodu = new Set<string>();
 
       for (;;) {
         if (stopping) {
@@ -268,19 +310,23 @@ async function pregledSeznamov(
 
           zadnja = zadnjaStran ?? zadnja;
           p.strani += 1;
+          straniTu += 1;
           utrip();
 
           // "Prazna" je tudi stran brez ENE nove kartice: vir za stranmi čez
           // konec pogosto vrača vsebino prve strani, števec strani pa zna
           // pograbiti napačno številko (izmerjeno: "5/567" pri rezini s ~30
           // stranmi). Šteti nove namesto vseh ustavi oboje.
-          const noveTuKaj = kartice.filter((k) => !videni.has(k.virId)).length;
-          if (kartice.length === 0 || noveTuKaj === 0) {
+          const svezeVPrehodu = kartice.filter((k) => !vTemPrehodu.has(k.virId));
+          for (const k of kartice) vTemPrehodu.add(k.virId);
+          if (kartice.length === 0 || svezeVPrehodu.length === 0) {
             praznihZapored += 1;
             if (praznihZapored >= 2) break;
           } else {
             praznihZapored = 0;
-            const nove = kartice.filter((k) => !videni.has(k.virId));
+            // Za ZAPIS pa šteje, česa ta pregled še ni obdelal — sicer bi del
+            // B iste oglase shranjeval znova.
+            const nove = svezeVPrehodu.filter((k) => !videni.has(k.virId));
             for (const k of nove) videni.add(k.virId);
             p.najdenih += nove.length;
             if (nove.length > 0) {
@@ -298,7 +344,7 @@ async function pregledSeznamov(
                * Pri viru, ki ni razvrščen po novosti, je to prepovedano: novi
                * in stari so pomešani in ustavili bi se sredi kataloga.
                */
-              if (inkrementalno) {
+              if (samoNovo) {
                 if (izid.novih === 0) {
                   brezNovihZapored += 1;
                   if (brezNovihZapored >= 2) {
@@ -322,12 +368,17 @@ async function pregledSeznamov(
           });
           if (zadnja !== null && stran >= zadnja) break;
           if (kartice.length === 0 && praznihZapored >= 2) break;
+          // Meja globine za ta prehod. Del A hodi v ŠIRINO: brez nje bi pri
+          // zaostali bazi porabil ves proračun na prvi rezini in zadnjih ne bi
+          // videl nikoli — kar je natanko stradanje, ki ga rotacija rešuje.
+          if (straniTu >= najvecStraniTu) break;
           // Dnevna kvota strani: raje se ustavimo sami, kot da nas vir ustavi.
-          if (vir.najvecStrani !== undefined && p.strani >= vir.najvecStrani) {
-            log("info", "dosezena kvota strani za ta pregled", { vir: vir.vir, strani: p.strani, rezina: rezina.oznaka, naslednjaStran: stran + 1 });
+          if (proracunStrani !== undefined && p.strani >= proracunStrani) {
+            log("info", "dosezena kvota strani za ta pregled", { vir: vir.vir, strani: p.strani, proracun: proracunStrani, rezina: rezina.oznaka, naslednjaStran: stran + 1 });
             dosezenaKvota = true;
-            // Naslednjič nadaljuj TOČNO tu — rezina se ne preskoči.
-            await shraniNadaljevanje(absolutniIndeks, stran + 1);
+            // Naslednjič nadaljuj TOČNO tu — rezina se ne preskoči. Velja
+            // samo za polni obhod; inkrementalni prelet kazalca ne premika.
+            if (premikajKazalec) await shraniNadaljevanje(absolutniIndeks, stran + 1);
             break;
           }
           stran += 1;
@@ -345,25 +396,88 @@ async function pregledSeznamov(
             // 403 ustavi cel pregled — vztrajanje bi blokado samo poglobilo.
             // Kje smo obstali, si zapomnimo, da naslednjič nadaljujemo tu.
             blokada = sporocilo;
-            await shraniNadaljevanje(absolutniIndeks, stran);
+            if (premikajKazalec) await shraniNadaljevanje(absolutniIndeks, stran);
             break;
           }
           break; // druga napaka: preskoči rezino, nadaljuj s preostankom
         }
       }
-      if (blokada) break;
+      if (blokada || dosezenaKvota) return;
       // Rezina je za nami (dokončana ali preskočena zaradi napake): naslednji
       // pregled naj začne za njo, od prve strani.
-      if (!dosezenaKvota) {
+      if (premikajKazalec) {
         obdelanihRezin += 1;
+        if ((absolutniIndeks + 1) % vseRezine.length === 0) krogSklenjen = true;
         await shraniNadaljevanje(absolutniIndeks + 1, 1);
       }
       // Razmik velja tudi ČEZ mejo rezine. Prej se je spal samo med stranmi
       // znotraj rezine, prehod na naslednjo kategorijo pa je šel takoj — pri
       // 182 rezinah je to 182 zahtevkov brez premora, natanko na mestih, kjer
       // se ritem najbolj pozna.
-      if (!dosezenaKvota && !stopping) await sleep(zamikMs);
+      if (!stopping) await sleep(zamikMs);
+  };
+
+  try {
+    browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
+
+    /**
+     * KROG IMA DVA DELA IN OBA STA POTREBNA.
+     *
+     * A. INKREMENTALNI PRELET vseh rezin od prve strani. Pri viru, razvrščenem
+     *    od najnovejšega, to pobere VSE nove oglase za nekaj deset zahtevkov.
+     * B. NADALJEVANJE POLNEGA OBHODA od kazalca rotacije, s preostankom
+     *    proračuna.
+     *
+     * Zakaj ne samo eno ali drugo: polni obhod pri 30 zahtevkih na krog traja
+     * pri bolhi ~13 dni, in če bi vsi krogi šli vanj, bi bili novi oglasi
+     * do dva tedna pozni. Samo inkrementalno branje pa nikoli ne vidi, kaj se
+     * je spremenilo globlje v katalogu, in brez sklenjenega kroga ni mogoče
+     * sklepati o izginulih. Prej je bila to odločitev "ali–ali" na krog in se
+     * ni izšla: polni obhod se ni nikoli sklenil, zato se inkrementalni ni
+     * nikoli vklopil.
+     */
+    if (preletNovih) {
+      // Dve strani na rezino: prva pokaže novo, druga potrdi, da za njo ni
+      // več novega. Globina je naloga polnega obhoda, ne preleta.
+      const STRANI_NA_REZINO_V_PRELETU = 2;
+      log("info", "A: inkrementalni prelet vseh rezin", {
+        vir: vir.vir,
+        rezin: vseRezine.length,
+        najvecStraniNaRezino: STRANI_NA_REZINO_V_PRELETU,
+      });
+      for (const [i, rezina] of vseRezine.entries()) {
+        if (stopping || dosezenaKvota || blokada) break;
+        // Proračun se preverja tudi PRED novo rezino. Znotraj rezine ga
+        // preskoči ustavitev po globini (prelet bere po dve strani), zato bi
+        // se sicer prekoračil za toliko strani, kolikor je rezin.
+        if (proracunStrani !== undefined && p.strani >= proracunStrani) {
+          dosezenaKvota = true;
+          break;
+        }
+        await predelajRezino(rezina, i, 1, true, false, STRANI_NA_REZINO_V_PRELETU);
+      }
+      log("info", "A: prelet koncan", { vir: vir.vir, strani: p.strani, novih: p.novih });
     }
+
+    if (!dosezenaKvota && !blokada && !stopping) {
+      log("info", "B: nadaljujem polni obhod", {
+        vir: vir.vir,
+        odRezine: zacetniIndeks,
+        odStrani: zacetnaStran,
+        preostanekProracuna: proracunStrani !== undefined ? proracunStrani - p.strani : "brez meje",
+      });
+      for (const [zaporedna, rezina] of rezineVrstniRed.entries()) {
+        if (stopping || dosezenaKvota || blokada) break;
+        if (proracunStrani !== undefined && p.strani >= proracunStrani) {
+          dosezenaKvota = true;
+          break;
+        }
+        const absolutniIndeks = (zacetniIndeks + zaporedna) % vseRezine.length;
+        // Samo prva rezina tega pregleda nadaljuje sredi paginacije.
+        await predelajRezino(rezina, absolutniIndeks, zaporedna === 0 ? zacetnaStran : 1, false, true);
+      }
+    }
+    if (stopping) popoln = false;
   } catch (err) {
     napaka = err instanceof Error ? err.message : String(err);
     popoln = false;
@@ -373,26 +487,30 @@ async function pregledSeznamov(
     if (browser) await browser.close().catch(() => {});
   }
 
-  // Izginotja samo po POPOLNEM pregledu TEGA vira: delen pregled ne ve, česa
-  // ni videl, in bi žive oglase razglasil za izginule. Pregled, ki se je
-  // začel sredi kroga (rotacija rezin), po definiciji ni popoln.
   let izginulih = 0;
-  // Inkrementalni pregled po definiciji NI popoln: namenoma ni pogledal
-  // globlje od prvih strani, zato o izginulih ne more sklepati ničesar.
-  const delnaRezina =
-    zacetniIndeks !== 0 || zacetnaStran > 1 || obdelanihRezin < vseRezine.length || dosezenaKvota || inkrementalno;
+  /**
+   * IZGINOTJA SMEJO SLEDITI SAMO IZ SKLENJENEGA KROGA.
+   *
+   * En zagon prebere le del kataloga — pri bolhi 30 strani od ~400 — zato o
+   * tem, česa NI videl, ne more sklepati ničesar. Šele ko rotacija sklene
+   * krog, smo v zadnjih dneh videli vsako rezino. `zacetek` bi bil takrat
+   * napačna mejna vrednost (nanaša se na ta zagon), zato se izginotja
+   * presojajo glede na začetek KROGA.
+   */
+  const delnaRezina = !krogSklenjen;
   if (delnaRezina || blokada || napaka) popoln = false;
-  // Polni obhod se zabeleži samo, če je res prišel do konca — sicer bi teden
-  // dni inkrementalnih pregledov tekel na podlagi obhoda, ki se ni zgodil.
-  if (!inkrementalno && popoln) {
+  const zacetekKroga = (polniZapis?.podatki as { ob?: string } | null)?.ob ?? null;
+  if (krogSklenjen) {
     await db.from("nep_statistika").upsert({
       kljuc: `polni:${vir.vir}`,
-      podatki: { ob: new Date().toISOString(), rezin: obdelanihRezin, najdenih: videni.size },
+      podatki: { ob: new Date().toISOString(), prejsnji: zacetekKroga, najdenihZadnjic: videni.size },
       izracunano: new Date().toISOString(),
     });
   }
   if (popoln && videni.size >= vir.pricakovanRazpon[0]) {
-    izginulih = await oznaciIzginule(db, zacetek, vir.vir);
+    // Mejna vrednost je začetek KROGA, ne tega zagona: oglas, ki smo ga videli
+    // pred desetimi dnevi na drugem koncu rotacije, ni izginil.
+    izginulih = await oznaciIzginule(db, zacetekKroga ?? zacetek, vir.vir);
   } else if (!delnaRezina && !blokada && !napaka && videni.size < vir.pricakovanRazpon[0]) {
     log("warn", "premalo najdenih - verjetno sprememba selektorjev", {
       vir: vir.vir,
@@ -484,8 +602,8 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
        * kjer je meja 50 — trikrat čez tisto, kar smo si sami postavili.
        * Detajli zato jemljejo iz istega proračuna, kar od njega ostane.
        */
-      const preostanek =
-        vir.najvecStrani !== undefined ? Math.max(0, vir.najvecStrani - izid.strani) : Number.POSITIVE_INFINITY;
+      const proracun = proracunZaVir(vir);
+      const preostanek = proracun !== undefined ? Math.max(0, proracun - izid.strani) : Number.POSITIVE_INFINITY;
       const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog, preostanek);
       if (kvota <= 0) {
         log("info", "2. faza preskocena - proracun zahtevkov je porabila 1. faza", {
