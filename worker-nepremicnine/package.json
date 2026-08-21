@@ -11,6 +11,8 @@
     "test:parse": "tsx src/test-parse.ts",
     "test:izziv": "tsx src/test-izziv.ts",
     "test:adapterji": "tsx src/test-adapterji.ts",
+    "test:kontekst": "tsx src/test-kontekst.ts",
+    "test:paginacija": "tsx src/test-paginacija.ts",
     "test:zakljucek": "tsx src/test-zakljucek.ts",
     "test:seznam": "tsx src/test-seznam.ts",
     "test:detajl": "tsx src/test-detajl.ts",

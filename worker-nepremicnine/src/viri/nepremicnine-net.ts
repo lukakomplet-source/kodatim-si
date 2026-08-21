@@ -6,16 +6,35 @@ import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from ".
 export type { SurovaKartica } from "./vmesnik.js";
 
 /**
- * Adapter za nepremicnine.net — bere SEZNAME, ne detajlov.
+ * Adapter za nepremicnine.net.
  *
- * Kartica na seznamu nosi vse ključno (mikropodatki Offer + opisna vrstica z
- * m², letom, zemljiščem, etažnostjo), detajlno stran pa varuje Cloudflareovo
- * preverjanje, ki hitre obiske ustavi. Zato faza 1 detajlov sploh ne odpira —
- * enak dvo-fazni model kot pri avto.netu, kjer se je izkazal.
+ * ⚠️ TA VIR JE IZKLOPLJEN IN NAJ TAK OSTANE, DOKLER NI DOGOVORA.
  *
- * robots.txt: `Allow: /` s Content-Signal search=yes, ai-train=no. To spoštujemo
- * dobesedno: gradimo iskalni indeks, opisov ne pošiljamo v modele, slik ne
- * kopiramo (hranimo URL) in oglas vedno kaže na izvirnik.
+ * `svezKontekstNaStran: true` je bilo doslej opisano kot tehnična podrobnost
+ * ("Cloudflare pusti prvo zahtevo konteksta skozi"). 21. 8. 2026 je bilo
+ * izmerjeno, kaj to v resnici pomeni (`npm run test:kontekst`):
+ *
+ *   ena obstojna seja, podviri dovoljeni, 10 s razmika  -> 403 od 2. zahtevka
+ *   ena obstojna seja, podviri dovoljeni, 60 s razmika  -> 403 od 2. zahtevka
+ *   svež kontekst za vsako stran, 10 s razmika          -> vse 200
+ *
+ * Vir torej ne omejuje HITROSTI — zavrne SEJO. Branje je delovalo izključno
+ * zato, ker smo sejo pred vsako stranjo zavrgli in se predstavili kot nov
+ * obiskovalec. To ni prilagoditev tempa, ampak izogibanje zavrnitvi, in
+ * izogibanje zavrnitvi je v tem projektu izrecno prepovedano.
+ *
+ * Adapter zato ostaja v kodi (podatki, ki so v bazi, so resnični in ostanejo),
+ * vir pa je v `nep_viri` izklopljen. Vklopi ga lahko samo človek in samo, če
+ * za to obstaja podlaga — pogoji Meganeta predvidijo pot pisnega dogovora,
+ * kar je edina rešitev, ki to vprašanje zares zapre.
+ *
+ * Kar smo o viru sicer ugotovili in ostaja v veljavi:
+ * - Kartica na seznamu nosi vse ključno (mikropodatki Offer + opisna vrstica),
+ *   zato 1. faza detajlov ne odpira.
+ * - robots.txt izrecno dovoljuje `/oglasi-prodaja/` in `/oglasi-oddaja/`
+ *   (Content-Signal search=yes, ai-train=no) — a robots.txt ni edina beseda:
+ *   pogoji uporabe robote dovoljujejo samo SPLOŠNIM iskalnikom, dejansko
+ *   vedenje strežnika pa je zgoraj.
  */
 
 export const VIR = "nepremicnine.net";

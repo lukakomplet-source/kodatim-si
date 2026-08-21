@@ -1,0 +1,110 @@
+import "dotenv/config";
+import { chromium } from "playwright";
+import { najdiVir } from "./viri/index.js";
+import { jeIzziv, razbremeniKontekst } from "./izziv.js";
+
+/**
+ * MERITEV, KI ODGOVARJA NA PRAVNO VPRAŠANJE, NE NA TEHNIČNO.
+ *
+ * Adapter za nepremicnine.net odpre za vsako stran SVEŽ brskalniški kontekst.
+ * V kodi je to utemeljeno z opombo, da "Cloudflare pusti prvo zahtevo konteksta
+ * skozi, vsako naslednjo pošlje na izziv". Če to drži, potem svež kontekst ni
+ * tehnična podrobnost, ampak način, kako se izogniti preverjanju — in
+ * izogibanje preverjanju je natanko tisto, česar ta projekt ne počne.
+ *
+ * Zato se to izmeri in ne domneva. Test prebere nekaj strani z ENIM samim
+ * obstojnim kontekstom (kot bi jih navaden obiskovalec) in pove, ali se izziv
+ * res pojavi.
+ *
+ *   npx tsx src/test-kontekst.ts [koliko-strani]
+ *
+ * Odgovor je pomemben v obe smeri:
+ *  - če se izziv POJAVI, je sedanja koda obhod in jo je treba opustiti,
+ *    čeprav to pomeni, da tega vira ne moremo več brati;
+ *  - če se NE pojavi, je svež kontekst nepotreben in opombo v kodi je treba
+ *    popraviti, ker trdi nekaj, kar ne drži.
+ */
+
+const koliko = Number(process.argv[2] ?? 4);
+/** Razmik med stranmi; z njim se loči "beremo prehitro" od "seja je zavrnjena". */
+const zamikMs = Number(process.argv[3] ?? 0) || null;
+const vir = najdiVir("nepremicnine.net");
+if (!vir) {
+  console.error("Vira ni v registru.");
+  process.exit(2);
+}
+const rezina = vir.rezine().find((r) => r.oznaka === "prodaja/podravska/stanovanje") ?? vir.rezine()[0];
+
+/**
+ * Ločnici, ki morata biti v testu neodvisni:
+ *  - `svez`: nov kontekst za vsako stran (kot dela adapter) proti enemu obstojnemu;
+ *  - `brez`: ali podvirov (slike, slogi) ne zahtevamo.
+ *
+ * Brez te ločitve je prva različica testa merila oboje hkrati in bi zavrnitev,
+ * ki jo povzroči blokada slogov, pripisala seji.
+ */
+const svezNaStran = process.argv.includes("--svez");
+const brezPodvirov = !process.argv.includes("--s-podviri");
+
+const browser = await chromium.launch({ args: ["--no-sandbox"] });
+const noviKontekst = async () => {
+  const c = await browser.newContext({
+    locale: "sl-SI",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  });
+  if (brezPodvirov) await razbremeniKontekst(c).catch(() => {});
+  return c;
+};
+const ctx = await noviKontekst();
+
+const razmik = zamikMs ?? vir.omejitve.zamikMs;
+console.log(
+  `${svezNaStran ? "SVEŽ kontekst za vsako stran" : "EN obstojen kontekst"}, ` +
+    `podviri ${brezPodvirov ? "BLOKIRANI" : "dovoljeni"}, ${koliko} strani, ${razmik / 1000} s razmika.\n`
+);
+let zavrnitev = 0;
+let uspehov = 0;
+for (let stran = 1; stran <= koliko; stran++) {
+  const kontekst = svezNaStran ? await noviKontekst() : ctx;
+  const page = await kontekst.newPage();
+  try {
+    const url = vir.seznamUrl(rezina, stran);
+    const r = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(1500);
+    const naslov = await page.title().catch(() => "");
+    const besedilo = (await page.evaluate(() => (document.body ? document.body.innerText.slice(0, 500) : "")).catch(
+      () => ""
+    )) as string;
+    const izziv = jeIzziv(naslov, besedilo);
+    const status = r?.status() ?? 0;
+    const { kartice } = await vir.preberiSeznam(page);
+    // Zavrnitev je OBOJE: zaslon preverjanja IN gol HTTP 403/429. Prva
+    // razlicica testa je stela samo zaslone in zato iz petih zavrnjenih strani
+    // sklepala, da vse deluje.
+    const zavrnjena = izziv || status === 403 || status === 429;
+    if (zavrnjena) zavrnitev += 1;
+    else if (kartice.length > 0) uspehov += 1;
+    console.log(
+      `stran ${stran} | HTTP ${status} | kartic ${String(kartice.length).padStart(3)} | ` +
+        `${izziv ? "IZZIV: " + naslov : zavrnjena ? "ZAVRNJENO" : "v redu"}`
+    );
+  } catch (e) {
+    console.log(`stran ${stran} | NAPAKA: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    await page.close();
+    if (svezNaStran) await kontekst.close().catch(() => {});
+  }
+  if (stran < koliko) await new Promise((r) => setTimeout(r, razmik));
+}
+await ctx.close();
+await browser.close();
+
+console.log(
+  zavrnitev > 0
+    ? `\nIZID: ${zavrnitev} od ${koliko} strani ZAVRNJENIH pri ${razmik / 1000} s razmika. Če je zavrnitev tudi ` +
+        `pri dolgem razmiku, vir ne omejuje hitrosti, ampak sejo — in svež kontekst za vsako stran je obhod.`
+    : `\nIZID: ${uspehov} od ${koliko} strani prebranih brez zavrnitve pri ${razmik / 1000} s razmika. ` +
+        `Obstojen kontekst pri tem tempu deluje.`
+);
+process.exitCode = 0;
