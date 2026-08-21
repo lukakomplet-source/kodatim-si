@@ -191,7 +191,9 @@ export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOgla
   const podtip = podtipSurov
     ? podtipSurov
         .split(/\s+/)
-        .filter((b) => !/^[A-ZČŠŽ]{2,}$/.test(b) && !/^\d/.test(b))
+        // Ven: kraj (same velike črke), številke in enote. Brez zadnjega je
+        // podtip postal "drugo m2" — mere niso vrsta nepremičnine.
+        .filter((b) => !/^[A-ZČŠŽ]{2,}$/.test(b) && !/^\d/.test(b) && !/^(m2|m²|m)$/i.test(b))
         .join(" ")
         .toLowerCase()
         .trim() || null

@@ -56,10 +56,23 @@ export type NormaliziranOglas = {
  * surova kartica v raw ostane nedotaknjena, da jo je mogoče kasneje presoditi.
  */
 const NAJVECJA_VERJETNA_CENA = 50_000_000;
+/**
+ * Spodnja meja PRODAJNE cene. Vir zna objaviti ceno na kvadratni meter brez
+ * enote ("85" za 20.312 m² zemljišča) ali povpraševanje z zgornjo mejo kupca.
+ * Nepremičnine v Sloveniji se ne prodajajo za 85 €, zato je taka vrednost
+ * podatek, ki mu ne verjamemo — in ne cena, ki bi jo smeli šteti v mediane.
+ *
+ * Velja SAMO za prodajo: mesečna najemnina 300 € je povsem običajna.
+ * Cene ne popravljamo — označimo jo za neznano, surova kartica v `raw` ostane
+ * nedotaknjena, da jo je mogoče kasneje presoditi.
+ */
+const NAJMANJSA_VERJETNA_PRODAJNA_CENA = 1_000;
 
-function verjetnaCena(cena: number | null): number | null {
+function verjetnaCena(cena: number | null, posel: string): number | null {
   if (cena === null) return null;
-  return cena > NAJVECJA_VERJETNA_CENA || cena <= 0 ? null : cena;
+  if (cena > NAJVECJA_VERJETNA_CENA || cena <= 0) return null;
+  if (posel === "prodaja" && cena < NAJMANJSA_VERJETNA_PRODAJNA_CENA) return null;
+  return cena;
 }
 
 /** Koliko od ključnih polj je res napolnjenih — za data_quality. */
@@ -76,7 +89,7 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
   const now = new Date().toISOString();
   // Nesmiselne cene vira postanejo "ni podatka" — takoj ob vhodu, da ne
   // pricurljajo ne v zgodovino cen ne v statistiko.
-  oglasi = oglasi.map((o) => ({ ...o, cenaEur: verjetnaCena(o.cenaEur) }));
+  oglasi = oglasi.map((o) => ({ ...o, cenaEur: verjetnaCena(o.cenaEur, o.posel) }));
 
   const ids = oglasi.map((o) => o.virId);
   const { data: obstojeci, error } = await db
