@@ -16,10 +16,16 @@ import { hlajenjeDo } from "./samopopravilo.js";
  * ki je v dnevniku ni videti) nas je pri števcu strani stal dve tretjini
  * kataloga, zato se zastavica NE vklopi na občutek.
  *
- * Merilo je preprosto in ne potrebuje datumov z oglasa: če je seznam razvrščen
- * po novosti, potem so oglasi s PRVE strani v naši bazi v povprečju videni
- * pozneje (`first_seen`) kot oglasi z globljih strani. Bazo uporabimo kot uro,
- * ki jo že imamo.
+ * MERILO. Prva različica tega testa je primerjala povprečni `first_seen` po
+ * straneh — in bila krožna: `first_seen` pove, kdaj je oglas videl NAŠ pregled,
+ * ta pa strani bere po vrsti, zato številka narašča s stranjo ne glede na to,
+ * kako vir razvršča. Test je zato razvrstitev po novosti "ovrgel" pri viru, pri
+ * katerem so bili v istem izpisu dokazi za nasprotno.
+ *
+ * Pravo merilo je NEPOZNANOST: če vir razvršča od najnovejšega, se oglasi, ki
+ * jih naša baza še ne pozna, gnetejo na prvih straneh in jih globlje ni. To
+ * hkrati meri natanko lastnost, na kateri sloni inkrementalna ustavitev — ne
+ * podobne, ampak isto.
  *
  * Poraba: 3 zahtevki. Vir v hlajenju se ne dotakne.
  *
@@ -46,22 +52,18 @@ if (hlajenje) {
 const rezina = vir.rezine()[0];
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 
-/** Povprečen `first_seen` oglasov ene strani, prebran iz naše baze. */
-async function povprecnaStarost(virIdji: string[]): Promise<{ povprecje: number | null; znanih: number }> {
-  if (virIdji.length === 0) return { povprecje: null, znanih: 0 };
-  const { data } = await db
+/** Koliko oglasov s te strani naša baza ŽE pozna. */
+async function znanih(virIdji: string[]): Promise<number> {
+  if (virIdji.length === 0) return 0;
+  const { count } = await db
     .from("nep_oglasi")
-    .select("vir_id, first_seen")
+    .select("id", { count: "exact", head: true })
     .eq("vir", vir!.vir)
     .in("vir_id", virIdji);
-  const casi = (data ?? [])
-    .map((v) => new Date(v.first_seen as string).getTime())
-    .filter((t) => Number.isFinite(t));
-  if (casi.length === 0) return { povprecje: null, znanih: 0 };
-  return { povprecje: casi.reduce((a, b) => a + b, 0) / casi.length, znanih: casi.length };
+  return count ?? 0;
 }
 
-const meritve: { stran: number; kartic: number; znanih: number; povprecje: number | null }[] = [];
+const meritve: { stran: number; kartic: number; neznanih: number }[] = [];
 for (const stran of [1, 2, 3]) {
   const ctx = await browser.newContext({
     locale: "sl-SI",
@@ -79,12 +81,10 @@ for (const stran of [1, 2, 3]) {
     await page.waitForTimeout(1500);
     await preveriIzziv(page);
     const { kartice } = await vir.preberiSeznam(page);
-    const { povprecje, znanih } = await povprecnaStarost(kartice.map((k) => k.virId));
-    meritve.push({ stran, kartic: kartice.length, znanih, povprecje });
-    console.log(
-      `stran ${stran}: kartic ${kartice.length}, v bazi znanih ${znanih}` +
-        (povprecje ? `, povprečno prvič videno ${new Date(povprecje).toLocaleString("sl-SI")}` : "")
-    );
+    const jihPoznamo = await znanih(kartice.map((k) => k.virId));
+    const neznanih = kartice.length - jihPoznamo;
+    meritve.push({ stran, kartic: kartice.length, neznanih });
+    console.log(`stran ${stran}: kartic ${kartice.length}, baza jih pozna ${jihPoznamo}, NEZNANIH ${neznanih}`);
   } catch (e) {
     console.error(`stran ${stran}: ${e instanceof Error ? e.message : String(e)}`);
     break;
@@ -96,26 +96,37 @@ for (const stran of [1, 2, 3]) {
 }
 await browser.close();
 
-const uporabne = meritve.filter((m) => m.povprecje !== null && m.znanih >= 5);
-if (uporabne.length < 2) {
-  console.log(
-    `\nIZID: premalo podatkov (potrebni sta vsaj dve strani z vsaj petimi znanimi oglasi). ` +
-      `Zastavice razvrsceniPoNovosti NE vklapljaj.`
-  );
+if (meritve.length < 3) {
+  console.log(`\nIZID: premalo prebranih strani. Zastavice razvrsceniPoNovosti NE vklapljaj.`);
   process.exitCode = 1;
 } else {
-  const prva = uporabne[0].povprecje as number;
-  const zadnja = uporabne[uporabne.length - 1].povprecje as number;
-  const razlikaUr = (prva - zadnja) / 3_600_000;
-  const razvrsceno = razlikaUr > 1;
-  console.log(
-    `\nPrva stran je v povprečju ${razlikaUr.toFixed(1)} h mlajša od zadnje merjene.\n` +
-      (razvrsceno
-        ? `IZID: seznam JE razvrščen od najnovejšega — razvrsceniPoNovosti: true je upravičena.`
-        : `IZID: razvrstitev po novosti NI potrjena. Zastavice ne vklapljaj: inkrementalno branje bi ` +
-          `tiho izpustilo del trga.`)
-  );
-  process.exitCode = razvrsceno ? 0 : 1;
+  const naPrvi = meritve[0].neznanih;
+  const globlje = meritve.slice(1).reduce((v, m) => v + m.neznanih, 0);
+  /**
+   * Test je smiseln le, kadar sploh obstaja kaj neznanega. Če je baza povsem
+   * dohitena, je povsod nič in iz tega ne sledi nič — takrat ni odgovora, ne
+   * pritrdilnega ne odklonilnega.
+   */
+  if (naPrvi + globlje === 0) {
+    console.log(
+      `\nIZID: na nobeni strani ni oglasa, ki ga baza ne bi poznala — meritev nima česa razločiti. ` +
+        `Ponovi jo takrat, ko je od zadnjega pregleda minilo nekaj dni.`
+    );
+    process.exitCode = 2;
+  } else {
+    // Novi oglasi morajo biti izrazito spredaj: vsaj štirikrat več na prvi
+    // strani kot na vseh globljih skupaj.
+    const razvrsceno = naPrvi >= 3 && naPrvi >= globlje * 4;
+    console.log(
+      `\nNeznanih oglasov: ${naPrvi} na prvi strani, ${globlje} na vseh globljih skupaj.\n` +
+        (razvrsceno
+          ? `IZID: novi oglasi se gnetejo na prvi strani — seznam JE razvrščen od najnovejšega in ` +
+            `razvrsceniPoNovosti: true je upravičena.`
+          : `IZID: novi oglasi niso zbrani spredaj. Zastavice ne vklapljaj: inkrementalno branje bi ` +
+            `tiho izpustilo del trga.`)
+    );
+    process.exitCode = razvrsceno ? 0 : 1;
+  }
 }
 
 await new Promise((r) => setTimeout(r, 300));

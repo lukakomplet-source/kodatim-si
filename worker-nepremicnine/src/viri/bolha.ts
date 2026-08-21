@@ -345,12 +345,17 @@ export const adapter: VirAdapter = {
   najvecStrani: 30,
   hlajenjeUr: 12,
   /**
-   * Ali je seznam razvrščen od najnovejšega, še NI izmerjeno
-   * (`npm run test:razvrstitev bolha.com`). Dokler ni, inkrementalnega
-   * branja ne vklapljamo: zgodnja ustavitev pri pomešanem seznamu tiho
-   * izpusti del trga.
+   * IZMERJENO 21. 8. 2026 (`npm run test:razvrstitev bolha.com`): od 30 kartic
+   * na prvi strani jih baza ni poznala 13, na drugi in tretji strani pa nobene
+   * (0 od 50). Novi oglasi se torej gnetejo spredaj — seznam je razvrščen od
+   * najnovejšega in inkrementalna ustavitev ne more tiho izpustiti trga.
+   *
+   * Prva različica te meritve je primerjala povprečni `first_seen` po straneh
+   * in bila krožna: ta pove, kdaj je oglas videl NAŠ pregled, ki strani bere
+   * po vrsti. Razvrstitev je zato "ovrgla" pri viru, pri katerem so bili v
+   * istem izpisu dokazi za nasprotno.
    */
-  razvrsceniPoNovosti: false,
+  razvrsceniPoNovosti: true,
   pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
   /**
