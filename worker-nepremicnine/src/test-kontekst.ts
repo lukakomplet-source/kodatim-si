@@ -1,7 +1,9 @@
 import "dotenv/config";
 import { chromium } from "playwright";
+import { connect } from "./db.js";
 import { najdiVir } from "./viri/index.js";
 import { jeIzziv, razbremeniKontekst } from "./izziv.js";
+import { hlajenjeDo } from "./samopopravilo.js";
 
 /**
  * MERITEV, KI ODGOVARJA NA PRAVNO VPRAŠANJE, NE NA TEHNIČNO.
@@ -28,11 +30,25 @@ import { jeIzziv, razbremeniKontekst } from "./izziv.js";
 const koliko = Number(process.argv[2] ?? 4);
 /** Razmik med stranmi; z njim se loči "beremo prehitro" od "seja je zavrnjena". */
 const zamikMs = Number(process.argv[3] ?? 0) || null;
-const vir = najdiVir("nepremicnine.net");
+/** Kateri vir merimo (--vir=bolha.com); privzeto nepremicnine.net. */
+const virArg = process.argv.find((a) => a.startsWith("--vir="))?.slice(6) ?? "nepremicnine.net";
+const vir = najdiVir(virArg);
 if (!vir) {
-  console.error("Vira ni v registru.");
+  console.error(`Vira "${virArg}" ni v registru.`);
   process.exit(2);
 }
+
+// Meritve NIKOLI ne delamo med hlajenjem: to bi bilo natanko tisto, čemur se
+// ta datoteka posveča.
+const db = connect();
+const hlajenje = await hlajenjeDo(db, vir.vir);
+if (hlajenje) {
+  console.error(
+    `Vir ${vir.vir} počiva po blokadi do ${new Date(hlajenje).toLocaleString("sl-SI")}. Meritev ni dovoljena.`
+  );
+  process.exit(4);
+}
+
 const rezina = vir.rezine().find((r) => r.oznaka === "prodaja/podravska/stanovanje") ?? vir.rezine()[0];
 
 /**

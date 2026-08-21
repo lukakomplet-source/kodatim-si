@@ -646,11 +646,18 @@ async function zagotoviViri(db: Db): Promise<void> {
   const obstojeci = new Set((data ?? []).map((v) => v.vir as string));
   for (const v of VIRI) {
     if (obstojeci.has(v.vir)) {
-      // Pravno opozorilo in Crawl-delay se osvežita ob vsakem zagonu: to sta
-      // podatka o viru, ne nastavitvi uporabnika.
+      // Pravno opozorilo, Crawl-delay in proračun zahtevkov se osvežijo ob
+      // vsakem zagonu: to so podatki o viru in o kodi, ne nastavitve
+      // uporabnika. Kvoto potrebuje konzola, da lahko pošteno izračuna,
+      // koliko dni traja polnjenje — z globalno številko bi lagala.
       await db
         .from("nep_viri")
-        .update({ crawl_delay_s: v.crawlDelayS ?? null, opomba_pravno: v.pravno ?? null })
+        .update({
+          crawl_delay_s: v.crawlDelayS ?? null,
+          opomba_pravno: v.pravno ?? null,
+          detajlov_kvota: v.detajli?.kvota ?? null,
+          najvec_strani: v.najvecStrani ?? null,
+        })
         .eq("vir", v.vir);
       continue;
     }
@@ -661,6 +668,8 @@ async function zagotoviViri(db: Db): Promise<void> {
       pricakovano_max: v.pricakovanRazpon[1],
       crawl_delay_s: v.crawlDelayS ?? null,
       opomba_pravno: v.pravno ?? null,
+      detajlov_kvota: v.detajli?.kvota ?? null,
+      najvec_strani: v.najvecStrani ?? null,
     });
     log("info", "nov vir vpisan (izklopljen)", { vir: v.vir });
   }

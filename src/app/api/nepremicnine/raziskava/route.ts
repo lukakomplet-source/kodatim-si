@@ -93,7 +93,7 @@ export async function GET() {
    * koliko jih še čaka. To je edini pošten odgovor na "koliko je še dela" —
    * vrstica pregleda pove samo, kaj je naredil TA krog.
    */
-  const viri = (viriRes.data ?? []) as { vir: string }[];
+  const viri = (viriRes.data ?? []) as { vir: string; detajlov_kvota: number | null; najvec_strani: number | null }[];
   const urnikVrstica = (urnikRes.data ?? null) as { ure?: string; detajlov_na_krog?: number } | null;
   const urnikUre = String(urnikVrstica?.ure ?? "4")
     .split(/[,\s]+/)
@@ -127,7 +127,19 @@ export async function GET() {
        * ne upošteva blokad, zato je to najboljši možni scenarij, ne napoved.
        */
       const preostanek = Math.max(0, (aktivnih.count ?? 0) - (zDetajli.count ?? 0));
-      const detajlovNaKrog = Math.max(1, Number(urnikVrstica?.detajlov_na_krog ?? 400));
+      /**
+       * Merodajna je NAJMANJŠA od treh meja: globalna nastavitev urnika,
+       * kvota tega adapterja in proračun zahtevkov, ki ga 1. faza pusti.
+       * Z globalno številko (400) bi ocena za vir, ki prenese 30 zahtevkov na
+       * krog, lagala za več kot desetkrat — in to v optimistično smer, kar je
+       * najslabša možna smer za tako oceno.
+       */
+      const meje = [
+        Number(urnikVrstica?.detajlov_na_krog ?? 400),
+        v.detajlov_kvota ?? Number.POSITIVE_INFINITY,
+        v.najvec_strani ?? Number.POSITIVE_INFINITY,
+      ].filter((x) => Number.isFinite(x) && x > 0);
+      const detajlovNaKrog = Math.max(1, Math.min(...meje));
       const krogovNaDan = Math.max(1, urnikUre.length);
       const dniDoPolnega =
         preostanek > 0 ? Math.ceil(preostanek / (detajlovNaKrog * krogovNaDan)) : 0;
