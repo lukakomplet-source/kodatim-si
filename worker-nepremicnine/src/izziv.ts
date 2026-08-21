@@ -30,6 +30,14 @@ const VZORCI = [
   /pokažite nam, da niste robot/i,
   /please solve this captcha/i,
   /verifying you are human/i,
+  // Radwarove stabilne oznake, ki jih prvi nabor ni lovil. Brez njih bi
+  // meritev CAPTCHA zaslon preštela kot "stran brez kartic" in zavrnitev
+  // pripisala napačnemu vzroku.
+  /verifying your browser/i,
+  /incident id/i,
+  /perfdrive/i,
+  /your activity and behaviou?r on this site/i,
+  /we apologize for the inconvenience/i,
 ];
 
 /**

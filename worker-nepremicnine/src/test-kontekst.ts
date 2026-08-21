@@ -94,17 +94,33 @@ for (let stran = 1; stran <= koliko; stran++) {
     )) as string;
     const izziv = jeIzziv(naslov, besedilo);
     const status = r?.status() ?? 0;
-    const { kartice } = await vir.preberiSeznam(page);
-    // Zavrnitev je OBOJE: zaslon preverjanja IN gol HTTP 403/429. Prva
-    // razlicica testa je stela samo zaslone in zato iz petih zavrnjenih strani
-    // sklepala, da vse deluje.
-    const zavrnjena = izziv || status === 403 || status === 429;
+    const { kartice, skupajZadetkov } = await vir.preberiSeznam(page);
+    /**
+     * ODTIS VSAKEGA ZAHTEVKA. Brez njega se tri različne zavrnitve zlijejo v
+     * eno: gol 403, zaslon preverjanja (pride s statusom 200!) in "postrezi
+     * lažne podatke" (stran, ki ima obliko, a ne vsebine — Radware to navaja
+     * med svojimi ukrepi). Vsaka ima drug odgovor, zato jih je treba ločiti.
+     */
+    const koncniUrl = page.url();
+    const dolzina = (await page.content().catch(() => "")).length;
+    const zavrnjena =
+      izziv || status === 403 || status === 429 || (kartice.length === 0 && skupajZadetkov !== 0);
     if (zavrnjena) zavrnitev += 1;
     else if (kartice.length > 0) uspehov += 1;
     console.log(
       `stran ${stran} | HTTP ${status} | kartic ${String(kartice.length).padStart(3)} | ` +
-        `${izziv ? "IZZIV: " + naslov : zavrnjena ? "ZAVRNJENO" : "v redu"}`
+        `HTML ${Math.round(dolzina / 1024)} kB | ${izziv ? "IZZIV: " + naslov : zavrnjena ? "ZAVRNJENO" : "v redu"}`
     );
+    if (zavrnjena) {
+      console.log(`         končni URL: ${koncniUrl}`);
+      console.log(`         naslov: ${naslov}`);
+      console.log(`         začetek besedila: ${besedilo.replace(/\s+/g, " ").slice(0, 220)}`);
+      // Ob prvi zavrnitvi se USTAVIMO. Prejšnja različica je nadaljevala do
+      // konca in vsak nadaljnji zahtevek je bil trkanje na vrata, ki so nam
+      // jih pravkar zaprli.
+      console.log(`\nUstavljam meritev ob prvi zavrnitvi — brez ponovnega poskusa.`);
+      break;
+    }
   } catch (e) {
     console.log(`stran ${stran} | NAPAKA: ${e instanceof Error ? e.message : String(e)}`);
   } finally {

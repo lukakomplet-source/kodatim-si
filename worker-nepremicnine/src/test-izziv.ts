@@ -45,9 +45,25 @@ const PRIMERI: { ime: string; naslov: string; besedilo: string; izziv: boolean }
     izziv: false,
   },
   {
+    // Radwarov zaslon, kot ga vrne validate.perfdrive.com — prvi nabor
+    // vzorcev ga ni ujel in bi ga prešteli kot "stran brez kartic".
+    ime: "Radware perfdrive preusmeritev",
+    naslov: "Verifying your browser before proceeding...",
+    besedilo:
+      "We apologize for the inconvenience, but your activity and behavior on this site made us think that you are a bot. Incident ID: be2b3cff-bsff-4d06-8d40-4ae36eb12a27",
+    izziv: true,
+  },
+  {
     ime: "prazna stran",
     naslov: "",
     besedilo: "",
+    izziv: false,
+  },
+  {
+    // Ozkost vzorcev mora zdržati tudi zdaj: oglas sme omeniti "incident".
+    ime: "oglas, ki omenja incident",
+    naslov: "Hiša po požaru, Celje",
+    besedilo: "Hiša je bila po incidentu leta 2019 v celoti obnovljena. Prodamo.",
     izziv: false,
   },
 ];
