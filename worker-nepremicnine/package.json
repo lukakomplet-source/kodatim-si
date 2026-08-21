@@ -14,6 +14,7 @@
     "test:kontekst": "tsx src/test-kontekst.ts",
     "test:paginacija": "tsx src/test-paginacija.ts",
     "test:zakljucek": "tsx src/test-zakljucek.ts",
+    "test:blokada": "tsx src/test-blokada.ts",
     "test:seznam": "tsx src/test-seznam.ts",
     "test:detajl": "tsx src/test-detajl.ts",
     "detajli": "tsx src/detajli-once.ts"

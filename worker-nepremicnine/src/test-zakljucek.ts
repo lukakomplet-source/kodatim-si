@@ -141,6 +141,8 @@ if ((aktiven ?? []).length > 0) {
 }
 
 console.log(padlo === 0 ? "\nVse je v redu." : `\n${padlo} preverb je padlo.`);
-// exitCode namesto process.exit(): odjemalec baze ima še odprte povezave in
-// takojšen izhod na Windowsu sproži trditev v libuv po že izpisanem rezultatu.
+// exitCode namesto process.exit(), in kratek predah: odjemalec baze ima še
+// odprte vtičnice in takojšen konec procesa na Windowsu sproži trditev v libuv
+// (async.c:94) — po že izpisanem rezultatu, a z izhodno kodo 1.
+await new Promise((r) => setTimeout(r, 300));
 process.exitCode = padlo === 0 ? 0 : 1;

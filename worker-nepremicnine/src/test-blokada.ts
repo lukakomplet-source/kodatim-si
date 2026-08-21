@@ -84,4 +84,9 @@ const { data: ostanek } = await db.from("nep_statistika").select("kljuc").eq("kl
 trdi("pospravljeno", !ostanek, "testni zapis pobrisan");
 
 console.log(padlo === 0 ? "\nVse je v redu." : `\n${padlo} preverb je padlo.`);
+// Kratek predah pred izhodom: odjemalec baze ima še odprte vtičnice in
+// takojšen konec procesa na Windowsu sproži trditev v libuv (async.c:94) —
+// po že izpisanem rezultatu, a z izhodno kodo 1, zaradi česar je test
+// izgledal kot padel, čeprav so vse preverbe uspele.
+await new Promise((r) => setTimeout(r, 300));
 process.exitCode = padlo === 0 ? 0 : 1;
