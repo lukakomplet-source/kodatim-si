@@ -81,7 +81,7 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
   const ids = oglasi.map((o) => o.virId);
   const { data: obstojeci, error } = await db
     .from("nep_oglasi")
-    .select("id, vir_id, cena_eur, status, povrsina_m2, zemljisce_m2, opis, opis_hash")
+    .select("id, vir_id, cena_eur, status, povrsina_m2, zemljisce_m2, opis, opis_hash, slike_urls")
     .eq("vir", oglasi[0].vir)
     .in("vir_id", ids);
   if (error) throw new Error(`Branje obstoječih ni uspelo: ${error.message}`);
@@ -130,8 +130,16 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
    * pobrisati shranjenih vrednosti — "nič se ne prepiše v prazno" velja tudi
    * za spodletelo parsanje ("Cena po dogovoru", manjkajoč opis).
    */
-  const vrsticaZaPosodobitev = (o: NormaliziranOglas) => {
+  const vrsticaZaPosodobitev = (o: NormaliziranOglas, imaGalerijo: boolean) => {
     const cela = vrstica(o) as Record<string, unknown>;
+    /**
+     * Kartica na seznamu skoraj vedno pokaže eno sliko, detajlna stran pa
+     * celo galerijo (izmerjeno povprečje 16). Če seznam prepiše `st_slik`,
+     * se število razide s `slike_urls` in oglas, ki ima 16 slik, trdi, da ima
+     * eno — vsak naslednji pregled seznamov je popravek 2. faze izničil.
+     * Ko galerija obstaja, je merodajna ona.
+     */
+    if (imaGalerijo) delete cela.st_slik;
     const vednoPisi = new Set(["vir", "vir_id", "url", "posel", "raw", "data_quality", "last_seen", "status", "manjka_od"]);
     for (const [polje, vrednost] of Object.entries(cela)) {
       if ((vrednost === null || vrednost === undefined) && !vednoPisi.has(polje)) delete cela[polje];
@@ -173,7 +181,9 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
       // Sprememba tudi pri null -> vrednost: prva znana cena šteje (in postane
       // cena_prvotna_eur, da padec cene sploh kdaj lahko obstaja).
       const sprememba = o.cenaEur !== null && staraCena !== o.cenaEur;
-      const zaVpis = vrsticaZaPosodobitev(o);
+      const imaGalerijo = Array.isArray((prej as { slike_urls?: unknown }).slike_urls)
+        && ((prej as { slike_urls: unknown[] }).slike_urls.length > 0);
+      const zaVpis = vrsticaZaPosodobitev(o, imaGalerijo);
       if (sprememba && staraCena === null) zaVpis.cena_prvotna_eur = o.cenaEur;
       const { error: e } = await db.from("nep_oglasi").update(zaVpis).eq("id", prej.id);
       if (e) return { ok: false, sprememba: false };

@@ -329,12 +329,17 @@ export default async function OglasPage({ params }: { params: Promise<{ id: stri
                     rel="noopener noreferrer"
                     className="group overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"
                   >
+                    {/* Referrer se NE skriva. `no-referrer` bi viru zakril, kdo
+                        njegove slike vključuje, in s tem izničil edino zaščito
+                        pred vgrajevanjem, ki jo ima. Če vir vgrajevanja ne
+                        želi, je pravilen izid prazno mesto — ne slika, ki smo
+                        jo dobili tako, da se nismo predstavili.
+                        eslint-disable-next-line @next/next/no-img-element */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={src}
                       alt={`${o.naslov ?? o.kraj ?? "Oglas"} — slika ${i + 1}`}
                       loading="lazy"
-                      referrerPolicy="no-referrer"
                       className="aspect-[4/3] w-full object-cover transition group-hover:brightness-105"
                     />
                   </a>

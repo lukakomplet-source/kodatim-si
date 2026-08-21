@@ -8,7 +8,7 @@ import { geokodirajOglase, naloziKraje, poveziNepremicnine } from "./nepremicnin
 import { izracunajPosle } from "./posli.js";
 import { preveriIskanja } from "./iskanja.js";
 import { zajemiDetajle } from "./detajli.js";
-import { preveriIzziv } from "./izziv.js";
+import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import {
   faktorHitrosti,
   hlajenjeDo,
@@ -123,8 +123,8 @@ async function pregledSeznamov(
    * razmika med stranmi nič); ostali viri obdržijo en kontekst.
    */
   const skupni: { ctx: BrowserContext | null } = { ctx: null };
-  const novKontekst = () =>
-    zOmejitvijo(
+  const novKontekst = async () => {
+    const ctx = await zOmejitvijo(
       "newContext",
       browser!.newContext({
         locale: "sl-SI",
@@ -132,6 +132,11 @@ async function pregledSeznamov(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       })
     );
+    // Slik, pisav in slogov ne zahtevamo: podatke beremo iz HTML-ja, vir pa
+    // je zaradi njih dobil nekaj deset zahtevkov na vsako našo stran.
+    await razbremeniKontekst(ctx).catch(() => {});
+    return ctx;
+  };
   const preberiStran = async (url: string) => {
     const ctx = vir.svezKontekstNaStran ? await novKontekst() : (skupni.ctx ??= await novKontekst());
     try {
@@ -281,6 +286,9 @@ async function pregledSeznamov(
         } catch (err) {
           p.napak += 1;
           popoln = false;
+          // Napaka je tudi premik: brez tega bi nadzornik zataknjenosti ubil
+          // proces, ki se skozi zaporedje časovnih omejitev pošteno prebija.
+          utrip();
           const sporocilo = err instanceof Error ? err.message : String(err);
           await db.from("nep_napake").insert({ vir: vir.vir, url: vir.seznamUrl(rezina, stran), tip: "seznam", sporocilo });
           log("warn", "napaka na strani", { vir: vir.vir, rezina: rezina.oznaka, stran, sporocilo });
@@ -301,6 +309,11 @@ async function pregledSeznamov(
         obdelanihRezin += 1;
         await shraniNadaljevanje(absolutniIndeks + 1, 1);
       }
+      // Razmik velja tudi ČEZ mejo rezine. Prej se je spal samo med stranmi
+      // znotraj rezine, prehod na naslednjo kategorijo pa je šel takoj — pri
+      // 182 rezinah je to 182 zahtevkov brez premora, natanko na mestih, kjer
+      // se ritem najbolj pozna.
+      if (!dosezenaKvota && !stopping) await sleep(zamikMs);
     }
   } catch (err) {
     napaka = err instanceof Error ? err.message : String(err);
@@ -351,6 +364,7 @@ async function pregledSeznamov(
     strani: p.strani,
     najdenih: p.najdenih,
     napak: p.napak,
+    izginulih,
     popoln,
     blokada,
     napaka,
@@ -369,6 +383,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
     strani: 0,
     najdenih: 0,
     napak: 0,
+    izginulih: 0,
     popoln: false,
     blokada: null,
     napaka: null,
@@ -398,7 +413,30 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
         .update({ faza: 2, updated_at: new Date().toISOString() })
         .eq("id", pregledId);
       await sprostiZataknjenoVrsto(db, vir.vir);
-      const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog);
+
+      /**
+       * KVOTA JE ENA SAMA ZA CEL KROG, NE ENA NA FAZO.
+       *
+       * `najvecStrani` je bila izmerjena meja vira ("bolha zavrne po ~50–60
+       * straneh v eni seji"), a je štela samo strani seznamov. 2. faza je
+       * dodala še do 120 zahtevkov, torej je en krog naredil 160 obiskov tam,
+       * kjer je meja 50 — trikrat čez tisto, kar smo si sami postavili.
+       * Detajli zato jemljejo iz istega proračuna, kar od njega ostane.
+       */
+      const preostanek =
+        vir.najvecStrani !== undefined ? Math.max(0, vir.najvecStrani - izid.strani) : Number.POSITIVE_INFINITY;
+      const kvota = Math.min(vir.detajli.kvota, detajlovNaKrog, preostanek);
+      if (kvota <= 0) {
+        log("info", "2. faza preskocena - proracun zahtevkov je porabila 1. faza", {
+          vir: vir.vir,
+          strani: izid.strani,
+          najvecStrani: vir.najvecStrani,
+        });
+      }
+
+      // Razmik tudi ob prehodu med fazama: brez njega gre prva detajlna stran
+      // takoj za zadnjo stranjo seznama.
+      if (kvota > 0) await sleep(Math.round(vir.detajli.zamikMs * Math.max(1, faktor)));
       const izidDetajlov = await zajemiDetajle(
         db,
         {
@@ -422,7 +460,11 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
         .update({
           detajlov_obdelanih: izidDetajlov.obdelanih,
           detajlov_skupaj: izidDetajlov.obdelanih + izidDetajlov.ostalo,
-          izginulih: izidDetajlov.izginulih,
+          // SEŠTEVEK, ne prepis: 1. faza označi izginule po dvo-udarčnem
+          // pravilu, 2. faza pa tiste, ki jim detajlna stran vrne 404/410.
+          // Prepis je prvo številko tiho izbrisal in konzola je po popolnem
+          // pregledu pokazala "izginulih 0", čeprav jih je bilo na desetine.
+          izginulih: izid.izginulih + izidDetajlov.izginulih,
           updated_at: new Date().toISOString(),
         })
         .eq("id", pregledId);
@@ -435,17 +477,46 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
   } finally {
     trenutnaFaza = { vir: null, faza: 0 };
     const z = oceniZakljucek(izid);
-    await db
-      .from("nep_pregledi")
-      .update({
-        status: z.status,
-        konec: new Date().toISOString(),
-        pregled_popoln: z.pregledPopoln,
-        opozorilo: z.opozorilo,
-        zadnja_napaka: izid.blokada ?? izid.napaka ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", pregledId);
+
+    /**
+     * ZAKLJUČNI ZAPIS MORA USPETI.
+     *
+     * Prej se izid tega zapisa ni prebral. En sam neuspeh (baza se je ravno
+     * ponovno zaganjala, omrežje je zamrznilo) bi pustil vrstico v stanju
+     * "tece" za vedno — unikatni indeks bi zaradi nje zavrnil vsak nadaljnji
+     * pregled in cel zbiralnik bi tiho obstal. Točno to obljubo naj bi ta
+     * funkcija držala, zato se zapis poskusi trikrat z naraščajočim premorom.
+     *
+     * Če tudi to ne uspe, ostane varovalka `zapriOsirotele()`: vrstico bo ob
+     * naslednjem zagonu zaprl nekdo drug. Zato tu ne mečemo naprej — samo
+     * glasno zapišemo, kaj se je zgodilo.
+     */
+    for (let poskus = 1; poskus <= 3; poskus++) {
+      const { error } = await db
+        .from("nep_pregledi")
+        .update({
+          status: z.status,
+          konec: new Date().toISOString(),
+          pregled_popoln: z.pregledPopoln,
+          opozorilo: z.opozorilo,
+          zadnja_napaka: izid.blokada ?? izid.napaka ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pregledId);
+      if (!error) break;
+      log("error", "zakljucnega statusa ni bilo mogoce zapisati", { poskus, napaka: error.message });
+      if (poskus === 3) {
+        await zabelezi(db, {
+          sprozil: "zaključek pregleda",
+          vir: vir.vir,
+          vzrok: `Statusa "${z.status}" po treh poskusih ni bilo mogoče zapisati: ${error.message}`,
+          ukrep: "zapri_osirotelega",
+          izvedeno: "Vrstica ostane odprta; zaprl jo bo nadzor osirotelih pregledov ob naslednjem krogu.",
+        }).catch(() => {});
+        break;
+      }
+      await sleep(poskus * 2000);
+    }
     log("info", "pregled zakljucen", {
       vir: vir.vir,
       status: z.status,
@@ -598,6 +669,27 @@ async function main(): Promise<void> {
       console.error(`Vira "${data.vir ?? virArg}" ni v registru adapterjev.`);
       process.exit(2);
     }
+    // Hlajenje velja tudi za ukazno vrstico. Prej sta ga --once in --prevzemi
+    // v celoti obšla, kar je iz varovalke naredilo priporočilo: kdor je vedel
+    // za zastavico, je lahko takoj po blokadi spet pritisnil na vir. Prav ta
+    // možnost je tisto, česar v tem projektu ne želimo imeti.
+    const hlajenjePrevzema = await hlajenjeDo(db, virPrevzema.vir);
+    if (hlajenjePrevzema) {
+      console.error(
+        `Vir ${virPrevzema.vir} počiva po blokadi do ${new Date(hlajenjePrevzema).toLocaleString("sl-SI")}. ` +
+          `Blokade ne obidemo niti iz ukazne vrstice.`
+      );
+      await db
+        .from("nep_pregledi")
+        .update({
+          status: "preklicano",
+          konec: new Date().toISOString(),
+          opozorilo: `Vir počiva po blokadi do ${new Date(hlajenjePrevzema).toLocaleString("sl-SI")}. Blokade ne obidemo.`,
+          zadnja_napaka: "vir je v hlajenju po blokadi",
+        })
+        .eq("id", prevzemiId);
+      process.exit(4);
+    }
     await pregled(db, prevzemiId, virPrevzema, urnikOb.detajlovNaKrog);
     await knjigovodstvo(db);
     return;
@@ -629,12 +721,17 @@ async function main(): Promise<void> {
         resolve();
       });
     });
-    // Vrata so naša => noben drug zbiralnik ne teče => vsak 'tece' zapis je
-    // osirotel ostanek mrtvega procesa (izpad elektrike, sesutje). Brez te
-    // obnove bi unique indeks za vedno blokiral vse nadaljnje preglede,
-    // heartbeat pa bi mirno kazal "živ". Zapre se kot DELNI pregled — delo,
-    // ki ga je opravil, je v bazi in je resnično.
-    const zaprtih = await zapriOsirotele(db, 0);
+    /**
+     * Vrata so naša, torej noben drug DEMON ne teče in vsak star 'tece' zapis
+     * je ostanek mrtvega procesa (izpad elektrike, sesutje). Brez te obnove bi
+     * unikatni indeks za vedno blokiral vse nadaljnje preglede, utrip pa bi
+     * mirno kazal "živ".
+     *
+     * Meja pa NI nič: `--prevzemi` teče v svojem procesu brez vrat in je ob
+     * zagonu demona lahko sredi dela. Prag desetih minut loči živ prevzem (ki
+     * se javlja ob vsaki strani) od trupla, ne da bi ubil prvega.
+     */
+    const zaprtih = await zapriOsirotele(db, 10);
     if (zaprtih > 0) log("warn", "osiroteli pregledi zaprti ob zagonu", { st: zaprtih });
   }
 
@@ -650,7 +747,29 @@ async function main(): Promise<void> {
       console.error(`Vira "${virArg}" ni v registru. Na voljo: ${VIRI.map((v) => v.vir).join(", ")}`);
       process.exit(2);
     }
-    const { data } = await db.from("nep_pregledi").insert({ status: "zahtevano", vir: vir.vir }).select("id").maybeSingle();
+    const hlajenjeEnkratnega = await hlajenjeDo(db, vir.vir);
+    if (hlajenjeEnkratnega) {
+      console.error(
+        `Vir ${vir.vir} počiva po blokadi do ${new Date(hlajenjeEnkratnega).toLocaleString("sl-SI")}. ` +
+          `Blokade ne obidemo niti iz ukazne vrstice.`
+      );
+      process.exit(4);
+    }
+    const { data, error } = await db
+      .from("nep_pregledi")
+      .insert({ status: "zahtevano", vir: vir.vir, zahteval: "ukazna vrstica" })
+      .select("id")
+      .maybeSingle();
+    // Napaka vstavljanja (unikatni indeks: en aktiven pregled) je bila doslej
+    // požrta — ukaz se je končal tiho in videti je bilo, kot da je delal.
+    if (error) {
+      console.error(
+        /duplicate|unique/i.test(error.message)
+          ? "En pregled že čaka ali teče — počakajte, da se konča."
+          : `Zahteve ni bilo mogoče vpisati: ${error.message}`
+      );
+      process.exit(5);
+    }
     if (data) await pregled(db, data.id as string, vir, urnikOb.detajlovNaKrog);
     await knjigovodstvo(db);
     return;
@@ -741,6 +860,28 @@ async function main(): Promise<void> {
           })
           .eq("id", naloga.id as string);
         log("warn", "zahteva za neznan vir - preklicana", { vir: naloga.vir });
+        await sleep(POLL_MS);
+        continue;
+      }
+      // Izklop vira med čakanjem zahteve mora zaleči. Prej je zahteva, ki je
+      // bila uvrščena, ko je bil vir še vklopljen, tekla naprej — izklop v
+      // konzoli torej ni ustavil ničesar in je bil videti kot da ne dela.
+      const { data: virVrstica } = await db
+        .from("nep_viri")
+        .select("omogocen")
+        .eq("vir", virNaloge.vir)
+        .maybeSingle();
+      if (virVrstica && virVrstica.omogocen === false) {
+        await db
+          .from("nep_pregledi")
+          .update({
+            status: "preklicano",
+            konec: new Date().toISOString(),
+            opozorilo: `Vir ${virNaloge.vir} je izklopljen — zahteva ni bila izpolnjena.`,
+            zadnja_napaka: "vir je izklopljen",
+          })
+          .eq("id", naloga.id as string);
+        log("warn", "zahteva preklicana - vir je izklopljen", { vir: virNaloge.vir });
         await sleep(POLL_MS);
         continue;
       }

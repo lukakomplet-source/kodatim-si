@@ -104,8 +104,13 @@ export type VirAdapter = {
    * glavna zanka ga preprosto preskoči, namesto da bi ugibala selektorje.
    */
   detajli?: DetajlPolitika;
-  /** Kar vir zahteva v robots.txt; samo za prikaz v konzoli (s = sekunde). */
-  crawlDelayS?: number;
+  /**
+   * Crawl-delay, kakor ga zahteva robots.txt tega vira, v sekundah.
+   * `null` pomeni "robots.txt ga NE navaja" in ne "nič sekund" — razlika je
+   * pomembna, ker konzola sicer trdi, da vir dovoljuje branje brez premora.
+   * Naš dejanski razmik je `omejitve.zamikMs` in je nikoli ne sme podkoračiti.
+   */
+  crawlDelayS?: number | null;
   /** Kaj o zajemu pravijo pogoji uporabe tega vira — vidno v konzoli. */
   pravno?: string;
   rezine(): Rezina[];

@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { BrowserContext, Page } from "playwright";
 
 /**
  * Prepoznava preverjanj "ali si robot".
@@ -31,6 +31,29 @@ const VZORCI = [
   /please solve this captcha/i,
   /verifying you are human/i,
 ];
+
+/**
+ * Vrste virov, ki jih za branje oglasov NE potrebujemo.
+ *
+ * "6 sekund med zahtevki" je veljalo samo za navigacije. Vsaka stran je s
+ * seboj potegnila še nekaj deset slik, pisav in skript — torej je vir v tistih
+ * šestih sekundah dobil trideset zahtevkov namesto enega. Podatke beremo iz
+ * HTML-ja (naslovi slik so v atributih), zato je nalaganje slik čista
+ * obremenitev vira brez koristi za nas.
+ */
+const NEPOTREBNI: string[] = ["image", "media", "font", "stylesheet"];
+
+/**
+ * Naloži kontekstu pravilo, da nepotrebnih virov sploh ne zahteva.
+ * Nikoli ne blokira dokumentov, skript ali XHR — stran se mora obnašati
+ * normalno, sicer bi to bilo prilagajanje viru, ne razbremenitev.
+ */
+export async function razbremeniKontekst(ctx: BrowserContext): Promise<void> {
+  await ctx.route("**/*", (r) => {
+    if (NEPOTREBNI.includes(r.request().resourceType())) void r.abort();
+    else void r.continue();
+  });
+}
 
 export function jeIzziv(naslov: string, besedilo: string): boolean {
   const vzorec = `${naslov}\n${besedilo}`;

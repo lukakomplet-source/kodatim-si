@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { cenaIz, izOpisa } from "../parse.js";
+import { cenaIz, izOpisa, stevilo } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
 import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
@@ -194,20 +194,22 @@ export function detajlIzSurovegaSiol(s: SurovDetajlSiol): Detajl {
     if (kljuc) lastnosti[kljuc] = s.pari[i + 1].trim();
   }
 
+  /** Najprej točno ujemanje imena, šele nato delno — glej opombo pri bolhi. */
   const najdi = (...kljuci: string[]): string | null => {
+    const imena = Object.keys(lastnosti);
     for (const k of kljuci) {
-      for (const [ime, vrednost] of Object.entries(lastnosti)) {
-        if (ime.toLowerCase().includes(k.toLowerCase())) return vrednost;
-      }
+      const tocno = imena.find((i) => i.toLowerCase() === k.toLowerCase());
+      if (tocno) return lastnosti[tocno];
+    }
+    for (const k of kljuci) {
+      const delno = imena.find((i) => i.toLowerCase().includes(k.toLowerCase()));
+      if (delno) return lastnosti[delno];
     }
     return null;
   };
   const stevilka = (...kljuci: string[]): number | null => {
-    const v = najdi(...kljuci);
-    const m = v?.match(/(\d[\d.]*(?:,\d+)?)/);
-    if (!m) return null;
-    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    const m = najdi(...kljuci)?.match(/(\d[\d.]*(?:,\d+)?)/);
+    return m ? stevilo(m[1]) : null;
   };
 
   // "Nadstropje: 1/2" je etaža/etažnost v enem zapisu.
@@ -272,7 +274,9 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: [200, 20000],
   slikePolitika: "referenca",
   svezKontekstNaStran: false,
-  crawlDelayS: 0,
+  // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);
+  // null pomeni "ni predpisan", ne "nič sekund". Naš razmik je v omejitve.zamikMs.
+  crawlDelayS: null,
   pravno:
     "Splošni pogoji, razdelek 8: prepovedano je meta-iskanje in »uporaba avtomatskih poizvedb ali drugih robotov«; izjema velja SAMO za splošne spletne iskalnike, vertikalni so izvzeti. Prepovedano je tudi kopiranje vsebine oglasov in vključevanje v drugo storitev. Zato je vir privzeto IZKLOPLJEN — vklopi ga lahko samo človek. robots.txt prepoveduje /userarea/, /accounts/, /api/v1/userarea/, /listing-mortgage-inquiry/ — teh ne odpiramo nikoli.",
   najvecStrani: 120,

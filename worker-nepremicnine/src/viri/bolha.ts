@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { cenaIz, izOpisa } from "../parse.js";
+import { cenaIz, izOpisa, stevilo } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
 import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
@@ -176,31 +176,57 @@ export function detajlIzSurovegaBolha(s: SurovDetajlBolha): Detajl {
     if (g.naslov && g.postavke.length > 0) lastnosti[g.naslov] = g.postavke.join(", ");
   }
 
+  /**
+   * Iskanje po imenu ključa: najprej TOČNO ujemanje, šele nato delno.
+   * Prej je bilo samo delno in "Površina" je ujela "Površina parcele" — pri
+   * hiši s 400 m² parcele in 250 m² bivalne površine je v `povrsina_m2`
+   * pristalo 400. To ni prazno polje, ampak napačna številka, in €/m² je
+   * bil zato tiho napačen.
+   */
   const najdi = (...kljuci: string[]): string | null => {
+    const imena = Object.keys(lastnosti);
     for (const k of kljuci) {
-      for (const [ime, vrednost] of Object.entries(lastnosti)) {
-        if (ime.toLowerCase().includes(k.toLowerCase())) return vrednost;
-      }
+      const tocno = imena.find((i) => i.toLowerCase() === k.toLowerCase());
+      if (tocno) return lastnosti[tocno];
+    }
+    for (const k of kljuci) {
+      const delno = imena.find((i) => i.toLowerCase().includes(k.toLowerCase()));
+      if (delno) return lastnosti[delno];
     }
     return null;
   };
+  /**
+   * Bolha piše števila po angleško ("173.72 m2", pika = decimalka),
+   * nepremicnine.net po slovensko ("208,4 m2", pike = tisočice). Slepo
+   * brisanje pik je iz 173,72 m² naredilo 17.372 m² — zato skupni `stevilo()`
+   * iz parse.ts, ki zapisa loči, in ne lastna različica.
+   */
   const stevilka = (...kljuci: string[]): number | null => {
+    const m = najdi(...kljuci)?.match(/(\d[\d.]*(?:,\d+)?)/);
+    return m ? stevilo(m[1]) : null;
+  };
+  /**
+   * Zastavica iz tabele: prisotnost ključa NI enaka "da". Vir zna zapisati
+   * "Klet: Ne" in prej je vsak tak oglas dobil klet — filter bi vrnil preveč
+   * zadetkov, ne da bi kdo opazil, ker manjkajoče lastnosti ni videti.
+   */
+  const zastavica = (...kljuci: string[]): boolean | null => {
     const v = najdi(...kljuci);
-    const m = v?.match(/([\d.]+(?:,\d+)?)/);
-    if (!m) return null;
-    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    if (v === null) return null;
+    return !/^\s*(ne|nima|brez|ni)\s*$/i.test(v);
   };
 
   const balkonTerasa = najdi("Balkon / terasa", "Balkon") ?? "";
-  const cenaStevilo = Number((s.cena ?? "").replace(/[^\d,]/g, "").replace(",", "."));
+  const cenaStevilo = stevilo((s.cena ?? "").replace(/[^\d.,]/g, ""));
   const slike = [...new Set(s.slike)];
 
   return {
-    povrsinaM2: stevilka("Bivalna površina", "Površina stanovanja", "Površina"),
+    // "Površina" ostane zadnja izbira, a šele za točnimi imeni — in nikoli
+    // ne sme prevzeti parcele, ki ima svoj ključ.
+    povrsinaM2: stevilka("Bivalna površina", "Površina stanovanja", "Površina hiše", "Površina"),
     zemljisceM2: stevilka("Površina parcele", "Velikost parcele"),
     stSob: stevilka("Število sob"),
-    stKopalnic: stevilka("Število kopalnic"),
+    stKopalnic: stevilka("Število kopalnic", "Kopalnice"),
     letoIzgradnje: stevilka("Leto izgradnje"),
     letoAdaptacije: stevilka("Leto adaptacije", "Leto prenove"),
     nadstropje: najdi("Nadstropje"),
@@ -211,18 +237,18 @@ export function detajlIzSurovegaBolha(s: SurovDetajlBolha): Detajl {
     stanje: najdi("Stanje nepremičnine", "Stanje"),
     lastnistvo: najdi("Lastništvo"),
     parkirno: najdi("Število parkirnih mest", "Parkirno mesto", "Garaža"),
-    balkon: /balkon/i.test(balkonTerasa) ? true : null,
-    terasa: /teras/i.test(balkonTerasa) ? true : null,
-    vrt: /atrij|vrt/i.test(balkonTerasa) ? true : null,
-    klet: najdi("Klet") ? true : null,
-    dvigalo: najdi("Dvigalo") ? true : null,
+    balkon: balkonTerasa ? /balkon/i.test(balkonTerasa) : null,
+    terasa: balkonTerasa ? /teras/i.test(balkonTerasa) : null,
+    vrt: balkonTerasa ? /atrij|vrt/i.test(balkonTerasa) : null,
+    klet: zastavica("Klet"),
+    dvigalo: zastavica("Dvigalo"),
     sifraOglasa: s.sifra?.replace(/^\s*Šifra oglasa:\s*/i, "").trim() || null,
     kraj: najdi("Lokacija"),
     // Telefon namerno ostane prazen — glej opombo nad preberiDetajl.
     telefon: null,
     posrednik: s.posrednik,
     opis: s.opis || null,
-    cenaEur: Number.isFinite(cenaStevilo) && cenaStevilo > 0 ? cenaStevilo : null,
+    cenaEur: cenaStevilo !== null && cenaStevilo > 0 ? cenaStevilo : null,
     slikeUrls: slike.length > 0 ? slike : null,
     lastnosti,
   };
@@ -272,7 +298,9 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: [300, 40000],
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
-  crawlDelayS: 0,
+  // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);
+  // null pomeni "ni predpisan", ne "nič sekund". Naš razmik je v omejitve.zamikMs.
+  crawlDelayS: null,
   pravno:
     "Pogoji (27. 10. 2025) splošne prepovedi scrapinga NIMAJO; prepovedano je kopiranje vsebine brez pisnega dovoljenja. robots.txt prepoveduje /search in slikovne endpointe — beremo samo kategorijske strani.",
   // Vir po ~50 straneh zavrne; detajli so zato skromno kvotirani in gredo v

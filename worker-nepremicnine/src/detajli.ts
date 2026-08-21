@@ -1,6 +1,6 @@
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import type { Db } from "./db.js";
-import { preveriIzziv } from "./izziv.js";
+import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import type { Detajl, VirAdapter } from "./viri/vmesnik.js";
 
 /**
@@ -34,7 +34,14 @@ export type IzidDetajlov = {
   ostalo: number;
 };
 
-type Vrstica = { id: string; url: string; vir_id: string; detajl_poskusov: number | null };
+type Vrstica = {
+  id: string;
+  url: string;
+  vir_id: string;
+  detajl_poskusov: number | null;
+  cena_eur: number | string | null;
+  povrsina_m2: number | string | null;
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -120,21 +127,60 @@ export async function zajemiDetajle(
   const izid: IzidDetajlov = { obdelanih: 0, napak: 0, izginulih: 0, blokada: null, ostalo: 0 };
   if (!vir.detajli) return izid;
 
-  const zdaj = new Date().toISOString();
-  // Vrsta: aktivni oglasi tega vira brez detajla, ki niso parkirani po
-  // neuspehu. Najmlajši najprej — nov oglas je tisti, ki ga kdo išče danes.
-  const { data, error } = await db
-    .from("nep_oglasi")
-    .select("id, url, vir_id, detajl_poskusov")
-    .eq("vir", vir.vir)
-    .eq("status", "aktiven")
-    .is("detajl_zajet", null)
-    .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lt.${zdaj}`)
-    .order("first_seen", { ascending: false })
-    .limit(vir.detajli.kvota);
-  if (error) throw new Error(`Branje vrste detajlov ni uspelo: ${error.message}`);
+  /**
+   * `slikePolitika` je bila doslej deklaracija, ki je ni bral nihče — torej
+   * varovalka, ki bi ob prvi napačni nastavitvi tiho odpovedala. Zdaj jo
+   * kdo prebere: prenašalca datotek ta koda nima in ga tudi ne sme imeti
+   * brez licence vira, zato je "lokalno" napaka in ne tiha možnost.
+   */
+  if (vir.slikePolitika !== "referenca") {
+    throw new Error(
+      `Vir ${vir.vir} ima slikePolitika="${vir.slikePolitika}", ta zbiralnik pa slik NE kopira. ` +
+        `Lokalna kopija zahteva licenco vira in svoj prenašalec; do takrat hranimo samo naslove.`
+    );
+  }
 
-  const vrsta = (data ?? []) as Vrstica[];
+  const zdaj = new Date().toISOString();
+  const POLJA = "id, url, vir_id, detajl_poskusov, cena_eur, povrsina_m2";
+  /**
+   * Oglas, ki se po toliko poskusih še vedno ne da prebrati, ni več kandidat.
+   * Brez te meje je pokvarjena stran vsak krog spet med prvimi in jemlje
+   * kvoto oglasom, ki bi se prebrali.
+   */
+  const NAJVEC_POSKUSOV = 6;
+  const osnova = () =>
+    db
+      .from("nep_oglasi")
+      .select(POLJA)
+      .eq("vir", vir.vir)
+      .eq("status", "aktiven")
+      .is("detajl_zajet", null)
+      .lt("detajl_poskusov", NAJVEC_POSKUSOV)
+      .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lt.${zdaj}`);
+
+  /**
+   * VRSTA JE MEŠANA, NE SAMO NAJNOVEJŠA.
+   *
+   * Če vsak krog vzame N najnovejših, rep zaostanka nikoli ne pride na vrsto:
+   * dokler vir objavlja več novih oglasov na dan, kot jih kvota zmore, se
+   * najstarejši čakajoči ne premakne nikoli. Zato gre četrtina kvote
+   * najstarejšim — najprej tisti, ki čakajo najdlje.
+   */
+  const kvota = vir.detajli.kvota;
+  const zaRep = Math.max(1, Math.floor(kvota / 4));
+  const [noviRes, stariRes] = await Promise.all([
+    osnova().order("first_seen", { ascending: false }).limit(kvota - zaRep),
+    osnova().order("first_seen", { ascending: true }).limit(zaRep),
+  ]);
+  if (noviRes.error) throw new Error(`Branje vrste detajlov ni uspelo: ${noviRes.error.message}`);
+  if (stariRes.error) throw new Error(`Branje repa vrste ni uspelo: ${stariRes.error.message}`);
+
+  // Oba seznama se lahko prekrivata, kadar je čakajočih malo.
+  const poId = new Map<string, Vrstica>();
+  for (const v of [...((noviRes.data ?? []) as Vrstica[]), ...((stariRes.data ?? []) as Vrstica[])]) {
+    poId.set(v.id, v);
+  }
+  const vrsta = [...poId.values()];
   const { count: skupajCaka } = await db
     .from("nep_oglasi")
     .select("id", { count: "exact", head: true })
@@ -154,8 +200,8 @@ export async function zajemiDetajle(
 
   let browser: Browser | null = null;
   const skupni: { ctx: BrowserContext | null } = { ctx: null };
-  const novKontekst = () =>
-    zOmejitvijo(
+  const novKontekst = async () => {
+    const ctx = await zOmejitvijo(
       "newContext",
       browser!.newContext({
         locale: "sl-SI",
@@ -163,6 +209,11 @@ export async function zajemiDetajle(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       })
     );
+    // Galerijo hranimo kot NASLOVE slik; datotek ne potrebujemo in vira z
+    // njihovim prenosom ne obremenjujemo.
+    await razbremeniKontekst(ctx).catch(() => {});
+    return ctx;
+  };
 
   try {
     browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
@@ -215,6 +266,22 @@ export async function zajemiDetajle(
           const vrsticaBaze = vrsticaIzDetajla(detajl);
           if (Object.keys(vrsticaBaze).length === 0) throw new Error("detajlna stran brez podatkov");
 
+          /**
+           * Cena na kvadratni meter se izračuna ob zapisu cene ALI površine.
+           * Prej jo je računal samo zapis s seznama; kadar je površino prinesla
+           * šele 2. faza (kar je pri bolhi pravilo), je `cena_m2_eur` ostala
+           * prazna za vedno — in prav ta stolpec nosita razvrstitev
+           * "najnižja cena/m²" in izračun poslov.
+           *
+           * PostgREST vrne numerične vrednosti kot NIZE, zato Number() pred
+           * vsakim izračunom.
+           */
+          const novaPovrsina = (vrsticaBaze.povrsina_m2 as number | undefined) ?? Number(o.povrsina_m2 ?? NaN);
+          const cena = Number(o.cena_eur ?? NaN);
+          if (Number.isFinite(cena) && cena > 0 && Number.isFinite(novaPovrsina) && novaPovrsina > 0) {
+            vrsticaBaze.cena_m2_eur = Math.round((cena / novaPovrsina) * 100) / 100;
+          }
+
           const { error: e } = await db
             .from("nep_oglasi")
             .update({ ...vrsticaBaze, detajl_zajet: new Date().toISOString(), detajl_naslednji_poskus: null })
@@ -230,6 +297,10 @@ export async function zajemiDetajle(
       } catch (err) {
         const sporocilo = err instanceof Error ? err.message : String(err);
         izid.napak += 1;
+        // Utrip tudi ob napaki: nadzornik zataknjenosti meri čas od zadnjega
+        // premika in bi proces, ki mu vsaka stran vrne časovno omejitev, po
+        // 25 minutah ubil sredi zapisovanja — čeprav bi delal, kar mora.
+        utrip();
         await db.from("nep_napake").insert({ vir: vir.vir, url: o.url, tip: "detajl", sporocilo });
 
         if (/vir blokira|HTTP 403|HTTP 429/.test(sporocilo)) {

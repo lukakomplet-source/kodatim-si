@@ -2,6 +2,7 @@ import "dotenv/config";
 import { connect } from "./db.js";
 import { najdiVir } from "./viri/index.js";
 import { zajemiDetajle } from "./detajli.js";
+import { hlajenjeDo } from "./samopopravilo.js";
 
 /**
  * En krog 2. faze iz ukazne vrstice, z ročno kvoto. Namenjeno preizkusu in
@@ -26,6 +27,16 @@ if (!detajli) {
 const db = connect();
 const log = (lvl: string, msg: string, extra?: Record<string, unknown>) =>
   console.log(JSON.stringify({ lvl, msg, ...extra }));
+
+// Hlajenje velja tudi tu. Ročno orodje, ki blokado obide, je blokado obšlo —
+// ne glede na to, kdo ga je pognal in zakaj.
+const hlajenje = await hlajenjeDo(db, vir.vir);
+if (hlajenje) {
+  console.error(
+    `Vir ${vir.vir} počiva po blokadi do ${new Date(hlajenje).toLocaleString("sl-SI")}. Blokade ne obidemo.`
+  );
+  process.exit(4);
+}
 
 const izid = await zajemiDetajle(
   db,

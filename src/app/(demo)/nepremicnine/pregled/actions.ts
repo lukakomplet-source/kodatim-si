@@ -115,17 +115,47 @@ export async function shraniUrnik(omogocen: boolean, ure: string, detajlovNaKrog
 }
 
 /**
- * Odklene vir, ki počiva po blokadi.
+ * Vzorci, ki pomenijo, da nas je vir zavrnil SAM — ne da smo si oviro
+ * napačno zaznali mi. Tega hlajenja se ne odklepa.
+ */
+const TRDA_ZAVRNITEV = /HTTP\s*(403|429)|CAPTCHA|Radware|Cloudflare|preverjanje/i;
+
+/**
+ * Odklene vir, ki počiva po blokadi — a samo, kadar je bila blokada NAŠA
+ * domneva.
  *
- * Namenoma ni "obidi blokado": hlajenje je naša lastna varovalka in ne
- * ovira, ki bi jo postavil vir. Kadar je bila blokada napačno zaznana (npr.
- * spremenjeni selektorji so izgledali kot prazna stran), je edina alternativa
- * čakanje ur brez razloga. Zapiše se v dnevnik samopopravil, da poseg ni
- * neviden.
+ * Hlajenje ima dva izvora in ta gumb sme poseči le v enega:
+ *
+ *  - MEHKA ZAZNAVA (prazna stran, premalo kartic): to je naša varovalka, ki
+ *    se lahko zmoti. 20. 8. se je zmotila — prazna kategorija ni bila
+ *    blokada — in čakanje šestih ur ne bi imelo nobenega smisla.
+ *  - TRDA ZAVRNITEV (HTTP 403/429, zaslon CAPTCHA): vir je povedal, naj
+ *    nehamo. Odkleniti to bi pomenilo iti mimo njegove odločitve, kar je
+ *    natanko tisto, česar ne počnemo — ne glede na to, kdo klikne gumb.
+ *
+ * Poseg se zapiše v dnevnik samopopravil, da ni neviden.
  */
 export async function odkleniVir(vir: string): Promise<Izid> {
   if (!(await admin())) return { ok: false, sporocilo: "Samo za administratorje." };
   const db = createAvtonetClient();
+
+  const { data: zapis } = await db
+    .from("nep_statistika")
+    .select("podatki")
+    .eq("kljuc", `blokada:${vir}`)
+    .maybeSingle();
+  const stanje = (zapis?.podatki ?? null) as { do?: string; razlog?: string } | null;
+  if (!stanje?.do) return { ok: false, sporocilo: `Vir ${vir} ne počiva — ni česa odkleniti.` };
+
+  if (TRDA_ZAVRNITEV.test(stanje.razlog ?? "")) {
+    return {
+      ok: false,
+      sporocilo:
+        `Vir ${vir} nas je zavrnil sam (${stanje.razlog}). Takega hlajenja ne odklepamo — ` +
+        `to bi bil obhod odločitve vira. Počakati je treba do ${new Date(stanje.do).toLocaleString("sl-SI")}.`,
+    };
+  }
+
   const { error } = await db.from("nep_statistika").delete().eq("kljuc", `blokada:${vir}`);
   if (error) return { ok: false, sporocilo: error.message };
 
@@ -139,8 +169,10 @@ export async function odkleniVir(vir: string): Promise<Izid> {
           ob: new Date().toISOString(),
           sprozil: "konzola (ročno)",
           vir,
-          vzrok: "Administrator je ocenil, da blokada ni bila resnična.",
-          ukrep: "nic",
+          vzrok: `Administrator je ocenil, da mehka zaznava ni bila resnična blokada (${stanje.razlog ?? "brez razloga"}).`,
+          // Ne "nic": poseg SE je zgodil in dnevnik, ki trdi "brez posega",
+          // je slabši od nobenega dnevnika.
+          ukrep: "rocni_odklep",
           izvedeno: "Hlajenje odstranjeno; vir je spet v čakalnici.",
         },
         ...prej,

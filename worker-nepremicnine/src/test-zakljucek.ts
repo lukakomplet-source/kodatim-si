@@ -19,6 +19,7 @@ const osnova: IzidPregleda = {
   strani: 0,
   najdenih: 0,
   napak: 0,
+  izginulih: 0,
   popoln: false,
   blokada: null,
   napaka: null,

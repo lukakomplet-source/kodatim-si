@@ -293,10 +293,25 @@ export default async function NepremicninePage({
   if (nacinVsi) vrstice = vrstice.slice((stran - 1) * NA_STRAN, stran * NA_STRAN);
   const naVoljo = nacinVsi ? prefiltrirano : skupaj;
 
-  const { count: vsehAktivnih } = await db
-    .from("nep_oglasi")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "aktiven");
+  const [{ count: vsehAktivnih }, { count: sPodrobnostmiSkupaj }, { data: viriVrstice }, { data: zadnjiPregled }] =
+    await Promise.all([
+      db.from("nep_oglasi").select("id", { count: "exact", head: true }).eq("status", "aktiven"),
+      db
+        .from("nep_oglasi")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "aktiven")
+        .not("detajl_zajet", "is", null),
+      db.from("nep_viri").select("vir").eq("omogocen", true),
+      db
+        .from("nep_pregledi")
+        .select("konec")
+        .in("status", ["koncano", "koncano_delno"])
+        .order("konec", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+  const stVirov = (viriVrstice ?? []).length;
+  const zadnjiZajem = (zadnjiPregled as { konec: string | null } | null)?.konec ?? null;
 
   // Shranjena iskanja prijavljenega uporabnika (za vrstico z značkami).
   let mojaIskanja: ShranjenoIskanje[] = [];
@@ -348,10 +363,18 @@ export default async function NepremicninePage({
         <Building2 className="h-7 w-7 text-accent" />
         Nepremičnine
       </h1>
+      {/* Številke pridejo iz baze in ne iz besedila. Prej je tu pisalo
+          "en vir, osveženo dnevno" — oboje je nekaj časa že bilo neresnično,
+          in prav takim stavkom nihče ne opazi, kdaj nehajo držati. */}
       <p className="mt-1.5 max-w-3xl text-sm text-zinc-500">
-        Lastna baza slovenskega nepremičninskega trga ({(vsehAktivnih ?? 0).toLocaleString("sl-SI")}{" "}
-        aktivnih oglasov, osveženo dnevno). Iskanje teče po naši bazi; slike in galerija so pri viru —
-        vsaka kartica ima velik gumb na izvirni oglas.
+        Lastna baza slovenskega nepremičninskega trga:{" "}
+        {(vsehAktivnih ?? 0).toLocaleString("sl-SI")} aktivnih oglasov iz {stVirov}{" "}
+        {stVirov === 1 ? "vira" : stVirov === 2 ? "virov" : "virov"}
+        {zadnjiZajem
+          ? `, zadnji zajem ${new Date(zadnjiZajem).toLocaleString("sl-SI", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}`
+          : ""}
+        . Iskanje teče po naši bazi; slike in galerija so pri viru — vsaka kartica ima velik gumb na
+        izvirni oglas.
       </p>
 
       <NepNav aktiven="/nepremicnine" jeAdmin={dostop.jeAdmin} />
@@ -503,6 +526,17 @@ export default async function NepremicninePage({
           )}
           {error && <span className="text-red-600"> · napaka: {error.message}</span>}
         </p>
+        {/* Filtri iz 2. faze iščejo samo med oglasi, ki jih je detajlni zajem
+            že obiskal. Brez te opombe je videti, kot da takih nepremičnin
+            skoraj ni — v resnici jih večina samo še čaka v vrsti. */}
+        {samoSPodrobnostmi && (
+          <p className="w-full rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
+            Iščete po podatkih z oglasnih strani (sobe, oprema). Te ima zaenkrat{" "}
+            <strong>{(sPodrobnostmiSkupaj ?? 0).toLocaleString("sl-SI")}</strong> od{" "}
+            {(vsehAktivnih ?? 0).toLocaleString("sl-SI")} aktivnih oglasov — preostali čakajo v vrsti in se
+            polnijo vsak dan. Zadetkov je zato manj, kot jih trg premore.
+          </p>
+        )}
         <div className="flex gap-1 rounded-xl border border-zinc-200 bg-white p-1 text-sm font-semibold">
           <Link
             href={povezava({ pogled: "", stran: "" })}

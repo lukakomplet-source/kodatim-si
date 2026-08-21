@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { cenaIz, izOpisa } from "../parse.js";
+import { cenaIz, izOpisa, stevilo } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
 import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
@@ -193,20 +193,28 @@ export function detajlIzSurovegaSalomon(s: SurovDetajlSalomon): Detajl {
     }
     i++; // vrstica z vrednostmi je porabljena
   }
+  /** Najprej točno ujemanje imena, šele nato delno — glej opombo pri bolhi. */
   const najdi = (...kljuci: string[]): string | null => {
+    const imena = Object.keys(lastnosti);
     for (const k of kljuci) {
-      for (const [ime, vrednost] of Object.entries(lastnosti)) {
-        if (ime.toLowerCase().includes(k.toLowerCase())) return vrednost;
-      }
+      const tocno = imena.find((i) => i.toLowerCase() === k.toLowerCase());
+      if (tocno) return lastnosti[tocno];
+    }
+    for (const k of kljuci) {
+      const delno = imena.find((i) => i.toLowerCase().includes(k.toLowerCase()));
+      if (delno) return lastnosti[delno];
     }
     return null;
   };
   const stevilka = (...kljuci: string[]): number | null => {
+    const m = najdi(...kljuci)?.match(/(\d[\d.]*(?:,\d+)?)/);
+    return m ? stevilo(m[1]) : null;
+  };
+  /** Prisotnost ključa ni "da": vir zna zapisati "Balkon: Ne". */
+  const zastavica = (...kljuci: string[]): boolean | null => {
     const v = najdi(...kljuci);
-    const m = v?.match(/(\d[\d.]*(?:,\d+)?)/);
-    if (!m) return null;
-    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    if (v === null) return null;
+    return !/^\s*(ne|nima|brez|ni)\s*$/i.test(v);
   };
   const kraj = [najdi("Naselje"), najdi("Občina")].find((v) => v && v.length > 1) ?? null;
   const slike = [...new Set(s.slike)];
@@ -221,14 +229,16 @@ export function detajlIzSurovegaSalomon(s: SurovDetajlSalomon): Detajl {
     ogrevanje: najdi("Ogrevanje"),
     opremljenost: najdi("Opremljenost", "Opremljeno"),
     stanje: najdi("Stanje"),
-    balkon: najdi("Balkon") ? true : null,
-    terasa: najdi("Terasa") ? true : null,
-    vrt: najdi("Atrij", "Vrt") ? true : null,
+    balkon: zastavica("Balkon"),
+    terasa: zastavica("Terasa"),
+    vrt: zastavica("Atrij", "Vrt"),
     kraj,
     sifraOglasa: s.sifra,
     // datetime atribut je že ISO ("2026-08-12T08:11:20+02:00").
     datumObjave: s.objava ? s.objava.slice(0, 10) : null,
-    telefon: s.telefon,
+    // href je "tel:030 704 336" — brez tega bi se predpona shranila v bazo in
+    // vsaka povezava na telefon bi postala "tel:tel:030 704 336".
+    telefon: s.telefon?.replace(/^tel:/i, "").trim() || null,
     posrednik: s.prodajalec,
     opis: s.opis || null,
     cenaEur: s.cena ? cenaIz(s.cena) : null,
@@ -267,7 +277,9 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: [200, 5000],
   slikePolitika: "referenca",
   svezKontekstNaStran: false,
-  crawlDelayS: 0,
+  // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);
+  // null pomeni "ni predpisan", ne "nič sekund". Naš razmik je v omejitve.zamikMs.
+  crawlDelayS: null,
   pravno:
     "Pogoji uporabe scrapinga ne omenjajo, prepovedujejo pa vsebino »prepisovati, ponovno objavljati in razširjati« brez pisnega dovoljenja družbe Salomon d.o.o. robots.txt prepoveduje /admin, /oddaja in /moj-salomon — teh ne odpiramo. Ker dovoljenje ni izrecno, je vir privzeto IZKLOPLJEN.",
   hlajenjeUr: 6,

@@ -77,6 +77,8 @@ export type IzidPregleda = {
   strani: number;
   najdenih: number;
   napak: number;
+  /** Koliko oglasov je 1. faza označila za izginule (0, če pregled ni bil popoln). */
+  izginulih: number;
   /** Ali je pregled videl cel katalog vira. */
   popoln: boolean;
   /** Sporočilo blokade, če je vir zavrnil. */
@@ -168,6 +170,7 @@ export async function zapriOsirotele(db: Db, minut = 45): Promise<number> {
       strani: p.strani ?? 0,
       najdenih: p.najdenih ?? 0,
       napak: 0,
+      izginulih: 0,
       popoln: false,
       blokada: null,
       napaka: `zbiralnik se ni oglasil ${minut} minut`,

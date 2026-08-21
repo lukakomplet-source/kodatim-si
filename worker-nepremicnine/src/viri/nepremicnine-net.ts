@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { cenaIz, izOpisa } from "../parse.js";
+import { cenaIz, izOpisa, stevilo } from "../parse.js";
 import type { NormaliziranOglas } from "../db.js";
 import type { Detajl, Rezina as BazniRezina, SurovaKartica, VirAdapter } from "./vmesnik.js";
 
@@ -63,10 +63,22 @@ export async function preberiSeznam(page: Page): Promise<{
       const virId = url.match(/_(\d+)\/?$/)?.[1];
       if (!virId) continue;
 
+      const besediloKartice = (el as HTMLElement).innerText.replace(/\s+/g, " ").trim();
+      /**
+       * POVPRAŠEVANJA NISO PONUDBA. Med oglasi za prodajo se znajdejo tudi
+       * "Kupim nezazidljivo zemljišče … Cena: max. 50,00 EUR" — kupec, ki
+       * navaja svojo zgornjo mejo. Če jih zajamemo, v bazo pridejo hiše za
+       * 50 € in vsaka statistika je pokvarjena. "Cena: max." je natančen
+       * podpis takega oglasa.
+       */
+      if (/cena:\s*max\.?/i.test(besediloKartice) && /\b(kupim|kupimo|i[šs][čc]em|najamem)\b/i.test(besediloKartice)) {
+        continue;
+      }
+
       const cena = el.querySelector('[itemprop="price"]')?.getAttribute("content") ?? null;
       const agencija = el.querySelector('[itemprop="seller"] [itemprop="name"]')?.getAttribute("content")
         ?? el.querySelector('[itemprop="seller"] [itemprop="name"]')?.textContent ?? null;
-      const besedilo = (el as HTMLElement).innerText.replace(/\s+/g, " ").trim();
+      const besedilo = besediloKartice;
 
       kartice.push({
         url,
@@ -130,15 +142,59 @@ function lepKraj(v: string | null): string | null {
     .trim();
 }
 
+/**
+ * CENA OGLASA — in past, ki je v bazo spravila zemljišča za 0,40 €.
+ *
+ * Mikropodatek `itemprop="price"` nosi golo število brez enote. Pri zemljiščih
+ * je to pogosto cena NA KVADRATNI METER: oglas 7304321 (Slavina, 27.663 m²) je
+ * imel `price = 0.40`, kar je v bazi postalo "parcela za 40 centov". Takih
+ * vrstic je bilo več deset in vsaka je vlekla mediane €/m² navzdol.
+ *
+ * Enoto pove opis vira sam: "Cena: 0,40 EUR/m2". Kadar je cena na enoto in
+ * poznamo površino, je skupna cena zmnožek dveh objavljenih števil — to ni
+ * ugibanje. Kadar površine ne poznamo, ostane cena NEZNANA: raje prazno kot
+ * napačno.
+ */
+export function cenaOglasa(r: SurovaKartica, povrsinaM2: number | null): number | null {
+  if (!r.cenaBesedilo) return null;
+  const cist = r.cenaBesedilo.replace(/\s*€\s*$/, "").trim();
+  // Mikropodatek uporablja decimalno PIKO ("3850000.00"), slovenski zapis pa
+  // pike kot tisočice ("3.850.000,00 €"). Branje enega s pravili drugega je
+  // naredilo cene ×100 — zato sta poti tu izrecno ločeni.
+  const osnovna = /^\d+(?:\.\d{1,2})?$/.test(cist) ? Number(cist) : cenaIz(r.cenaBesedilo);
+  if (osnovna === null || !Number.isFinite(osnovna) || osnovna <= 0) return null;
+
+  const naEnoto = /(?:eur|€)\s*\/\s*m2|\/\s*m²/i.test(r.opis ?? "");
+  if (!naEnoto) return osnovna;
+  if (povrsinaM2 === null || povrsinaM2 <= 0) return null;
+  return Math.round(osnovna * povrsinaM2);
+}
+
 export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOglas {
   const opis = r.opis ?? "";
   const iz = izOpisa(opis);
   // podtip iz naslovne vrstice: "Prodaja: Hiša, Samostojna" -> "samostojna"
   // "Prodaja: Hiša, Samostojna BISTRICA OB DRAVI 208..." — podtip je do prve
   // besede iz samih velikih črk (lokacija) ali do prve številke.
+  /**
+   * Podtip iz naslovne vrstice: "Prodaja: Hiša, Samostojna BISTRICA OB DRAVI
+   * 208…" -> "samostojna". Odrežemo besede iz samih velikih črk (to je kraj)
+   * in vse od prve številke naprej.
+   *
+   * Prej je tu pisalo `split(/s+/)` — vzorec brez leve poševnice, ki ne deli
+   * po presledkih, ampak po ČRKI "s". "Samostojna BISTRICA" je zato razpadla
+   * na "Samo", "tojna BI", "TRICA" in podtip je bil zmazek. Filter `!/^d/`
+   * je bil enak spodrsljaj: mišljeno je bilo "ne začni s številko" (`\d`),
+   * dejansko pa je brisal vsako besedo na črko "d".
+   */
   const podtipSurov = r.naslovVrstica?.split(",")[1]?.trim() ?? null;
   const podtip = podtipSurov
-    ? podtipSurov.split(/s+/).filter((b) => !/^[A-ZČŠŽ]{2,}$/.test(b) && !/^d/.test(b)).join(" ").toLowerCase().trim() || null
+    ? podtipSurov
+        .split(/\s+/)
+        .filter((b) => !/^[A-ZČŠŽ]{2,}$/.test(b) && !/^\d/.test(b))
+        .join(" ")
+        .toLowerCase()
+        .trim() || null
     : null;
 
   return {
@@ -151,15 +207,7 @@ export function normaliziraj(r: SurovaKartica, rezina: Rezina): NormaliziranOgla
     posel: rezina.posel,
     regija: rezina.regija,
     kraj: lepKraj(r.lokacija),
-    cenaEur: (() => {
-      if (!r.cenaBesedilo) return null;
-      const cist = r.cenaBesedilo.replace(/\s*€\s*$/, "").trim();
-      // Mikropodatek uporablja decimalno PIKO ("3850000.00"), slovenski zapis pa
-      // pike kot tisočice ("3.850.000,00 €"). Branje enega s pravili drugega je
-      // naredilo cene ×100 — zato sta poti tu izrecno ločeni.
-      if (/^\d+(?:\.\d{1,2})?$/.test(cist)) return Number(cist);
-      return cenaIz(r.cenaBesedilo);
-    })(),
+    cenaEur: cenaOglasa(r, iz.povrsinaM2),
     povrsinaM2: iz.povrsinaM2,
     zemljisceM2: iz.zemljisceM2,
     letoIzgradnje: iz.letoIzgradnje,
@@ -230,14 +278,11 @@ export function detajlIzSurovega(s: SurovDetajl): Detajl {
     return v.length > 0 ? v.join(", ") : null;
   };
   const stevilka = (re: RegExp): number | null => {
-    const v = najdi(re);
     // Vzorec se mora začeti s ŠTEVKO. Prejšnji `[\d.]+` je v "Št. spalnic: 2"
     // pobral piko iz okrajšave "Št." in vrnil 0 — tiho, brez napake, za vsak
     // tak oglas. Zato je prva števka obvezna.
-    const m = v?.match(/(\d[\d.]*(?:,\d+)?)/);
-    if (!m) return null;
-    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    const m = najdi(re)?.match(/(\d[\d.]*(?:,\d+)?)/);
+    return m ? stevilo(m[1]) : null;
   };
   /** Zastavica: prisotna vrstica pomeni "da", odsotna pomeni "ne vemo". */
   const zastavica = (re: RegExp): boolean | null => (najdi(re) ? true : null);
@@ -321,7 +366,9 @@ export const adapter: VirAdapter = {
   pricakovanRazpon: PRICAKOVAN_RAZPON,
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
-  crawlDelayS: 0,
+  // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);
+  // null pomeni "ni predpisan", ne "nič sekund". Naš razmik je v omejitve.zamikMs.
+  crawlDelayS: null,
   pravno:
     "Pogoji (avg. 2020) prepovedujejo meta-iskanje in robote; izjema velja samo za SPLOŠNE iskalnike. Za komercialno rabo je predviden predhoden dogovor z MEGANET. Slik ne kopiramo, oglas vedno kaže na izvirnik.",
   // 2. faza je pri tem viru dražja od seznamov (Cloudflare pusti skozi prvo

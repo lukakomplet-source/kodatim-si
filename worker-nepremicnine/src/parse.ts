@@ -44,7 +44,7 @@ const BESEDNA_STEVILA: Record<string, number> = {
  * Pravilo: ena sama pika z NAJVEČ dvema številkama za njo in brez vejice je
  * decimalka (slovenske tisočice so vedno v skupinah po tri).
  */
-function stevilo(v: string | undefined): number | null {
+export function stevilo(v: string | undefined): number | null {
   if (!v) return null;
   const s = v.trim();
   const n = /^\d+\.\d{1,2}$/.test(s) ? Number(s) : Number(s.replace(/\./g, "").replace(",", "."));

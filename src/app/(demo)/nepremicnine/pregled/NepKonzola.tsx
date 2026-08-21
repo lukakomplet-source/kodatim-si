@@ -136,7 +136,15 @@ const UKREPI: Record<string, string> = {
   sprosti_vrsto: "sproščena vrsta",
   zapri_osirotelega: "zaprt osiroteli pregled",
   ponovni_zagon: "ponovni zagon zbiralnika",
+  rocni_odklep: "ročni odklep hlajenja",
   nic: "brez posega",
+};
+
+/** Zdravje vira pride iz baze v angleščini; vmesnik je slovenski. */
+const ZDRAVJE: Record<string, string> = {
+  healthy: "zdrav",
+  degraded: "okrnjen",
+  neznano: "neznano",
 };
 
 function stevilo(n: number | null | undefined): string {
@@ -210,13 +218,14 @@ export function NepKonzola() {
   }, [preberi]);
 
   /** Vsak ukaz konzole: pokaži izid, nato takoj preberi novo stanje. */
-  const ukaz = async (delo: () => Promise<{ ok: boolean; sporocilo: string }>) => {
+  const ukaz = async (delo: () => Promise<{ ok: boolean; sporocilo: string }>): Promise<boolean> => {
     setDelam(true);
     setSporocilo(null);
     try {
       const izid = await delo();
       setSporocilo({ ok: izid.ok, besedilo: izid.sporocilo });
       await preberi();
+      return izid.ok;
     } finally {
       setDelam(false);
     }
@@ -458,12 +467,12 @@ function Napredek({
           <p className="mt-1.5 text-xs text-zinc-600">
             <strong>{rezinOdstotek} %</strong> kataloga · {stevilo(p.rezin_koncanih)} od {stevilo(p.rezin_skupaj)} rezin
             {preostaloMin !== null && (
-              <>
-                {" · še "}
-                <strong>
-                  {preostaloMin >= 60 ? `${Math.floor(preostaloMin / 60)} h ${preostaloMin % 60} min` : `${preostaloMin} min`}
-                </strong>
-              </>
+              // Ocena, ne obljuba: izračunana je iz tempa DOSLEJ, rezine pa
+              // niso enako velike. Zato "približno" in ne krepko.
+              <span className="text-zinc-500">
+                {" · še približno "}
+                {preostaloMin >= 60 ? `${Math.floor(preostaloMin / 60)} h ${preostaloMin % 60} min` : `${preostaloMin} min`}
+              </span>
             )}
           </p>
           {p.zadnja_rezina && <p className="mt-0.5 text-[11px] text-zinc-400">zdaj: {p.zadnja_rezina}</p>}
@@ -523,7 +532,7 @@ function Urnik({
   delam,
 }: {
   urnik?: { omogocen: boolean; ure: string; detajlov_na_krog: number };
-  onShrani: (omogocen: boolean, ure: string, detajlov: number) => Promise<void>;
+  onShrani: (omogocen: boolean, ure: string, detajlov: number) => Promise<boolean>;
   delam: boolean;
 }) {
   // `lokalno` drži neshranjene spremembe; dokler je null, se kaže vrednost s
@@ -613,7 +622,15 @@ function Urnik({
 
       <button
         type="button"
-        onClick={() => void onShrani(omogocen, ure, detajlov).then(() => setLokalno(null))}
+        // Neshranjene spremembe se zavržejo SAMO ob uspehu. Prej se je
+        // lokalno stanje počistilo v vsakem primeru, zato je neuspel zapis
+        // (baza nedosegljiva) admin-u pobrisal tudi to, kar je pravkar
+        // vpisal — in polje je spet kazalo staro vrednost, kot da je shranjeno.
+        onClick={() =>
+          void onShrani(omogocen, ure, detajlov).then((uspelo) => {
+            if (uspelo) setLokalno(null);
+          })
+        }
         disabled={delam || !spremenjeno}
         className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
       >
@@ -659,7 +676,7 @@ function BazaSkupno({
 
       <div className="mt-4">
         <div className="h-2 overflow-hidden rounded-full bg-zinc-200">
-          <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${Math.max(1, odstotek)}%` }} />
+          <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${odstotek}%` }} />
         </div>
         <p className="mt-1.5 text-xs text-zinc-600">
           <strong>{odstotek} %</strong> aktivnih oglasov ima podatke z detajlne strani ({stevilo(zDetajli)} od{" "}
@@ -703,7 +720,11 @@ function VirKartica({
           <h3 className="text-base font-semibold text-zinc-900">{v.vir}</h3>
           <p className="mt-0.5 text-xs text-zinc-400">
             Zadnji pregled {datumUra(v.zadnji_pregled)}
-            {v.crawl_delay_s ? ` · robots.txt zahteva ${v.crawl_delay_s} s razmika` : ""}
+            {/* 0 in "ni podatka" nista isto: prazno polje pomeni, da robots.txt
+                razmika ne predpisuje, ne da ga smemo brati brez premora. */}
+            {v.crawl_delay_s !== null && v.crawl_delay_s !== undefined
+              ? ` · robots.txt zahteva ${v.crawl_delay_s} s razmika`
+              : " · robots.txt razmika ne predpisuje"}
           </p>
         </div>
         <span
@@ -719,14 +740,20 @@ function VirKartica({
                     : "bg-zinc-100 text-zinc-500"
           }`}
         >
-          {!v.omogocen ? "izklopljen" : blokada?.pociva ? "počiva" : (v.zdravje ?? "neznano")}
+          {!v.omogocen
+            ? "izklopljen"
+            : blokada?.pociva
+              ? "počiva"
+              : (ZDRAVJE[v.zdravje ?? "neznano"] ?? v.zdravje ?? "neznano")}
         </span>
       </div>
 
       {stanje && (
         <>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100">
-            <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(1, odstotek)}%` }} />
+            {/* Brez Math.max(1, …): 0 % mora izgledati kot 0 %, sicer trak
+                trdi, da se je nekaj že zgodilo, ko se ni nič. */}
+            <div className="h-full rounded-full bg-accent" style={{ width: `${odstotek}%` }} />
           </div>
           <p className="mt-1 text-xs text-zinc-600">
             {stevilo(stanje.aktivnih)} aktivnih · {stevilo(stanje.zDetajli)} s podrobnostmi ({odstotek} %)
