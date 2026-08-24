@@ -83,7 +83,7 @@ export default async function PregledPage() {
           <div>
             <p className="text-sm font-semibold text-zinc-900">
               PDF arhiv oglasov{" "}
-              <span className="font-normal text-zinc-500">(E: disk — stran + vse slike, verzija ob vsaki spremembi cene)</span>
+              <span className="font-normal text-zinc-500">(stran + vse slike, verzija ob vsaki spremembi cene)</span>
             </p>
             <p className="mt-0.5 text-sm text-zinc-600">
               {Number(pdfArhiv?.datotek ?? 0).toLocaleString("sl-SI")} PDF-jev ·{" "}
