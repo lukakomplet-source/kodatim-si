@@ -53,6 +53,13 @@ const UTRIP = process.env.AVTONET_PDF_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\pd
  * dovolimo. Zaklep drzi PID; ce proces v njem ne zivi vec, ga nov prevzame,
  * tako da padec ne pusti arhivarja trajno zaklenjenega.
  */
+/**
+ * Poševnice morajo biti podvojene: TypeScript zaporedij \U in \l ne pozna in
+ * ju preprosto poje, zato je iz poti nastalo relativno ime
+ * "C:Userslukakavtonet-dbpdf-arhiv.lock". Zaklep je nastajal v delovni mapi
+ * (in obležal v repozitoriju), dva arhivarja iz različnih map pa se ne bi
+ * videla — kar je natanko to, kar naj bi zaklep preprečil.
+ */
 const ZAKLEP = process.env.AVTONET_PDF_ZAKLEP ?? "C:\Users\lukak\avtonet-db\pdf-arhiv.lock";
 
 function zivProces(pid: number): boolean {

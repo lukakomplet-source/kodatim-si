@@ -247,8 +247,20 @@ export async function GET() {
     pdfArhiv: (() => {
       const p = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
       const caka = pdfCakaRes.count ?? 0;
-      const stanje = (statistika["pdf_arhiv"] ?? null) as { stanje?: string; porabljeno?: number; dnevniProracun?: number } | null;
-      const proracun = Number(stanje?.dnevniProracun ?? 400);
+      const stanje = (statistika["pdf_arhiv"] ?? null) as { stanje?: string; porabljeno?: number } | null;
+      /**
+       * Arhivarjev dnevni žepek NI več njegova nastavitev, ampak to, kar pri
+       * viru ostane nad zbiralnikovo rezervacijo. Prej je imel svojo številko
+       * (400) in vir je dobil vsoto obeh — natanko to je 24. 8. 2026 pripeljalo
+       * do CAPTCHE.
+       */
+      const proracun = Object.entries(statistika)
+        .filter(([k]) => k.startsWith("zdravje:"))
+        .map(([, v]) => {
+          const pr = (v as { proracun?: { skupaj?: number; rezervacijaZbiralnika?: number } } | null)?.proracun;
+          return pr ? Math.max(0, Number(pr.skupaj ?? 0) - Number(pr.rezervacijaZbiralnika ?? 0)) : 0;
+        })
+        .reduce((a, b) => a + b, 0);
       // ~9 zahtevkov na oglas: stran + do osem fotografij.
       const naDan = Math.max(1, Math.floor(proracun / 9));
       return {
@@ -262,6 +274,25 @@ export async function GET() {
         dniDoKonca: caka > 0 ? Math.ceil(caka / naDan) : 0,
       };
     })(),
+    /**
+     * ZDRAVJE VIROV. Izračuna ga zbiralnik (worker-nepremicnine/src/stanje-vira.ts)
+     * in objavi v `nep_statistika`; tu se samo prebere. Namenoma: če bi stanje
+     * računala tudi ta datoteka, bi imeli dve resnici o tem, ali je vir v
+     * hlajenju — in tista, ki odloča o zahtevkih, ni ta.
+     */
+    zdravjeVirov: Object.entries(statistika)
+      .filter(([k]) => k.startsWith("zdravje:"))
+      .map(([k, v]) => {
+        const vir = k.slice(8);
+        return {
+          ...(v as Record<string, unknown>),
+          vir,
+          dnevnik:
+            ((statistika[`dnevnik:${vir}`] as { dogodki?: unknown[] } | undefined)?.dogodki ?? []).slice(0, 12),
+        };
+      })
+      // Najbolj bolan vir na vrh: kar potrebuje pozornost, naj ne bo zadnje.
+      .sort((a, b) => Number((a as { ocena?: number }).ocena ?? 0) - Number((b as { ocena?: number }).ocena ?? 0)),
     samopopravila: (statistika["samopopravila"] as { zapisi?: unknown[] } | undefined)?.zapisi ?? [],
     napake: napakeRes.data ?? [],
     izginuli: izginuliRes.data ?? [],

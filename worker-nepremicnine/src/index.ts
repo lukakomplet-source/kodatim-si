@@ -11,10 +11,25 @@ import { preveriIskanja } from "./iskanja.js";
 import { zajemiDetajle } from "./detajli.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import {
+  jeBlokada,
+  klasificiraj,
+  obicajnoNaStran,
+  OPIS_NAPAKE,
+  pocakajNaVrsto,
+  pocistiParserOkvaro,
+  potrebujePreverbo,
+  proracunVira,
+  oceniZdravje,
+  zabelezDogodek,
+  zabelezParserOkvaro,
+  zaznajAnomalijo,
+} from "./stanje-vira.js";
+import {
   dodajPorabo,
   faktorHitrosti,
   hlajenjeDo,
   porabaDanes,
+  preberiBlokado,
   oceniZakljucek,
   sprostiZataknjenoVrsto,
   zabelezBlokado,
@@ -110,8 +125,22 @@ async function proracunZaVir(db: Db, vir: VirAdapter): Promise<number | undefine
    * zase videti vljuden — dokler vir ni začel vračati strani brez kartic.
    */
   if (vir.dnevnaMejaStrani !== undefined) {
-    const porabljeno = await porabaDanes(db, vir.vir);
-    meje.push(Math.max(0, vir.dnevnaMejaStrani - (Number.isFinite(porabljeno) ? porabljeno : vir.dnevnaMejaStrani)));
+    if (vir.dnevniProracunVira !== undefined) {
+      /**
+       * SKUPNA KNJIGA. Zbiralnik in PDF arhivar sta doslej štela vsak v svojo
+       * in vir je dobil vsoto obeh — 24. 8. 2026 je bila prav ta vsota tista,
+       * ki je pripeljala do CAPTCHE. Zdaj je proračun na VIR, zbiralnik pa
+       * dobi svojo rezervacijo iz njega (stanje-vira.ts).
+       */
+      const pr = await proracunVira(db, vir.vir, {
+        osnova: vir.dnevniProracunVira,
+        rezervacijaZbiralnika: vir.dnevnaMejaStrani,
+      });
+      meje.push(pr.zaZbiralnik);
+    } else {
+      const porabljeno = await porabaDanes(db, vir.vir);
+      meje.push(Math.max(0, vir.dnevnaMejaStrani - (Number.isFinite(porabljeno) ? porabljeno : vir.dnevnaMejaStrani)));
+    }
   }
 
   return meje.length > 0 ? Math.min(...meje) : undefined;
@@ -126,7 +155,15 @@ async function pregledSeznamov(
   pregledId: string,
   vir: VirAdapter,
   /** Množitelj razmikov po prejšnjih blokadah (1 = nastavljena hitrost). */
-  faktor: number
+  faktor: number,
+  /**
+   * PREVERBA — prvi obisk po hlajenju je EN SAM zahtevek.
+   *
+   * Doslej se je po izteku hlajenja zagnal navaden krog. Če vir še ni bil
+   * pripravljen, je to pomenilo štirideset zahtevkov naravnost v novo
+   * blokado, ta pa je hlajenje podvojila. Preverba stane enega.
+   */
+  preverba = false
 ): Promise<IzidPregleda> {
   const zacetek = new Date().toISOString();
   const zamikMs = Math.round(vir.omejitve.zamikMs * Math.max(1, faktor));
@@ -175,6 +212,10 @@ async function pregledSeznamov(
     try {
       const page = await zOmejitvijo("newPage", ctx.newPage());
       try {
+        // SKUPEN RITEM. Razmik se meri od zadnjega zahtevka KATEREGAKOLI
+        // našega procesa, ne le tega. Brez tega je zbiralnik lahko spal
+        // petnajst sekund, arhivar pa je v tem času poslal trinajst zahtevkov.
+        await pocakajNaVrsto(db, vir.vir, zamikMs);
         zahtevkov += 1;
         const r = await zOmejitvijo("goto", page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 }), 60_000);
         const status = r?.status() ?? 0;
@@ -236,7 +277,15 @@ async function pregledSeznamov(
   const preletNovih = vir.razvrsceniPoNovosti === true;
   /** Postane true, ko rotacija sklene krog med tem zagonom. */
   let krogSklenjen = false;
-  const proracunStrani = await proracunZaVir(db, vir);
+  const proracunStrani = preverba ? 1 : await proracunZaVir(db, vir);
+  if (preverba) {
+    log("info", "PREVERBA po hlajenju - en sam zahtevek", { vir: vir.vir });
+    await zabelezDogodek(db, vir.vir, {
+      stanje: "preverba",
+      kdo: "zbiralnik",
+      kaj: "Hlajenje je poteklo. Preverjamo z enim samim zahtevkom, preden se lotimo kroga.",
+    });
+  }
   /**
    * REZERVA ZA 2. FAZO.
    *
@@ -368,6 +417,17 @@ async function pregledSeznamov(
              * pa dvanajsturno hlajenje, zapisano zaradi kategorije brez
              * oglasov. Prav ta zamenjava je 20. 8. prekinila cel obhod.
              */
+            /**
+             * Vir SAM pove, koliko zadetkov ima. Če pravi "385" in kartic ni,
+             * to ni blokada in ne prazna kategorija — spremenila se je stran.
+             * Ta razlika je edina, ki jo znamo dokazati brez ugibanja.
+             */
+            if (typeof skupajZadetkov === "number" && skupajZadetkov > 0) {
+              throw new Error(
+                `neznana struktura strani: vir pove ${skupajZadetkov} zadetkov, prebrali pa smo 0 kartic`
+              );
+            }
+
             if (p.strani > 0) {
               praznihRezinZapored += 1;
               if (praznihRezinZapored < 2) {
@@ -396,6 +456,10 @@ async function pregledSeznamov(
             throw new Error("vir blokira (prazna prva stran tudi po premoru)");
           }
 
+          // Kartice smo prebrali: če je bila zastavica "branje ne deluje"
+          // postavljena, je s tem dokazano odpravljena. Zastavica, ki je
+          // nihče ne pobere, po nekaj dneh pomeni samo šum v konzoli.
+          if (p.strani === 0) await pocistiParserOkvaro(db, vir.vir).catch(() => {});
           zadnja = zadnjaStran ?? zadnja;
           p.strani += 1;
           straniTu += 1;
@@ -471,7 +535,9 @@ async function pregledSeznamov(
             break;
           }
           stran += 1;
-          await sleep(zamikMs);
+          // Razmika tu ni več: prevzel ga je skupni ritem v preberiStran(),
+          // ki šteje tudi zahtevke arhivarja. Dvojno čakanje bi pomenilo, da
+          // dnevni proračun porabimo v dvakrat daljšem času brez koristi.
         } catch (err) {
           p.napak += 1;
           popoln = false;
@@ -481,11 +547,38 @@ async function pregledSeznamov(
           const sporocilo = err instanceof Error ? err.message : String(err);
           await db.from("nep_napake").insert({ vir: vir.vir, url: vir.seznamUrl(rezina, stran), tip: "seznam", sporocilo });
           log("warn", "napaka na strani", { vir: vir.vir, rezina: rezina.oznaka, stran, sporocilo });
-          if (/vir blokira|HTTP 403|HTTP 429/.test(sporocilo)) {
-            // 403 ustavi cel pregled — vztrajanje bi blokado samo poglobilo.
+          /**
+           * KAKŠNA NAPAKA JE TO. Prej sta bili dve vrsti: "vir blokira" in
+           * "vse ostalo". Premalo — 500-ka je težava vira in nas ne sme stati
+           * dvanajsturnega hlajenja, spremenjen HTML pa ni blokada in ga
+           * upočasnjevanje ne popravi, samo skrije.
+           */
+          const vrsta = klasificiraj(sporocilo);
+          if (jeBlokada(vrsta)) {
+            // Zavrnitev ustavi cel pregled — vztrajanje bi jo samo poglobilo.
             // Kje smo obstali, si zapomnimo, da naslednjič nadaljujemo tu.
             blokada = sporocilo;
+            await zabelezDogodek(db, vir.vir, {
+              stanje: null,
+              kdo: "zbiralnik",
+              vrsta,
+              kaj: `${OPIS_NAPAKE[vrsta]} po ${p.strani} straneh — pregled se ustavi.`,
+            });
             if (premikajKazalec) await shraniNadaljevanje(absolutniIndeks, stran);
+            break;
+          }
+          if (vrsta === "parser") {
+            // Pokvarjeno branje strani: umik ga ne popravi, zato ga glasno
+            // zabeležimo in ustavimo krog, da čez dobre podatke ne pišemo
+            // praznih. Hlajenja NE zapišemo — vir nas ni zavrnil.
+            napaka = sporocilo;
+            await zabelezParserOkvaro(db, vir.vir, sporocilo);
+            await zabelezDogodek(db, vir.vir, {
+              stanje: "parser_pokvarjen",
+              kdo: "zbiralnik",
+              vrsta,
+              kaj: `${OPIS_NAPAKE[vrsta]} — vir dela, mi ga ne znamo brati. Hlajenja ni.`,
+            });
             break;
           }
           break; // druga napaka: preskoči rezino, nadaljuj s preostankom
@@ -503,7 +596,8 @@ async function pregledSeznamov(
       // znotraj rezine, prehod na naslednjo kategorijo pa je šel takoj — pri
       // 182 rezinah je to 182 zahtevkov brez premora, natanko na mestih, kjer
       // se ritem najbolj pozna.
-      if (!stopping) await sleep(zamikMs);
+      // Prehod na naslednjo rezino je prav tako zahtevek in prav tako čaka —
+      // za to poskrbi skupni ritem, ne poseben premor tukaj.
   };
 
   try {
@@ -668,6 +762,12 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
   // Kako počasi beremo ta krog: po vsaki blokadi se razmiki podvojijo in se
   // vračajo šele po treh čistih pregledih (samopopravilo.ts).
   const faktor = await faktorHitrosti(db, vir.vir);
+  /**
+   * Je to prvi obisk po hlajenju? Takrat gre za PREVERBO: en zahtevek namesto
+   * celega kroga in brez 2. faze. Uspeh šteje kot čist pregled in naslednji
+   * krog je normalen; neuspeh stane enega samega zahtevka.
+   */
+  const preverba = potrebujePreverbo(await preberiBlokado(db, vir.vir));
 
   try {
     /**
@@ -701,7 +801,16 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
       return;
     }
 
-    izid = await pregledSeznamov(db, pregledId, vir, faktor);
+    izid = await pregledSeznamov(db, pregledId, vir, faktor, preverba);
+    if (preverba) {
+      await zabelezDogodek(db, vir.vir, {
+        stanje: izid.blokada ? "hlajenje" : "okrevanje",
+        kdo: "zbiralnik",
+        kaj: izid.blokada
+          ? `Preverba zavrnjena (${izid.blokada}). Hlajenje se podaljša, poskusili smo z enim zahtevkom.`
+          : `Preverba uspela — ${izid.najdenih} oglasov z ene strani. Naslednji krog je normalen, a še vedno ${faktor}× počasnejši.`,
+      });
+    }
 
     // 2. faza samo, kadar je 1. potekla brez blokade: če nas vir ravnokar
     // ustavlja, je odpiranje detajlnih strani natanko tisto, česar ne smemo.
@@ -712,7 +821,9 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
       .maybeSingle();
     const detajliDovoljeni = (virVrstica?.detajli_omogoceni ?? true) === true;
 
-    if (vir.detajli && detajliDovoljeni && detajlovNaKrog > 0 && !izid.blokada && !stopping) {
+    // Med preverbo 2. faze ni: preverjamo, ali nas vir sploh spusti do ene
+    // strani seznama, ne odpiramo trideset detajlnih strani za povrh.
+    if (vir.detajli && detajliDovoljeni && detajlovNaKrog > 0 && !izid.blokada && !stopping && !preverba) {
       trenutnaFaza = { vir: vir.vir, faza: 2 };
       await db
         .from("nep_pregledi")
@@ -831,6 +942,7 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
       }
       await sleep(poskus * 2000);
     }
+    await objaviZdravje(db, true);
     log("info", "pregled zakljucen", {
       vir: vir.vir,
       status: z.status,
@@ -842,9 +954,34 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
 
     // Blokado spoštujemo: vir pustimo pri miru, dokler hlajenje ne poteče.
     // Nikoli je ne poskušamo obiti — počasneje in kasneje, ne drugače.
+    /**
+     * VAROVALKA KAKOVOSTI. Če je krog prinesel drastično manj oglasov na
+     * stran kot običajno, je najverjetnejša razlaga spremenjena stran — in
+     * tak krog ne sme veljati za "čistega". Sicer bi si pokvarjen parser s
+     * tremi praznimi krogi prislužil polno hitrost in nas prepričal, da je
+     * vse v redu, ker se ni nihče pritožil.
+     *
+     * Varovalka je enosmerna: sumljivo je samo MANJ, nikoli več.
+     */
+    const anomalija = zaznajAnomalijo({
+      najdenih: izid.najdenih,
+      strani: izid.strani,
+      obicajnoNaStran: await obicajnoNaStran(db, vir.vir),
+    });
+    if (anomalija.jeAnomalija) {
+      await zabelezParserOkvaro(db, vir.vir, anomalija.opis).catch(() => {});
+      await zabelezDogodek(db, vir.vir, {
+        stanje: "parser_pokvarjen",
+        kdo: "zbiralnik",
+        vrsta: "parser",
+        kaj: anomalija.opis,
+      });
+      log("warn", "anomalija v izplenu - krog ne velja za cistega", { vir: vir.vir, opis: anomalija.opis });
+    }
+
     if (izid.blokada) {
       await zabelezBlokado(db, vir.vir, vir.hlajenjeUr ?? 6, izid.blokada);
-    } else if (z.status === "koncano" || z.status === "koncano_delno") {
+    } else if (!anomalija.jeAnomalija && (z.status === "koncano" || z.status === "koncano_delno")) {
       // Krog brez blokade je edini dokaz, da je trenutna hitrost vzdržna.
       // Trije taki vrnejo korak hitrosti; en sam ne.
       await zabelezUspeh(db, vir.vir);
@@ -858,6 +995,47 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
         izvedeno: "Vir ostane v čakalnici; naslednji krog poskusi znova.",
       });
     }
+  }
+}
+
+/**
+ * ZDRAVJE VIROV V KONZOLO.
+ *
+ * Stanje se izračuna na ENEM mestu (stanje-vira.ts) in se objavi v bazo; API
+ * konzole ga samo prebere. Druga možnost bi bila, da isto logiko napišemo še
+ * enkrat v spletni aplikaciji — in takrat bi imeli dve resnici o tem, ali je
+ * bolha v hlajenju, ki bi se sčasoma razšli. Raje ena, zapisana tam, kjer se
+ * odloča o zahtevkih.
+ *
+ * Objavlja se ob vsakem preverjanju urnika (nekajkrat na minuto je preveč,
+ * zato je razmik minuta) in takoj po vsakem krogu.
+ */
+let zadnjaObjavaZdravja = 0;
+async function objaviZdravje(db: Db, takoj = false): Promise<void> {
+  if (!takoj && Date.now() - zadnjaObjavaZdravja < 60_000) return;
+  zadnjaObjavaZdravja = Date.now();
+  try {
+    const { data } = await db.from("nep_viri").select("vir, omogocen");
+    const vrstice = (data ?? []) as { vir: string; omogocen: boolean }[];
+    for (const v of vrstice) {
+      const adapter = VIRI.find((a) => a.vir === v.vir);
+      if (!adapter) continue;
+      const zdravje = await oceniZdravje(db, v.vir, { omogocen: v.omogocen !== false });
+      const proracun =
+        adapter.dnevniProracunVira !== undefined && adapter.dnevnaMejaStrani !== undefined
+          ? await proracunVira(db, v.vir, {
+              osnova: adapter.dnevniProracunVira,
+              rezervacijaZbiralnika: adapter.dnevnaMejaStrani,
+            })
+          : null;
+      await db.from("nep_statistika").upsert({
+        kljuc: `zdravje:${v.vir}`,
+        podatki: { ...zdravje, proracun },
+        izracunano: new Date().toISOString(),
+      });
+    }
+  } catch {
+    // Objava stanja je poročilo, ne delo. Njena napaka ne sme ustaviti kroga.
   }
 }
 
@@ -1131,6 +1309,7 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     utrip();
+    await objaviZdravje(db);
     const urnik = await preberiUrnik(db);
     const zdaj = new Date();
     // Ključ termina je v LOKALNEM času, ker so ure urnika lokalne. Mešanje

@@ -350,6 +350,12 @@ export const adapter: VirAdapter = {
    * kroge dneva skupaj -- štirje termini si jo delijo, ne pomnožijo.
    */
   dnevnaMejaStrani: 40,
+  /**
+   * Skupni dnevni proračun vira: 40 za zbiralnik (novi oglasi so hitro
+   * pokvarljivi in imajo prednost) + 20 za PDF arhivar. Osnova raste za 20 na
+   * vsak dan brez blokade do stropa 160 in ob vsaki blokadi pade nazaj.
+   */
+  dnevniProracunVira: 60,
   hlajenjeUr: 12,
   /**
    * IZMERJENO 21. 8. 2026 (`npm run test:razvrstitev bolha.com`): od 30 kartic

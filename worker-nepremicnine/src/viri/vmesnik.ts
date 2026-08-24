@@ -107,6 +107,19 @@ export type VirAdapter = {
    */
   dnevnaMejaStrani?: number;
   /**
+   * DNEVNI PRORAČUN ZAHTEVKOV ZA CEL VIR — vsi naši procesi skupaj.
+   *
+   * `dnevnaMejaStrani` je zbiralnikova rezervacija ZNOTRAJ te številke; kar
+   * ostane nad njo, sme porabiti PDF arhivar. Brez skupne številke je vsak
+   * proces vljuden po svoji knjigi, vir pa dobi vsoto — 24. 8. 2026 je bila
+   * prav ta vsota (40 + 13 v petindvajsetih sekundah) tista, ki je pripeljala
+   * do CAPTCHE.
+   *
+   * Številka se ob dnevih brez blokade počasi dviguje in ob vsaki blokadi
+   * pade nazaj na osnovo (stanje-vira.ts, proracunVira).
+   */
+  dnevniProracunVira?: number;
+  /**
    * INKREMENTALNO BRANJE — najmočnejši vzvod, ki ga imamo.
    *
    * Če vir seznam razvrsti od najnovejšega, so novi oglasi na prvih straneh.

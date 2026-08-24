@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Activity,
   ShieldAlert,
   Square,
   Wrench,
@@ -98,6 +99,29 @@ type Blokada = {
   stopnja: number;
   pociva: boolean;
 };
+/** Dogodek na časovnici enega vira — piše ga zbiralnik IN PDF arhivar. */
+type Dogodek = { ob: string; stanje: string | null; kaj: string; kdo: string; vrsta?: string };
+
+/**
+ * Zdravje vira, kakor ga izračuna zbiralnik (stanje-vira.ts) in objavi v bazo.
+ * Konzola ga samo prikaže — stanja tu namenoma NE računamo znova, da ne bi
+ * imeli dveh resnic o tem, ali vir počiva.
+ */
+type ZdravjeVira = {
+  vir: string;
+  stanje: string;
+  ocena: number;
+  razlog: string;
+  hlajenjeDo: string | null;
+  naslednjaPreverba: string | null;
+  faktor: number;
+  potrebnaPreverba: boolean;
+  zadnjiUspeh: string | null;
+  svezinaUr: number | null;
+  proracun: { skupaj: number; porabljeno: number; zaZbiralnik: number; zaArhiv: number; pojasnilo: string } | null;
+  dnevnik: Dogodek[];
+};
+
 type Popravilo = { ob: string; sprozil: string; vir: string | null; vzrok: string; ukrep: string; izvedeno: string };
 type Napaka = { ob: string; vir: string | null; tip: string; sporocilo: string; url: string | null };
 
@@ -139,6 +163,7 @@ type Odziv = {
   prostor?: { uporabljeno: number | null; limit: number };
   izginuli?: Izginuli[];
   blokade?: Blokada[];
+  zdravjeVirov?: ZdravjeVira[];
   pdfArhiv?: PdfArhiv;
   samopopravila?: Popravilo[];
   napake?: Napaka[];
@@ -380,6 +405,8 @@ export function NepKonzola() {
           ))}
         </div>
       </section>
+
+      {(odziv.zdravjeVirov ?? []).length > 0 && <ZdravjeVirov viri={odziv.zdravjeVirov ?? []} />}
 
       {odziv.pdfArhiv && <PdfArhivKartica a={odziv.pdfArhiv} />}
 
@@ -1108,6 +1135,104 @@ function ZadnjeNapake({ napake }: { napake: Napaka[] }) {
  * številka je pri viru, ki prenese nekaj sto zahtevkov na dan, neprijetna in
  * prav zato izpisana: skrita bi bila obljuba popolnosti, ki je ne moremo držati.
  */
+const STANJE_OZNAKE: Record<string, { naziv: string; barva: string; pika: string }> = {
+  zdravo: { naziv: "Zdravo", barva: "text-emerald-700 bg-emerald-50 border-emerald-200", pika: "bg-emerald-500" },
+  previdno: { naziv: "Previdno", barva: "text-amber-700 bg-amber-50 border-amber-200", pika: "bg-amber-500" },
+  upocasnjeno: { naziv: "Upočasnjeno", barva: "text-amber-700 bg-amber-50 border-amber-200", pika: "bg-amber-500" },
+  hlajenje: { naziv: "Hlajenje po blokadi", barva: "text-amber-800 bg-amber-50 border-amber-300", pika: "bg-amber-600" },
+  preverba: { naziv: "Čaka preverbo", barva: "text-sky-700 bg-sky-50 border-sky-200", pika: "bg-sky-500" },
+  okrevanje: { naziv: "Okrevanje", barva: "text-sky-700 bg-sky-50 border-sky-200", pika: "bg-sky-500" },
+  parser_pokvarjen: { naziv: "Branje strani ne deluje", barva: "text-rose-700 bg-rose-50 border-rose-200", pika: "bg-rose-500" },
+  izklopljen: { naziv: "Izklopljen", barva: "text-zinc-600 bg-zinc-50 border-zinc-200", pika: "bg-zinc-400" },
+};
+
+/** Kako sveži so podatki vira — da 5 dni star zajem ne izgleda kot današnji. */
+function svezina(ur: number | null): { naziv: string; barva: string } {
+  if (ur === null) return { naziv: "ni podatka", barva: "text-zinc-500" };
+  if (ur < 24) return { naziv: "sveže (danes)", barva: "text-emerald-700" };
+  if (ur < 72) return { naziv: `pred ${Math.round(ur / 24)} dnevoma`, barva: "text-amber-700" };
+  return { naziv: `staro — pred ${Math.round(ur / 24)} dnevi`, barva: "text-rose-700" };
+}
+
+/**
+ * ZDRAVJE VIROV.
+ *
+ * Odgovarja na vprašanje, ki ga je konzola doslej puščala odprto: "zakaj
+ * bolha danes ne dela?" Prej je pisalo samo "počiva še 714 min" — kar je res,
+ * ne pove pa ne vzroka, ne kdaj bo spet poskusila, ne ali so podatki še
+ * uporabni. Vsaka od teh treh stvari je razlog, da človek odpre kodo.
+ */
+function ZdravjeVirov({ viri }: { viri: ZdravjeVira[] }) {
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="flex items-center gap-2">
+        <Activity className="h-4 w-4 text-accent" />
+        <h2 className="text-sm font-semibold text-zinc-900">Zdravje virov</h2>
+      </div>
+      <p className="mt-1 text-xs text-zinc-500">
+        Vsak vir ima svoje stanje, svoj proračun zahtevkov in svojo časovnico. Blokade ne obidemo nikoli — edini
+        odgovor nanjo je manj zahtevkov in več časa.
+      </p>
+
+      <div className="mt-3 space-y-3">
+        {viri.map((v) => {
+          const o = STANJE_OZNAKE[v.stanje] ?? STANJE_OZNAKE.previdno;
+          const sv = svezina(v.svezinaUr);
+          return (
+            <div key={v.vir} className="rounded-xl border border-zinc-200 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${o.pika}`} />
+                <span className="text-sm font-semibold text-zinc-900">{v.vir}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${o.barva}`}>{o.naziv}</span>
+                <span className="text-[11px] text-zinc-500">
+                  zdravje <strong className="text-zinc-700">{v.ocena}/100</strong>
+                </span>
+                {v.faktor > 1 && (
+                  <span className="text-[11px] text-amber-700">bere {v.faktor}× počasneje</span>
+                )}
+              </div>
+
+              <p className="mt-1.5 text-xs text-zinc-600">{v.razlog}</p>
+
+              <div className="mt-2 grid gap-x-4 gap-y-1 text-[11px] text-zinc-500 sm:grid-cols-2">
+                <p>
+                  Podatki: <span className={sv.barva}>{sv.naziv}</span>
+                  {v.zadnjiUspeh ? ` · zadnji uspešen pregled ${datumUra(v.zadnjiUspeh)}` : ""}
+                </p>
+                {v.hlajenjeDo && <p>Naslednji poskus (preverba z enim zahtevkom): {datumUra(v.hlajenjeDo)}</p>}
+                {v.potrebnaPreverba && <p className="text-sky-700">Hlajenje je poteklo — naslednji krog je preverba.</p>}
+                {v.proracun && (
+                  <p>
+                    Zahtevki danes: <strong className="text-zinc-700">{v.proracun.porabljeno}</strong> /{" "}
+                    {v.proracun.skupaj} · zbiralniku ostane {v.proracun.zaZbiralnik}, arhivu {v.proracun.zaArhiv}
+                  </p>
+                )}
+                {v.proracun && <p className="text-zinc-400">{v.proracun.pojasnilo}</p>}
+              </div>
+
+              {v.dnevnik.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-600 hover:text-zinc-900">
+                    Časovnica vira ({v.dnevnik.length})
+                  </summary>
+                  <ul className="mt-1.5 space-y-1">
+                    {v.dnevnik.map((d, i) => (
+                      <li key={`${d.ob}-${i}`} className="text-[11px] text-zinc-600">
+                        <span className="text-zinc-400">{datumUra(d.ob)}</span> · <span className="text-zinc-500">{d.kdo}</span> ·{" "}
+                        {d.kaj}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function PdfArhivKartica({ a }: { a: PdfArhiv }) {
   const gb = a.bajtov / 1024 ** 3;
   const posneto = a.datotek;

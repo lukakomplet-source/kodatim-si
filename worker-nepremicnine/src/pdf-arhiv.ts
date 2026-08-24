@@ -8,6 +8,7 @@ import { connect, type Db } from "./db.js";
 import { uporabniskiAgent } from "./identiteta.js";
 import { jeIzziv } from "./izziv.js";
 import { hlajenjeDo, zabelezBlokado } from "./samopopravilo.js";
+import { dodajPoraboArhiva, klasificiraj, OPIS_NAPAKE, pocakajNaVrsto, proracunVira, zabelezDogodek } from "./stanje-vira.js";
 import { najdiVir } from "./viri/index.js";
 
 /**
@@ -47,7 +48,18 @@ const UTRIP = process.env.NEP_PDF_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\nep-pd
 const ZAKLEP = process.env.NEP_PDF_ZAKLEP ?? "C:\\Users\\lukak\\avtonet-db\\nep-pdf-arhiv.lock";
 
 /** Dnevni proračun ZAHTEVKOV (stran + vsaka slika), ne oglasov. */
-const DNEVNI_PRORACUN = Number(process.env.NEP_PDF_DNEVNI_PRORACUN ?? 400);
+/**
+ * PRORAČUNA SI ARHIVAR NE DOLOČA SAM.
+ *
+ * Prej je imel svojega (400 zahtevkov na dan) in zbiralnik svojega (40 strani).
+ * Vsak je bil zase v mejah, vir pa je dobil vsoto — in 24. 8. 2026 vrnil
+ * CAPTCHO. Zdaj je proračun na VIR (adapter, dnevniProracunVira), zbiralnik
+ * ima znotraj njega rezervacijo, arhivar dobi to, kar ostane nad njo.
+ *
+ * Spremenljivka okolja ostaja kot ZGORNJA meja za preizkuse, ne kot dovoljenje:
+ * nikoli ne poviša tega, kar dovoli vir.
+ */
+const STROP_IZ_OKOLJA = Number(process.env.NEP_PDF_DNEVNI_PRORACUN ?? Number.POSITIVE_INFINITY);
 /** Največ fotografij na oglas — meja stroška, ne meja kakovosti. */
 const NAJVEC_SLIK = Number(process.env.NEP_PDF_NAJVEC_SLIK ?? 8);
 const ZAMIK_OGLAS_MS = Number(process.env.NEP_PDF_ZAMIK_MS ?? 30_000);
@@ -106,8 +118,17 @@ function prevzemiZaklep(): boolean {
     return true;
   } catch {
     try {
+      /**
+       * PRAZEN ZAKLEP NI ŽIV ZAKLEP.
+       *
+       * Datoteka zaklepa je 24. 8. 2026 ostala za sabo prazna (0 bajtov).
+       * `Number("")` je 0, `zivProces(0)` pa na Windowsu ne javi napake — zato
+       * je arhivar ob vsakem zagonu javil "že teče" in se ustavil, čeprav ni
+       * tekel nihče. Zaklep, ki se ne zna prepoznati za truplo, ustavi sistem
+       * bolj zanesljivo kot okvara, ki naj bi jo preprečeval.
+       */
       const pid = Number(readFileSync(ZAKLEP, "utf8").trim());
-      if (Number.isFinite(pid) && zivProces(pid)) return false;
+      if (Number.isFinite(pid) && pid > 0 && pid !== process.pid && zivProces(pid)) return false;
       writeFileSync(ZAKLEP, String(process.pid));
       return true;
     } catch {
@@ -177,7 +198,9 @@ export function uporabneSlike(urlji: string[], vir: string): string[] {
  */
 async function zajemi(
   browser: Browser,
-  k: Kandidat
+  k: Kandidat,
+  /** Za skupni ritem in knjigo porabe; brez njega arhivar teče brez varovalk. */
+  db?: Db
 ): Promise<{ pdf: Buffer; stSlik: number; zahtevkov: number } | "nedosegljiv"> {
   const ctx = await browser.newContext({ locale: "sl-SI", userAgent: uporabniskiAgent() });
   let zahtevkov = 0;
@@ -194,6 +217,10 @@ async function zajemi(
       (r) => r.abort()
     );
 
+    // SKUPEN RITEM: razmik se meri od zadnjega zahtevka kateregakoli našega
+    // procesa. Če je zbiralnik pravkar bral seznam, arhivar počaka — vir vidi
+    // en sam curek zahtevkov, ne dveh vljudnih procesov.
+    if (db) await pocakajNaVrsto(db, k.vir, ZAMIK_OGLAS_MS);
     const odgovor = await page.goto(k.url, { waitUntil: "domcontentloaded", timeout: 45_000 });
     zahtevkov += 1;
     const status = odgovor?.status() ?? 0;
@@ -241,6 +268,7 @@ async function zajemi(
     if (k.razlog !== "cena") {
       for (const slikaUrl of uporabneSlike(surovi, k.vir).slice(0, NAJVEC_SLIK)) {
         try {
+          if (db) await pocakajNaVrsto(db, k.vir, ZAMIK_SLIKA_MS);
           const odziv = await ctx.request.get(slikaUrl, { timeout: 20_000 });
           zahtevkov += 1;
           if (odziv.status() === 403 || odziv.status() === 429) throw new LastnaBlokada(odziv.status());
@@ -256,7 +284,8 @@ async function zajemi(
           const stran = dokument.addPage([vlozena.width, vlozena.height]);
           stran.drawImage(vlozena, { x: 0, y: 0, width: vlozena.width, height: vlozena.height });
           stSlik += 1;
-          await spanec(ZAMIK_SLIKA_MS + Math.random() * 3_000);
+          // Razmik do naslednje slike prevzame skupni ritem ob naslednjem
+          // zahtevku; dvojno čakanje bi samo skrajšalo dan brez koristi.
         } catch (e) {
           if (e instanceof LastnaBlokada) throw e;
           // Ena slika ni razlog, da pade cel oglas.
@@ -307,7 +336,7 @@ async function zapisiPorabo(db: Db, zahtevkov: number): Promise<void> {
 async function objaviStanje(db: Db, stanje: string, dodatno: Record<string, unknown> = {}): Promise<void> {
   await db.from("nep_statistika").upsert({
     kljuc: "pdf_arhiv",
-    podatki: { stanje, ob: new Date().toISOString(), mapa: MAPA, dnevniProracun: DNEVNI_PRORACUN, ...dodatno },
+    podatki: { stanje, ob: new Date().toISOString(), mapa: MAPA, ...dodatno },
     izracunano: new Date().toISOString(),
   });
 }
@@ -329,24 +358,20 @@ async function main(): Promise<void> {
   const db = connect();
   if (!existsSync(MAPA)) mkdirSync(MAPA, { recursive: true });
   log(
-    `PDF arhivar zagnan. Mapa: ${MAPA}, dnevni proračun: ${DNEVNI_PRORACUN} zahtevkov` +
+    `PDF arhivar zagnan. Mapa: ${MAPA}, proračun določi vir (skupen z zbiralnikom)` +
       (testnih ? `, TEST ${testnih} oglasov` : "")
   );
 
   let porabljeno = await porabaDanes(db);
   let obdelanih = 0;
+  /** Koliko zahtevkov sme arhivar danes še porabiti pri tem viru. */
+  let naVoljo = Number.POSITIVE_INFINITY;
   const browser = await chromium.launch({ args: ["--no-sandbox"] });
 
   try {
     for (;;) {
       utrip("iscem");
       if (testnih && obdelanih >= testnih) break;
-
-      if (porabljeno >= DNEVNI_PRORACUN) {
-        log(`dnevni proračun ${DNEVNI_PRORACUN} zahtevkov je porabljen — arhivar počiva do jutri`);
-        await objaviStanje(db, "proracun porabljen", { porabljeno });
-        break;
-      }
 
       const { data } = await db
         .from("nep_pdf_kandidati")
@@ -361,6 +386,29 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * PRORAČUN JE VIROV, NE NAŠ. Preberemo ga za vir tega kandidata in za
+       * arhivarja vzamemo samo tisto, kar ostane nad zbiralnikovo rezervacijo.
+       * Če zbiralnik danes še ni tekel, arhivar vseeno ne sme poseči v njegov
+       * del — novi oglasi so hitro pokvarljivi, arhiv pa lahko počaka dan.
+       */
+      const adapter = najdiVir(k.vir);
+      if (adapter?.dnevniProracunVira !== undefined && adapter.dnevnaMejaStrani !== undefined) {
+        const pr = await proracunVira(db, k.vir, {
+          osnova: adapter.dnevniProracunVira,
+          rezervacijaZbiralnika: adapter.dnevnaMejaStrani,
+        });
+        naVoljo = Math.min(pr.zaArhiv, STROP_IZ_OKOLJA);
+        if (naVoljo < 3) {
+          // Manj kot trije zahtevki ne zadoščajo niti za en oglas s tremi
+          // slikami; začeti in obviseti na pol bi pomenilo porabiti zahtevke
+          // za PDF, ki nikoli ne nastane.
+          log(`dnevni proračun vira ${k.vir} je porabljen (${pr.porabljeno}/${pr.skupaj}) — arhivar počiva do jutri`);
+          await objaviStanje(db, "proracun porabljen", { porabljeno, proracunVira: pr.skupaj, pojasnilo: pr.pojasnilo });
+          break;
+        }
+      }
+
       // Isto hlajenje kot zbiralnik: če vir počiva, počiva tudi arhivar.
       const hlajenje = await hlajenjeDo(db, k.vir);
       if (hlajenje) {
@@ -371,9 +419,10 @@ async function main(): Promise<void> {
 
       utrip(`zajemam ${k.vir}/${k.vir_id}`);
       try {
-        const izid = await zajemi(browser, k);
+        const izid = await zajemi(browser, k, db);
         if (izid === "nedosegljiv") {
           porabljeno += 1;
+          await dodajPoraboArhiva(db, k.vir, 1);
           await db.from("nep_pdfji").insert({
             vir: k.vir,
             vir_id: k.vir_id,
@@ -384,11 +433,13 @@ async function main(): Promise<void> {
           log(`${k.vir}/${k.vir_id}: nedosegljiv`);
         } else {
           porabljeno += izid.zahtevkov;
+          await dodajPoraboArhiva(db, k.vir, izid.zahtevkov);
           await shrani(db, k, izid.pdf, izid.stSlik);
           obdelanih += 1;
           log(
             `${k.vir}/${k.vir_id} [${k.razlog}]: ${Math.round(izid.pdf.length / 1024)} kB, ` +
-              `${izid.stSlik} slik, ${izid.zahtevkov} zahtevkov (danes ${porabljeno}/${DNEVNI_PRORACUN})`
+              `${izid.stSlik} slik, ${izid.zahtevkov} zahtevkov ` +
+              `(arhivu ostane ${Number.isFinite(naVoljo) ? Math.max(0, naVoljo - izid.zahtevkov) : "∞"} pri tem viru)`
           );
         }
         await zapisiPorabo(db, porabljeno);
@@ -399,8 +450,17 @@ async function main(): Promise<void> {
           // isto, ki ga bere zbiralnik — in se ustavimo brez ponovnega poskusa.
           const virAdapter = najdiVir(k.vir);
           await zabelezBlokado(db, k.vir, virAdapter?.hlajenjeUr ?? 12, `PDF arhivar: ${e.message}`);
+          const vrsta = klasificiraj(e.message);
+          await zabelezDogodek(db, k.vir, {
+            stanje: "hlajenje",
+            kdo: "PDF arhivar",
+            vrsta,
+            kaj:
+              `${OPIS_NAPAKE[vrsta]} pri arhiviranju oglasa ${k.vir_id}. ` +
+              `Arhivar se ustavi brez ponovnega poskusa; hlajenje velja tudi za zbiralnik.`,
+          });
           log(`ZAVRNITEV pri ${k.vir}: ${e.message} — hlajenje zapisano, arhivar se ustavi`);
-          await objaviStanje(db, "zavrnjen", { porabljeno, razlog: e.message });
+          await objaviStanje(db, "zavrnjen", { porabljeno, razlog: e.message, vrsta });
           break;
         }
         log(`napaka pri ${k.vir}/${k.vir_id}: ${e instanceof Error ? e.message : String(e)}`);
