@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { PogovorPopravkov } from "@/components/PogovorPopravkov";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -53,12 +52,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         {children}
-        {/*
-          Pogovora o popravkih (Nik levo, Benjamin desno), na vsaki strani.
-          Za neprijavljene se ne izrise nic, zato sme ziveti tu: pripomba je
-          najvec vredna na strani, kjer je bila opazena.
-        */}
-        <PogovorPopravkov />
       </body>
     </html>
   );
