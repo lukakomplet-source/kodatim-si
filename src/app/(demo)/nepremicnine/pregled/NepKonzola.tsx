@@ -101,6 +101,17 @@ type Blokada = {
 type Popravilo = { ob: string; sprozil: string; vir: string | null; vzrok: string; ukrep: string; izvedeno: string };
 type Napaka = { ob: string; vir: string | null; tip: string; sporocilo: string; url: string | null };
 
+type PdfArhiv = {
+  datotek: number;
+  bajtov: number;
+  zadnji: string | null;
+  caka: number;
+  stanje: string | null;
+  porabljenoDanes: number;
+  dnevniProracun: number;
+  dniDoKonca: number;
+};
+
 
 /** Oglas, ki ga sklenjen obhod ni vec nasel. */
 type Izginuli = {
@@ -128,6 +139,7 @@ type Odziv = {
   prostor?: { uporabljeno: number | null; limit: number };
   izginuli?: Izginuli[];
   blokade?: Blokada[];
+  pdfArhiv?: PdfArhiv;
   samopopravila?: Popravilo[];
   napake?: Napaka[];
 };
@@ -368,6 +380,8 @@ export function NepKonzola() {
           ))}
         </div>
       </section>
+
+      {odziv.pdfArhiv && <PdfArhivKartica a={odziv.pdfArhiv} />}
 
       {(odziv.samopopravila ?? []).length > 0 && <Samopopravila zapisi={odziv.samopopravila ?? []} />}
 
@@ -1082,6 +1096,58 @@ function ZadnjeNapake({ napake }: { napake: Napaka[] }) {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+
+/**
+ * PDF arhiv na OneDrive — vizualna kopija oglasa, ki preživi njegovo izginotje.
+ *
+ * Poleg tega, kar je posneto, pove tudi, koliko časa bo trajalo do konca. Ta
+ * številka je pri viru, ki prenese nekaj sto zahtevkov na dan, neprijetna in
+ * prav zato izpisana: skrita bi bila obljuba popolnosti, ki je ne moremo držati.
+ */
+function PdfArhivKartica({ a }: { a: PdfArhiv }) {
+  const gb = a.bajtov / 1024 ** 3;
+  const posneto = a.datotek;
+  const delez = posneto + a.caka > 0 ? Math.round((posneto / (posneto + a.caka)) * 100) : 0;
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="flex items-center gap-2">
+        <Database className="h-4 w-4 text-accent" />
+        <h2 className="text-sm font-semibold text-zinc-900">PDF arhiv oglasov (OneDrive)</h2>
+      </div>
+      <p className="mt-1 text-xs text-zinc-500">
+        En PDF na oglas: stran in fotografije. Ob spremembi cene nastane nova verzija brez slik, tako da se pri
+        izginulem oglasu vidi cela zgodba — kako je bil objavljen in s kakšno ceno je šel dol.
+      </p>
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-200">
+        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${delez}%` }} />
+      </div>
+      <p className="mt-1.5 text-xs text-zinc-600">
+        <strong>{stevilo(posneto)}</strong> posnetih ·{" "}
+        {gb >= 1 ? `${gb.toFixed(2)} GB` : `${Math.round(a.bajtov / 1024 ** 2)} MB`} · čaka{" "}
+        {stevilo(a.caka)} oglasov ({delez} % posnetih)
+      </p>
+      <p className="mt-1 text-[11px] text-zinc-500">
+        Danes porabljeno {stevilo(a.porabljenoDanes)} od {stevilo(a.dnevniProracun)} zahtevkov
+        {a.dniDoKonca > 0 && (
+          <>
+            {" · pri tem tempu bo zaostanek posnet čez "}
+            <strong className={a.dniDoKonca > 90 ? "text-amber-700" : "text-zinc-700"}>
+              {a.dniDoKonca > 400 ? "več kot leto" : `${stevilo(a.dniDoKonca)} dni`}
+            </strong>
+          </>
+        )}
+        {a.zadnji ? ` · zadnji ${datumUra(a.zadnji)}` : ""}
+        {a.stanje ? ` · stanje: ${a.stanje}` : ""}
+      </p>
+      <p className="mt-1 text-[11px] text-zinc-400">
+        Hitreje ne gre: prvi poskus s krajšimi razmiki med slikami je pri drugem oglasu dobil CAPTCHO in stal dvanajst
+        ur hlajenja. Če je predolgo, je odgovor dogovor z virom, ne hitrejše branje.
+      </p>
     </section>
   );
 }

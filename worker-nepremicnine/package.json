@@ -19,12 +19,15 @@
     "test:blokada": "tsx src/test-blokada.ts",
     "test:seznam": "tsx src/test-seznam.ts",
     "test:detajl": "tsx src/test-detajl.ts",
-    "detajli": "tsx src/detajli-once.ts"
+    "detajli": "tsx src/detajli-once.ts",
+    "pdf-arhiv": "tsx src/pdf-arhiv.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
     "dotenv": "^16.4.5",
+    "pdf-lib": "^1.17.1",
     "playwright": "1.62.1",
+    "sharp": "^0.35.3",
     "tsx": "^4.23.1"
   },
   "devDependencies": {

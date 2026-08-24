@@ -61,7 +61,7 @@ export async function GET() {
   const db = createAvtonetClient();
   const vceraj = new Date(Date.now() - 86_400_000).toISOString();
 
-  const [zbiralnik, aktivnaRes, zgodovinaRes, viriRes, urnikRes, napakeRes, statRes, izginuliRes] =
+  const [zbiralnik, aktivnaRes, zgodovinaRes, viriRes, urnikRes, napakeRes, statRes, izginuliRes, pdfRes, pdfCakaRes] =
     await Promise.all([
     zbiralnikZiv(),
     db
@@ -100,6 +100,9 @@ export async function GET() {
       .eq("status", "izginil")
       .order("last_seen", { ascending: false })
       .limit(50),
+    // PDF arhiv na OneDrive: koliko je posnetega in koliko še čaka.
+    db.from("nep_pdf_povzetek").select("datotek, bajtov, zadnji").maybeSingle(),
+    db.from("nep_pdf_kandidati").select("vir", { count: "exact", head: true }),
   ]);
 
   // Manjkajoča tabela pomeni samo, da migracija še ni pognana — ne okvara.
@@ -236,6 +239,29 @@ export async function GET() {
     rezine: Object.entries(statistika)
       .filter(([k]) => k.startsWith("rezine:"))
       .map(([k, v]) => ({ vir: k.slice(7), ...(v as { naslednja?: number; stran?: number }) })),
+    /**
+     * PDF arhiv: koliko je posnetega, koliko čaka in koliko dni bo trajalo.
+     * Zadnja številka je pri viru, ki prenese nekaj sto zahtevkov na dan,
+     * neprijetna — in prav zato je izpisana.
+     */
+    pdfArhiv: (() => {
+      const p = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
+      const caka = pdfCakaRes.count ?? 0;
+      const stanje = (statistika["pdf_arhiv"] ?? null) as { stanje?: string; porabljeno?: number; dnevniProracun?: number } | null;
+      const proracun = Number(stanje?.dnevniProracun ?? 400);
+      // ~9 zahtevkov na oglas: stran + do osem fotografij.
+      const naDan = Math.max(1, Math.floor(proracun / 9));
+      return {
+        datotek: Number(p?.datotek ?? 0),
+        bajtov: Number(p?.bajtov ?? 0),
+        zadnji: p?.zadnji ?? null,
+        caka,
+        stanje: stanje?.stanje ?? null,
+        porabljenoDanes: Number(stanje?.porabljeno ?? 0),
+        dnevniProracun: proracun,
+        dniDoKonca: caka > 0 ? Math.ceil(caka / naDan) : 0,
+      };
+    })(),
     samopopravila: (statistika["samopopravila"] as { zapisi?: unknown[] } | undefined)?.zapisi ?? [],
     napake: napakeRes.data ?? [],
     izginuli: izginuliRes.data ?? [],
