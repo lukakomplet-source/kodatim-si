@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, statfsSync, appendFileSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync, statfsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { PDFDocument } from "pdf-lib";
@@ -383,7 +383,9 @@ async function main(): Promise<void> {
   }
 
   const db = connect();
-  mkdirSync(MAPA, { recursive: true });
+  // Koren priklopljenega diska (npr. "G:\\" za OneDrive) ze obstaja in ga ni
+  // mogoce ustvariti - mkdir nanj vrne EPERM in arhivar je padel v zanko.
+  if (!existsSync(MAPA)) mkdirSync(MAPA, { recursive: true });
   log(`PDF arhivar zagnan. Mapa: ${MAPA}, kapica: ${KAPICA_GB} GB${testnih ? `, TEST ${testnih} oglasov` : ""}`);
 
   let browser: Browser | null = null;

@@ -16,6 +16,15 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 export const dynamic = "force-dynamic";
 
 const MAPA = process.env.AVTONET_PDF_MAPA ?? "E:\\Samo slike od avtonet baza koda tim";
+/**
+ * Kjer se PDF isce, ce ga v glavni mapi ni.
+ *
+ * Arhiv se seli (E: disk -> C: -> OneDrive -> nov disk), selitev pa traja ure.
+ * Brez rezerve bi vsak ze arhiviran oglas v tem casu vrnil 404, ceprav
+ * datoteka obstaja - le se na stari lokaciji. Poti v bazi so relativne, zato
+ * je dovolj poskusiti isto pot pod drugim korenom.
+ */
+const REZERVA = process.env.AVTONET_PDF_MAPA_REZERVA ?? "";
 
 export async function GET(
   _request: NextRequest,
@@ -41,12 +50,27 @@ export async function GET(
   // datoteke ta pot lahko doseže, in ker je koren zunanji disk iz okolja,
   // posledično posledično potegne v sledenje cel projekt — gradnja je nato
   // pri preverjanju tipov ostala brez pomnilnika (koda 134).
-  const osnova = resolve(/* turbopackIgnore: true */ MAPA);
-  const pot = resolve(join(osnova, v.datoteka));
-  if (!pot.startsWith(osnova)) return NextResponse.json({ napaka: "neveljavna pot" }, { status: 400 });
+  const koreni = [MAPA, REZERVA].filter(Boolean);
+  const poti: string[] = [];
+  for (const koren of koreni) {
+    const osnova = resolve(/* turbopackIgnore: true */ koren);
+    const pot = resolve(join(osnova, v.datoteka));
+    // "../" v zapisu ne sme odpeljati iz arhivske mape.
+    if (pot.startsWith(osnova)) poti.push(pot);
+  }
+  if (poti.length === 0) return NextResponse.json({ napaka: "neveljavna pot" }, { status: 400 });
 
   try {
-    const vsebina = await readFile(pot);
+    let vsebina: Buffer | null = null;
+    for (const pot of poti) {
+      try {
+        vsebina = await readFile(pot);
+        break;
+      } catch {
+        // Naslednji koren: med selitvijo arhiva datoteka lezi na stari poti.
+      }
+    }
+    if (!vsebina) throw new Error("ni najden v nobeni arhivski mapi");
     const ime = `avtonet-${v.avtonet_id}-${v.ustvarjen.slice(0, 10)}-${v.razlog}.pdf`;
     return new NextResponse(new Uint8Array(vsebina), {
       headers: {
