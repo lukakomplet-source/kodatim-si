@@ -31,7 +31,7 @@ export default async function PregledPage() {
     db.from("avtonet_zdravje").select("*").eq("id", "worker").maybeSingle(),
     db
       .from("avtonet_raziskave")
-      .select("id, status")
+      .select("id, status, updated_at")
       .in("status", ["zahtevano", "tece"])
       .limit(1)
       .maybeSingle(),
@@ -49,7 +49,8 @@ export default async function PregledPage() {
     novih_zadnjic: number | null;
   } | null;
 
-  const tece = (aktivnaRes.data as { status: string } | null)?.status === "tece";
+  const aktivna = aktivnaRes.data as { status: string; updated_at: string | null } | null;
+  const tece = aktivna?.status === "tece";
 
   const pdfArhiv = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
   const pdfStanje =
@@ -82,6 +83,7 @@ export default async function PregledPage() {
           strani={zdravje?.strani_zadnjic ?? null}
           najdenih={zdravje?.najdenih_zadnjic ?? null}
           novih={zdravje?.novih_zadnjic ?? null}
+          pregledOsvezen={tece ? (aktivna?.updated_at ?? null) : null}
         />
       </header>
 

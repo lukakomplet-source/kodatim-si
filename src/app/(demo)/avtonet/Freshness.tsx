@@ -53,6 +53,7 @@ export function WorkerHealth({
   strani,
   najdenih,
   novih,
+  pregledOsvezen = null,
 }: {
   zadnjiUspeh: string | null;
   napaka: string | null;
@@ -61,6 +62,8 @@ export function WorkerHealth({
   strani: number | null;
   najdenih: number | null;
   novih: number | null;
+  /** Kdaj se je nazadnje premaknil pregled, ki TRENUTNO tece (sicer null). */
+  pregledOsvezen?: string | null;
 }) {
   const now = useNow();
 
@@ -70,10 +73,18 @@ export function WorkerHealth({
   // collector is noticed the same day rather than three weeks later. This is
   // the check the worker itself cannot make: a process that is not running
   // reports nothing at all, so the silence has to be read from the outside.
-  const zastalo = now !== null && zadnjiUspeh !== null && now - new Date(zadnjiUspeh).getTime() > 3 * 60 * 60 * 1000;
+  const zastalo =
+    now !== null && zadnjiUspeh !== null && now - new Date(zadnjiUspeh).getTime() > 3 * 60 * 60 * 1000;
+
+  // Pregled traja vec ur, "zadnji uspesen zajem" pa se zapise sele ob koncu -
+  // sredi zdravega, urnega pregleda je zato konzola javljala "Zbiralnik ne
+  // javlja". Tekoci pregled utisa alarm le, dokler se RES premika: obstal
+  // pregled ima svez status in star napredek, in mora ostati viden.
+  const pregledZiv =
+    now !== null && pregledOsvezen !== null && now - new Date(pregledOsvezen).getTime() < 15 * 60 * 1000;
 
   const hudo = stanje === "ustavljeno";
-  const tezava = hudo || nikoli || zastalo || stanje === "opozorilo";
+  const tezava = hudo || nikoli || (zastalo && !pregledZiv) || stanje === "opozorilo";
 
   const tone = hudo
     ? "bg-red-50 text-red-800 ring-red-200"
@@ -85,7 +96,7 @@ export function WorkerHealth({
     ? "Zbiralnik ustavljen"
     : nikoli
       ? "Zbiralnik še ni tekel"
-      : zastalo
+      : zastalo && !pregledZiv
         ? "Zbiralnik ne javlja"
         : stanje === "opozorilo"
           ? "Zbiralnik opozarja"
@@ -100,6 +111,11 @@ export function WorkerHealth({
       <p className="mt-1">
         Zadnji uspešen zajem: <RelativeTime iso={zadnjiUspeh} />
       </p>
+      {pregledZiv && (
+        <p className="mt-0.5 font-medium">
+          Pregled trga teče — napredek <RelativeTime iso={pregledOsvezen} />
+        </p>
+      )}
       {(strani !== null || najdenih !== null) && (
         <p className="mt-0.5 opacity-90">
           Zadnjič: {strani ?? 0} strani · {najdenih ?? 0} oglasov · {novih ?? 0} novih
