@@ -52,10 +52,17 @@ export default async function PregledPage() {
   const tece = (aktivnaRes.data as { status: string } | null)?.status === "tece";
 
   const pdfArhiv = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
-  const pdfStanje = ((pdfStanjeRes.data as { podatki?: { stanje?: string; kapicaGb?: number } } | null)?.podatki) ?? null;
+  const pdfStanje =
+    ((pdfStanjeRes.data as { podatki?: { stanje?: string; kapicaGb?: number; cakajocih?: number } } | null)
+      ?.podatki) ?? null;
   const pdfGb = Number(pdfArhiv?.bajtov ?? 0) / 1e9;
   const pdfKapica = Number(pdfStanje?.kapicaGb ?? 150);
   const pdfDelez = Math.min(100, Math.round((pdfGb / pdfKapica) * 100));
+  // Koliko oglasov še gre na disk: preostanek do kapice, deljen s povprečnim
+  // PDF-jem. Bolj uporabno od "še X GB" — pove, ali vrsta sploh gre skozi.
+  const pdfCaka = Number(pdfStanje?.cakajocih ?? 0);
+  const pdfPovprecje = pdfArhiv?.datotek ? Number(pdfArhiv.bajtov) / Number(pdfArhiv.datotek) : 1.4e6;
+  const pdfSeGre = Math.max(0, Math.floor(((pdfKapica * 0.97 - pdfGb) * 1e9) / pdfPovprecje));
 
   return (
     <div>
@@ -93,6 +100,16 @@ export default async function PregledPage() {
                 : ""}
               {pdfStanje?.stanje && pdfStanje.stanje !== "tece" ? ` · stanje: ${pdfStanje.stanje}` : ""}
             </p>
+            {pdfCaka > 0 ? (
+              <p className="mt-0.5 text-sm text-zinc-500">
+                čaka še {pdfCaka.toLocaleString("sl-SI")} oglasov (~
+                {((pdfCaka * pdfPovprecje) / 1e9).toFixed(0)} GB) · do kapice je prostora še za{" "}
+                <strong className={pdfSeGre < pdfCaka ? "text-amber-600" : "text-zinc-700"}>
+                  {pdfSeGre.toLocaleString("sl-SI")}
+                </strong>{" "}
+                {pdfSeGre < pdfCaka ? "— za ostale bo potreben večji disk" : ""}
+              </p>
+            ) : null}
           </div>
           <div className="w-full max-w-xs">
             <div className="h-2 rounded-full bg-zinc-100">

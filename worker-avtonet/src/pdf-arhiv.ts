@@ -138,12 +138,28 @@ async function zasedenost(db: Db): Promise<{ datotek: number; bajtov: number }> 
   return { datotek: Number(p?.datotek ?? 0), bajtov: Number(p?.bajtov ?? 0) };
 }
 
+/**
+ * Koliko oglasov čaka na arhiviranje. Brez te številke se "arhiv je poln"
+ * opazi šele takrat, ko se zajem ustavi — konzola iz nje in iz povprečne
+ * velikosti PDF-ja izračuna, za koliko oglasov je še prostora.
+ */
+async function cakajocih(db: Db): Promise<number> {
+  try {
+    const { count } = await db
+      .from("avtonet_pdf_kandidati")
+      .select("avtonet_id", { count: "exact", head: true });
+    return Number(count ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 async function objaviStanje(db: Db, dodatno: Record<string, unknown>): Promise<void> {
   try {
-    const z = await zasedenost(db);
+    const [z, caka] = await Promise.all([zasedenost(db), cakajocih(db)]);
     await db.from("avtonet_statistika").upsert({
       kljuc: "pdf_arhiv",
-      podatki: { ...z, kapicaGb: KAPICA_GB, ...dodatno },
+      podatki: { ...z, kapicaGb: KAPICA_GB, cakajocih: caka, ...dodatno },
       izracunano: new Date().toISOString(),
     });
   } catch {
