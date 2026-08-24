@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { mkdirSync, writeFileSync, statfsSync, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, statfsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { PDFDocument } from "pdf-lib";
@@ -44,6 +44,62 @@ const LOG = process.env.AVTONET_PDF_LOG ?? "C:\\Users\\lukak\\avtonet-db\\pdf-ar
  * nadzornik pobije ter zažene znova.
  */
 const UTRIP = process.env.AVTONET_PDF_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\pdf-arhiv.utrip";
+/**
+ * Zaklep enega samega arhivarja.
+ *
+ * 24. 8. sta minuto tekla dva hkrati (rocni zagon in nadzornikov sta se srecala)
+ * in isti oglas je bil posnet dvakrat v 0,2 sekunde. To ni le podvojeno delo:
+ * podvoji tudi klice na avto.net, kar je natanko tisto, cesar temu procesu ne
+ * dovolimo. Zaklep drzi PID; ce proces v njem ne zivi vec, ga nov prevzame,
+ * tako da padec ne pusti arhivarja trajno zaklenjenega.
+ */
+const ZAKLEP = process.env.AVTONET_PDF_ZAKLEP ?? "C:\Users\lukak\avtonet-db\pdf-arhiv.lock";
+
+function zivProces(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM pomeni, da proces obstaja, le da vanj ne smemo poseci.
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function prevzemiZaklep(): boolean {
+  try {
+    writeFileSync(ZAKLEP, String(process.pid), { flag: "wx" });
+    log(`Zaklep prevzet (PID ${process.pid}, prost).`);
+    return true;
+  } catch {
+    let vsebina = "";
+    try {
+      vsebina = readFileSync(ZAKLEP, "utf8").trim();
+    } catch {
+      // Necitljiv zaklep obravnavamo kot ostanek padlega procesa.
+    }
+    const stari = Number(vsebina);
+    if (stari && stari !== process.pid && zivProces(stari)) {
+      log(`Zaklep drzi ziv PID ${stari}.`);
+      return false;
+    }
+    log(`Zaklep prevzet (PID ${process.pid}, star zapis "${vsebina}" ni ziv).`);
+    try {
+      writeFileSync(ZAKLEP, String(process.pid));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function sprostiZaklep(): void {
+  try {
+    if (Number(readFileSync(ZAKLEP, "utf8").trim()) === process.pid) unlinkSync(ZAKLEP);
+  } catch {
+    // Sproscanje je vljudnost; naslednji zagon zna prevzeti mrtev zaklep.
+  }
+}
+
 
 function utrip(stanje: string): void {
   try {
@@ -313,6 +369,18 @@ async function main(): Promise<void> {
     const i = process.argv.indexOf("--test");
     return i >= 0 ? Number(process.argv[i + 1] ?? 3) : null;
   })();
+
+  if (!prevzemiZaklep()) {
+    log("Arhivar ze tece (zaklep drzi ziv proces) - ta zagon se konca.");
+    return;
+  }
+  process.on("exit", sprostiZaklep);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.on(sig, () => {
+      sprostiZaklep();
+      process.exit(0);
+    });
+  }
 
   const db = connect();
   mkdirSync(MAPA, { recursive: true });
