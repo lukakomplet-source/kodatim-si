@@ -1,0 +1,10 @@
+# Nacrti (PZI/IDZ PDF, popisi, DWG) zivijo na OneDrive /Vojnik - tam je vir
+# resnice; sem se prenesejo samo za analizo. Binarnih datotek ne commitamo.
+*.pdf
+*.xlsx
+*.xls
+*.dwg
+*.zip
+*.jpg
+*.png
+!reference/streetview/*.jpg
