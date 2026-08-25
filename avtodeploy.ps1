@@ -24,8 +24,9 @@
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-# Ce cloudflared tunel ne kaze na 3000, popravi tukaj.
-$vrata = 3000
+# kodatim.si tunel kaze na localhost:3001 (stran je tekla kot "next start -p 3001").
+# Ce se port kdaj spremeni, popravi tukaj.
+$vrata = 3001
 
 $mapa = Join-Path $PSScriptRoot ".avtodeploy"
 $dnevnik = Join-Path $mapa "dnevnik.log"

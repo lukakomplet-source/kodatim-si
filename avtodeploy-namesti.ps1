@@ -64,8 +64,23 @@ $obPrijavi = New-ScheduledTaskTrigger -AtLogOn
 
 $nastavitve = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1) -StartWhenAvailable
 
-Register-ScheduledTask -TaskName "KodaTim avtodeploy" -Action $akcija -Trigger $vsakih5, $obPrijavi -Settings $nastavitve -Description "Vsakih 5 minut potegne novosti z GitHuba (main), zgradi stran in skrbi, da next start tece za kodatim.si tunel." -Force | Out-Null
-Write-Host "     Opravilo registrirano (vsakih 5 minut + ob prijavi)." -ForegroundColor Green
+# Register-ScheduledTask zna brez skrbniskih pravic vrniti "Access is denied"
+# (0x80070005) - v tem primeru isto opravilo ustvarimo prek schtasks.exe, ki
+# za navadnega uporabnika deluje (le prozilca "ob prijavi" ne zna brez admina;
+# 5-minutni razpored po prijavi tako ali tako stece v nekaj minutah).
+try {
+    Register-ScheduledTask -TaskName "KodaTim avtodeploy" -Action $akcija -Trigger $vsakih5, $obPrijavi -Settings $nastavitve -Description "Vsakih 5 minut potegne novosti z GitHuba (main), zgradi stran in skrbi, da next start tece za kodatim.si tunel." -Force | Out-Null
+    Write-Host "     Opravilo registrirano (vsakih 5 minut + ob prijavi)." -ForegroundColor Green
+} catch {
+    Write-Host "     Register-ScheduledTask ni sel skozi - poskusam schtasks ..." -ForegroundColor Yellow
+    $tr = 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $skripta + '"'
+    schtasks /Create /TN "KodaTim avtodeploy" /TR $tr /SC MINUTE /MO 5 /F | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Tudi schtasks ni uspel - odpri PowerShell z 'Zazeni kot skrbnik' in ponovi to skripto." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "     Opravilo registrirano prek schtasks (vsakih 5 minut)." -ForegroundColor Green
+}
 Write-Host ""
 
 Write-Host "3/3  Prvi deploy (build + zagon streznika) - traja minuto ali dve ..." -ForegroundColor Cyan
@@ -75,6 +90,6 @@ Write-Host ""
 Write-Host "Narejeno." -ForegroundColor Green
 Write-Host "  - Vsak push na GitHub (main) bo odslej na strani v najvec ~5 minutah." -ForegroundColor Gray
 Write-Host "  - Dnevnik: .avtodeploy\dnevnik.log" -ForegroundColor Gray
-Write-Host "  - Streznik tece na vratih 3000; ce cloudflared tunel kaze drugam," -ForegroundColor Gray
-Write-Host "    popravi vrednost `$vrata na vrhu avtodeploy.ps1." -ForegroundColor Gray
+Write-Host "  - Streznik tece na vratih 3001 (tja kaze cloudflared tunel); ce se" -ForegroundColor Gray
+Write-Host "    port spremeni, popravi vrednost `$vrata na vrhu avtodeploy.ps1." -ForegroundColor Gray
 Write-Host "  - Izklop: Unregister-ScheduledTask -TaskName 'KodaTim avtodeploy' -Confirm:`$false" -ForegroundColor Gray
