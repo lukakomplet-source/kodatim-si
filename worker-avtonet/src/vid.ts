@@ -21,7 +21,7 @@ import { connect, type Db } from "./db.js";
  */
 
 const OLLAMA = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
-const MODEL = process.env.AVTONET_VID_MODEL ?? "qwen3-vl:8b";
+const MODEL = process.env.AVTONET_VID_MODEL ?? "qwen2.5vl:7b";
 const MAPA = process.env.AVTONET_PDF_MAPA ?? "G:\\";
 const LOG = process.env.AVTONET_VID_LOG ?? "C:\\Users\\lukak\\avtonet-db\\vid.log";
 const UTRIP = process.env.AVTONET_VID_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\vid.utrip";
@@ -83,53 +83,95 @@ async function spanec(ms: number): Promise<void> {
 }
 
 /**
- * Navodilo modelu.
+ * Kaj sprašujemo in na kateri sliki.
  *
- * Dve zahtevi, ki sta se izkazali za nujni: naj odgovori SAMO z JSON-om (sicer
- * doda razlago v prozi, ki je ni mogoče razčleniti), in naj sme reči "ne vem".
- * Model, ki ne sme reči "ne vem", ugiba — in ugibanje je tu dražje od tišine.
+ * Merjeno na tem stroju: odprto vprašanje ("naštej opremo") daje slabe odgovore
+ * — model bodisi prepiše primere iz navodila bodisi vrne prazno. Eno konkretno
+ * vprašanje na eno sliko pa je hitro (1–2 s) in odgovori se med avtomobili
+ * razlikujejo, kar je prvi pogoj, da sploh kaj merijo.
+ *
+ * "kje" pove, katero sliko dobi model: zunanjost je prva (sprednja polovica
+ * vozila), notranjost pa predzadnja — vprašanje o sedežih na sliki motorja je
+ * zapravljena sekunda.
  */
-const NAVODILO = `Si ocenjevalec rabljenih vozil. Na slikah je EN avtomobil iz oglasa.
+const VPRASANJA: { kljuc: string; oznaka: string; kje: "zunaj" | "znotraj"; vprasanje: string }[] = [
+  {
+    kljuc: "led_zarometi",
+    oznaka: "LED žarometi",
+    kje: "zunaj",
+    vprasanje:
+      "Ali ima ta avto LED prednje žaromete? LED se prepozna po ostri beli svetlobni črti ali več ločenih segmentih znotraj žarometa.",
+  },
+  {
+    kljuc: "alu_platisca",
+    oznaka: "Alu platišča",
+    kje: "zunaj",
+    vprasanje:
+      "Ali so platišča na tem avtu aluminijasta (kovinski kraki, vidni skozi odprtine), ne jeklena s plastičnim pokrovom?",
+  },
+  {
+    kljuc: "stresno_okno",
+    oznaka: "Strešno okno",
+    kje: "zunaj",
+    vprasanje: "Ali ima ta avto na strehi strešno okno ali panoramsko streho?",
+  },
+  {
+    kljuc: "vlecna_kljuka",
+    oznaka: "Vlečna kljuka",
+    kje: "zunaj",
+    vprasanje: "Ali je na zadnjem odbijaču vidna vlečna kljuka ali njeno nosilno grlo?",
+  },
+  {
+    kljuc: "usnje",
+    oznaka: "Usnjeni sedeži",
+    kje: "znotraj",
+    vprasanje: "Ali so sedeži usnjeni (gladka, sijoča površina s šivi), ne blago?",
+  },
+  {
+    kljuc: "sportni_sedezi",
+    oznaka: "Športni sedeži",
+    kje: "znotraj",
+    vprasanje: "Ali imajo sprednji sedeži izrazito oblikovane stranske opornike (športni sedeži)?",
+  },
+  {
+    kljuc: "zaslon",
+    oznaka: "Navigacijski zaslon",
+    kje: "znotraj",
+    vprasanje: "Ali je na sredinski konzoli zaslon za navigacijo ali multimedijo?",
+  },
+  {
+    kljuc: "digitalni_merilniki",
+    oznaka: "Digitalni merilniki",
+    kje: "znotraj",
+    vprasanje: "Ali so merilniki za volanom digitalni (zaslon namesto klasičnih okroglih števcev)?",
+  },
+];
 
-Odgovori IZKLJUČNO z JSON objektom, brez besedila pred ali za njim:
+/**
+ * Model sme reči "ne vem" in sme biti negotov.
+ *
+ * Brez teh dveh možnosti model ugiba, ugibanje pa je tu dražje od tišine:
+ * napačno pripisana oprema pokvari primerjavo vozil bolj kot manjkajoča.
+ */
+const MOZNOSTI = ["zagotovo da", "verjetno da", "ne", "ne vem"] as const;
 
-{
-  "oprema": [{"znacilka": "...", "zaupanje": 0.0-1.0, "kje": "kratko, na kateri sliki in po čem"}],
-  "facelift": true | false | null,
-  "facelift_zaupanje": 0.0-1.0,
-  "facelift_razlog": "po čem sklepaš (oblika žarometov, maska, odbijač)",
-  "opomba": "karkoli nenavadnega (poškodba, drug model kot v naslovu ...)"
-}
+const SHEMA_DA_NE = {
+  type: "object",
+  properties: {
+    odgovor: { type: "string", enum: [...MOZNOSTI] },
+    razlog: { type: "string" },
+  },
+  required: ["odgovor", "razlog"],
+} as const;
 
-Pravila:
-- Naštej samo opremo, ki jo NA SLIKI RES VIDIŠ. Nič sklepanja iz modela ali letnika.
-- Uporabljaj slovenske izraze: LED žarometi, xenon žarometi, strešno okno, panoramska streha,
-  usnjeni sedeži, športni sedeži, alu platišča, navigacijski zaslon, digitalni merilniki,
-  parkirna kamera, vlečna kljuka, zračno vzmetenje, dvocevni izpuh, športni paket.
-- Če česa ne vidiš zanesljivo, ga NE naštej. Bolje manj kot narobe.
-- "zaupanje" naj bo iskreno: 0.9+ samo, kadar je stvar nedvoumna.
-- facelift: true = gre za prenovljeno različico serije, false = predfacelift, null = ne da se ločiti.`;
-
-type Odgovor = {
-  oprema?: { znacilka?: string; zaupanje?: number; kje?: string }[];
-  facelift?: boolean | null;
-  facelift_zaupanje?: number;
-  facelift_razlog?: string;
-  opomba?: string;
-};
-
-/** Iz odgovora pobere JSON tudi, kadar ga model zavije v ```json ograjo. */
-function razcleni(besedilo: string): Odgovor | null {
-  const brezOgraje = besedilo.replace(/```json\s*|```/g, "").trim();
-  const zac = brezOgraje.indexOf("{");
-  const kon = brezOgraje.lastIndexOf("}");
-  if (zac < 0 || kon <= zac) return null;
-  try {
-    return JSON.parse(brezOgraje.slice(zac, kon + 1)) as Odgovor;
-  } catch {
-    return null;
-  }
-}
+const SHEMA_FACELIFT = {
+  type: "object",
+  properties: {
+    odgovor: { type: "string", enum: ["facelift", "predfacelift", "ne vem"] },
+    razlog: { type: "string" },
+  },
+  required: ["odgovor", "razlog"],
+} as const;
 
 /** Slike enega oglasa, ki jih je arhivar pustil ob PDF-ju. */
 function slikeOglasa(avtonetId: string): string[] {
@@ -141,26 +183,78 @@ function slikeOglasa(avtonetId: string): string[] {
     .map((v) => join(mapa, v));
 }
 
-async function vprasajModel(
-  slike: string[],
-  kontekst: string
-): Promise<{ odgovor: Odgovor | null; surovo: string; ms: number }> {
-  const zacetek = Date.now();
+type Odgovor = { odgovor?: string; razlog?: string };
+
+async function vprasaj(slika: string, vprasanje: string, shema: unknown): Promise<Odgovor> {
   const r = await fetch(`${OLLAMA}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: MODEL,
-      prompt: `${NAVODILO}\n\nIz oglasa vemo: ${kontekst}`,
-      images: slike.map((p) => readFileSync(p).toString("base64")),
+      prompt: vprasanje,
+      images: [readFileSync(slika).toString("base64")],
       stream: false,
-      options: { temperature: 0.1, num_ctx: 8192 },
+      format: shema,
+      options: { temperature: 0, num_ctx: 4096 },
     }),
   });
   if (!r.ok) throw new Error(`Ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const telo = (await r.json()) as { response?: string };
-  const surovo = telo.response ?? "";
-  return { odgovor: razcleni(surovo), surovo, ms: Date.now() - zacetek };
+  try {
+    return JSON.parse(telo.response ?? "{}") as Odgovor;
+  } catch {
+    return {};
+  }
+}
+
+/** Iz besednega odgovora naredi stopnjo zaupanja, ki jo razume ostali sistem. */
+function zaupanjeIz(odgovor: string | undefined): number | null {
+  if (odgovor === "zagotovo da") return 0.95;
+  if (odgovor === "verjetno da") return 0.7;
+  return null;
+}
+
+type Izid = {
+  oprema: { znacilka: string; zaupanje: number; kje: string }[];
+  facelift: boolean | null;
+  facelift_zaupanje: number | null;
+  facelift_razlog: string;
+  vsi: Record<string, string>;
+  ms: number;
+};
+
+async function pregledOglasa(slike: string[]): Promise<Izid> {
+  const zacetek = Date.now();
+  const zunaj = slike[0];
+  const znotraj = slike.length > 2 ? slike[slike.length - 2] : slike[slike.length - 1];
+
+  const oprema: Izid["oprema"] = [];
+  const vsi: Record<string, string> = {};
+
+  for (const v of VPRASANJA) {
+    const o = await vprasaj(v.kje === "zunaj" ? zunaj : znotraj, v.vprasanje, SHEMA_DA_NE);
+    vsi[v.kljuc] = o.odgovor ?? "brez odgovora";
+    const zaupanje = zaupanjeIz(o.odgovor);
+    if (zaupanje !== null) {
+      oprema.push({ znacilka: v.oznaka, zaupanje, kje: (o.razlog ?? "").slice(0, 140) });
+    }
+  }
+
+  const f = await vprasaj(
+    zunaj,
+    "Ali je to facelift (prenovljena različica serije) ali predfacelift? Poglej obliko žarometov, maske in odbijača.",
+    SHEMA_FACELIFT
+  );
+  vsi["facelift"] = f.odgovor ?? "brez odgovora";
+
+  return {
+    oprema,
+    facelift: f.odgovor === "facelift" ? true : f.odgovor === "predfacelift" ? false : null,
+    facelift_zaupanje: f.odgovor === "ne vem" || !f.odgovor ? null : 0.7,
+    facelift_razlog: (f.razlog ?? "").slice(0, 200),
+    vsi,
+    ms: Date.now() - zacetek,
+  };
 }
 
 type Naloga = { avtonet_id: string; naziv: string | null; letnik: number | null; oprema: unknown };
@@ -173,25 +267,19 @@ async function vrsta(db: Db, koliko: number): Promise<Naloga[]> {
   return (data ?? []) as Naloga[];
 }
 
-async function shrani(
-  db: Db,
-  n: Naloga,
-  izid: { odgovor: Odgovor | null; surovo: string; ms: number },
-  stSlik: number
-): Promise<void> {
-  const o = izid.odgovor;
+async function shrani(db: Db, n: Naloga, izid: Izid, stSlik: number): Promise<void> {
   await db.from("avtonet_vid").upsert({
     avtonet_id: n.avtonet_id,
-    status: o ? "koncano" : "napaka",
+    status: "koncano",
     model: MODEL,
     slik: stSlik,
     ms: izid.ms,
-    oprema: o?.oprema ?? null,
-    facelift: o?.facelift ?? null,
-    facelift_zaupanje: o?.facelift_zaupanje ?? null,
-    obrazlozitev: [o?.facelift_razlog, o?.opomba].filter(Boolean).join(" · ") || null,
-    surovo: { besedilo: izid.surovo.slice(0, 4000) },
-    napaka: o ? null : "odgovora ni bilo mogoce razcleniti",
+    oprema: izid.oprema,
+    facelift: izid.facelift,
+    facelift_zaupanje: izid.facelift_zaupanje,
+    obrazlozitev: izid.facelift_razlog || null,
+    surovo: { odgovori: izid.vsi },
+    napaka: null,
     posodobljen: new Date().toISOString(),
   });
 }
@@ -260,14 +348,12 @@ async function main(): Promise<void> {
           continue;
         }
         try {
-          const kontekst = `${n.naziv ?? "?"}${n.letnik ? `, letnik ${n.letnik}` : ""}`;
-          const izid = await vprasajModel(slike, kontekst);
+          const izid = await pregledOglasa(slike);
           await shrani(db, n, izid, slike.length);
           odZagona++;
-          const o = izid.odgovor;
           log(
             `  ${n.avtonet_id}: ${slike.length} slik, ${(izid.ms / 1000).toFixed(1)} s, ` +
-              `oprema ${o?.oprema?.length ?? 0}, facelift ${String(o?.facelift ?? "?")}`
+              `oprema ${izid.oprema.length}, facelift ${String(izid.facelift ?? "?")}`
           );
         } catch (e) {
           const sporocilo = e instanceof Error ? e.message : String(e);

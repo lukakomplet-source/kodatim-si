@@ -60,7 +60,11 @@ export default async function PregledPage() {
   const vidSkupaj = vidObdelanih + vidCaka;
   const vidDelez = vidSkupaj > 0 ? Math.round((vidObdelanih / vidSkupaj) * 100) : 0;
   const vidNaDan = Number(vid?.v24h ?? 0);
-  const vidDni = vidNaDan > 0 && vidCaka > 0 ? vidCaka / vidNaDan : null;
+  // Tempo pokazemo sele, ko za njim stoji dovolj dela. Prvih nekaj testnih
+  // pregledov bi dalo "27 na dan" in iz tega neumno oceno; taka stevilka je
+  // slabsa od nobene, ker jo clovek prebere kot dejstvo.
+  const vidTempoZanesljiv = vidNaDan >= 20;
+  const vidDni = vidTempoZanesljiv && vidCaka > 0 ? vidCaka / vidNaDan : null;
   const vidEta =
     vidDni === null
       ? null
@@ -196,7 +200,9 @@ export default async function PregledPage() {
             <p className="mt-0.5 text-sm text-zinc-600">
               <strong>{vidObdelanih.toLocaleString("sl-SI")}</strong> pregledanih ·{" "}
               {vidCaka.toLocaleString("sl-SI")} čaka
-              {vidNaDan > 0 ? ` · tempo ${vidNaDan.toLocaleString("sl-SI")}/dan` : ""}
+              {vidTempoZanesljiv
+                ? ` · tempo ${vidNaDan.toLocaleString("sl-SI")}/dan`
+                : " · tempo še merim"}
               {vidEta ? ` · vrsta prazna čez ${vidEta}` : ""}
               {vid?.model ? ` · ${vid.model}` : ""}
             </p>
