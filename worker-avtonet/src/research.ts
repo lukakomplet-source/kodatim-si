@@ -174,6 +174,9 @@ export async function runResearch(
   // Set false the moment any slice ends capped-but-unsplittable; gates whether
   // absence may be read as disappearance at the end.
   let vseRezinePopolne = true;
+  // Imena rezin, ki niso videle celega svojega dela trga - da je v dnevniku
+  // razvidno, KATERA je ustavila belezenje izginotij, ne le da se je zgodilo.
+  const nepopolneRezine: string[] = [];
 
   // Records a slice's outcome, so a resumed run can skip it and the research
   // page can show what was actually asked.
@@ -320,7 +323,10 @@ export async function runResearch(
           if (otroci) for (const o of otroci) sklad.push(o);
           p.poizvedb_razdeljenih += 1;
         } else {
-          if (!prejsnja.popolna) vseRezinePopolne = false;
+          if (!prejsnja.popolna) {
+            vseRezinePopolne = false;
+            nepopolneRezine.push(r.oznaka);
+          }
           p.poizvedb_koncanih += 1;
         }
         continue;
@@ -393,7 +399,10 @@ export async function runResearch(
         log,
         shouldStop: opts.shouldStop,
       });
-      if (!izid.popolna) vseRezinePopolne = false;
+      if (!izid.popolna) {
+        vseRezinePopolne = false;
+        nepopolneRezine.push(r.oznaka);
+      }
 
       await zabeleziRezino(r, "koncano", {
         najdenih: izid.oglasov,
@@ -427,7 +436,11 @@ export async function runResearch(
       dnevnik.zapisi("info", `Pregled celotnega trga popoln — ${p.izginulih} oglasov ni več na oglasniku`);
     } else {
       p.pregled_popoln = false;
-      dnevnik.zapisi("info", "Pregled ni bil popoln po vseh rezinah — izginotja se ne beležijo");
+      const seznam = nepopolneRezine.slice(0, 5).join(", ");
+      dnevnik.zapisi(
+        "info",
+        `Pregled ni bil popoln — izginotja se ne beležijo. Nepopolne rezine (${nepopolneRezine.length}): ${seznam}${nepopolneRezine.length > 5 ? " …" : ""}`
+      );
     }
     await onProgress(p);
 
@@ -549,6 +562,46 @@ export async function runResearch(
  * market moves between the sizing probe and the sweep). A repetition long
  * before that count means truncation and is reported as such.
  */
+/**
+ * Ena stran rezultatov, s ponovnimi poskusi.
+ *
+ * 25. 8. je ena sama prekinjena povezava (ERR_CONNECTION_RESET na 4. strani
+ * BMW-jev) stala cel dan izginotij: stran je bila preskocena, rezina je zato
+ * koncala s 367 od napovedanih 415 oglasov, kar je pod pragom popolnosti - in
+ * ker se izginotja belezijo samo iz popolnega pregleda, tisti dan ni bilo
+ * zabelezeno niti eno. Mimobezna napaka omrezja ne sme imeti take teze, zato
+ * stran poskusimo veckrat, preden jo damo za izgubljeno.
+ *
+ * Blokada se NE ponavlja: ta pomeni, da nas vir ne zeli, in jo pusti naprej.
+ */
+const PONOVNI_POSKUSI_MS = [5_000, 15_000, 45_000];
+
+async function preberiStranZVztrajnostjo(
+  browser: Browser,
+  r: Rezina,
+  stran: number,
+  dnevnik: EventSink
+): Promise<ParsedRow[]> {
+  let zadnja: unknown = new Error("stran ni bila prebrana");
+  for (let poskus = 0; poskus <= PONOVNI_POSKUSI_MS.length; poskus++) {
+    try {
+      return await fetchResultsPage(browser, buildResultsUrl({ ...r.filtri, stran }));
+    } catch (err) {
+      if (err instanceof BlockedError) throw err;
+      zadnja = err;
+      if (poskus < PONOVNI_POSKUSI_MS.length) {
+        const cakaj = PONOVNI_POSKUSI_MS[poskus];
+        dnevnik.zapisi(
+          "info",
+          `"${r.oznaka}" stran ${stran} ni uspela (${err instanceof Error ? err.message.slice(0, 60) : String(err)}) — poskus ${poskus + 2} cez ${Math.round(cakaj / 1000)} s`
+        );
+        await sleep(cakaj);
+      }
+    }
+  }
+  throw zadnja;
+}
+
 async function sweepRezina(
   browser: Browser,
   db: Db,
@@ -582,12 +635,15 @@ async function sweepRezina(
 
     let rows: ParsedRow[];
     try {
-      rows = await fetchResultsPage(browser, buildResultsUrl({ ...r.filtri, stran }));
+      rows = await preberiStranZVztrajnostjo(browser, r, stran, dnevnik);
     } catch (err) {
       if (err instanceof BlockedError) throw err;
       p.napak += 1;
       p.zadnja_napaka = err instanceof Error ? err.message : String(err);
-      dnevnik.zapisi("napaka", `"${r.oznaka}" stran ${stran}: ${p.zadnja_napaka}`);
+      dnevnik.zapisi(
+        "napaka",
+        `"${r.oznaka}" stran ${stran} ni uspela niti po ${PONOVNI_POSKUSI_MS.length + 1} poskusih: ${p.zadnja_napaka}`
+      );
       await sleep(ctx.delayListMs);
       continue;
     }
