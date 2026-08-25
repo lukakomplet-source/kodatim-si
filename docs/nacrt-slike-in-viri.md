@@ -534,3 +534,75 @@ učinkovita in poštena, ni: en zahtevek na sejo pomeni eno stran na sejo.
 **Isto je treba izmeriti za bolha.com**, ki uporablja enako nastavitev. 21. 8.
 je bila v hlajenju po CAPTCHA-i, zato je nisem preizkušal — preizkušanje vira
 med hlajenjem bi bilo natanko tisto, čemur se ta odločitev izogiba.
+
+---
+
+# DEL 6 — Tri odločitve, sprejete 25. 8. 2026
+
+Ob gradnji nadzora nad stanjem virov (`worker-nepremicnine/src/stanje-vira.ts`) so
+padle tri odločitve, ki se jih iz kode ne da razbrati. Zapisane so tu, ker bo
+naslednji človek — ali naslednja seja — sicer poskusil isto znova.
+
+## 1. nepremicnine.siol.net ostane IZKLOPLJEN — trajno
+
+Ponovno prebrano 25. 8. 2026, ne po spominu.
+
+`robots.txt` je popustljiv: prepoveduje samo `/userarea/`, `/accounts/`,
+`/api/v1/userarea/` in `/listing-mortgage-inquiry/`, nepremičninskih seznamov pa
+ne. Kdor gleda samo `robots.txt`, sklene, da je zajem dovoljen.
+
+Splošni pogoji (`/page/splosni-pogoji`) povedo nasprotno, dobesedno:
+
+> „Prepovedana je uporaba avtomatskih poizvedb ali drugih robotov, ki avtomatsko
+> pridobivajo podatke iz sklopa nepremičnine na Siol.net ali na drugačen način
+> avtomatsko posegajo v portal ali komunicirajo s portalom."
+>
+> „Prepoved 'meta' iskanja in prepoved uporabe robotov ne velja za splošne
+> spletne iskalnike (universal search engines)."
+
+Izjema velja za SPLOŠNE iskalnike; mi smo vertikalni zbiralnik in vanjo ne
+sodimo. Poleg tega pogoji vsebine izrecno varujejo kot zbirko podatkov po ZASP.
+
+**Odločitev: vir ostane izklopljen in adapter ostane v kodi samo za primer, da
+Telekom Slovenije oz. Arvio kdaj da pisno dovoljenje.** `robots.txt`, ki nečesa
+ne prepoveduje, ni dovoljenje — pogoji uporabe so.
+
+## 2. oglasi.svet24.si — odločitev je človekova, ne sistemova
+
+`robots.txt` prepoveduje `/admin`, `/oddaja` in `/moj-salomon`; seznamov ne.
+Pogoji (`/pomoc/splosni-pogoji`) robotov ne omenjajo, pravijo pa:
+
+> „…je dovoljeno pregledovati in reproducirati za lastne potrebe, ne sme pa se
+> jih spreminjati, prepisovati, ponovno objavljati in razširjati niti v
+> komercialne niti v nekomercialne namene brez izrecnega predhodnega pisnega
+> dovoljenja družbe Salomon, d.o.o."
+
+To je drugačna slika kot pri Siolu: zajem za lastne potrebe ni prepovedan,
+prepovedano je RAZŠIRJANJE. Naša baza je zaprta in vsaka kartica vodi na
+izvirnik, kar govori v prid „lastnim potrebam" — a prikaz oglasov v aplikaciji
+naročnika je meja, ki je nihče od nas ne more razsoditi namesto pravnika.
+
+**Zato vir ostane izklopljen, dokler ga človek v konzoli ne vklopi.** To ni
+oklevanje, ampak pravilo tega modula: nov vir se nikoli ne vklopi sam, ob gumbu
+za vklop pa konzola izpiše prav ta odstavek. Tehnično je adapter pripravljen in
+bi ga en klik postavil v pogon.
+
+## 3. Google/spletno iskanje kot pot do bolhinih oglasov — NE
+
+Predlagano je bilo, da bi ob blokadi bolhe njene javno indeksirane strani
+iskali prek spletnega iskalnika. Tega ne bomo počeli.
+
+Razlog ni tehničen. Če vir našemu avtomatiziranemu dostopu reče ne, je iskanje
+iste vsebine po ovinku natanko to, kar je zavrnil — le da je težje opaziti.
+Pravilo tega projekta („blokade se ne obhajajo, odgovor je manj zahtevkov in
+več časa") ne pozna razlike med obhodom naravnost in obhodom po ovinku.
+
+Spletno iskanje ostane odprto kot SVOJ vir za strani, ki nam zajem dovolijo —
+takrat jasno označen kot spletno odkritje in nikoli predstavljen kot bolhin
+seznam.
+
+## Kar iz vsega tega sledi
+
+Bolha je edini vklopljen vir. To je večje tveganje od CAPTCHE in ga arhitektura
+ne odpravi: odpravita ga samo pisno dovoljenje (Salomon) ali dogovor s Styrio
+(`docs/pismo-bolha.md`). Obe poti vodita čez človeka, ne čez kodo.

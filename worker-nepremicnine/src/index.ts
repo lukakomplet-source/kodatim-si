@@ -851,9 +851,9 @@ async function pregled(db: Db, pregledId: string, vir: VirAdapter, detajlovNaKro
         });
       }
 
-      // Razmik tudi ob prehodu med fazama: brez njega gre prva detajlna stran
-      // takoj za zadnjo stranjo seznama.
-      if (kvota > 0) await sleep(Math.round(vir.detajli.zamikMs * Math.max(1, faktor)));
+      // Razmika ob prehodu med fazama ni več treba jemati posebej: skupni
+      // ritem ga vzame tik pred prvo detajlno stranjo, in to z upoštevanjem
+      // tega, kaj je vir medtem dobil od arhivarja.
       const izidDetajlov = await zajemiDetajle(
         db,
         {

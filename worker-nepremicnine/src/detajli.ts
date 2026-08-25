@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import type { Db } from "./db.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
+import { pocakajNaVrsto } from "./stanje-vira.js";
 import type { Detajl, VirAdapter } from "./viri/vmesnik.js";
 import { uporabniskiAgent } from "./identiteta.js";
 
@@ -244,6 +245,15 @@ export async function zajemiDetajle(
       try {
         const page = await zOmejitvijo("newPage", ctx.newPage());
         try {
+          /**
+           * SKUPEN RITEM TUDI V 2. FAZI — in tu najbolj.
+           *
+           * Detajlne strani so večina naših zahtevkov (do trideset na krog
+           * proti nekaj desetim stranem seznamov), zato bi bila prav ta faza
+           * tista, ki bi se prekrivala s PDF arhivarjem. Razmik se meri od
+           * zadnjega zahtevka kateregakoli procesa, ne od zadnjega našega.
+           */
+          await pocakajNaVrsto(db, vir.vir, vir.detajli.zamikMs);
           const r = await zOmejitvijo(
             "goto",
             page.goto(o.url, { waitUntil: "domcontentloaded", timeout: 45_000 }),
@@ -270,7 +280,7 @@ export async function zajemiDetajle(
             });
             izid.izginulih += 1;
             utrip();
-            await sleep(vir.detajli.zamikMs);
+            // Razmik prevzame skupni ritem pred naslednjim zahtevkom.
             continue;
           }
 
@@ -346,7 +356,8 @@ export async function zajemiDetajle(
       }
 
       if (izid.blokada) break;
-      await sleep(vir.detajli.zamikMs);
+      // Brez lastnega premora: čakanje opravi skupni ritem tik pred naslednjim
+      // zahtevkom, ker le tam ve, kdaj je vir nazadnje kaj dobil od nas.
     }
   } finally {
     if (skupni.ctx) await skupni.ctx.close().catch(() => {});
