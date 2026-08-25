@@ -457,9 +457,17 @@ async function main(): Promise<void> {
   }
 
   const db = connect();
-  // Koren priklopljenega diska (npr. "G:\\" za OneDrive) ze obstaja in ga ni
-  // mogoce ustvariti - mkdir nanj vrne EPERM in arhivar je padel v zanko.
-  if (!existsSync(MAPA)) mkdirSync(MAPA, { recursive: true });
+  // Arhivska mapa je lahko priklopljen disk (OneDrive prek rclone). Ce priklop
+  // pade, mape ni - in mkdir na koren diska vrne ENOENT. Prej je arhivar ob tem
+  // takoj umrl, zaganjalnik ga je pognal znova, spet je umrl ... 25. 8. je tako
+  // 52-krat zapored padel, medtem ko je nadzornik ozivljal priklop. Zato zdaj
+  // POCAKA: priklop se lahko vrne sam, arhivar pa medtem ne dela hrupa.
+  for (let poskus = 0; !existsSync(MAPA); poskus++) {
+    if (poskus === 0) log(`Arhivska mapa ${MAPA} ni dosegljiva (priklop?) — cakam, da se vrne.`);
+    utrip("cakam na disk");
+    await spanecZUtripom(60_000, "cakam na disk");
+    if (poskus === 30) log(`Mape ${MAPA} ni ze 30 minut — arhiviranje miruje, ostalo tece naprej.`);
+  }
   log(`PDF arhivar zagnan. Mapa: ${MAPA}, kapica: ${KAPICA_GB} GB${testnih ? `, TEST ${testnih} oglasov` : ""}`);
 
   let browser: Browser | null = null;
