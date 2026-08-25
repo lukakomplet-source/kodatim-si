@@ -8,8 +8,9 @@
 #      in ga po uspesnem buildu znova zazene
 #
 # Varnostna pravila:
-#   - nikoli ne ustavi procesa, ki ga ni sama zagnala (dev streznik ostane pri miru;
-#     ce vrata zaseda tuj proces, se samo zabelezi in nic ne zaganja)
+#   - dev streznika in drugih aplikacij se nikoli ne dotakne; ustavi kvecjemu
+#     "next start" te iste strani (prejsnjo verzijo), ki jo nadzornik iz
+#     Startup mape potem sam znova zazene na svezem buildu
 #   - ce build pade, se vrne prejsnja verzija in stran tece naprej
 #   - ce git pull ne gre gladko (lokalne spremembe), se ustavi in zapise napako;
 #     nikoli ne uporablja force
@@ -107,7 +108,7 @@ try {
         if ($zasede) {
             $moj = StreznikPid
             if ($moj -and ($zasede -eq $moj)) { return }
-            Zapisi "Vrata $vrata zaseda tuj proces (PID $zasede, verjetno dev streznik) - produkcijskega ne zaganjam."
+            Zapisi "Vrata $vrata ze streze drug proces (PID $zasede) - najverjetneje nadzornik; svojega ne zaganjam."
             return
         }
         $nextBin = Join-Path $PSScriptRoot "node_modules\next\dist\bin\next"
@@ -126,14 +127,23 @@ try {
     }
 
     function ZgradiInZazeni {
-        # Ce vrata zaseda tuj proces (najverjetneje next dev), .next uporablja
-        # on - vanj ne smemo graditi. Koda je ze potegnjena, dev jo pobere sam;
-        # produkcijski build pride na vrsto, ko dev streznika ne bo vec.
+        # Ce vrata zaseda tuj proces, je to bodisi dev streznik (pustimo pri
+        # miru) bodisi "next start" te iste strani - prejsnja verzija, ki jo
+        # zaganja nadzornik iz Startup mape. Slednjo ustavimo in zgradimo novo;
+        # nadzornik jo bo sam znova zagnal ze s svezim buildom.
         $zasede = VrataZasedaPid
         $moj = StreznikPid
         if ($zasede -and (-not ($moj -and ($zasede -eq $moj)))) {
-            Zapisi "Na vratih $vrata tece tuj proces (dev streznik?) - koda je potegnjena, build in restart preskocim."
-            return $true
+            $tujec = Get-CimInstance Win32_Process -Filter "ProcessId = $zasede" -ErrorAction SilentlyContinue
+            $staraVerzijaStrani = ($tujec -and $tujec.Name -eq "node.exe" -and $tujec.CommandLine -like "*$PSScriptRoot*" -and $tujec.CommandLine -like "*next*start*")
+            if ($staraVerzijaStrani) {
+                Zapisi "Na vratih $vrata je prejsnja verzija te strani (PID $zasede) - jo ustavljam za svez build."
+                Stop-Process -Id $zasede -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+            } else {
+                Zapisi "Na vratih $vrata tece tuj proces (dev streznik?) - koda je potegnjena, build in restart preskocim."
+                return $true
+            }
         }
         # Streznik ustavimo pred buildom (Windows ne mara prepisovanja odprtih
         # datotek v .next), prejsnji build pa spravimo za rollback.
@@ -183,13 +193,18 @@ try {
         # ponovnem zagonu racunalnika); ce tece - nas ali tuj (dev) -
         # koncamo tiho, da dnevnik ne raste.
         if ($null -ne (StreznikPid)) { exit 0 }
-        if ($null -ne (VrataZasedaPid)) { exit 0 }
+        $zeStreze = VrataZasedaPid
+        if ($null -ne $zeStreze) {
+            # Ce nadzornikov streznik tece brez builda (npr. po pobrisanem
+            # .next), BUILD_ID manjka - takrat vseeno zgradimo.
+            if (Test-Path (Join-Path $PSScriptRoot ".next\BUILD_ID")) { exit 0 }
+        }
         if (Test-Path $zastavicaNapake) { exit 0 }
         if (Test-Path (Join-Path $PSScriptRoot ".next\BUILD_ID")) {
             Zapisi "Streznik ne tece (ponovni zagon racunalnika?) - ga zaganjam."
             ZazeniStreznik
         } else {
-            Zapisi "Prvi zagon: builda se ni - gradim in zaganjam."
+            Zapisi "Builda se ni - gradim in zaganjam."
             $null = ZgradiInZazeni
         }
         exit 0
