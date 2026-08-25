@@ -407,13 +407,13 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     { etaza: "nadstropje", tip: "postelja", x: 2.9, z: 2.6 },
     { etaza: "nadstropje", tip: "kavc", x: -3.5, z: 0.4, rot: Math.PI / 2 },
     { etaza: "nadstropje", tip: "miza", x: -1.8, z: 2.8 },
-    { etaza: "nadstropje", tip: "kuhinja", x: 0.35, z: 2.6, rot: Math.PI / 2 },
+    { etaza: "nadstropje", tip: "kuhinja", x: 0.45, z: 2.6, rot: -Math.PI / 2 },
     { etaza: "nadstropje", tip: "tv", x: -0.9, z: -2.6, rot: 0 },
     // podstreha
     { etaza: "podstreha", tip: "postelja", x: -1.6, z: -3.6 },
     { etaza: "podstreha", tip: "postelja", x: 2.8, z: 2.6 },
     { etaza: "podstreha", tip: "kavc", x: -2.4, z: 1.2, rot: Math.PI / 2 },
-    { etaza: "podstreha", tip: "kuhinja", x: -3.75, z: 0.6, rot: Math.PI },
+    { etaza: "podstreha", tip: "kuhinja", x: 0.63, z: 2.9, rot: -Math.PI / 2 },
     { etaza: "podstreha", tip: "miza", x: -1.0, z: 1.0 },
   ];
   for (const o of oprema) {
