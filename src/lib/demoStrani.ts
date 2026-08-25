@@ -89,6 +89,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     opis:
       "Iskanje po lastni bazi nepremičninskih oglasov (nepremicnine.net, dnevno): AI vrstica v naravnem jeziku, filtri, zgodovina cen, večenotni objekti za investitorje.",
   },
+  {
+    slug: "3d-hisa",
+    naziv: "3D model hiše — Parmova 4, Vojnik",
+    stranka: null,
+    vrsta: "aplikacija",
+    opis:
+      "Interaktivni 3D sprehod okoli hiše (WASD + miška, dan/zahod/noč, ogled okolice). Obstoječe stanje po Street View; prenova po PZI načrtih sledi.",
+  },
 ];
 
 /**
