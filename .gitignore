@@ -40,6 +40,10 @@ yarn-error.log*
 # .env.local, .env.production — stay ignored.
 !.env.example
 
+# avtodeploy (dnevniki, pid streznika, varnostna kopija prejsnjega builda)
+.avtodeploy/
+.next_prejsnja/
+
 # vercel
 .vercel
 
