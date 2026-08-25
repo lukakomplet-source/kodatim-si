@@ -94,10 +94,18 @@ async function spanec(ms: number): Promise<void> {
  * vozila), notranjost pa predzadnja — vprašanje o sedežih na sliki motorja je
  * zapravljena sekunda.
  */
-const VPRASANJA: { kljuc: string; oznaka: string; kje: "zunaj" | "znotraj"; vprasanje: string }[] = [
+const VPRASANJA: {
+  kljuc: string;
+  oznaka: string;
+  kje: "zunaj" | "znotraj";
+  vprasanje: string;
+  /** Po teh besedah se ista lastnost prepozna v besedilu oglasa. */
+  besedilo: string[];
+}[] = [
   {
     kljuc: "led_zarometi",
     oznaka: "LED žarometi",
+    besedilo: ["led žarom", "led luč", "matrix", "full led"],
     kje: "zunaj",
     vprasanje:
       "Ali ima ta avto LED prednje žaromete? LED se prepozna po ostri beli svetlobni črti ali več ločenih segmentih znotraj žarometa.",
@@ -105,6 +113,7 @@ const VPRASANJA: { kljuc: string; oznaka: string; kje: "zunaj" | "znotraj"; vpra
   {
     kljuc: "alu_platisca",
     oznaka: "Alu platišča",
+    besedilo: ["alu platišč", "aluminij", "lito platišč"],
     kje: "zunaj",
     vprasanje:
       "Ali so platišča na tem avtu aluminijasta (kovinski kraki, vidni skozi odprtine), ne jeklena s plastičnim pokrovom?",
@@ -112,36 +121,42 @@ const VPRASANJA: { kljuc: string; oznaka: string; kje: "zunaj" | "znotraj"; vpra
   {
     kljuc: "stresno_okno",
     oznaka: "Strešno okno",
+    besedilo: ["strešno okno", "panorams", "šiber", "sunroof"],
     kje: "zunaj",
     vprasanje: "Ali ima ta avto na strehi strešno okno ali panoramsko streho?",
   },
   {
     kljuc: "vlecna_kljuka",
     oznaka: "Vlečna kljuka",
+    besedilo: ["vlečna", "kljuka", "avtovlečn"],
     kje: "zunaj",
     vprasanje: "Ali je na zadnjem odbijaču vidna vlečna kljuka ali njeno nosilno grlo?",
   },
   {
     kljuc: "usnje",
     oznaka: "Usnjeni sedeži",
+    besedilo: ["usnj", "leather"],
     kje: "znotraj",
     vprasanje: "Ali so sedeži usnjeni (gladka, sijoča površina s šivi), ne blago?",
   },
   {
     kljuc: "sportni_sedezi",
     oznaka: "Športni sedeži",
+    besedilo: ["športni sedež", "sport seat", "recaro"],
     kje: "znotraj",
     vprasanje: "Ali imajo sprednji sedeži izrazito oblikovane stranske opornike (športni sedeži)?",
   },
   {
     kljuc: "zaslon",
     oznaka: "Navigacijski zaslon",
+    besedilo: ["navigacij", "zaslon", "multimedij", "carplay"],
     kje: "znotraj",
     vprasanje: "Ali je na sredinski konzoli zaslon za navigacijo ali multimedijo?",
   },
   {
     kljuc: "digitalni_merilniki",
     oznaka: "Digitalni merilniki",
+    besedilo: ["digitalni merilnik", "virtual cockpit", "digitalna armaturna"],
     kje: "znotraj",
     vprasanje: "Ali so merilniki za volanom digitalni (zaslon namesto klasičnih okroglih števcev)?",
   },
@@ -220,6 +235,8 @@ type Izid = {
   facelift_zaupanje: number | null;
   facelift_razlog: string;
   vsi: Record<string, string>;
+  razlogi: Record<string, string>;
+  slikaZa: Record<string, string>;
   ms: number;
 };
 
@@ -230,6 +247,8 @@ async function pregledOglasa(slike: string[]): Promise<Izid> {
 
   const oprema: Izid["oprema"] = [];
   const vsi: Record<string, string> = {};
+  const razlogi: Record<string, string> = {};
+  const slikaZa: Record<string, string> = {};
 
   for (const v of VPRASANJA) {
     const o = await vprasaj(v.kje === "zunaj" ? zunaj : znotraj, v.vprasanje, SHEMA_DA_NE);
@@ -238,6 +257,8 @@ async function pregledOglasa(slike: string[]): Promise<Izid> {
     if (zaupanje !== null) {
       oprema.push({ znacilka: v.oznaka, zaupanje, kje: (o.razlog ?? "").slice(0, 140) });
     }
+    razlogi[v.kljuc] = (o.razlog ?? "").slice(0, 200);
+    slikaZa[v.kljuc] = v.kje === "zunaj" ? zunaj : znotraj;
   }
 
   const f = await vprasaj(
@@ -253,6 +274,8 @@ async function pregledOglasa(slike: string[]): Promise<Izid> {
     facelift_zaupanje: f.odgovor === "ne vem" || !f.odgovor ? null : 0.7,
     facelift_razlog: (f.razlog ?? "").slice(0, 200),
     vsi,
+    razlogi,
+    slikaZa,
     ms: Date.now() - zacetek,
   };
 }
@@ -265,6 +288,68 @@ async function vrsta(db: Db, koliko: number): Promise<Naloga[]> {
     .select("avtonet_id, naziv, letnik, oprema")
     .limit(koliko);
   return (data ?? []) as Naloga[];
+}
+
+
+/**
+ * Iz odgovora modela in besedila oglasa naredi eno strukturirano trditev.
+ *
+ * Pravila, ki se jih drzi:
+ *  - NEZNANO se NIKOLI ne prevede v NE. Manjkajoc dokaz in odsotnost opreme
+ *    nista isto; ce bi ju enacili, bi baza scasoma trdila, da polovica vozil
+ *    nima stresnega okna, ker ga na sliki ni bilo videti.
+ *  - KONFLIKT samo pri PRAVEM nasprotju: oglas opremo NASTEJE, model pa jo na
+ *    sliki izrecno zanika. Molk oglasa ni zanikanje - seznami opreme so skoraj
+ *    vedno nepopolni, zato "besedilo molci, model vidi" ni konflikt.
+ */
+function zdruzi(
+  vizija: string,
+  vBesedilu: boolean
+): { vrednost: "DA" | "NE" | "NEZNANO" | "KONFLIKT"; vir: "besedilo" | "vizija" | "zdruzeno" } {
+  const vidiDa = vizija === "zagotovo da" || vizija === "verjetno da";
+  const vidiNe = vizija === "ne";
+  if (vBesedilu && vidiNe) return { vrednost: "KONFLIKT", vir: "zdruzeno" };
+  if (vBesedilu && vidiDa) return { vrednost: "DA", vir: "zdruzeno" };
+  if (vBesedilu) return { vrednost: "DA", vir: "besedilo" };
+  if (vidiDa) return { vrednost: "DA", vir: "vizija" };
+  if (vidiNe) return { vrednost: "NE", vir: "vizija" };
+  return { vrednost: "NEZNANO", vir: "vizija" };
+}
+
+/** Besedilo oglasa, v katerem iscemo omembe opreme. */
+function besediloOglasa(n: Naloga): string {
+  const kosi = [Array.isArray(n.oprema) ? (n.oprema as unknown[]).join(" ") : "", n.naziv ?? ""];
+  return kosi.join(" ").toLowerCase();
+}
+
+async function zapisiLastnosti(db: Db, n: Naloga, izid: Izid): Promise<void> {
+  const besedilo = besediloOglasa(n);
+  const vrstice = VPRASANJA.map((v) => {
+    const vBesedilu = v.besedilo.some((b) => besedilo.includes(b));
+    const { vrednost, vir } = zdruzi(izid.vsi[v.kljuc] ?? "", vBesedilu);
+    return {
+      avtonet_id: n.avtonet_id,
+      lastnost: v.kljuc,
+      vrednost,
+      zaupanje: zaupanjeIz(izid.vsi[v.kljuc]),
+      vir,
+      dokaz: izid.razlogi[v.kljuc] || null,
+      slika: izid.slikaZa[v.kljuc] ? izid.slikaZa[v.kljuc].replace(MAPA, "") : null,
+      posodobljen: new Date().toISOString(),
+    };
+  });
+  vrstice.push({
+    avtonet_id: n.avtonet_id,
+    lastnost: "facelift",
+    vrednost: izid.facelift === true ? "DA" : izid.facelift === false ? "NE" : "NEZNANO",
+    zaupanje: izid.facelift_zaupanje,
+    vir: "vizija",
+    dokaz: izid.facelift_razlog || null,
+    slika: izid.slikaZa["led_zarometi"] ? izid.slikaZa["led_zarometi"].replace(MAPA, "") : null,
+    posodobljen: new Date().toISOString(),
+  });
+  const { error } = await db.from("avtonet_lastnosti").upsert(vrstice, { onConflict: "avtonet_id,lastnost" });
+  if (error) log(`  lastnosti ni bilo mogoce zapisati (${n.avtonet_id}): ${error.message}`);
 }
 
 async function shrani(db: Db, n: Naloga, izid: Izid, stSlik: number): Promise<void> {
@@ -350,6 +435,7 @@ async function main(): Promise<void> {
         try {
           const izid = await pregledOglasa(slike);
           await shrani(db, n, izid, slike.length);
+          await zapisiLastnosti(db, n, izid);
           odZagona++;
           log(
             `  ${n.avtonet_id}: ${slike.length} slik, ${(izid.ms / 1000).toFixed(1)} s, ` +

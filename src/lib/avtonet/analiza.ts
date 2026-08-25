@@ -31,8 +31,18 @@ export type ZakljucenOglas = {
   km: number | null;
   letnik: number | null;
   je_dealer: boolean | null;
-  /** The source's own "last change" date — a floor on how long the ad existed. */
+  /** The source's own "last change" date — kept for display, NOT for timing. */
   source_zadnja_sprememba?: string | null;
+  /**
+   * Ali zanesljivo vemo, kdaj je oglas prišel na trg.
+   *
+   * false pomeni, da je bil na trgu že pred našim prvim popolnim pregledom;
+   * takemu oglasu časa na trgu ni mogoče izmeriti in ne sme v nobeno statistiko
+   * o hitrosti prodaje.
+   */
+  vstop_znan?: boolean | null;
+  /** Kdaj je vstopil na trg (samo kadar vstop_znan). */
+  vstop_na_trg?: string | null;
   /** Set when this ad's disappearance was explained by a RELIST — not a sale. */
   naslednji_oglas_id?: string | null;
   /** How many times the ad vanished and came back. */
@@ -153,23 +163,42 @@ export function median(values: number[]): number {
 }
 
 /**
- * Days between appearing and leaving the board; null when unmeasurable.
+ * Koliko dni je oglas dokazljivo bil na trgu — ali null, kadar tega ni mogoče vedeti.
  *
- * The start is our first sighting — EXCEPT when the source's own "last change"
- * date is earlier, which proves the advert existed before we ever saw it (an ad
- * already on the board when sweeps began would otherwise read as one day old).
- * The source date is a floor on age, so taking the earlier of the two only ever
- * makes the figure more honest, never optimistic.
+ * Prej se je začetek jemal kot `min(first_seen, source_zadnja_sprememba)`. Oboje
+ * je napačno: `first_seen` pove le, kdaj smo oglas videli MI (ob prižigu
+ * zbiralnika smo naenkrat "zagledali" 53.650 oglasov, ki so bili tam že mesece),
+ * `source_zadnja_sprememba` pa je datum zadnjega UREJANJA — oglas iz 2021, ki ga
+ * je prodajalec včeraj popravil, ima včerajšnji datum.
+ *
+ * Zato zdaj velja preprosto pravilo: meri se samo tisto, čemur smo videli
+ * začetek. 83 % vseh dosedanjih izginotij tega pogoja ne izpolnjuje — ta
+ * funkcija zanje vrne null in statistika jih preskoči, namesto da bi si
+ * izmislila "prodano v 9 dneh".
  */
 export function dniNaOglasu(row: ZakljucenOglas): number | null {
+  if (row.vstop_znan !== true || !row.vstop_na_trg) return null;
   if (!row.status_spremenjen) return null;
-  let zacetek = new Date(row.first_seen).getTime();
-  if (row.source_zadnja_sprememba) {
-    const vir = new Date(row.source_zadnja_sprememba).getTime();
-    if (Number.isFinite(vir) && vir < zacetek) zacetek = vir;
-  }
-  const dni = (new Date(row.status_spremenjen).getTime() - zacetek) / 86_400_000;
+  const dni =
+    (new Date(row.status_spremenjen).getTime() - new Date(row.vstop_na_trg).getTime()) / 86_400_000;
   return Number.isFinite(dni) && dni >= 0 ? dni : null;
+}
+
+/**
+ * Koliko časa oglas že opazujemo, tudi če še ni izginil.
+ *
+ * Pri še aktivnem oglasu čas do prodaje NI znan — znamo pa reči "vsaj toliko".
+ * V statistiki se to imenuje cenzurirano opazovanje in ga je treba obravnavati
+ * drugače kot dokončano; `dogodekOpazen` pove, za katero gre.
+ */
+export function opazovanje(
+  row: ZakljucenOglas
+): { dni: number; dogodekOpazen: boolean } | null {
+  if (row.vstop_znan !== true || !row.vstop_na_trg) return null;
+  const konec = row.status_spremenjen ? new Date(row.status_spremenjen).getTime() : Date.now();
+  const dni = (konec - new Date(row.vstop_na_trg).getTime()) / 86_400_000;
+  if (!Number.isFinite(dni) || dni < 0) return null;
+  return { dni, dogodekOpazen: row.status === "izginil" || row.status === "prodano" };
 }
 
 export function modelKljuc(row: { znamka: string | null; model: string | null }): string {

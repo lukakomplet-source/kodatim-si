@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { razdeliNaziv, type ParsedRow } from "./parse.js";
+import { vstopZnan } from "./trg.js";
 
 /**
  * Everything that touches the database.
@@ -132,6 +133,11 @@ export async function upsertListings(
           : {}),
         first_seen: now,
         last_seen: now,
+        // Oglas, ki se pojavi po preseku, je resnicno nov: njegov vstop na trg
+        // poznamo. Pri starih to ostane false in njihov "cas na trgu" se nikjer
+        // ne racuna - glej trg.ts.
+        vstop_znan: vstopZnan(now),
+        vstop_na_trg: vstopZnan(now) ? now : null,
         status,
       });
       out.novi.push(row);

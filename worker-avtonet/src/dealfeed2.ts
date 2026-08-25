@@ -21,14 +21,16 @@ const POLJA =
   "cena_eur, je_dealer, status, status_spremenjen, first_seen, oprema, opis, oprema_znacilke, " +
   "dodatni_podatki, ddv_odbitek, cena_brez_ddv_eur, druzina_modela, generacija, izvedenka, " +
   "izvedenka_vir, identiteta_zaupanje, pogon_norm, menjalnik_druzina, vin, oprema_kljucna, " +
-  "oprema_teza, prstni_odtis, cena_primerljiva, razlog_izkljucitve, serija, serija_opis, facelift";
+  "oprema_teza, prstni_odtis, cena_primerljiva, razlog_izkljucitve, serija, serija_opis, facelift, " +
+  "vstop_znan, vstop_na_trg";
 
 type Vrstica = {
   id: string; avtonet_id: string; url: string; naziv: string | null; znamka: string | null;
   model: string | null; letnik: number | null; km: number | null; kw: number | null;
   gorivo: string | null; menjalnik: string | null; karoserija: string | null; pogon: string | null;
   cena_eur: number | string | null; je_dealer: boolean | null; status: string;
-  status_spremenjen: string | null; first_seen: string; oprema: string | null; opis: string | null;
+  status_spremenjen: string | null; first_seen: string;
+  vstop_znan: boolean | null; vstop_na_trg: string | null; oprema: string | null; opis: string | null;
   oprema_znacilke: string[] | null; dodatni_podatki: Record<string, unknown> | null;
   ddv_odbitek: boolean | null; cena_brez_ddv_eur: number | string | null;
   druzina_modela: string | null; generacija: string | null; izvedenka: string | null;
@@ -70,7 +72,7 @@ function vVozilo(r: Vrstica): Vozilo | null {
     id: r.id, avtonetId: r.avtonet_id, url: r.url, naziv: r.naziv, znamka: r.znamka,
     model: r.model, letnik: r.letnik, km: r.km, kw: r.kw, cena,
     jeDealer: r.je_dealer, status: r.status, statusSpremenjen: r.status_spremenjen,
-    firstSeen: r.first_seen, identiteta: i,
+    firstSeen: r.first_seen, vstopZnan: r.vstop_znan, vstopNaTrg: r.vstop_na_trg, identiteta: i,
     serija: r.serija, serijaOpis: r.serija_opis, faceliftTrditev: r.facelift,
     cenaPrimerljiva: r.cena_primerljiva ?? true,
     razlogIzkljucitve: r.razlog_izkljucitve,
@@ -96,9 +98,18 @@ async function preberi(db: Db, aktivni: boolean): Promise<Vozilo[]> {
   return out;
 }
 
+/**
+ * Dni na trgu — samo za oglase, ki smo jim videli prihod.
+ *
+ * Prej se je merilo od `firstSeen`, kar je pri oglasih iz zacetnega polnjenja
+ * baze pomenilo "od dneva, ko smo prizgali zbiralnik". Tak oglas je bil na trgu
+ * lahko ze pol leta, mi pa smo mu pripisali 9 dni in iz tega racunali likvidnost.
+ * 83 % vseh izginotij je bilo takih, zato je bila stara likvidnost izmisljena.
+ */
 function dniNaTrgu(v: Vozilo): number | null {
+  if (v.vstopZnan !== true || !v.vstopNaTrg) return null;
   if (!v.statusSpremenjen) return null;
-  const d = (new Date(v.statusSpremenjen).getTime() - new Date(v.firstSeen).getTime()) / 86_400_000;
+  const d = (new Date(v.statusSpremenjen).getTime() - new Date(v.vstopNaTrg).getTime()) / 86_400_000;
   return d >= 0 && d < 2000 ? Math.round(d) : null;
 }
 

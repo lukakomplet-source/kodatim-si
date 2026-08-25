@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/require-admin";
 import { createAvtonetClient } from "@/lib/avtonet/db";
+import { Ocena } from "./Ocena";
 
 /**
  * Kaj je lokalni model prebral s slik — da se da preveriti, ali mu gre verjeti.
@@ -16,6 +17,16 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 export const dynamic = "force-dynamic";
 
 type Znacilka = { znacilka?: string; zaupanje?: number; kje?: string };
+
+type Lastnost = {
+  avtonet_id: string;
+  lastnost: string;
+  vrednost: "DA" | "NE" | "NEZNANO" | "KONFLIKT";
+  zaupanje: number | null;
+  vir: string;
+  dokaz: string | null;
+  slika: string | null;
+};
 
 type Vrstica = {
   avtonet_id: string;
@@ -66,6 +77,33 @@ export default async function VidPage() {
   ]);
 
   const vrstice = (vidRes.data ?? []) as Vrstica[];
+  // Strukturirane trditve za prikazane oglase: vsaka ima vir, dokaz in sliko,
+  // da se da klikniti in preveriti, na cem je model gradil.
+  const idjiZaLastnosti = vrstice.map((v) => v.avtonet_id);
+  const lastnostiPoOglasu = new Map<string, Lastnost[]>();
+  if (idjiZaLastnosti.length > 0) {
+    const { data } = await db
+      .from("avtonet_lastnosti")
+      .select("avtonet_id, lastnost, vrednost, zaupanje, vir, dokaz, slika")
+      .in("avtonet_id", idjiZaLastnosti);
+    for (const l of (data ?? []) as Lastnost[]) {
+      const seznam = lastnostiPoOglasu.get(l.avtonet_id) ?? [];
+      seznam.push(l);
+      lastnostiPoOglasu.set(l.avtonet_id, seznam);
+    }
+  }
+
+  // Natancnost iz clovekovih presoj. Dokler je primerov malo, je stevilka
+  // neuporabna - zato se pokaze sele pri petih ocenah na lastnost.
+  const { data: qaData } = await db.from("avtonet_qa").select("lastnost, clovek");
+  const natancnost = new Map<string, { pravilnih: number; vseh: number }>();
+  for (const q of (qaData ?? []) as { lastnost: string; clovek: string }[]) {
+    const n = natancnost.get(q.lastnost) ?? { pravilnih: 0, vseh: 0 };
+    n.vseh++;
+    if (q.clovek === "pravilno") n.pravilnih++;
+    natancnost.set(q.lastnost, n);
+  }
+
   const stat = ((statRes.data as { podatki?: Record<string, unknown> } | null)?.podatki) ?? {};
 
   // Oglasi zraven: brez naziva in cene je ugotovitev modela nepreverljiva.
@@ -113,6 +151,41 @@ export default async function VidPage() {
           </div>
         ))}
       </div>
+
+      {natancnost.size > 0 && (
+        <div className="mt-6 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+          <p className="text-sm font-semibold text-zinc-900">Natančnost po lastnostih</p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Iz tvojih presoj spodaj. Lastnost, ki je model ne obvlada, ne sme vplivati na Posle —
+            zato se meri posebej za vsako.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {[...natancnost.entries()]
+              .sort((a, b) => b[1].vseh - a[1].vseh)
+              .map(([kljuc, n]) => {
+                const dovoljPrimerov = n.vseh >= 5;
+                const odstotek = Math.round((n.pravilnih / n.vseh) * 100);
+                return (
+                  <span
+                    key={kljuc}
+                    className={`rounded-full px-2.5 py-1 text-xs ${
+                      !dovoljPrimerov
+                        ? "bg-zinc-100 text-zinc-600"
+                        : odstotek >= 90
+                          ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
+                          : odstotek >= 75
+                            ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200"
+                            : "bg-red-50 text-red-800 ring-1 ring-red-200"
+                    }`}
+                  >
+                    {kljuc}: {dovoljPrimerov ? `${odstotek} %` : "premalo ocen"}{" "}
+                    <span className="opacity-60">({n.vseh})</span>
+                  </span>
+                );
+              })}
+          </div>
+        </div>
+      )}
 
       <h2 className="mt-8 text-sm font-semibold text-zinc-900">Zadnji pregledi</h2>
       <p className="mt-1 text-sm text-zinc-500">
@@ -202,6 +275,41 @@ export default async function VidPage() {
                     </div>
                     {v.obrazlozitev && (
                       <p className="mt-2 text-xs text-zinc-500">Utemeljitev: {v.obrazlozitev}</p>
+                    )}
+
+                    {(lastnostiPoOglasu.get(v.avtonet_id) ?? []).length > 0 && (
+                      <div className="mt-3 space-y-1 border-t border-zinc-100 pt-2">
+                        {(lastnostiPoOglasu.get(v.avtonet_id) ?? []).map((l) => (
+                          <div key={l.lastnost} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate text-zinc-600" title={l.dokaz ?? ""}>
+                              <span
+                                className={`mr-1.5 rounded px-1.5 py-0.5 font-medium ${
+                                  l.vrednost === "DA"
+                                    ? "bg-emerald-50 text-emerald-800"
+                                    : l.vrednost === "KONFLIKT"
+                                      ? "bg-red-50 text-red-800"
+                                      : l.vrednost === "NE"
+                                        ? "bg-zinc-100 text-zinc-600"
+                                        : "bg-amber-50 text-amber-800"
+                                }`}
+                              >
+                                {l.vrednost}
+                              </span>
+                              {l.lastnost}
+                              <span className="ml-1 text-zinc-400">
+                                · {l.vir}
+                                {l.zaupanje ? ` ${Math.round(Number(l.zaupanje) * 100)} %` : ""}
+                              </span>
+                            </span>
+                            <Ocena
+                              avtonetId={v.avtonet_id}
+                              lastnost={l.lastnost}
+                              aiVrednost={l.vrednost}
+                              aiZaupanje={l.zaupanje}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
 

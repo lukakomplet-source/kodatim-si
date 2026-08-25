@@ -68,6 +68,7 @@ type Vrstica = {
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, kw, ccm, gorivo, karoserija, cena_eur, " +
   "cena_prvotna_eur, status, first_seen, status_spremenjen, je_dealer, lokacija, prstni_odtis, " +
+  "vstop_znan, vstop_na_trg, " +
   "druzina_modela, generacija, serija_opis, izvedenka, pogon_norm, menjalnik_druzina, " +
   "oprema_kljucna, oprema_teza, cena_primerljiva, vin";
 

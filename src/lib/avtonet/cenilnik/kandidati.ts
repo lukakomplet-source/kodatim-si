@@ -60,7 +60,8 @@ export type KandidatVrstica = {
 const STOLPCI_OSNOVA =
   "id, avtonet_id, url, naziv, znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, " +
   "pogon, karoserija, barva, serija, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
-  "status_spremenjen, je_dealer, lokacija, source_zadnja_sprememba, naslednji_oglas_id";
+  "status_spremenjen, je_dealer, lokacija, source_zadnja_sprememba, naslednji_oglas_id" +
+  ", vstop_znan, vstop_na_trg";
 
 const STOLPCI = `${STOLPCI_OSNOVA}, oprema_znacilke`;
 

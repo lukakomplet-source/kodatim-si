@@ -42,6 +42,10 @@ export type Vozilo = {
   razlogIzkljucitve: string | null;
   ddvOdbitek: boolean;
   cenaBrezDdv: number | null;
+  /** Ali zanesljivo vemo, kdaj je oglas prisel na trg (glej trg.ts). */
+  vstopZnan?: boolean | null;
+  /** Kdaj je vstopil na trg — edini posten zacetek merjenja. */
+  vstopNaTrg?: string | null;
 };
 
 export type Stopnja = 1 | 2 | 3 | 4;

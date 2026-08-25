@@ -64,6 +64,7 @@ type Vrstica = {
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, kw, gorivo, menjalnik, cena_eur, " +
   "cena_prvotna_eur, status, first_seen, status_spremenjen, je_dealer, lokacija, izvedenka, " +
+  "vstop_znan, vstop_na_trg, " +
   "generacija, serija_opis, pogon_norm, menjalnik_druzina, oprema_kljucna, oprema_teza, cena_primerljiva, vin";
 
 const num = (v: number | string | null): number | null => {

@@ -36,6 +36,8 @@ type Oglas = {
   first_seen: string;
   status_spremenjen: string | null;
   source_zadnja_sprememba: string | null;
+  vstop_znan: boolean | null;
+  vstop_na_trg: string | null;
   naslednji_oglas_id: string | null;
   je_dealer: boolean | null;
   prodajalec_naziv: string | null;
@@ -53,7 +55,7 @@ type Oglas = {
 
 const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, gorivo, menjalnik, karoserija, barva, " +
-  "cena_eur, cena_prvotna_eur, status, first_seen, status_spremenjen, source_zadnja_sprememba, " +
+  "cena_eur, cena_prvotna_eur, status, first_seen, status_spremenjen, source_zadnja_sprememba, vstop_znan, vstop_na_trg, " +
   "naslednji_oglas_id, je_dealer, prodajalec_naziv, lokacija, ogledov, starost, kw, oprema_znacilke, " +
   "ddv_odbitek, cena_brez_ddv_eur";
 
@@ -168,15 +170,18 @@ function veljavnaProdaja(o: Oglas): boolean {
   return !o.naslednji_oglas_id;
 }
 
-/** Days on board; start is the EARLIER of our first sighting and the source's own date. */
+/**
+ * Dni na trgu — samo za oglase, ki smo jim videli prihod.
+ *
+ * Enako pravilo kot v analiza.ts (in namenoma enako zapisano): oglas, ki je bil
+ * na trgu ze pred nasim prvim popolnim pregledom, casa na trgu nima merljivega.
+ * Prej se je jemal min(first_seen, source_zadnja_sprememba) in je vsak star
+ * oglas dobil izmisljen "cas prodaje" - 83 % vseh izginotij je bilo takih.
+ */
 function dniNaTrgu(o: Oglas): number | null {
+  if (o.vstop_znan !== true || !o.vstop_na_trg) return null;
   if (!o.status_spremenjen) return null;
-  let zacetek = new Date(o.first_seen).getTime();
-  if (o.source_zadnja_sprememba) {
-    const vir = new Date(o.source_zadnja_sprememba).getTime();
-    if (Number.isFinite(vir) && vir < zacetek) zacetek = vir;
-  }
-  const d = (new Date(o.status_spremenjen).getTime() - zacetek) / DAN;
+  const d = (new Date(o.status_spremenjen).getTime() - new Date(o.vstop_na_trg).getTime()) / DAN;
   return Number.isFinite(d) && d >= 0 ? d : null;
 }
 

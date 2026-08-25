@@ -30,7 +30,7 @@ export default async function PregledPage() {
 
   const db = createAvtonetClient();
   const sistem = await preberiSistem();
-  const [zdravjeRes, aktivnaRes, pdfRes, pdfStanjeRes, vidRes] = await Promise.all([
+  const [zdravjeRes, aktivnaRes, pdfRes, pdfStanjeRes, vidRes, trgRes] = await Promise.all([
     db.from("avtonet_zdravje").select("*").eq("id", "worker").maybeSingle(),
     db
       .from("avtonet_raziskave")
@@ -41,7 +41,38 @@ export default async function PregledPage() {
     db.from("avtonet_pdf_povzetek").select("datotek, bajtov, zadnji").maybeSingle(),
     db.from("avtonet_statistika").select("podatki, izracunano").eq("kljuc", "pdf_arhiv").maybeSingle(),
     db.from("avtonet_statistika").select("podatki, izracunano").eq("kljuc", "vid").maybeSingle(),
+    db.from("avtonet_trg_povzetek").select("*").maybeSingle(),
   ]);
+
+  /**
+   * Tržna kohorta: edine številke o hitrosti prodaje, ki nekaj pomenijo.
+   *
+   * Vse pred presečnim datumom je bilo na trgu že prej — takim oglasom časa na
+   * trgu ni mogoče izmeriti, zato so tu izločeni. Prav tako so izločene ponovne
+   * objave, ker bi sicer en avto štel kot dva izginula.
+   */
+  const trg =
+    (trgRes.data as {
+      novih?: number;
+      aktivnih?: number;
+      izginulih?: number;
+      do7?: number;
+      do14?: number;
+      do30?: number;
+      mediana_dni?: number | null;
+      pred_presekom?: number;
+      spremljamo_od?: string | null;
+    } | null) ?? null;
+  const trgOd = trg?.spremljamo_od
+    ? new Date(trg.spremljamo_od).toLocaleDateString("sl-SI", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
+  const trgIzginulih = Number(trg?.izginulih ?? 0);
+  const delezDo = (n: number | undefined): string =>
+    trgIzginulih > 0 ? `${Math.round((Number(n ?? 0) / trgIzginulih) * 100)} %` : "—";
 
   const vid =
     ((vidRes.data as {
@@ -135,6 +166,44 @@ export default async function PregledPage() {
           pregledOsvezen={tece ? (aktivna?.updated_at ?? null) : null}
         />
       </header>
+
+      {trg && (
+        <div className="mt-6 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-semibold text-zinc-900">
+              Tržna kohorta{" "}
+              <span className="font-normal text-zinc-500">
+                (samo oglasi, ki smo jim videli prihod na trg)
+              </span>
+            </p>
+            {trgOd && <p className="text-sm text-zinc-500">Trg spremljamo od {trgOd}</p>}
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              ["Novih oglasov", Number(trg.novih ?? 0).toLocaleString("sl-SI")],
+              ["Še aktivnih", Number(trg.aktivnih ?? 0).toLocaleString("sl-SI")],
+              ["Izginulih", trgIzginulih.toLocaleString("sl-SI")],
+              ["Mediana do izginotja", trg.mediana_dni ? `${trg.mediana_dni} dni` : "—"],
+              ["Izginili ≤ 7 dni", delezDo(trg.do7)],
+              ["Izginili ≤ 14 dni", delezDo(trg.do14)],
+            ].map(([oznaka, vrednost]) => (
+              <div key={oznaka}>
+                <p className="text-xs text-zinc-500">{oznaka}</p>
+                <p className="mt-0.5 text-lg font-semibold text-zinc-900">{vrednost}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-3 border-t border-zinc-100 pt-2 text-xs text-zinc-500">
+            Izven te statistike je {Number(trg.pred_presekom ?? 0).toLocaleString("sl-SI")} starejših
+            oglasov: bili so na trgu že pred prvim popolnim pregledom, zato njihovega časa do prodaje
+            ni mogoče izmeriti. Ostajajo v bazi za identifikacijo vozil, cene in tehnične podatke.
+            <strong> „Izginil“ tudi ni isto kot „prodan“</strong> — vir prodaje ne potrdi, zato tu
+            piše samo, kar je res izmerjeno.
+          </p>
+        </div>
+      )}
 
       <div className="mt-6 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
         <div className="flex flex-wrap items-center justify-between gap-3">
