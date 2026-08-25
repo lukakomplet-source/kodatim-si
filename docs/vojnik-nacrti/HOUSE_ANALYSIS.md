@@ -18,9 +18,13 @@ Kategorije: **A** = dokumentirano (iz PZI), **B** = inferirano, **C** = predlog/
 - Etažne višine (prereza A-A, B-B, M 1:50): pritličje svetlo **2,46** (dnevni −0,31 po
   odstranitvi estriha → izravnava), plošče **0,25** („obstoječa monta plošča“),
   1. nadstropje svetlo **2,50**, podstreha do slemena **3,70**, kolenčna stena **1,16**.
-  Skupna višina do slemena ≈ **9,30 m**. Streha: simetrična dvokapnica, **sleme V–Z**
-  (zatrepa/čela sta S in J fasada!), + frčade.
-- POZOR (popravek C-modela): sleme teče **vzhod–zahod**, ne S–J kot v približku v1.
+  Skupna višina do slemena ≈ **9,30 m**. Streha: simetrična dvokapnica, **sleme S–J**
+  (zatrepa/čela sta S in J fasada!), + frčada z oknom O6 na zahodni strešini.
+- POZOR (popravek prve izdaje tega dokumenta): sleme teče **sever–jug** — to potrjujejo
+  situacija, fasade (čeli na S in J) in Street View. Prejšnji zapis „V–Z“ je bil napačen
+  (tlorisi PZI so risani z **vzhodom navzgor**, od tod prvotna 90° zamenjava smeri).
+- Za 3D model (FAZA 2) je stranica S–J privzeta ≈ **10,75 m** (B — vsota kotirne verige
+  3,02+5,05+2,83 ob vzhodni fasadi; tlorisi kažejo 10,60–10,90), stranica V–Z **9,30 m** (A).
 
 ## 3. Program prostorov (A — neto iz grafike tlorisov)
 
@@ -38,7 +42,8 @@ PS+SS) / predprostor 4,10 / soba 14,62 / spalnica 15,08 / dnevni prostor s kuhin
 
 ## 4. Zunanje stopnišče — prizidava (A)
 
-- Lega: **ob severni fasadi** (v tlorisih zgoraj), zunanji gabarit **5,05 × 2,88 m**,
+- Lega: **ob vzhodni fasadi** (v tlorisih zgoraj — vzhod navzgor!), 3,02 m od
+  severnega roba hiše, zunanji gabarit **5,05 × 2,88 m**,
   višina stolpa ≈ **7,20 m**; rame 12×17,5/28 (+ 0,28 nastopi), podesti 1,15 m,
   vmesni podest kote 2,20 / 2,35 / 2,58 (prerezi A1-1, A2-2, B1-1, B2-2).
 - Konstrukcija: jeklena, **cinkana in prašno barvana**; nastopne ploskve **rebrasta
@@ -87,15 +92,15 @@ ZV1 95+38/210 ×1 · ZV2 80/210 ×1 · ZV3 103+110/210 (2,20 š) ×1 · ZV4 100/
 
 - Zahodna (ulična): balkon 1. nadstropja čez fasado, frčada z O6; pritličje okna/vrata.
 - Južna: zatrep; balkonček 1. nadstropja (O5), okna; ob vogalih lamelni pas.
-- Severna: zatrep; vrata ZV1/ZV2, stopniščni stolp z lamelami.
-- Vzhodna: velik lamelni pas (stopnišče/dimniški trakt).
+- Severna: zatrep; vhod ZV1 v pritličje.
+- Vzhodna: stopniščni stolp z lamelami (dostopi ZV2 in 2× ZV4), dimniški trakt.
 - Barve/oblog: fasada svetla (omet), lamele (stopnišče + pasovi), Prefalz streha.
   Natančen ton fasade: **B** (iz fotografij/popisov — preveriti).
 
 ## 9. Kaj sledi (plan)
 
 - FAZA 2: nova geometrija `/3d-hisa` po teh merah (obst. + „PO PRENOVI“ preklop),
-  etaže/tlorisi, stopnišče, frčade, sleme V–Z. FAZA 4-5: materiali (Prefalz, travertin,
+  etaže/tlorisi, stopnišče, frčade, sleme S–J. FAZA 4-5: materiali (Prefalz, travertin,
   Abacus, granitogres), oprema; FAZA 10: popisi + cene (slovenske trgovine, oznake cen
   v sprehodu). Rendering fotorealizma: lokalno pri uporabniku (ne v Claude sejah).
 
