@@ -34,6 +34,7 @@ export default function HisaClient() {
   const [nacin, setNacin] = useState<Nacin>("ogled");
   const [varianta, setVarianta] = useState<Varianta>("prenova");
   const [zaklenjen, setZaklenjen] = useState(false);
+  const [renderStanje, setRenderStanje] = useState<string | null>(null);
 
   const pripravljen = napredek >= 100;
 
@@ -90,6 +91,20 @@ export default function HisaClient() {
     `rounded-full px-3 py-1.5 text-xs font-semibold transition ${
       aktiven ? "bg-accent text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
     }`;
+
+  const izvoziKadre = async () => {
+    if (!motorRef.current || renderStanje) return;
+    try {
+      await motorRef.current.izvoziKadre((opravljeno, skupaj, ime) => {
+        setRenderStanje(`GPU kadri: ${opravljeno}/${skupaj} · ${ime}`);
+      });
+      setRenderStanje("Kadri preneseni ✓ — poženi render-pipeline/overnight-render.ps1");
+      setTimeout(() => setRenderStanje(null), 12000);
+    } catch {
+      setRenderStanje("Izvoz ni uspel — poglej konzolo.");
+      setTimeout(() => setRenderStanje(null), 6000);
+    }
+  };
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-zinc-900">
@@ -161,6 +176,25 @@ export default function HisaClient() {
             </span>
           </span>
         </button>
+      )}
+
+      {/* lokalni AI render: izvoz kadrov (beauty + depth + normal) */}
+      {pripravljen && nacin === "ogled" && (
+        <div className="absolute left-4 bottom-4 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={izvoziKadre}
+            disabled={renderStanje !== null && renderStanje.startsWith("GPU")}
+            className="rounded-full bg-zinc-900/70 px-4 py-2 text-xs font-semibold text-white/90 backdrop-blur transition hover:bg-zinc-900/90 disabled:opacity-60"
+          >
+            🎬 Render — izvozi kadre (12 × 3 prehodi)
+          </button>
+          {renderStanje && (
+            <p className="rounded-full bg-zinc-900/70 px-3 py-1.5 text-[11px] text-emerald-300/90 backdrop-blur">
+              {renderStanje}
+            </p>
+          )}
+        </div>
       )}
 
       {/* legenda */}

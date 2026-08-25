@@ -1,0 +1,72 @@
+{
+  "_navodilo": "ComfyUI API workflow: SDXL img2img + ControlNet depth. Po potrebi popravi imeni modelov v vozliscih 4 (checkpoint) in 12 (controlnet). Nadomestne oznake {BEAUTY}, {DEPTH}, {DENOISE}, {SEED} vstavi overnight-render.ps1.",
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{BEAUTY}", "upload": "image" }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{DEPTH}", "upload": "image" }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "photorealistic architectural photography, renovated slovenian family house, white mineral plaster facade, anthracite Prefalz standing seam metal roof, vertical larch wood slat cladding, travertine and ceramic tiles, triple glazed windows, soft daylight, realistic garden with lawn and trees, ultra detailed, 35mm photo"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "cartoon, lowpoly, cgi look, plastic, blurry, distorted geometry, warped windows, text, watermark, oversaturated"
+    }
+  },
+  "8": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["1", 0], "vae": ["4", 2] }
+  },
+  "12": {
+    "class_type": "ControlNetLoader",
+    "inputs": { "control_net_name": "control-lora-depth-rank256.safetensors" }
+  },
+  "13": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "control_net": ["12", 0],
+      "image": ["2", 0],
+      "strength": 0.85,
+      "start_percent": 0.0,
+      "end_percent": 0.9
+    }
+  },
+  "14": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["4", 0],
+      "positive": ["13", 0],
+      "negative": ["13", 1],
+      "latent_image": ["8", 0],
+      "seed": "{SEED}",
+      "steps": 28,
+      "cfg": 6.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": "{DENOISE}"
+    }
+  },
+  "15": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["14", 0], "vae": ["4", 2] }
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["15", 0], "filename_prefix": "{PREFIX}" }
+  }
+}
