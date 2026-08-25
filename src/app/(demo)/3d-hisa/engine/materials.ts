@@ -185,6 +185,73 @@ export function ustvariMateriale() {
   lesT.repeat.set(7, 1);
   strehaT.repeat.set(2, 7);
 
+  // --- teksture PO PRENOVI (materiali iz PZI) ---
+  const prefalzT = tekstura(256, 256, (ctx, w, h) => {
+    // Prefa-Prefalz: stoječi zgib, antracit
+    ctx.fillStyle = "#3d4145";
+    ctx.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 43) {
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(x, 0, 2, h);
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(x + 3, 0, 2, h);
+    }
+    for (let i = 0; i < 500; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.04})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 6);
+    }
+  });
+  prefalzT.repeat.set(3, 3);
+
+  const travertinT = tekstura(256, 256, (ctx, w, h) => {
+    // Unique Travertine by Provenza — bež kamen, vodoravne žile
+    sum(ctx, w, h, "#cfc4b2", 0.05, 1200);
+    for (let y = 0; y < h; y += 6 + Math.random() * 10) {
+      ctx.fillStyle = `rgba(150,130,105,${0.10 + Math.random() * 0.12})`;
+      ctx.fillRect(0, y, w, 1.5 + Math.random() * 2);
+    }
+    ctx.strokeStyle = "rgba(90,80,65,0.30)";
+    ctx.lineWidth = 2;
+    for (let x = 0; x <= w; x += 128) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y <= h; y += 128) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  });
+  travertinT.repeat.set(2, 2);
+
+  const abacusT = (osnova: string, svetlo: number) =>
+    tekstura(256, 256, (ctx, w, h) => {
+      // Abacus by Ergon "brick" — navpične lamelne ploščice
+      ctx.fillStyle = osnova;
+      ctx.fillRect(0, 0, w, h);
+      for (let x = 0; x < w; x += 13) {
+        ctx.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * svetlo})`;
+        ctx.fillRect(x + 1, 0, 11, h);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(x, 0, 1.5, h);
+      }
+    });
+
+  const granitogresT = tekstura(256, 256, (ctx, w, h) => {
+    // granitogres 60×60, svetlo siv
+    sum(ctx, w, h, "#c9c7c2", 0.04, 900);
+    ctx.strokeStyle = "rgba(100,100,98,0.5)";
+    ctx.lineWidth = 2;
+    for (let x = 0; x <= w; x += 128) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y <= h; y += 128) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  });
+  granitogresT.repeat.set(2, 2);
+
+  const lameleT = tekstura(256, 256, (ctx, w, h) => {
+    // navpične lesene lamele (stopniščni stolp, fasadni pasovi)
+    ctx.fillStyle = "#171512";
+    ctx.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) {
+      const ton = 0.82 + Math.random() * 0.34;
+      ctx.fillStyle = `rgb(${Math.round(146 * ton)},${Math.round(112 * ton)},${Math.round(74 * ton)})`;
+      ctx.fillRect(x + 2, 0, 9, h);
+    }
+  });
+  lameleT.repeat.set(4, 1);
+
   const nastani = <T extends THREE.MeshStandardMaterialParameters>(p: T) => new THREE.MeshStandardMaterial(p);
 
   return {
@@ -226,6 +293,20 @@ export function ustvariMateriale() {
     ograjaMreza: nastani({ color: "#2e3436", roughness: 0.8, transparent: true, opacity: 0.85 }),
     zelenaKovina: nastani({ color: "#2f6b3a", roughness: 0.6, metalness: 0.3 }),
     hrib: nastani({ color: "#4a5a44", roughness: 1 }),
+    // po prenovi
+    prefalz: nastani({ map: prefalzT, roughness: 0.55, metalness: 0.55 }),
+    fasadaNova: nastani({ color: "#efece6", roughness: 0.92 }),
+    travertin: nastani({ map: travertinT, roughness: 0.7 }),
+    abacusPetrolio: nastani({ map: abacusT("#2e6b6a", 0.12), roughness: 0.5 }),
+    abacusCalce: nastani({ map: abacusT("#ddd6c4", 0.1), roughness: 0.55 }),
+    granitogres: nastani({ map: granitogresT, roughness: 0.35, metalness: 0.05 }),
+    lamele: nastani({ map: lameleT, roughness: 0.8 }),
+    jekloAntracit: nastani({ color: "#33363a", roughness: 0.45, metalness: 0.7 }),
+    mavcna: nastani({ color: "#f6f4f0", roughness: 0.95 }),
+    pohistvoLes: nastani({ color: "#b98f5f", roughness: 0.75 }),
+    pohistvoTemno: nastani({ color: "#4b4f54", roughness: 0.7 }),
+    tekstil: nastani({ color: "#8e9aa5", roughness: 1 }),
+    keramikaBela: nastani({ color: "#f2f2f0", roughness: 0.25 }),
     ponovi,
   };
 }
