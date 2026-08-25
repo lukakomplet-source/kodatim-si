@@ -36,7 +36,7 @@ export default async function PregledPage() {
       .limit(1)
       .maybeSingle(),
     db.from("avtonet_pdf_povzetek").select("datotek, bajtov, zadnji").maybeSingle(),
-    db.from("avtonet_statistika").select("podatki").eq("kljuc", "pdf_arhiv").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki, izracunano").eq("kljuc", "pdf_arhiv").maybeSingle(),
   ]);
 
   const zdravje = (zdravjeRes.data ?? null) as {
@@ -54,7 +54,7 @@ export default async function PregledPage() {
 
   const pdfArhiv = (pdfRes.data ?? null) as { datotek: number; bajtov: number; zadnji: string | null } | null;
   const pdfStanje =
-    ((pdfStanjeRes.data as { podatki?: { stanje?: string; kapicaGb?: number; cakajocih?: number } } | null)
+    ((pdfStanjeRes.data as { podatki?: { stanje?: string; kapicaGb?: number; cakajocih?: number; v24h?: number } } | null)
       ?.podatki) ?? null;
   const pdfGb = Number(pdfArhiv?.bajtov ?? 0) / 1e9;
   const pdfKapica = Number(pdfStanje?.kapicaGb ?? 150);
@@ -62,6 +62,22 @@ export default async function PregledPage() {
   // Koliko oglasov še gre na disk: preostanek do kapice, deljen s povprečnim
   // PDF-jem. Bolj uporabno od "še X GB" — pove, ali vrsta sploh gre skozi.
   const pdfCaka = Number(pdfStanje?.cakajocih ?? 0);
+  // ETA iz dejanskega izkupicka zadnjih 24 ur. Tempo je enakomeren (~4.000/dan),
+  // zato je preprosto deljenje dovolj; ce podatka o tempu ni, ocene ne kazemo,
+  // ker je izmisljena ocena slabsa od nobene.
+  const pdfNaDan = Number(pdfStanje?.v24h ?? 0);
+  const pdfDni = pdfNaDan > 0 && pdfCaka > 0 ? pdfCaka / pdfNaDan : null;
+  // Izhodisce je cas, ko je arhivar zadnjic objavil stanje (nekaj minut nazaj),
+  // ne trenutek izrisa: podatek iz baze je cist, Date.now() pa bi bil neciste
+  // branje ure sredi izrisa in bi vsak ponovni izris dal drugacen rezultat.
+  const pdfOb = (pdfStanjeRes.data as { izracunano?: string } | null)?.izracunano ?? null;
+  const pdfKonec =
+    pdfDni === null || pdfOb === null
+      ? null
+      : new Date(new Date(pdfOb).getTime() + pdfDni * 86_400_000).toLocaleDateString("sl-SI", {
+          day: "numeric",
+          month: "long",
+        });
   const pdfPovprecje = pdfArhiv?.datotek ? Number(pdfArhiv.bajtov) / Number(pdfArhiv.datotek) : 1.4e6;
   const pdfSeGre = Math.max(0, Math.floor(((pdfKapica * 0.97 - pdfGb) * 1e9) / pdfPovprecje));
 
@@ -102,6 +118,15 @@ export default async function PregledPage() {
                 : ""}
               {pdfStanje?.stanje && pdfStanje.stanje !== "tece" ? ` · stanje: ${pdfStanje.stanje}` : ""}
             </p>
+            {pdfDni !== null && (
+              <p className="mt-0.5 text-sm text-zinc-600">
+                tempo <strong>{pdfNaDan.toLocaleString("sl-SI")}</strong> PDF/dan · vrsta prazna
+                predvidoma{" "}
+                <strong>
+                  {pdfDni < 1 ? "danes" : `${Math.round(pdfDni)} dni (${pdfKonec})`}
+                </strong>
+              </p>
+            )}
             {pdfCaka > 0 ? (
               <p className="mt-0.5 text-sm text-zinc-500">
                 čaka še {pdfCaka.toLocaleString("sl-SI")} oglasov (~

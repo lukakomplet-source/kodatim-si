@@ -217,12 +217,32 @@ async function cakajocih(db: Db): Promise<number> {
   }
 }
 
+/**
+ * Koliko PDF-jev je nastalo v zadnjih 24 urah.
+ *
+ * Iz te stevilke konzola izracuna, kdaj bo vrsta prazna. Merimo DEJANSKI izkupicek,
+ * ne teoreticne hitrosti: blokade, hlajenja in padci so ze všteti, zato je ocena
+ * postena tudi takrat, ko dan ni bil idealen.
+ */
+async function vZadnjihUrah(db: Db): Promise<number> {
+  try {
+    const od = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count } = await db
+      .from("avtonet_pdfji")
+      .select("id", { count: "exact", head: true })
+      .gte("ustvarjen", od);
+    return Number(count ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 async function objaviStanje(db: Db, dodatno: Record<string, unknown>): Promise<void> {
   try {
-    const [z, caka] = await Promise.all([zasedenost(db), cakajocih(db)]);
+    const [z, caka, v24h] = await Promise.all([zasedenost(db), cakajocih(db), vZadnjihUrah(db)]);
     await db.from("avtonet_statistika").upsert({
       kljuc: "pdf_arhiv",
-      podatki: { ...z, kapicaGb: KAPICA_GB, cakajocih: caka, ...dodatno },
+      podatki: { ...z, kapicaGb: KAPICA_GB, cakajocih: caka, v24h, ...dodatno },
       izracunano: new Date().toISOString(),
     });
   } catch {
