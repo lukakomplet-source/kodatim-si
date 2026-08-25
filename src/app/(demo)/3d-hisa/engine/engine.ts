@@ -98,9 +98,18 @@ export async function ustvariMotor(
       varianta === "obstojece"
         ? [...hisa.kolizije, ...okolica.kolizije]
         : [...prenova.kolizije, ...okolica.kolizije];
-    sprehod.nastaviSvet(kolizije, varianta === "prenova" ? prenova.tla : []);
+    const tla =
+      varianta === "prenova" ? [...prenova.tla, ...okolica.tla] : [...okolica.tla];
+    sprehod.nastaviSvet(kolizije, tla);
   };
   uporabiVarianto();
+
+  // Podatki za avtomatski QA prehodnosti (scripts/qa-sprehod.mjs) — samo prenova.
+  const box3 = (b: THREE.Box3) => [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z];
+  (window as unknown as { __hisaQA?: object }).__hisaQA = {
+    kolizije: [...prenova.kolizije, ...okolica.kolizije].map(box3),
+    tla: [...prenova.tla, ...okolica.tla].map(box3),
+  };
 
   if (zacetek.spawn) sprehod.polozaj.set(...zacetek.spawn);
   kamera.position.set(...(zacetek.cam ?? [-26, 9, 16]));
