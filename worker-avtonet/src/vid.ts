@@ -1,0 +1,300 @@
+import "dotenv/config";
+import { readFileSync, existsSync, writeFileSync, readdirSync, appendFileSync } from "node:fs";
+import { join } from "node:path";
+import { connect, type Db } from "./db.js";
+
+/**
+ * Vizualni pregled oglasov z LOKALNIM modelom (Ollama, RTX 3060).
+ *
+ * Zakaj sploh: besedilo oglasa pove opremo tako, kot jo je vpisal prodajalec —
+ * pogosto na pol, včasih napačno. Facelift pa iz besedila skoraj nikoli ne
+ * pride (od 66.000 oglasov ga ima določenega 486). Oboje se VIDI na slikah,
+ * zato jih pogleda model, ki teče tu doma in ne stane nič.
+ *
+ * Kar model pove, NI dejstvo, ampak mnenje s stopnjo zaupanja. Zato živi v
+ * svoji tabeli (avtonet_vid) in ne piše čez podatke z oglasnika; v cenilnik
+ * gre samo tisto, kar prestane prag. Model, ki v petini primerov vidi usnje,
+ * kjer ga ni, bi primerjavo vozil pokvaril bolj, kot bi jo izboljšal.
+ *
+ * Slike NIKOLI ne pridejo z avto.neta: uporabimo tiste, ki jih je PDF arhivar
+ * že prenesel in shranil ob PDF-ju. Vir s tem ne dobi niti enega zahtevka več.
+ */
+
+const OLLAMA = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
+const MODEL = process.env.AVTONET_VID_MODEL ?? "qwen3-vl:8b";
+const MAPA = process.env.AVTONET_PDF_MAPA ?? "G:\\";
+const LOG = process.env.AVTONET_VID_LOG ?? "C:\\Users\\lukak\\avtonet-db\\vid.log";
+const UTRIP = process.env.AVTONET_VID_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\vid.utrip";
+const ZAKLEP = process.env.AVTONET_VID_ZAKLEP ?? "C:\\Users\\lukak\\avtonet-db\\vid.lock";
+/** Koliko oglasov naenkrat vzamemo iz vrste. */
+const SVEZENJ = 8;
+
+function log(sporocilo: string): void {
+  const vrstica = `${new Date().toISOString()} ${sporocilo}`;
+  console.log(vrstica);
+  try {
+    appendFileSync(LOG, vrstica + "\n");
+  } catch {
+    // Dnevnik ni razlog za padec.
+  }
+}
+
+function utrip(stanje: string): void {
+  try {
+    writeFileSync(UTRIP, `${new Date().toISOString()} ${stanje}`);
+  } catch {
+    // Utrip ni razlog za padec.
+  }
+}
+
+/** Enak zaklep kot pri arhivarju: dva procesa bi delala isto delo dvakrat. */
+function zivProces(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function prevzemiZaklep(): boolean {
+  try {
+    writeFileSync(ZAKLEP, String(process.pid), { flag: "wx" });
+    return true;
+  } catch {
+    let stari = 0;
+    try {
+      stari = Number(readFileSync(ZAKLEP, "utf8").trim());
+    } catch {
+      // Nečitljiv zaklep je ostanek padlega procesa.
+    }
+    if (stari && stari !== process.pid && zivProces(stari)) return false;
+    try {
+      writeFileSync(ZAKLEP, String(process.pid));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function spanec(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Navodilo modelu.
+ *
+ * Dve zahtevi, ki sta se izkazali za nujni: naj odgovori SAMO z JSON-om (sicer
+ * doda razlago v prozi, ki je ni mogoče razčleniti), in naj sme reči "ne vem".
+ * Model, ki ne sme reči "ne vem", ugiba — in ugibanje je tu dražje od tišine.
+ */
+const NAVODILO = `Si ocenjevalec rabljenih vozil. Na slikah je EN avtomobil iz oglasa.
+
+Odgovori IZKLJUČNO z JSON objektom, brez besedila pred ali za njim:
+
+{
+  "oprema": [{"znacilka": "...", "zaupanje": 0.0-1.0, "kje": "kratko, na kateri sliki in po čem"}],
+  "facelift": true | false | null,
+  "facelift_zaupanje": 0.0-1.0,
+  "facelift_razlog": "po čem sklepaš (oblika žarometov, maska, odbijač)",
+  "opomba": "karkoli nenavadnega (poškodba, drug model kot v naslovu ...)"
+}
+
+Pravila:
+- Naštej samo opremo, ki jo NA SLIKI RES VIDIŠ. Nič sklepanja iz modela ali letnika.
+- Uporabljaj slovenske izraze: LED žarometi, xenon žarometi, strešno okno, panoramska streha,
+  usnjeni sedeži, športni sedeži, alu platišča, navigacijski zaslon, digitalni merilniki,
+  parkirna kamera, vlečna kljuka, zračno vzmetenje, dvocevni izpuh, športni paket.
+- Če česa ne vidiš zanesljivo, ga NE naštej. Bolje manj kot narobe.
+- "zaupanje" naj bo iskreno: 0.9+ samo, kadar je stvar nedvoumna.
+- facelift: true = gre za prenovljeno različico serije, false = predfacelift, null = ne da se ločiti.`;
+
+type Odgovor = {
+  oprema?: { znacilka?: string; zaupanje?: number; kje?: string }[];
+  facelift?: boolean | null;
+  facelift_zaupanje?: number;
+  facelift_razlog?: string;
+  opomba?: string;
+};
+
+/** Iz odgovora pobere JSON tudi, kadar ga model zavije v ```json ograjo. */
+function razcleni(besedilo: string): Odgovor | null {
+  const brezOgraje = besedilo.replace(/```json\s*|```/g, "").trim();
+  const zac = brezOgraje.indexOf("{");
+  const kon = brezOgraje.lastIndexOf("}");
+  if (zac < 0 || kon <= zac) return null;
+  try {
+    return JSON.parse(brezOgraje.slice(zac, kon + 1)) as Odgovor;
+  } catch {
+    return null;
+  }
+}
+
+/** Slike enega oglasa, ki jih je arhivar pustil ob PDF-ju. */
+function slikeOglasa(avtonetId: string): string[] {
+  const mapa = join(MAPA, avtonetId, "vid");
+  if (!existsSync(mapa)) return [];
+  return readdirSync(mapa)
+    .filter((v) => v.toLowerCase().endsWith(".jpg"))
+    .sort()
+    .map((v) => join(mapa, v));
+}
+
+async function vprasajModel(
+  slike: string[],
+  kontekst: string
+): Promise<{ odgovor: Odgovor | null; surovo: string; ms: number }> {
+  const zacetek = Date.now();
+  const r = await fetch(`${OLLAMA}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      prompt: `${NAVODILO}\n\nIz oglasa vemo: ${kontekst}`,
+      images: slike.map((p) => readFileSync(p).toString("base64")),
+      stream: false,
+      options: { temperature: 0.1, num_ctx: 8192 },
+    }),
+  });
+  if (!r.ok) throw new Error(`Ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const telo = (await r.json()) as { response?: string };
+  const surovo = telo.response ?? "";
+  return { odgovor: razcleni(surovo), surovo, ms: Date.now() - zacetek };
+}
+
+type Naloga = { avtonet_id: string; naziv: string | null; letnik: number | null; oprema: unknown };
+
+async function vrsta(db: Db, koliko: number): Promise<Naloga[]> {
+  const { data } = await db
+    .from("avtonet_vid_kandidati")
+    .select("avtonet_id, naziv, letnik, oprema")
+    .limit(koliko);
+  return (data ?? []) as Naloga[];
+}
+
+async function shrani(
+  db: Db,
+  n: Naloga,
+  izid: { odgovor: Odgovor | null; surovo: string; ms: number },
+  stSlik: number
+): Promise<void> {
+  const o = izid.odgovor;
+  await db.from("avtonet_vid").upsert({
+    avtonet_id: n.avtonet_id,
+    status: o ? "koncano" : "napaka",
+    model: MODEL,
+    slik: stSlik,
+    ms: izid.ms,
+    oprema: o?.oprema ?? null,
+    facelift: o?.facelift ?? null,
+    facelift_zaupanje: o?.facelift_zaupanje ?? null,
+    obrazlozitev: [o?.facelift_razlog, o?.opomba].filter(Boolean).join(" · ") || null,
+    surovo: { besedilo: izid.surovo.slice(0, 4000) },
+    napaka: o ? null : "odgovora ni bilo mogoce razcleniti",
+    posodobljen: new Date().toISOString(),
+  });
+}
+
+async function objaviStanje(db: Db, dodatno: Record<string, unknown>): Promise<void> {
+  try {
+    const [{ count: obdelanih }, { count: cakajocih }, { count: v24h }] = await Promise.all([
+      db.from("avtonet_vid").select("avtonet_id", { count: "exact", head: true }).eq("status", "koncano"),
+      db.from("avtonet_vid_kandidati").select("avtonet_id", { count: "exact", head: true }),
+      db
+        .from("avtonet_vid")
+        .select("avtonet_id", { count: "exact", head: true })
+        .gte("ustvarjen", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
+    ]);
+    await db.from("avtonet_statistika").upsert({
+      kljuc: "vid",
+      podatki: {
+        model: MODEL,
+        obdelanih: Number(obdelanih ?? 0),
+        cakajocih: Number(cakajocih ?? 0),
+        v24h: Number(v24h ?? 0),
+        ...dodatno,
+      },
+      izracunano: new Date().toISOString(),
+    });
+  } catch {
+    // Števec je informativen.
+  }
+}
+
+async function main(): Promise<void> {
+  const i = process.argv.indexOf("--test");
+  const testnih = i >= 0 ? Number(process.argv[i + 1] ?? 5) : null;
+
+  if (!prevzemiZaklep()) {
+    log("Vizualni pregled ze tece (zaklep drzi ziv proces) - ta zagon se konca.");
+    return;
+  }
+
+  const db = connect();
+  log(`Vizualni pregled zagnan. Model: ${MODEL}, slike iz: ${MAPA}${testnih ? `, TEST ${testnih}` : ""}`);
+
+  let odZagona = 0;
+  for (;;) {
+    try {
+      utrip("iscem delo");
+      const naloge = await vrsta(db, testnih ?? SVEZENJ);
+      if (naloge.length === 0) {
+        await objaviStanje(db, { stanje: "vse_obdelano" });
+        if (testnih !== null) break;
+        log("Vrsta je prazna - preverim cez 10 min.");
+        await spanec(10 * 60_000);
+        continue;
+      }
+
+      for (const n of naloge) {
+        utrip("berem " + n.avtonet_id);
+        const slike = slikeOglasa(n.avtonet_id);
+        if (slike.length === 0) {
+          // Arhivar tega oglasa se ni posnel; poskusimo kdaj drugic.
+          await db.from("avtonet_vid").upsert({
+            avtonet_id: n.avtonet_id,
+            status: "brez_slik",
+            posodobljen: new Date().toISOString(),
+          });
+          continue;
+        }
+        try {
+          const kontekst = `${n.naziv ?? "?"}${n.letnik ? `, letnik ${n.letnik}` : ""}`;
+          const izid = await vprasajModel(slike, kontekst);
+          await shrani(db, n, izid, slike.length);
+          odZagona++;
+          const o = izid.odgovor;
+          log(
+            `  ${n.avtonet_id}: ${slike.length} slik, ${(izid.ms / 1000).toFixed(1)} s, ` +
+              `oprema ${o?.oprema?.length ?? 0}, facelift ${String(o?.facelift ?? "?")}`
+          );
+        } catch (e) {
+          const sporocilo = e instanceof Error ? e.message : String(e);
+          log(`  Napaka pri ${n.avtonet_id}: ${sporocilo}`);
+          await db.from("avtonet_vid").upsert({
+            avtonet_id: n.avtonet_id,
+            status: "napaka",
+            napaka: sporocilo.slice(0, 300),
+            posodobljen: new Date().toISOString(),
+          });
+        }
+        if (odZagona % 5 === 0) await objaviStanje(db, { stanje: "tece", odZagona });
+      }
+
+      await objaviStanje(db, { stanje: "tece", odZagona });
+      if (testnih !== null) break;
+    } catch (e) {
+      log(`Napaka zanke: ${e instanceof Error ? e.message : String(e)} - nadaljujem cez 2 min.`);
+      await spanec(2 * 60_000);
+    }
+  }
+
+  log(`Konec. Obdelanih: ${odZagona}.`);
+  process.exit(0);
+}
+
+main().catch((e) => {
+  log(`Usodna napaka: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+  process.exit(1);
+});

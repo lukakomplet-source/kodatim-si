@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/require-admin";
+import Link from "next/link";
 import { createAvtonetClient } from "@/lib/avtonet/db";
+import { preberiSistem } from "@/lib/avtonet/sistem";
 import { ResearchPanel } from "../ResearchPanel";
 import { WorkerHealth } from "../Freshness";
 import { PregledClient } from "./PregledClient";
@@ -27,7 +29,8 @@ export default async function PregledPage() {
   }
 
   const db = createAvtonetClient();
-  const [zdravjeRes, aktivnaRes, pdfRes, pdfStanjeRes] = await Promise.all([
+  const sistem = await preberiSistem();
+  const [zdravjeRes, aktivnaRes, pdfRes, pdfStanjeRes, vidRes] = await Promise.all([
     db.from("avtonet_zdravje").select("*").eq("id", "worker").maybeSingle(),
     db
       .from("avtonet_raziskave")
@@ -37,7 +40,33 @@ export default async function PregledPage() {
       .maybeSingle(),
     db.from("avtonet_pdf_povzetek").select("datotek, bajtov, zadnji").maybeSingle(),
     db.from("avtonet_statistika").select("podatki, izracunano").eq("kljuc", "pdf_arhiv").maybeSingle(),
+    db.from("avtonet_statistika").select("podatki, izracunano").eq("kljuc", "vid").maybeSingle(),
   ]);
+
+  const vid =
+    ((vidRes.data as {
+      podatki?: {
+        model?: string;
+        obdelanih?: number;
+        cakajocih?: number;
+        v24h?: number;
+        stanje?: string;
+        odZagona?: number;
+      };
+    } | null)?.podatki) ?? null;
+  const vidOb = (vidRes.data as { izracunano?: string } | null)?.izracunano ?? null;
+  const vidObdelanih = Number(vid?.obdelanih ?? 0);
+  const vidCaka = Number(vid?.cakajocih ?? 0);
+  const vidSkupaj = vidObdelanih + vidCaka;
+  const vidDelez = vidSkupaj > 0 ? Math.round((vidObdelanih / vidSkupaj) * 100) : 0;
+  const vidNaDan = Number(vid?.v24h ?? 0);
+  const vidDni = vidNaDan > 0 && vidCaka > 0 ? vidCaka / vidNaDan : null;
+  const vidEta =
+    vidDni === null
+      ? null
+      : vidDni < 1
+        ? `${Math.max(1, Math.round(vidDni * 24))} h`
+        : `${Math.round(vidDni)} dni`;
 
   const zdravje = (zdravjeRes.data ?? null) as {
     zadnji_uspeh: string | null;
@@ -149,6 +178,81 @@ export default async function PregledPage() {
           </div>
         </div>
       </div>
+
+      {/* Lokalni vizualni model: kaj razbere s slik oglasa. Klik odpre primere,
+          da se da rocno preveriti, ali mu je sploh mogoce verjeti. */}
+      <Link
+        href="/avtonet/vid"
+        className="mt-4 block rounded-xl bg-white p-4 ring-1 ring-zinc-200 transition hover:ring-zinc-300"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-zinc-900">
+              Vizualni pregled slik{" "}
+              <span className="font-normal text-zinc-500">
+                (lokalni AI na tej grafični kartici — oprema in facelift s slik)
+              </span>
+            </p>
+            <p className="mt-0.5 text-sm text-zinc-600">
+              <strong>{vidObdelanih.toLocaleString("sl-SI")}</strong> pregledanih ·{" "}
+              {vidCaka.toLocaleString("sl-SI")} čaka
+              {vidNaDan > 0 ? ` · tempo ${vidNaDan.toLocaleString("sl-SI")}/dan` : ""}
+              {vidEta ? ` · vrsta prazna čez ${vidEta}` : ""}
+              {vid?.model ? ` · ${vid.model}` : ""}
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {vid?.stanje === "tece"
+                ? "teče"
+                : vid?.stanje === "vse_obdelano"
+                  ? "vse obdelano, čaka nove oglase"
+                  : vid?.stanje
+                    ? `stanje: ${vid.stanje}`
+                    : "še ni tekel"}
+              {vidOb
+                ? ` · osveženo ${new Date(vidOb).toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}`
+                : ""}{" "}
+              · klikni za primere, kaj je prebral
+            </p>
+          </div>
+          <div className="w-full max-w-xs">
+            <div className="h-2 rounded-full bg-zinc-100">
+              <div
+                className="h-2 rounded-full bg-indigo-500"
+                style={{ width: `${Math.max(1, vidDelez)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-right text-xs text-zinc-500">{vidDelez} % novih oglasov</p>
+          </div>
+        </div>
+
+        {/* Obremenitev stroja: model si kartico deli z zbiralnikom in arhivarjem,
+            zato je koristno videti, ali je se kaj prostora. */}
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t border-zinc-100 pt-2 text-xs text-zinc-600">
+          {sistem.gpuIme && (
+            <span>
+              <span className="text-zinc-400">GPU</span> {sistem.gpuIme}
+              {sistem.gpuOdstotek !== null ? ` · ${sistem.gpuOdstotek} %` : ""}
+            </span>
+          )}
+          {sistem.vramSkupajGb !== null && (
+            <span>
+              <span className="text-zinc-400">VRAM</span> {sistem.vramUporabljenoGb?.toFixed(1)} /{" "}
+              {sistem.vramSkupajGb.toFixed(0)} GB
+            </span>
+          )}
+          {sistem.ramSkupajGb !== null && (
+            <span>
+              <span className="text-zinc-400">RAM</span> {sistem.ramUporabljenoGb?.toFixed(1)} /{" "}
+              {sistem.ramSkupajGb.toFixed(0)} GB
+            </span>
+          )}
+          {sistem.cpuOdstotek !== null && (
+            <span>
+              <span className="text-zinc-400">CPU</span> {sistem.cpuOdstotek} %
+            </span>
+          )}
+        </div>
+      </Link>
 
       <ResearchPanel />
 

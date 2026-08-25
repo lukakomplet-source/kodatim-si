@@ -272,7 +272,7 @@ class LastnaBlokada extends Error {
 async function zajemi(
   browser: Browser,
   k: Kandidat
-): Promise<{ pdf: Buffer; stSlik: number } | "nedosegljiv"> {
+): Promise<{ pdf: Buffer; stSlik: number; zaModel: Buffer[] } | "nedosegljiv"> {
   let ctx: BrowserContext | null = null;
   try {
     ctx = await browser.newContext({ locale: "sl-SI", userAgent: UA });
@@ -322,9 +322,23 @@ async function zajemi(
 
     const dokument = await PDFDocument.load(stranPdf);
     let stSlik = 0;
+    // Slike za lokalni vizualni model. Nastanejo iz iste prenesene slike kot
+    // stran v PDF-ju, zato vir ne dobi niti enega zahtevka vec. Izbor: prvi
+    // dve (sprednja polovica avta, kjer se vidi facelift), sredinska in ena iz
+    // zadnje tretjine (obicajno notranjost, kjer se vidi oprema) - stiri
+    // slike istega kota avta modelu ne povedo nicesar.
+    const zaModel: Buffer[] = [];
+    const vsiUrlji = k.razlog !== "cena" ? polneSlike(surovi) : [];
+    const izbrane = new Set(
+      [0, 1, Math.floor(vsiUrlji.length / 2), Math.floor(vsiUrlji.length * 0.75)].filter(
+        (i) => i >= 0 && i < vsiUrlji.length
+      )
+    );
 
     if (k.razlog !== "cena") {
-      for (const slikaUrl of polneSlike(surovi)) {
+      let indeks = -1;
+      for (const slikaUrl of vsiUrlji) {
+        indeks++;
         try {
           const odziv = await ctx.request.get(slikaUrl, { timeout: 20_000 });
           if (!odziv.ok()) continue;
@@ -335,6 +349,14 @@ async function zajemi(
             .resize({ width: 1400, height: 1400, fit: "inside", withoutEnlargement: true })
             .jpeg({ quality: 72 })
             .toBuffer();
+          if (izbrane.has(indeks)) {
+            zaModel.push(
+              await sharp(jpeg)
+                .resize({ width: 896, height: 896, fit: "inside", withoutEnlargement: true })
+                .jpeg({ quality: 65 })
+                .toBuffer()
+            );
+          }
           const vlozena = await dokument.embedJpg(jpeg);
           const stran = dokument.addPage([vlozena.width, vlozena.height]);
           stran.drawImage(vlozena, { x: 0, y: 0, width: vlozena.width, height: vlozena.height });
@@ -347,13 +369,19 @@ async function zajemi(
     }
 
     const koncni = Buffer.from(await dokument.save());
-    return { pdf: koncni, stSlik };
+    return { pdf: koncni, stSlik, zaModel };
   } finally {
     await ctx?.close().catch(() => {});
   }
 }
 
-async function shrani(db: Db, k: Kandidat, pdf: Buffer, stSlik: number): Promise<void> {
+async function shrani(
+  db: Db,
+  k: Kandidat,
+  pdf: Buffer,
+  stSlik: number,
+  zaModel: Buffer[] = []
+): Promise<void> {
   const dan = new Date().toISOString().slice(0, 10);
   const cena = k.cena_eur !== null ? Math.round(Number(k.cena_eur)) : "brez-cene";
   const mapaOglasa = join(MAPA, k.avtonet_id);
@@ -369,6 +397,25 @@ async function shrani(db: Db, k: Kandidat, pdf: Buffer, stSlik: number): Promise
     velikost: pdf.length,
     stevilo_slik: stSlik,
   });
+
+  // Slike za lokalni vizualni model in vpis v njegovo vrsto. Vrsto polni
+  // arhivar in ne poizvedba po bazi zato, ker samo on ve, ali slike RES lezijo
+  // na disku - sicer bi vrsta stela oglase, ki jih model ne more pogledati.
+  if (zaModel.length > 0) {
+    try {
+      const mapaVid = join(mapaOglasa, "vid");
+      mkdirSync(mapaVid, { recursive: true });
+      zaModel.forEach((slika, i) => writeFileSync(join(mapaVid, `${i + 1}.jpg`), slika));
+      await db.from("avtonet_vid").upsert({
+        avtonet_id: k.avtonet_id,
+        status: "cakanje",
+        slik: zaModel.length,
+        posodobljen: new Date().toISOString(),
+      });
+    } catch (e) {
+      log(`  slik za model ni bilo mogoce shraniti (${k.avtonet_id}): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 async function nagrobnik(db: Db, k: Kandidat): Promise<void> {
@@ -473,7 +520,7 @@ async function main(): Promise<void> {
             await nagrobnik(db, k);
             log(`  ${k.avtonet_id} ni več dosegljiv (verjetno ravno izginil) — preskočen.`);
           } else {
-            await shrani(db, k, rezultat.pdf, rezultat.stSlik);
+            await shrani(db, k, rezultat.pdf, rezultat.stSlik, rezultat.zaModel);
             obdelanih++;
             log(
               `  ${k.avtonet_id} [${k.razlog}] shranjen: ${(rezultat.pdf.length / 1024).toFixed(0)} KB, ${rezultat.stSlik} slik, ${Date.now() - zacetek} ms`
