@@ -17,8 +17,26 @@ export type Motor = {
   nastaviVarianto: (v: Varianta) => void;
   zahtevajSprehod: () => void;
   obLockChange: (cb: (zaklenjen: boolean) => void) => void;
+  /** Izvozi kadre za lokalni AI render (beauty + globina + normale za vsak kader). */
+  izvoziKadre: (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => Promise<void>;
   unici: () => void;
 };
+
+/** Kadri za lokalni AI render pipeline (render-pipeline/README.md). */
+const RENDER_KADRI: { ime: string; cam: [number, number, number]; look: [number, number, number] }[] = [
+  { ime: "EXTERIOR_FRONT", cam: [-13.5, 5.5, 0.5], look: [0, 3.5, 0] }, // z zahoda (ulica)
+  { ime: "EXTERIOR_BACK", cam: [11, 5, -4], look: [0, 3.5, 0] }, // z vzhoda (stopnišče)
+  { ime: "EXTERIOR_SIDE", cam: [-7, 4, 13], look: [0, 3.5, 0] }, // z juga
+  { ime: "EXTERIOR_TOP", cam: [0.5, 42, 3], look: [0, 0, 2.9] }, // situacija od zgoraj
+  { ime: "GROUND_FLOOR", cam: [-2.2, 1.65, 2.6], look: [2.5, 1.2, -0.5] }, // dnevni → kuhinja
+  { ime: "FIRST_FLOOR", cam: [-2.8, 4.35, 2.8], look: [2, 3.9, -1.5] }, // dnevni 1N
+  { ime: "ATTIC", cam: [-2.6, 7.05, 3.2], look: [2, 6.6, -2] }, // podstreha
+  { ime: "LIVING_ROOM", cam: [1.2, 1.7, 4.4], look: [-3.5, 1.1, 0.5] }, // dnevni pritličje
+  { ime: "KITCHEN", cam: [0.6, 1.7, 0.4], look: [4.2, 1.1, 0.3] }, // kuhinja pritličje
+  { ime: "STAIRCASE", cam: [5.6, 1.6, -2.0], look: [6.6, 3.2, 2.2] }, // jekleno stopnišče
+  { ime: "BATHROOM", cam: [2.2, 1.65, -1.1], look: [4.2, 1.2, -2.4] }, // kopalnica pritličje
+  { ime: "BEDROOM", cam: [-4.0, 1.65, -0.9], look: [-2.5, 1.1, -4.5] }, // spalnica pritličje
+];
 
 export type ZacetneNastavitve = {
   cas?: Cas;
@@ -98,9 +116,18 @@ export async function ustvariMotor(
       varianta === "obstojece"
         ? [...hisa.kolizije, ...okolica.kolizije]
         : [...prenova.kolizije, ...okolica.kolizije];
-    sprehod.nastaviSvet(kolizije, varianta === "prenova" ? prenova.tla : []);
+    const tla =
+      varianta === "prenova" ? [...prenova.tla, ...okolica.tla] : [...okolica.tla];
+    sprehod.nastaviSvet(kolizije, tla);
   };
   uporabiVarianto();
+
+  // Podatki za avtomatski QA prehodnosti (scripts/qa-sprehod.mjs) — samo prenova.
+  const box3 = (b: THREE.Box3) => [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z];
+  (window as unknown as { __hisaQA?: object }).__hisaQA = {
+    kolizije: [...prenova.kolizije, ...okolica.kolizije].map(box3),
+    tla: [...prenova.tla, ...okolica.tla].map(box3),
+  };
 
   if (zacetek.spawn) sprehod.polozaj.set(...zacetek.spawn);
   kamera.position.set(...(zacetek.cam ?? [-26, 9, 16]));
@@ -163,8 +190,63 @@ export async function ustvariMotor(
   javi(100, "Pripravljeno");
   zanka();
 
+  // Izvoz kadrov za lokalni AI render: za vsak kader beauty + globina + normale.
+  // Vse teče lokalno v brskalniku (toBlob + prenos), brez strežnika.
+  const izvoziKadre = async (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => {
+    const W = 1600;
+    const H = 900;
+    const staraVelikost = new THREE.Vector2();
+    renderer.getSize(staraVelikost);
+    const staroRazmerje = kamera.aspect;
+    renderer.setSize(W, H, false);
+    kamera.aspect = W / H;
+    kamera.updateProjectionMatrix();
+    // linearna globina (bela = blizu, razpon 1..35 m) — uporabno za ControlNet
+    const globinaMat = new THREE.ShaderMaterial({
+      vertexShader: `varying float vz; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vz = -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying float vz; void main(){ float d = clamp(1.0 - (vz - 1.0) / 34.0, 0.0, 1.0); gl_FragColor = vec4(vec3(d), 1.0); }`,
+    });
+    const normaleMat = new THREE.MeshNormalMaterial();
+    const prenesi = (ime: string) =>
+      new Promise<void>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = ime;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+          }
+          resolve();
+        }, "image/png");
+      });
+    let i = 0;
+    for (const k of RENDER_KADRI) {
+      i++;
+      obKadru?.(i, RENDER_KADRI.length, k.ime);
+      kamera.position.set(...k.cam);
+      kamera.lookAt(...k.look);
+      kamera.updateMatrixWorld();
+      renderer.render(scena, kamera);
+      await prenesi(`${k.ime}_beauty.png`);
+      scena.overrideMaterial = globinaMat;
+      renderer.render(scena, kamera);
+      await prenesi(`${k.ime}_depth.png`);
+      scena.overrideMaterial = normaleMat;
+      renderer.render(scena, kamera);
+      await prenesi(`${k.ime}_normal.png`);
+      scena.overrideMaterial = null;
+      await new Promise((r) => setTimeout(r, 350)); // da brskalnik požre prenose
+    }
+    renderer.setSize(staraVelikost.x, staraVelikost.y, false);
+    kamera.aspect = staroRazmerje;
+    kamera.updateProjectionMatrix();
+    nastaviVelikost();
+  };
+
   return {
     nastaviCas: svetloba.nastaviCas,
+    izvoziKadre,
     nastaviNacin: (n) => {
       nacin = n;
       orbit.enabled = n === "ogled";

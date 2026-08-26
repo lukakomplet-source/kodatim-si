@@ -23,8 +23,8 @@ Kategorije: **A** = dokumentirano (iz PZI), **B** = inferirano, **C** = predlog/
 - POZOR (popravek prve izdaje tega dokumenta): sleme teče **sever–jug** — to potrjujejo
   situacija, fasade (čeli na S in J) in Street View. Prejšnji zapis „V–Z“ je bil napačen
   (tlorisi PZI so risani z **vzhodom navzgor**, od tod prvotna 90° zamenjava smeri).
-- Za 3D model (FAZA 2) je stranica S–J privzeta ≈ **10,75 m** (B — vsota kotirne verige
-  3,02+5,05+2,83 ob vzhodni fasadi; tlorisi kažejo 10,60–10,90), stranica V–Z **9,30 m** (A).
+- Za 3D model je stranica S–J **10,90 m** (A — kotirna veriga 3,02 + 5,05 + 2,83 na
+  vzhodni fasadi, tloris pritličja), stranica V–Z **9,30 m** (A).
 
 ## 3. Program prostorov (A — neto iz grafike tlorisov)
 
@@ -92,7 +92,7 @@ ZV1 95+38/210 ×1 · ZV2 80/210 ×1 · ZV3 103+110/210 (2,20 š) ×1 · ZV4 100/
 
 - Zahodna (ulična): balkon 1. nadstropja čez fasado, frčada z O6; pritličje okna/vrata.
 - Južna: zatrep; balkonček 1. nadstropja (O5), okna; ob vogalih lamelni pas.
-- Severna: zatrep; vhod ZV1 v pritličje.
+- Severna: zatrep; vhoda ZV1 (stanovanje pritličja) in ZV2 (kurilnica).
 - Vzhodna: stopniščni stolp z lamelami (dostopi ZV2 in 2× ZV4), dimniški trakt.
 - Barve/oblog: fasada svetla (omet), lamele (stopnišče + pasovi), Prefalz streha.
   Natančen ton fasade: **B** (iz fotografij/popisov — preveriti).
