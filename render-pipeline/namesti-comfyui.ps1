@@ -80,7 +80,7 @@ $bat = Join-Path $koren "zazeni-comfyui.bat"
 @(
     "@echo off"
     "rem zazene ComfyUI (API na http://127.0.0.1:8188) - okno pusti odprto"
-    ("cd /d `"" + $comfyKoren + "`"\")
+    ('cd /d "' + $comfyKoren + '"')
     "call run_nvidia_gpu.bat"
 ) | Set-Content -Path $bat -Encoding ASCII
 
