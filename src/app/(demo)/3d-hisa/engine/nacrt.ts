@@ -210,5 +210,6 @@ export const ODPRTINE: readonly Odprtina[] = [
   { id: "ZV4a", tip: "ZV4", stran: "E", etaza: "nadstropje", sredina: -1.57, parapet: 0.0 },
   { id: "O3d", tip: "O3", stran: "E", etaza: "nadstropje", sredina: 1.9, parapet: 0.9 }, // soba
   { id: "ZV4b", tip: "ZV4", stran: "E", etaza: "podstreha", sredina: -1.57, parapet: 0.0 },
-  { id: "O4f", tip: "O4", stran: "E", etaza: "podstreha", sredina: 0.3, parapet: 1.0 }, // soba
+  // (podstreha na vzhodu nima stenskega okna — kolenčna 1,16 je prenizka;
+  //  namesto tega sta v vzhodni strešini strešni okni: soba in kopalnica)
 ];

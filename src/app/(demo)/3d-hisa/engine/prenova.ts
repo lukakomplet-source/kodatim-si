@@ -493,12 +493,65 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
   const kapY = NACRT.podstrehaTla + NACRT.kolencna;
   const kapZunY = kapY - Math.tan(NAKLON) * NACRT.previsKap;
   const strehaD = NACRT.sirinaSJ + 2 * NACRT.previsCelo;
-  const dolzPoklona = Math.hypot(polG + NACRT.previsKap, NACRT.slemeY - kapZunY) + 0.1;
-  for (const smer of [-1, 1]) {
-    const plosk = boks(mat.prefalz, dolzPoklona, 0.1, strehaD, (smer * (polG + NACRT.previsKap)) / 2, (NACRT.slemeY + kapZunY) / 2 + 0.05, 0);
+  // zahodna strešina cela; vzhodna z izrezom nad vhodom podstrehe (ZV4b),
+  // ker bi strešina sicer rezala vrh vrat (kolenčna 1,16 < vrata 2,10)
+  const strehina = (smer: 1 | -1, z0: number, z1: number, xDo = polG + NACRT.previsKap) => {
+    const yPriXDo = NACRT.slemeY - Math.tan(NAKLON) * xDo;
+    const dolz = Math.hypot(xDo, NACRT.slemeY - yPriXDo) + 0.1;
+    const plosk = boks(mat.prefalz, dolz, 0.1, z1 - z0, (smer * xDo) / 2, (NACRT.slemeY + yPriXDo) / 2 + 0.05, (z0 + z1) / 2);
     plosk.rotation.z = -smer * NAKLON;
-  }
+  };
+  strehina(-1, -strehaD / 2, strehaD / 2);
+  const vhodZ0 = -2.45;
+  const vhodZ1 = -0.68; // cona vhodne frčadice nad ZV4b
+  strehina(1, -strehaD / 2, vhodZ0);
+  strehina(1, vhodZ1, strehaD / 2);
+  strehina(1, vhodZ0, vhodZ1, 2.55); // nad frčadico ostane le zgornji del strešine
   boks(mat.prefalz, 0.4, 0.12, strehaD, 0, NACRT.slemeY + 0.1, 0);
+
+  // vhodna frčadica nad ZV4b (B): čelna stena nad kolenčno z odprtino za vrh
+  // vrat, obe lički in ravna strehica — sicer bi vrata štrlela skozi streho
+  {
+    const celoPri = polG - DEB / 2;
+    stena(mat.fasadaNova, "z", celoPri, vhodZ0, vhodZ1, kapY, 7.78, DEB, [
+      { sredina: -1.57, w: 1.0, y0: kapY, y1: NACRT.podstrehaTla + 2.1 },
+    ]);
+    for (const zz of [vhodZ0, vhodZ1]) {
+      const licko = new THREE.Shape();
+      licko.moveTo(2.55, NACRT.slemeY - Math.tan(NAKLON) * 2.55);
+      licko.lineTo(polG + 0.1, NACRT.slemeY - Math.tan(NAKLON) * (polG + 0.1));
+      licko.lineTo(polG + 0.1, 7.78);
+      licko.lineTo(2.55, 7.78);
+      licko.closePath();
+      const lg = new THREE.ExtrudeGeometry(licko, { depth: 0.1, bevelEnabled: false });
+      const lm = new THREE.Mesh(lg, mat.fasadaNova);
+      lm.position.set(0, 0, zz - 0.05);
+      lm.castShadow = true;
+      lm.receiveShadow = true;
+      g.add(lm);
+    }
+    const mini = boks(mat.prefalz, polG + 0.45 - 2.5, 0.08, vhodZ1 - vhodZ0 + 0.25, (2.5 + polG + 0.45) / 2, 7.83, (vhodZ0 + vhodZ1) / 2);
+    mini.rotation.z = 0.03;
+  }
+
+  // strešni okni v vzhodni strešini (PZI: „strešno okno“ v kopalnici; + soba)
+  const stresnoOkno = (zc: number) => {
+    const xc = 2.35;
+    const yc = NACRT.slemeY - Math.tan(NAKLON) * xc + 0.09;
+    const so = new THREE.Group();
+    so.position.set(xc, yc, zc);
+    so.rotation.z = -NAKLON;
+    const okvirSO = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.07, 0.82), mat.jekloAntracit);
+    okvirSO.receiveShadow = true;
+    so.add(okvirSO);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.075, 0.68), mat.steklo);
+    st.position.y = 0.01;
+    so.add(st);
+    stekla.push(st);
+    g.add(so);
+  };
+  stresnoOkno(0.9); // soba
+  stresnoOkno(-3.7); // kopalnica
   // žleb + cevi (zahod)
   const zleb = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, strehaD, 10), mat.jekloAntracit);
   zleb.rotation.x = Math.PI / 2;
@@ -566,16 +619,20 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     const x2 = polG + S.globinaVZ;
     const xNotr = x1 + S.podestSirina;
 
+    // vrh stolpa (B): dvignjen nad vrh vrat podstrehe (podstrehaTla + 2,10 = 7,56),
+    // da strehica stolpa ne seka vratne odprtine ZV4 — PZI kota 7,20 je do venca
+    const vrhStolpa = S.visinaStolpa + 0.5;
+
     // stebri HOP 100/100/3 po PZI rastru (cinkani, prašno barvani)
     for (const odmik of NACRT.stopnisce.stebriOdmiki) {
       const sz = z1 + odmik;
       for (const sx of [x1 + 0.07, x2 - 0.07]) {
-        trdno(mat.jekloAntracit, sx - 0.05, 0, sz - 0.05, sx + 0.05, S.visinaStolpa, sz + 0.05);
+        trdno(mat.jekloAntracit, sx - 0.05, 0, sz - 0.05, sx + 0.05, vrhStolpa, sz + 0.05);
       }
     }
     // prečke na vrhu (okvir strehe)
-    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, S.visinaStolpa - 0.05, z1 + 0.07);
-    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, S.visinaStolpa - 0.05, z2 - 0.07);
+    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, vrhStolpa - 0.05, z1 + 0.07);
+    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, vrhStolpa - 0.05, z2 - 0.07);
 
     // LAMELNA OBLEKA s presledki — vidna konstrukcija skozi (pogledi A/B/C)
     const lamelnaStena = (os: "x" | "z", pri: number, od: number, doo: number, y0: number, y1: number) => {
@@ -589,14 +646,14 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       if (os === "z") kolizije.push(new THREE.Box3(new THREE.Vector3(pri - 0.04, y0, od), new THREE.Vector3(pri + 0.04, y1, doo)));
       else kolizije.push(new THREE.Box3(new THREE.Vector3(od, y0, pri - 0.04), new THREE.Vector3(doo, y1, pri + 0.04)));
     };
-    lamelnaStena("z", x2 - 0.03, z1 + 0.1, z2 - 0.1, 0.25, S.visinaStolpa); // vzhodna stran
+    lamelnaStena("z", x2 - 0.03, z1 + 0.1, z2 - 0.1, 0.25, vrhStolpa); // vzhodna stran
     // severna: ob fasadi ostane odprtina za VSTOP v stolp (s severnega tlakovca)
-    lamelnaStena("x", z1 + 0.03, x1 + 1.0, x2 - 0.1, 0.25, S.visinaStolpa);
-    lamelnaStena("x", z2 - 0.03, x1 + 0.1, x2 - 0.1, 0.25, S.visinaStolpa); // južna
+    lamelnaStena("x", z1 + 0.03, x1 + 1.0, x2 - 0.1, 0.25, vrhStolpa);
+    lamelnaStena("x", z2 - 0.03, x1 + 0.1, x2 - 0.1, 0.25, vrhStolpa); // južna
 
-    // streha stolpa (rahlo nagnjena pločevina)
-    const strehica = boks(mat.prefalz, S.globinaVZ + 0.5, 0.08, S.dolzinaSJ + 0.4, (x1 + x2) / 2 + 0.05, S.visinaStolpa + 0.16, (z1 + z2) / 2);
-    strehica.rotation.z = -0.1;
+    // streha stolpa (rahlo nagnjena pločevina, nad vrhom vrat podstrehe)
+    const strehica = boks(mat.prefalz, S.globinaVZ + 0.5, 0.08, S.dolzinaSJ + 0.4, (x1 + x2) / 2 + 0.05, vrhStolpa + 0.12, (z1 + z2) / 2);
+    strehica.rotation.z = -0.06;
 
     // ograja iz ravne pločevine 40/4: stebrički + vrhnji pas
     const ograjica = (ax: number, az: number, bx: number, bz: number, ya: number, yb: number) => {
@@ -618,15 +675,15 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       g.add(rocaj);
     };
 
-    // podesti pri vratih (1N, podstreha) — severni del, rebrasta pločevina
+    // podesti pri vratih (1N, podstreha) — severni del, cinkana rebrasta pločevina
     for (const py of [NACRT.nadstropjeTla, NACRT.podstrehaTla]) {
-      trdno(mat.jekloAntracit, x1, py - 0.05, z1 + 0.06, xNotr + 0.15, py, z1 + 1.6);
+      trdno(mat.rebrasta, x1, py - 0.05, z1 + 0.06, xNotr + 0.15, py, z1 + 1.6);
       pohodno(x1, z1 + 0.06, xNotr + 0.15, z1 + 1.6, py);
       ograjica(xNotr + 0.15, z1 + 0.06, xNotr + 0.15, z1 + 1.6, py, py);
     }
     // vmesna podesta (jug)
     for (const py of [NACRT.nadstropjeTla / 2, (NACRT.nadstropjeTla + NACRT.podstrehaTla) / 2]) {
-      trdno(mat.jekloAntracit, x1, py - 0.05, z2 - 1.21, x2 - 0.12, py, z2 - 0.06);
+      trdno(mat.rebrasta, x1, py - 0.05, z2 - 1.21, x2 - 0.12, py, z2 - 0.06);
       pohodno(x1, z2 - 1.21, x2 - 0.12, z2 - 0.06, py);
     }
 
@@ -638,9 +695,10 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       for (let i = 0; i < st; i++) {
         const zz = zOd + dz * (i + 0.5);
         const yy = y0 + dy * (i + 1);
-        // nastopna ploskev (rebrasta pločevina) + čelni rob
-        boks(mat.jekloAntracit, sx2 - sx1 - 0.12, 0.035, Math.abs(dz) - 0.03, (sx1 + sx2) / 2, yy - 0.018, zz, false);
-        boks(mat.kovinaTemna, sx2 - sx1 - 0.12, 0.05, 0.02, (sx1 + sx2) / 2, yy - 0.05, zz + (dz > 0 ? -Math.abs(dz) / 2 + 0.02 : Math.abs(dz) / 2 - 0.02), false);
+        // nastopna ploskev (cinkana rebrasta pločevina) + zaprto čelo, da so
+        // stopnice jasno vidne tudi od daleč (odprta čela so se brala kot luknje)
+        boks(mat.rebrasta, sx2 - sx1 - 0.12, 0.05, Math.abs(dz) - 0.02, (sx1 + sx2) / 2, yy - 0.025, zz, false);
+        boks(mat.jekloAntracit, sx2 - sx1 - 0.12, 0.16, 0.03, (sx1 + sx2) / 2, yy - 0.1, zz + (dz > 0 ? -Math.abs(dz) / 2 + 0.02 : Math.abs(dz) / 2 - 0.02), false);
         tla.push(new THREE.Box3(new THREE.Vector3(sx1, yy - 0.2, zz - Math.abs(dz) / 2), new THREE.Vector3(sx2, yy, zz + Math.abs(dz) / 2)));
       }
       // nosilca (stringerja) ob straneh
@@ -663,9 +721,9 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     rampa(xNotr + 0.15, x2 - 0.12, zRampOd, zRampDo, NACRT.nadstropjeTla, (NACRT.nadstropjeTla + NACRT.podstrehaTla) / 2);
     rampa(x1, xNotr + 0.15, zRampDo, zRampOd, (NACRT.nadstropjeTla + NACRT.podstrehaTla) / 2, NACRT.podstrehaTla);
 
-    // luči v stolpu
-    for (const ly of [2.4, 5.1, 6.9]) {
-      const pl = new THREE.PointLight("#ffe7c4", 4, 7, 1.9);
+    // luči v stolpu (dovolj svetlo, da se rame stopnic berejo tudi ponoči)
+    for (const ly of [1.2, 2.6, 5.0, 6.9]) {
+      const pl = new THREE.PointLight("#ffe7c4", 6, 7.5, 1.9);
       pl.position.set((x1 + x2) / 2, ly, (z1 + z2) / 2);
       g.add(pl);
     }
