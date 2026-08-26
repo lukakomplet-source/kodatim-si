@@ -10,7 +10,7 @@ geometrijo in kadre pripravi aplikacija `/3d-hisa`, fotorealizem pa naredi
 /3d-hisa (three.js)                tvoj PC (GPU)
 ┌─────────────────────┐            ┌────────────────────────────┐
 │ 🎬 Render — izvozi  │  12 kadrov │ ComfyUI (SDXL + ControlNet)  │
-│ kadre (12 × 3)      ├───────────►│ img2img po beauty kadru,     │
+│ kadre (12 × 3)      ├──────────►│ img2img po beauty kadru,     │
 │ beauty/depth/normal │   *.png    │ depth drži geometrijo        │
 └─────────────────────┘            │ → izhod/<kader>_final.png    │
                                    └────────────────────────────┘
@@ -20,21 +20,29 @@ Ker AI dobi poleg beauty slike še **depth pass**, ohrani NATANČNO geometrijo
 hiše iz PZI — polepša materiale, svetlobo in vegetacijo, ne izmišlja pa si
 druge hiše.
 
-## Enkratna namestitev (na tem PC-ju)
+## Enkratna namestitev (na tem PC-ju) — en ukaz
 
-1. Namesti [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (portable ZIP
-   za Windows z NVIDIA GPU je najlažji) in ga zaženi — posluša na
-   `http://127.0.0.1:8188`.
-2. V `ComfyUI/models/checkpoints/` daj SDXL checkpoint (npr.
-   `sd_xl_base_1.0.safetensors` ali fotorealističen finetune, npr. Juggernaut XL).
-3. V `ComfyUI/models/controlnet/` daj SDXL depth ControlNet (npr.
-   `controlnet-depth-sdxl-1.0` oz. `control-lora-depth-rank256.safetensors`).
-4. Odpri `comfy-workflow.json` in po potrebi popravi imeni modelov v vozliščih
-   `CheckpointLoaderSimple` in `ControlNetLoader`, da ustrezata datotekama iz
-   točk 2–3.
+```powershell
+cd render-pipeline
+powershell -ExecutionPolicy Bypass -File .\namesti-comfyui.ps1
+```
+
+Skripta sama prenese ComfyUI (portable za Windows + NVIDIA), SDXL checkpoint
+(`sd_xl_base_1.0.safetensors`, ~6,9 GB) in depth ControlNet
+(`control-lora-depth-rank256.safetensors`, ~0,7 GB) točno pod imeni, ki ju
+`comfy-workflow.json` že pričakuje — nič ni treba preimenovati. Prenosov je
+za ~9 GB, zato traja; če se prekine, skripto samo še enkrat poženeš
+(nadaljuje, kjer je ostala). Na koncu ustvari `zazeni-comfyui.bat`.
+
+Ročna pot (če bi hotel drug checkpoint, npr. Juggernaut XL): modele daš v
+`ComfyUI/models/checkpoints/` oz. `ComfyUI/models/controlnet/` in imeni
+popraviš v vozliščih `CheckpointLoaderSimple` / `ControlNetLoader` v
+`comfy-workflow.json`.
 
 ## Uporaba
 
+0. Zaženi ComfyUI: `.\zazeni-comfyui.bat` (okno pusti odprto — API posluša
+   na `http://127.0.0.1:8188`).
 1. Odpri `kodatim.si/3d-hisa`, način **Ogled**, klikni
    **„🎬 Render — izvozi kadre“**. Brskalnik prenese 36 PNG-jev
    (12 kadrov × beauty/depth/normal). Dovoli večkratne prenose, ko vpraša.
