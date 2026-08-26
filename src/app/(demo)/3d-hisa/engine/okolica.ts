@@ -94,6 +94,21 @@ export function zgradiOkolico(mat: Materiali): Okolica {
   }
   g.add(ploskev(mat.tlakovci, 1.6, 2.4, -5.45, 6.3, 0.035, 2.6, 2.6)); // pot parkirišče–hiša
 
+  // nadstrešek nad parkiriščem (C — predlog, v PZI ga ni): jeklen, antracit
+  // pločevina z rahlim naklonom proti cesti, 6 stebrov, spodaj prehodno
+  for (const nz of [7.6, 11.3, 15.0]) {
+    for (const nx of [-10.7, -6.2]) {
+      const steber = boks(mat.jekloAntracit, 0.1, 2.35, 0.1, nx, 1.18, nz);
+      g.add(steber);
+      kolizijaOkoli(steber, kolizije);
+    }
+  }
+  const nadstresekStreha = boks(mat.prefalz, 4.9, 0.06, 8.0, -8.45, 2.44, 11.3);
+  nadstresekStreha.rotation.z = 0.05;
+  g.add(nadstresekStreha);
+  g.add(boks(mat.jekloAntracit, 4.9, 0.08, 0.1, -8.45, 2.3, 7.55, false));
+  g.add(boks(mat.jekloAntracit, 4.9, 0.08, 0.1, -8.45, 2.3, 15.05, false));
+
   // ---------- teren: terasast dvig proti vzhodni meji (kote 267,6 -> 269,2) ----------
   const terasa = (x0: number, x1: number, z0: number, z1: number, h: number) => {
     const t = ploskev(mat.trava, x1 - x0, z1 - z0, (x0 + x1) / 2, (z0 + z1) / 2, h - 0.03, 4, 4);

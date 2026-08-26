@@ -240,6 +240,25 @@ export function ustvariMateriale() {
   });
   granitogresT.repeat.set(2, 2);
 
+  const rebrastaT = tekstura(128, 128, (ctx, w, h) => {
+    // cinkana rebrasta (solza) pločevina — nastopne ploskve in podesti stopnišča
+    sum(ctx, w, h, "#9aa0a4", 0.06, 700);
+    for (let y = 8; y < h; y += 24) {
+      for (let x = 8; x < w; x += 24) {
+        const zam = ((y / 24) % 2) * 12;
+        ctx.save();
+        ctx.translate(x + zam, y);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.fillRect(-4, -1.5, 8, 3);
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(-4, 1.5, 8, 1.5);
+        ctx.restore();
+      }
+    }
+  });
+  rebrastaT.repeat.set(2, 2);
+
   const lameleT = tekstura(256, 256, (ctx, w, h) => {
     // navpične lesene lamele (stopniščni stolp, fasadni pasovi)
     ctx.fillStyle = "#171512";
@@ -302,6 +321,7 @@ export function ustvariMateriale() {
     granitogres: nastani({ map: granitogresT, roughness: 0.35, metalness: 0.05 }),
     lamele: nastani({ map: lameleT, roughness: 0.8 }),
     jekloAntracit: nastani({ color: "#33363a", roughness: 0.45, metalness: 0.7 }),
+    rebrasta: nastani({ map: rebrastaT, roughness: 0.4, metalness: 0.75 }),
     mavcna: nastani({ color: "#f6f4f0", roughness: 0.95 }),
     pohistvoLes: nastani({ color: "#b98f5f", roughness: 0.75 }),
     pohistvoTemno: nastani({ color: "#4b4f54", roughness: 0.7 }),
