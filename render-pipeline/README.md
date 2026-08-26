@@ -10,7 +10,7 @@ geometrijo in kadre pripravi aplikacija `/3d-hisa`, fotorealizem pa naredi
 /3d-hisa (three.js)                tvoj PC (GPU)
 ┌─────────────────────┐            ┌────────────────────────────┐
 │ 🎬 Render — izvozi  │  12 kadrov │ ComfyUI (SDXL + ControlNet)  │
-│ kadre (12 × 3)      ├──────────►│ img2img po beauty kadru,     │
+│ kadre (12 × 3)      ├───────────►│ img2img po beauty kadru,     │
 │ beauty/depth/normal │   *.png    │ depth drži geometrijo        │
 └─────────────────────┘            │ → izhod/<kader>_final.png    │
                                    └────────────────────────────┘
