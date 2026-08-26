@@ -130,12 +130,14 @@ export const SOBE: readonly Soba[] = [
   { ime: "Soba", povrsina: "14,56 m²", etaza: "nadstropje", x1: 0.8, z1: 0.28, x2: polG - 0.3, z2: polS - 0.25, tla: "granitogres" },
   { ime: "Hodnik", povrsina: "7,28 m²", etaza: "nadstropje", x1: -0.4, z1: -2.1, x2: 2.45, z2: 0.6, tla: "granitogres" },
   { ime: "Dnevni prostor s kuhinjo", povrsina: "32,12 m²", etaza: "nadstropje", x1: -polG + 0.3, z1: -polS + 0.25, x2: 0.8, z2: polS - 0.25, tla: "granitogres" },
-  // podstreha (tloris list 7 + list 1): kopalnica 3,02 × 2,84
-  { ime: "Predprostor", povrsina: "4,10 m²", etaza: "podstreha", x1: 2.4, z1: -2.28, x2: polG - 0.3, z2: -0.6, tla: "granitogres" },
-  { ime: "Kopalnica", povrsina: "8,03 m²", etaza: "podstreha", x1: 1.4, z1: -polS + 0.25, x2: polG - 0.3, z2: -2.28, tla: "abacus" },
-  { ime: "Spalnica", povrsina: "15,08 m²", etaza: "podstreha", x1: -polG + 0.3, z1: -polS + 0.25, x2: 1.4, z2: -1.9, tla: "granitogres" },
-  { ime: "Soba", povrsina: "14,62 m²", etaza: "podstreha", x1: 1.0, z1: -0.6, x2: polG - 0.3, z2: polS - 0.25, tla: "granitogres" },
-  { ime: "Dnevni prostor s kuhinjo", povrsina: "~32 m²", etaza: "podstreha", x1: -polG + 0.3, z1: -1.9, x2: 1.0, z2: polS - 0.25, tla: "granitogres" },
+  // podstreha (tloris list 7, M 1:50): vzhodni pas 2,84 globine (kopalnica 2,69 +
+  // predprostor 1,44 + soba), zahodni pas 5,00 (spalnica 3,02 dolga, ostalo dnevni).
+  // Ločilna stena vzhodni/zahodni pas teče neprekinjeno S–J (v načrtu 0,16).
+  { ime: "Kopalnica", povrsina: "8,03 m²", etaza: "podstreha", x1: 1.33, z1: -polS + 0.25, x2: polG - 0.3, z2: -2.5, tla: "abacus" },
+  { ime: "Predprostor", povrsina: "4,10 m²", etaza: "podstreha", x1: 1.33, z1: -2.34, x2: polG - 0.3, z2: -0.9, tla: "granitogres" },
+  { ime: "Soba", povrsina: "14,62 m²", etaza: "podstreha", x1: 1.33, z1: -0.74, x2: polG - 0.3, z2: polS - 0.25, tla: "granitogres" },
+  { ime: "Spalnica", povrsina: "15,08 m²", etaza: "podstreha", x1: -polG + 0.3, z1: -polS + 0.25, x2: 1.33, z2: -2.18, tla: "granitogres" },
+  { ime: "Dnevni prostor s kuhinjo", povrsina: "32,12 m²", etaza: "podstreha", x1: -polG + 0.3, z1: -2.18, x2: 1.33, z2: polS - 0.25, tla: "granitogres" },
 ];
 
 /** Notranja vrata (A: tipi V1–V4 iz shem; pozicije iz tlorisov). */
@@ -160,12 +162,11 @@ export const VRATA_NOTRANJA: readonly NotranjaVrata[] = [
   { etaza: "nadstropje", tip: "V4", x: 0.9, z: -3.4, smer: "x", opis: "hodnik → spalnica" },
   { etaza: "nadstropje", tip: "V1", x: 1.6, z: 0.28, smer: "x", opis: "hodnik → soba" },
   { etaza: "nadstropje", tip: "V2", x: -0.4, z: -0.6, smer: "z", opis: "hodnik → dnevni" },
-  // podstreha
-  { etaza: "podstreha", tip: "V1", x: 2.9, z: -2.28, smer: "x", opis: "predprostor → kopalnica" },
-  { etaza: "podstreha", tip: "V1", x: 2.4, z: -1.3, smer: "z", opis: "predprostor → dnevni/spalnica" },
-  { etaza: "podstreha", tip: "V1", x: 1.4, z: -2.6, smer: "z", opis: "→ spalnica" },
-  { etaza: "podstreha", tip: "V1", x: 1.0, z: 0.6, smer: "z", opis: "dnevni → soba" },
-  { etaza: "podstreha", tip: "V1", x: 0.2, z: -1.9, smer: "x", opis: "dnevni → spalnica" },
+  // podstreha (vstop je ZV4 s stopnišča naravnost v predprostor)
+  { etaza: "podstreha", tip: "V1", x: 2.9, z: -2.42, smer: "x", opis: "predprostor → kopalnica" },
+  { etaza: "podstreha", tip: "V1", x: 2.9, z: -0.82, smer: "x", opis: "predprostor → soba" },
+  { etaza: "podstreha", tip: "V1", x: 1.33, z: -1.6, smer: "z", opis: "predprostor → dnevni" },
+  { etaza: "podstreha", tip: "V1", x: -0.3, z: -2.18, smer: "x", opis: "dnevni → spalnica" },
 ];
 
 /**
@@ -210,6 +211,7 @@ export const ODPRTINE: readonly Odprtina[] = [
   { id: "ZV4a", tip: "ZV4", stran: "E", etaza: "nadstropje", sredina: -1.57, parapet: 0.0 },
   { id: "O3d", tip: "O3", stran: "E", etaza: "nadstropje", sredina: 1.9, parapet: 0.9 }, // soba
   { id: "ZV4b", tip: "ZV4", stran: "E", etaza: "podstreha", sredina: -1.57, parapet: 0.0 },
-  // (podstreha na vzhodu nima stenskega okna — kolenčna 1,16 je prenizka;
-  //  namesto tega sta v vzhodni strešini strešni okni: soba in kopalnica)
+  // O4 118/118 s parapetom 100 tik ob vhodnih vratih podstrehe (tloris list 7):
+  // vrata in okno sta višja od kolenčne 1,16, zato ju zajema vzhodna frčada.
+  { id: "O4f", tip: "O4", stran: "E", etaza: "podstreha", sredina: -0.12, parapet: 1.0 },
 ];
