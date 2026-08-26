@@ -279,16 +279,68 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     pohodno(notrX1, notrZ1, notrX2, notrZ2, zgoraj);
     boks(mat.granitogres, notrX2 - notrX1, 0.012, notrZ2 - notrZ1, 0, zgoraj + 0.006, 0, false);
   }
-  // poševni strop podstrehe (mavčne plošče pod špirovci)
-  for (const smer of [-1, 1]) {
+  // poševni strop podstrehe (mavčne plošče pod špirovci) — v pasovih, ker morata
+  // frčada in obe strešni okni ostati odprta navznoter (sicer se od znotraj ne vidi ven)
+  /** spodnji rob mavčnega stropa nad točko x (šotorasta streha) */
+  const podStrop = (x: number) => NACRT.slemeY - 0.18 - Math.tan(NAKLON) * Math.abs(x);
+  const posevniStrop = (smer: -1 | 1, z0: number, z1: number) => {
+    if (z1 - z0 < 0.05) return;
     const dolz = polG / Math.cos(NAKLON) + 0.2;
-    const p = boks(mat.mavcna, dolz, 0.06, NACRT.sirinaSJ - 2 * DEB, (smer * polG) / 2, 0, 0, false);
+    const p = boks(mat.mavcna, dolz, 0.06, z1 - z0, (smer * polG) / 2, 0, (z0 + z1) / 2, false);
     p.position.y = (NACRT.podstrehaTla + NACRT.kolencna + NACRT.slemeY) / 2 - 0.14;
     p.rotation.z = -smer * NAKLON;
-  }
+  };
+  const notrZs = -NACRT.sirinaSJ / 2 + DEB;
+  const notrZe = NACRT.sirinaSJ / 2 - DEB;
+  // zahod: pas frčade (O6) ostane odprt
+  posevniStrop(-1, notrZs, NACRT.frcada.sredinaZ - NACRT.frcada.sirina / 2);
+  posevniStrop(-1, NACRT.frcada.sredinaZ + NACRT.frcada.sirina / 2, notrZe);
+  // vzhod: odprta pasova vhodne frčade (ZV4 + O4) in obeh strešnih oken
+  posevniStrop(1, notrZs, -4.15);
+  posevniStrop(1, -3.25, -2.35);
+  posevniStrop(1, 0.65, 1.15);
+  posevniStrop(1, 2.05, notrZe);
   boks(mat.mavcna, 3.4, 0.06, NACRT.sirinaSJ - 2 * DEB, 0, NACRT.slemeY - 0.98, 0, false);
 
   // ===================== PREDELNE STENE =====================
+  /**
+   * Predelna stena podstrehe, ki teče V–Z (pri stalnem z): vrh sledi poševnini
+   * strehe, sicer bi stena predrla strešino. Odprtine za vrata so luknje v profilu.
+   */
+  const stenaPodStreho = (pri: number, od: number, doo: number, y0: number, strop: number, luknje: Luknja[]) => {
+    const vrh = (x: number) => Math.min(strop, podStrop(x));
+    // preloma profila, kjer poševnina pade pod strop
+    const xPreloma = (NACRT.slemeY - 0.18 - strop) / Math.tan(NAKLON);
+    const tocke = [od, ...[-xPreloma, 0, xPreloma].filter((x) => x > od && x < doo), doo];
+    const oblika = new THREE.Shape();
+    oblika.moveTo(od, y0);
+    oblika.lineTo(doo, y0);
+    for (let i = tocke.length - 1; i >= 0; i--) oblika.lineTo(tocke[i], vrh(tocke[i]));
+    oblika.closePath();
+    for (const l of luknje) {
+      const luknja = new THREE.Path();
+      luknja.moveTo(l.sredina - l.w / 2, l.y0);
+      luknja.lineTo(l.sredina + l.w / 2, l.y0);
+      luknja.lineTo(l.sredina + l.w / 2, l.y1);
+      luknja.lineTo(l.sredina - l.w / 2, l.y1);
+      luknja.closePath();
+      oblika.holes.push(luknja);
+    }
+    const mh = new THREE.Mesh(new THREE.ExtrudeGeometry(oblika, { depth: DEBp, bevelEnabled: false }), mat.mavcna);
+    mh.position.set(0, 0, pri - DEBp / 2);
+    mh.castShadow = true;
+    mh.receiveShadow = true;
+    g.add(mh);
+    // kolizije: polni odseki med odprtinami (do stropa — nad glavo ni pomembno)
+    const meje = [od, ...luknje.flatMap((l) => [l.sredina - l.w / 2, l.sredina + l.w / 2]), doo].sort((a, b) => a - b);
+    for (let i = 0; i < meje.length; i += 2) {
+      if (meje[i + 1] - meje[i] < 0.02) continue;
+      kolizije.push(
+        new THREE.Box3(new THREE.Vector3(meje[i], y0, pri - DEBp / 2), new THREE.Vector3(meje[i + 1], strop, pri + DEBp / 2))
+      );
+    }
+  };
+
   type Predelna = { etaza: Etaza; os: "x" | "z"; pri: number; od: number; doo: number };
   const predelne: Predelna[] = [
     // pritličje
@@ -312,13 +364,11 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     { etaza: "nadstropje", os: "z", pri: -0.4, od: notrZ1, doo: 0.6 }, // dnevni | spalnica+hodnik (V2)
     { etaza: "nadstropje", os: "x", pri: 0.6, od: -0.4, doo: 0.8 }, // hodnik | dnevni (J del)
     { etaza: "nadstropje", os: "z", pri: 0.8, od: 0.28, doo: notrZ2 }, // soba | dnevni
-    // podstreha
-    { etaza: "podstreha", os: "x", pri: -2.28, od: 1.4, doo: notrX2 }, // kopalnica | predprostor
-    { etaza: "podstreha", os: "z", pri: 1.4, od: notrZ1, doo: -1.9 }, // kopalnica/spalnica zahodna stena
-    { etaza: "podstreha", os: "x", pri: -1.9, od: notrX1, doo: 1.4 }, // spalnica | dnevni
-    { etaza: "podstreha", os: "z", pri: 2.4, od: -2.28, doo: -0.6 }, // predprostor | dnevni
-    { etaza: "podstreha", os: "x", pri: -0.6, od: 2.4, doo: notrX2 }, // predprostor | soba
-    { etaza: "podstreha", os: "z", pri: 1.0, od: -0.6, doo: notrZ2 }, // soba | dnevni
+    // podstreha (tloris list 7): neprekinjena stena med vzhodnim in zahodnim pasom
+    { etaza: "podstreha", os: "z", pri: 1.33, od: notrZ1, doo: notrZ2 }, // vzhodni pas | zahodni pas
+    { etaza: "podstreha", os: "x", pri: -2.42, od: 1.33, doo: notrX2 }, // kopalnica | predprostor
+    { etaza: "podstreha", os: "x", pri: -0.82, od: 1.33, doo: notrX2 }, // predprostor | soba
+    { etaza: "podstreha", os: "x", pri: -2.18, od: notrX1, doo: 1.33 }, // spalnica | dnevni
   ];
   for (const p of predelne) {
     const E = ETAZE[p.etaza];
@@ -331,7 +381,14 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       y0: E.tla,
       y1: E.tla + VRATA_TIPI[v.tip].h + 0.06,
     }));
-    stena(mat.mavcna, p.os, p.pri, p.od, p.doo, E.tla, E.strop, DEBp, luknje);
+    if (p.etaza !== "podstreha") {
+      stena(mat.mavcna, p.os, p.pri, p.od, p.doo, E.tla, E.strop, DEBp, luknje);
+    } else if (p.os === "z") {
+      // stena teče v smeri S–J pri stalnem x → vrh je povsod enak
+      stena(mat.mavcna, p.os, p.pri, p.od, p.doo, E.tla, Math.min(E.strop, podStrop(p.pri)), DEBp, luknje);
+    } else {
+      stenaPodStreho(p.pri, p.od, p.doo, E.tla, E.strop, luknje);
+    }
     for (const v of vrata) notranjaVrata(p.os === "z" ? "z" : "x", p.os === "z" ? p.pri : v.x, p.os === "z" ? v.z : p.pri, E.tla, v.tip);
   }
 
@@ -409,12 +466,12 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     { etaza: "nadstropje", tip: "miza", x: -1.8, z: 2.8 },
     { etaza: "nadstropje", tip: "kuhinja", x: 0.45, z: 2.6, rot: -Math.PI / 2 },
     { etaza: "nadstropje", tip: "tv", x: -0.9, z: -2.6, rot: 0 },
-    // podstreha
-    { etaza: "podstreha", tip: "postelja", x: -1.6, z: -3.6 },
-    { etaza: "podstreha", tip: "postelja", x: 2.8, z: 2.6 },
-    { etaza: "podstreha", tip: "kavc", x: -2.4, z: 1.2, rot: Math.PI / 2 },
-    { etaza: "podstreha", tip: "kuhinja", x: 0.63, z: 2.9, rot: -Math.PI / 2 },
-    { etaza: "podstreha", tip: "miza", x: -1.0, z: 1.0 },
+    // podstreha (tloris list 7: kuhinja ob steni spalnice, jedilna miza ob frčadi)
+    { etaza: "podstreha", tip: "postelja", x: -1.6, z: -3.8 },
+    { etaza: "podstreha", tip: "postelja", x: 2.8, z: 3.0 },
+    { etaza: "podstreha", tip: "kavc", x: -2.7, z: 0.6, rot: Math.PI / 2 },
+    { etaza: "podstreha", tip: "kuhinja", x: 1.0, z: 0.2, rot: -Math.PI / 2 },
+    { etaza: "podstreha", tip: "miza", x: -1.4, z: 3.3 },
   ];
   for (const o of oprema) {
     const y = ETAZE[o.etaza].tla;
@@ -489,6 +546,13 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     }
   }
 
+  // nov lesen steber C24 160/160 z zavetrovanjem (tloris list 7) — pod slemenom
+  {
+    const yZg = NACRT.slemeY - 1.05;
+    trdno(mat.pohistvoLes, -0.08, NACRT.podstrehaTla, -0.68, 0.08, yZg, -0.52);
+    boks(mat.pohistvoLes, 0.12, 0.16, 1.6, 0, yZg - 0.1, -0.6, false); // razbremenilna glava
+  }
+
   // ===================== STREHA (Prefalz) + FRČADA =====================
   const kapY = NACRT.podstrehaTla + NACRT.kolencna;
   const kapZunY = kapY - Math.tan(NAKLON) * NACRT.previsKap;
@@ -502,19 +566,21 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     plosk.rotation.z = -smer * NAKLON;
   };
   strehina(-1, -strehaD / 2, strehaD / 2);
-  const vhodZ0 = -2.45;
-  const vhodZ1 = -0.68; // cona vhodne frčadice nad ZV4b
+  // vzhodna frčada po tlorisu list 7: zajame vhodna vrata ZV4 (100/210) IN okno
+  // O4 118/118 s parapetom 100 — oboje je višje od kolenčne stene 1,16
+  const vhodZ0 = -2.35;
+  const vhodZ1 = 0.65;
   strehina(1, -strehaD / 2, vhodZ0);
   strehina(1, vhodZ1, strehaD / 2);
-  strehina(1, vhodZ0, vhodZ1, 2.55); // nad frčadico ostane le zgornji del strešine
+  strehina(1, vhodZ0, vhodZ1, 2.55); // nad frčado ostane le zgornji del strešine
   boks(mat.prefalz, 0.4, 0.12, strehaD, 0, NACRT.slemeY + 0.1, 0);
 
-  // vhodna frčadica nad ZV4b (B): čelna stena nad kolenčno z odprtino za vrh
-  // vrat, obe lički in ravna strehica — sicer bi vrata štrlela skozi streho
+  // čelna stena vzhodne frčade nad kolenčno, z odprtinama za vrh vrat in okna
   {
     const celoPri = polG - DEB / 2;
     stena(mat.fasadaNova, "z", celoPri, vhodZ0, vhodZ1, kapY, 7.78, DEB, [
       { sredina: -1.57, w: 1.0, y0: kapY, y1: NACRT.podstrehaTla + 2.1 },
+      { sredina: -0.12, w: 1.18, y0: kapY, y1: NACRT.podstrehaTla + 2.18 },
     ]);
     for (const zz of [vhodZ0, vhodZ1]) {
       const licko = new THREE.Shape();
@@ -550,8 +616,8 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     stekla.push(st);
     g.add(so);
   };
-  stresnoOkno(0.9); // soba
-  stresnoOkno(-3.7); // kopalnica
+  stresnoOkno(1.6); // soba (južno od vzhodne frčade)
+  stresnoOkno(-3.7); // kopalnica (PZI: „strešno okno“)
   // žleb + cevi (zahod)
   const zleb = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, strehaD, 10), mat.jekloAntracit);
   zleb.rotation.x = Math.PI / 2;
@@ -586,6 +652,9 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     const dolz = -F.celoX + F.strehaDo + 0.5;
     const str = boks(mat.prefalz, dolz, 0.09, F.sirina + 0.3, (F.celoX + F.strehaDo) / 2 - 0.1, celoVrh + 0.22, F.sredinaZ);
     str.rotation.z = 0.16;
+    // mavčni strop frčade (od znotraj se sicer vidi spodnja stran pločevine)
+    const strNotr = boks(mat.mavcna, dolz - 0.3, 0.05, F.sirina - 0.2, (F.celoX + F.strehaDo) / 2 - 0.1, celoVrh + 0.12, F.sredinaZ, false);
+    strNotr.rotation.z = 0.16;
   }
 
   // ===================== BALKONI =====================
@@ -623,11 +692,20 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     // da strehica stolpa ne seka vratne odprtine ZV4 — PZI kota 7,20 je do venca
     const vrhStolpa = S.visinaStolpa + 0.5;
 
-    // stebri HOP 100/100/3 po PZI rastru (cinkani, prašno barvani)
+    // stebri HOP 100/100/3 po PZI rastru (cinkani, prašno barvani). PZI izrecno
+    // pravi, da so pozicije profilov informativne in jih je treba uskladiti z
+    // nosilnimi stenami — zato steber ob fasadi, ki bi pristal sredi vrat ZV4,
+    // odmaknemo na podboj (sicer bi stal točno na poti skozi vrata).
+    const vrataOs = -1.57;
+    const vrataPol = OKNA_TIPI.ZV4.w / 2 + 0.12;
     for (const odmik of NACRT.stopnisce.stebriOdmiki) {
       const sz = z1 + odmik;
       for (const sx of [x1 + 0.07, x2 - 0.07]) {
-        trdno(mat.jekloAntracit, sx - 0.05, 0, sz - 0.05, sx + 0.05, vrhStolpa, sz + 0.05);
+        let z = sz;
+        if (sx < xNotr && Math.abs(sz - vrataOs) < vrataPol) {
+          z = sz < vrataOs ? vrataOs - vrataPol : vrataOs + vrataPol;
+        }
+        trdno(mat.jekloAntracit, sx - 0.05, 0, z - 0.05, sx + 0.05, vrhStolpa, z + 0.05);
       }
     }
     // prečke na vrhu (okvir strehe)
