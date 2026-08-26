@@ -46,8 +46,8 @@ const CILJI = [
   ["stopnišče: podest podstrehe", 5.2, -1.5, 5.46],
   ["M: predprostor", 3.2, -1.4, 5.46],
   ["M: kopalnica", 2.6, -3.6, 5.46],
-  ["M: spalnica", -1.5, -3.4, 5.46],
-  ["M: soba", 1.5, 1.4, 5.46],
+  ["M: spalnica", -3.5, -3.0, 5.46],
+  ["M: soba", 2.6, 1.6, 5.46],
   ["M: dnevni s kuhinjo", -2.6, 3.6, 5.46],
 ];
 
