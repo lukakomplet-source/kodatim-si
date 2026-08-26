@@ -31,7 +31,7 @@ import { preberiBlokado, blokiran, minutDoKonca } from "./blokada.js";
  * stari pa počakajo.
  */
 
-const MAPA = process.env.AVTONET_PDF_MAPA ?? "E:\\Samo slike od avtonet baza koda tim";
+const MAPA = process.env.AVTONET_PDF_MAPA ?? "C:\\avtonet-arhiv";
 const KAPICA_GB = Number(process.env.AVTONET_PDF_KAPICA_GB ?? 150);
 const MIN_PROSTO_GB = 5;
 const UA =

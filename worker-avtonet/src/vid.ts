@@ -22,7 +22,7 @@ import { connect, type Db } from "./db.js";
 
 const OLLAMA = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const MODEL = process.env.AVTONET_VID_MODEL ?? "qwen2.5vl:7b";
-const MAPA = process.env.AVTONET_PDF_MAPA ?? "G:\\";
+const MAPA = process.env.AVTONET_PDF_MAPA ?? "C:\\avtonet-arhiv";
 const LOG = process.env.AVTONET_VID_LOG ?? "C:\\Users\\lukak\\avtonet-db\\vid.log";
 const UTRIP = process.env.AVTONET_VID_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\vid.utrip";
 const ZAKLEP = process.env.AVTONET_VID_ZAKLEP ?? "C:\\Users\\lukak\\avtonet-db\\vid.lock";

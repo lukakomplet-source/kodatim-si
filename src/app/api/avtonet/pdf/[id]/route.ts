@@ -15,7 +15,7 @@ import { createAvtonetClient } from "@/lib/avtonet/db";
 
 export const dynamic = "force-dynamic";
 
-const MAPA = process.env.AVTONET_PDF_MAPA ?? "E:\\Samo slike od avtonet baza koda tim";
+const MAPA = process.env.AVTONET_PDF_MAPA ?? "C:\\avtonet-arhiv";
 /**
  * Kjer se PDF isce, ce ga v glavni mapi ni.
  *
