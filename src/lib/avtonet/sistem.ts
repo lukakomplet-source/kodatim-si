@@ -77,7 +77,22 @@ async function procesorInPomnilnik(): Promise<Partial<Sistem>> {
   }
 }
 
+/**
+ * Zadnja meritev, da vsak izris konzole ne zaganja dveh zunanjih procesov.
+ *
+ * Stran se osvezuje in vsak obisk je prej pomenil nov nvidia-smi in nov
+ * PowerShell. Merjeno je to sicer hitro (0,2 in 0,4 s), a je zaganjanje
+ * procesov ob vsakem izrisu nepotrebno tveganje na stroju, ki hkrati skrejpa,
+ * arhivira in poganja model. Deset sekund starosti je za prikaz obremenitve
+ * povsem dovolj.
+ */
+let zadnja: { ob: number; vrednost: Sistem } | null = null;
+const VELJAVNOST_MS = 10_000;
+
 export async function preberiSistem(): Promise<Sistem> {
+  if (zadnja && Date.now() - zadnja.ob < VELJAVNOST_MS) return zadnja.vrednost;
   const [gpu, cpu] = await Promise.all([grafična(), procesorInPomnilnik()]);
-  return { ...PRAZNO, ...gpu, ...cpu };
+  const vrednost = { ...PRAZNO, ...gpu, ...cpu };
+  zadnja = { ob: Date.now(), vrednost };
+  return vrednost;
 }
