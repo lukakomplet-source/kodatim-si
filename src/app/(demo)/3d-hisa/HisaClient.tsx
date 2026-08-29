@@ -92,6 +92,25 @@ export default function HisaClient() {
       aktiven ? "bg-accent text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
     }`;
 
+  /**
+   * Fotoreal: trenutni pogled se izriše štiristokrat in povpreči. Traja nekaj
+   * sekund in ves čas teče na tukajšnji grafični kartici — zato je gumb
+   * namenoma ločen od "Render", ki pripravi kadre za nadaljnjo obdelavo.
+   */
+  const fotoreal = async () => {
+    if (!motorRef.current || renderStanje) return;
+    try {
+      await motorRef.current.fotoreal(400, (koliko, skupaj) => {
+        setRenderStanje(`Izostrujem sliko: ${Math.round((koliko / skupaj) * 100)} %`);
+      });
+      setRenderStanje("Fotoreal PNG shranjen ✓");
+      setTimeout(() => setRenderStanje(null), 8000);
+    } catch {
+      setRenderStanje("Fotoreal ni uspel — poglej konzolo.");
+      setTimeout(() => setRenderStanje(null), 6000);
+    }
+  };
+
   const izvoziKadre = async () => {
     if (!motorRef.current || renderStanje) return;
     try {
@@ -181,6 +200,14 @@ export default function HisaClient() {
       {/* lokalni AI render: izvoz kadrov (beauty + depth + normal) */}
       {pripravljen && nacin === "ogled" && (
         <div className="absolute left-4 bottom-4 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={fotoreal}
+            disabled={renderStanje !== null}
+            className="rounded-full bg-amber-500/85 px-4 py-2 text-xs font-semibold text-zinc-950 backdrop-blur transition hover:bg-amber-400 disabled:opacity-60"
+          >
+            ✨ Fotoreal — izostri in shrani PNG
+          </button>
           <button
             type="button"
             onClick={izvoziKadre}

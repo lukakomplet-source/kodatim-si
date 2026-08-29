@@ -6,6 +6,7 @@ import { zgradiPrenovo } from "./prenova";
 import { zgradiOkolico } from "./okolica";
 import { ustvariSvetlobo, type Cas } from "./svetloba";
 import { Sprehod } from "./kontrole";
+import { ustvariKakovost } from "./kakovost";
 
 export type { Cas };
 export type Nacin = "sprehod" | "ogled";
@@ -16,6 +17,13 @@ export type Motor = {
   nastaviNacin: (nacin: Nacin) => void;
   nastaviVarianto: (v: Varianta) => void;
   zahtevajSprehod: () => void;
+  /**
+   * Fotoreal: izostri trenutni pogled z veliko vzorci in shrani PNG.
+   * Vse izriše tukajšnja grafična kartica — nič ne gre v oblak.
+   */
+  fotoreal: (vzorcev?: number, obNapredku?: (n: number, skupaj: number) => void) => Promise<void>;
+  /** Koliko vzorcev ima trenutna slika (za napis "izostrujem …"). */
+  vzorcev: () => { zdaj: number; najvec: number };
   obLockChange: (cb: (zaklenjen: boolean) => void) => void;
   /** Izvozi kadre za lokalni AI render (beauty + globina + normale za vsak kader). */
   izvoziKadre: (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => Promise<void>;
@@ -97,6 +105,13 @@ export async function ustvariMotor(
     mat,
   });
 
+  /**
+   * Kakovost slike (ambientna okluzija + akumulacija vzorcev). Ustvari se za
+   * svetlobo, ker potrebuje sonce: mehka senca nastane tako, da se sonce med
+   * vzorci premika po svojem disku.
+   */
+  const kakovost = ustvariKakovost({ renderer, scena, kamera, sonce: svetloba.sonce });
+
   const orbit = new OrbitControls(kamera, canvas);
   orbit.target.set(0, 3.2, 0);
   orbit.enableDamping = true;
@@ -162,11 +177,13 @@ export async function ustvariMotor(
     renderer.setSize(el.clientWidth, el.clientHeight, false);
     kamera.aspect = el.clientWidth / el.clientHeight;
     kamera.updateProjectionMatrix();
+    kakovost.nastaviVelikost(el.clientWidth, el.clientHeight);
   };
   nastaviVelikost();
   const opazovalec = new ResizeObserver(nastaviVelikost);
   if (canvas.parentElement) opazovalec.observe(canvas.parentElement);
 
+  const prejsnjaLega = new THREE.Matrix4();
   const ura = new THREE.Clock();
   const smer = new THREE.Vector3();
   const cilj = new THREE.Vector3();
@@ -183,7 +200,17 @@ export async function ustvariMotor(
       sprehod.smerPogleda(smer);
       kamera.lookAt(cilj.copy(sprehod.polozaj).add(smer));
     }
-    renderer.render(scena, kamera);
+    /**
+     * Ali se je kamera premaknila, ugotovimo iz njene matrike, ne iz dogodkov
+     * kontrol: dušenje (damping) premika kamero še sekundo po tem, ko miška
+     * obmiruje, in dogodkovni pristop bi akumulacijo začel prezgodaj — slika bi
+     * se izostrila okoli položaja, ki ga kamera šele zapušča, in bi se ob
+     * ustavitvi vidno "prelomila".
+     */
+    kamera.updateMatrixWorld();
+    const premika = !kamera.matrixWorld.equals(prejsnjaLega);
+    prejsnjaLega.copy(kamera.matrixWorld);
+    kakovost.korak(premika);
   };
 
   svetloba.nastaviCas(zacetek.cas ?? "dan");
@@ -227,8 +254,20 @@ export async function ustvariMotor(
       kamera.position.set(...k.cam);
       kamera.lookAt(...k.look);
       kamera.updateMatrixWorld();
-      renderer.render(scena, kamera);
-      await prenesi(`${k.ime}_beauty.png`);
+      /**
+       * Beauty gre skozi isto akumulacijo kot pogled v brskalniku — kader za
+       * nadaljnjo obdelavo mora biti najboljši, kar zna ta stroj, sicer se
+       * njegove pomanjkljivosti prenesejo naprej. Globina in normale pa gresta
+       * skozi surov izris: tam je vsak filter napaka, ne izboljšava.
+       */
+      const izostrena = await kakovost.zajemi(96);
+      if (izostrena) {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(izostrena);
+        a.download = `${k.ime}_beauty.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
       scena.overrideMaterial = globinaMat;
       renderer.render(scena, kamera);
       await prenesi(`${k.ime}_depth.png`);
@@ -245,8 +284,21 @@ export async function ustvariMotor(
   };
 
   return {
-    nastaviCas: svetloba.nastaviCas,
+    nastaviCas: (c) => {
+      svetloba.nastaviCas(c);
+      kakovost.ponastavi(); // druga svetloba = druga slika, stari vzorci ne veljajo
+    },
     izvoziKadre,
+    fotoreal: async (vzorcev = 400, obNapredku) => {
+      const blob = await kakovost.zajemi(vzorcev, obNapredku);
+      if (!blob) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `fotoreal_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
+    vzorcev: () => ({ zdaj: kakovost.vzorcev(), najvec: kakovost.najvecVzorcev }),
     nastaviNacin: (n) => {
       nacin = n;
       orbit.enabled = n === "ogled";
@@ -260,6 +312,7 @@ export async function ustvariMotor(
     nastaviVarianto: (v) => {
       varianta = v;
       uporabiVarianto();
+      kakovost.ponastavi();
     },
     zahtevajSprehod: () => {
       if (nacin === "sprehod") canvas.requestPointerLock();
@@ -275,6 +328,7 @@ export async function ustvariMotor(
       window.removeEventListener("keydown", tipkaDol);
       window.removeEventListener("keyup", tipkaGor);
       orbit.dispose();
+      kakovost.unici();
       renderer.dispose();
     },
   };

@@ -9,6 +9,11 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Zaganjalnik strani prejšnjo zgradbo preimenuje v .next_prejsnja (varnostna
+    // kopija za vrnitev). Je strojno generirana koda in ne naša: brez tega
+    // izjema eslint javi ~22.000 opozoril, med katerimi se resnične napake v
+    // src/ preprosto izgubijo.
+    ".next_prejsnja/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

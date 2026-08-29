@@ -41,6 +41,72 @@ function ponovi(t: THREE.Texture, geoW: number, geoH: number, worldW: number, wo
   return kopija;
 }
 
+/**
+ * RELIEF IZ BARVNE TEKSTURE.
+ *
+ * Materiali so bili ravni: omet, deske in tlakovci so imeli risbo, ne pa
+ * površine. Ravna ploskev se pod soncem obnaša kot papir — svetloba pade nanjo
+ * enakomerno in noben rob ne vrže drobne sence, zato je fasada videti kot
+ * naslikana. Zrnavost ometa je v naravi visoka desetinko milimetra in prav ta
+ * desetinka naredi razliko med "beli zid" in "omet".
+ *
+ * Višino beremo iz svetlosti barvne teksture (svetlo = izbočeno) in iz nje s
+ * Sobelovim operatorjem izračunamo normale. To ni fizikalno pravilno — fuga med
+ * tlakovci je temna IN vbočena, špranja med deskami tudi, kar tu slučajno drži
+ * — je pa dovolj: relief mora biti pravilen na robovih, ne v absolutni višini.
+ *
+ * Ponovitev in ovijanje se prepišeta z izvirne teksture, sicer bi se relief
+ * ponavljal v drugem merilu kot barva in bi se videl kot vzorec čez vzorec.
+ */
+function reliefIz(t: THREE.CanvasTexture, moc = 1): THREE.CanvasTexture {
+  const vir = t.image as HTMLCanvasElement;
+  const w = vir.width;
+  const h = vir.height;
+  const piksli = vir.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, w, h).data;
+  // Svetlost s teksturo ovito naokoli — brez ovijanja bi bil na robu ploščice šiv.
+  const visina = (x: number, y: number) => {
+    const i = (((y + h) % h) * w + ((x + w) % w)) * 4;
+    return (piksli[i] * 0.299 + piksli[i + 1] * 0.587 + piksli[i + 2] * 0.114) / 255;
+  };
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d")!;
+  const izhod = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx =
+        visina(x - 1, y - 1) + 2 * visina(x - 1, y) + visina(x - 1, y + 1) -
+        (visina(x + 1, y - 1) + 2 * visina(x + 1, y) + visina(x + 1, y + 1));
+      const dy =
+        visina(x - 1, y - 1) + 2 * visina(x, y - 1) + visina(x + 1, y - 1) -
+        (visina(x - 1, y + 1) + 2 * visina(x, y + 1) + visina(x + 1, y + 1));
+      const nx = dx * moc;
+      const ny = dy * moc;
+      const dolzina = Math.sqrt(nx * nx + ny * ny + 1);
+      const i = (y * w + x) * 4;
+      izhod.data[i] = ((nx / dolzina) * 0.5 + 0.5) * 255;
+      izhod.data[i + 1] = ((ny / dolzina) * 0.5 + 0.5) * 255;
+      izhod.data[i + 2] = (1 / dolzina) * 255;
+      izhod.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(izhod, 0, 0);
+  const normala = new THREE.CanvasTexture(c);
+  normala.wrapS = t.wrapS;
+  normala.wrapT = t.wrapT;
+  normala.repeat.copy(t.repeat);
+  normala.offset.copy(t.offset);
+  normala.anisotropy = 4;
+  // Normale NISO barva: sRGB pretvorba bi jih zavila in površina bi se svetila
+  // v napačno smer.
+  normala.colorSpace = THREE.NoColorSpace;
+  return normala;
+}
+
+/** Kako močno naj se relief pozna. Ločeno, da so vrednosti na enem mestu. */
+const RELIEF = (moc: number) => new THREE.Vector2(moc, moc);
+
 export type Materiali = ReturnType<typeof ustvariMateriale>;
 
 export function ustvariMateriale() {
@@ -275,35 +341,47 @@ export function ustvariMateriale() {
 
   return {
     // hiša Parmova 4
-    omet: nastani({ map: ometT, roughness: 0.95 }),
+    omet: nastani({ map: ometT, roughness: 0.95, normalMap: reliefIz(ometT, 2.2), normalScale: RELIEF(0.6) }),
     cokel: nastani({ color: "#7d4032", roughness: 0.9 }),
-    les: nastani({ map: lesT, roughness: 0.85 }),
+    les: nastani({ map: lesT, roughness: 0.85, normalMap: reliefIz(lesT, 3.5), normalScale: RELIEF(1.0) }),
     lesGladek: nastani({ color: "#5a3a26", roughness: 0.85 }),
-    streha: nastani({ map: strehaT, roughness: 0.75, metalness: 0.05 }),
+    streha: nastani({ map: strehaT, roughness: 0.75, metalness: 0.05, normalMap: reliefIz(strehaT, 2.5), normalScale: RELIEF(0.8) }),
     vrata: nastani({ map: vrataT, roughness: 0.7 }),
     garaza: nastani({ map: garazaT, roughness: 0.75 }),
     okvir: nastani({ color: "#ececec", roughness: 0.5 }),
     polica: nastani({ color: "#d8d4cc", roughness: 0.7 }),
+    /**
+     * Steklo je pri hiši največji odsevnik in zato največji vir vtisa. Prej je
+     * bilo temno-modra prosojna ploskev z malo odseva; zdaj ima lak (clearcoat)
+     * in polno moč okoljskega odseva, zato v njem vidiš nebo in sosednjo streho
+     * — prav to loči okno od naslikanega pravokotnika. Odsevnost 0,08 je
+     * vrednost za navadno steklo (lomni količnik 1,5).
+     */
     steklo: new THREE.MeshPhysicalMaterial({
       color: "#2a3840",
-      roughness: 0.22,
-      metalness: 0.2,
+      roughness: 0.08,
+      metalness: 0,
+      reflectivity: 0.5,
+      ior: 1.5,
+      clearcoat: 1,
+      clearcoatRoughness: 0.04,
+      envMapIntensity: 1.6,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.86,
     }),
     oknoNoc: nastani({ color: "#2a2018", emissive: "#ffc477", emissiveIntensity: 1.1, roughness: 0.4 }),
     zavesa: nastani({ color: "#e8ddc8", roughness: 1 }),
     notranjost: nastani({ color: "#181f26", roughness: 1 }),
-    beton: nastani({ color: "#cfccc4", roughness: 0.9 }),
+    beton: nastani({ color: "#cfccc4", roughness: 0.9, normalMap: reliefIz(ometT, 1.8), normalScale: RELIEF(0.35) }),
     kovinaTemna: nastani({ color: "#3a3a3c", roughness: 0.5, metalness: 0.6 }),
     // okolica
-    tlakovci: nastani({ map: tlakovciT, roughness: 0.95 }),
-    asfalt: nastani({ map: asfaltT, roughness: 1 }),
+    tlakovci: nastani({ map: tlakovciT, roughness: 0.95, normalMap: reliefIz(tlakovciT, 4.0), normalScale: RELIEF(1.1) }),
+    asfalt: nastani({ map: asfaltT, roughness: 1, normalMap: reliefIz(asfaltT, 2.0), normalScale: RELIEF(0.5) }),
     trava: nastani({ map: travaT, roughness: 1 }),
     zivaMeja: nastani({ map: mejaT, roughness: 1 }),
     listje: nastani({ color: "#3e5a2a", roughness: 1, flatShading: true }),
     deblo: nastani({ color: "#5b4632", roughness: 1 }),
-    opekaStreha: nastani({ map: opekaStrehaT, roughness: 0.9 }),
+    opekaStreha: nastani({ map: opekaStrehaT, roughness: 0.9, normalMap: reliefIz(opekaStrehaT, 3.0), normalScale: RELIEF(0.9) }),
     rumenaFasada: nastani({ color: "#e9d98f", roughness: 0.95 }),
     belaFasada: nastani({ map: ometT.clone(), roughness: 0.95 }),
     cerkevFasada: nastani({ color: "#efe3c2", roughness: 0.95 }),
@@ -313,9 +391,9 @@ export function ustvariMateriale() {
     zelenaKovina: nastani({ color: "#2f6b3a", roughness: 0.6, metalness: 0.3 }),
     hrib: nastani({ color: "#4a5a44", roughness: 1 }),
     // po prenovi
-    prefalz: nastani({ map: prefalzT, roughness: 0.55, metalness: 0.55 }),
-    fasadaNova: nastani({ color: "#efece6", roughness: 0.92 }),
-    travertin: nastani({ map: travertinT, roughness: 0.7 }),
+    prefalz: nastani({ map: prefalzT, roughness: 0.55, metalness: 0.55, normalMap: reliefIz(prefalzT, 2.6), normalScale: RELIEF(0.7) }),
+    fasadaNova: nastani({ color: "#efece6", roughness: 0.92, normalMap: reliefIz(ometT, 2.2), normalScale: RELIEF(0.5) }),
+    travertin: nastani({ map: travertinT, roughness: 0.7, normalMap: reliefIz(travertinT, 2.4), normalScale: RELIEF(0.55) }),
     abacusPetrolio: nastani({ map: abacusT("#2e6b6a", 0.12), roughness: 0.5 }),
     abacusCalce: nastani({ map: abacusT("#ddd6c4", 0.1), roughness: 0.55 }),
     granitogres: nastani({ map: granitogresT, roughness: 0.35, metalness: 0.05 }),
