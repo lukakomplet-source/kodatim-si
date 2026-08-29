@@ -122,7 +122,14 @@ export function WorkerHealth({
         </p>
       )}
       {zaporednihNapak > 0 && <p className="mt-0.5">Zaporednih neuspehov: {zaporednihNapak}</p>}
-      {napaka && <p className="mt-1 max-w-xs break-words">Napaka: {napaka}</p>}
+      {napaka && (
+        <p className="mt-1 max-w-xs break-words" title={napaka}>
+          {/* Playwright ob neuspelem zagonu brskalnika vrne 4.400 znakov ukazne
+              vrstice Chromiuma. Izpisano v celoti je poplavilo konzolo in jo
+              naredilo neberljivo; prva poved pove vse, ostalo je v namigu. */}
+          Napaka: {napaka.length > 160 ? `${napaka.slice(0, 160)}…` : napaka}
+        </p>
+      )}
     </div>
   );
 }

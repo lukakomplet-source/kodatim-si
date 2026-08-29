@@ -707,7 +707,14 @@ export async function reportHealth(
   }
 ): Promise<void> {
   try {
-    const { error } = await db.from("avtonet_zdravje").update(patch).eq("id", "worker");
+    // Playwright ob neuspelem zagonu vrne 4.400 znakov ukazne vrstice Chromiuma.
+    // V bazi je to nesmisel, v konzoli pa poplava, ki jo naredi neberljivo -
+    // prva poved pove, kaj se je zgodilo, ostalo je sum.
+    const zaBazo =
+      typeof patch.zadnja_napaka === "string" && patch.zadnja_napaka.length > 300
+        ? { ...patch, zadnja_napaka: patch.zadnja_napaka.slice(0, 300) + " […]" }
+        : patch;
+    const { error } = await db.from("avtonet_zdravje").update(zaBazo).eq("id", "worker");
     if (error) console.error(`[zdravje] zapis ni uspel: ${error.message}`);
   } catch (err) {
     console.error(`[zdravje] zapis ni uspel: ${err instanceof Error ? err.message : err}`);

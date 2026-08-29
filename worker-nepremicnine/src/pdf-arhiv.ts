@@ -42,7 +42,10 @@ import { najdiVir } from "./viri/index.js";
  * dogovor z virom (docs/pismo-bolha.md), ne hitrejše branje.
  */
 
-const MAPA = process.env.NEP_PDF_MAPA ?? "G:\\nepremicnine";
+// Priklop OneDrive je 26. 8. presel s crke G: na mapo: ko rclone umre, Windows
+// crke ne sprosti in vsak nadaljnji dostop visi. Ta arhivar je se kazal na
+// staro crko, zato se je 202-krat zagnal in takoj koncal.
+const MAPA = process.env.NEP_PDF_MAPA ?? "C:\\avtonet-arhiv\\nepremicnine";
 const LOG = process.env.NEP_PDF_LOG ?? "C:\\Users\\lukak\\avtonet-db\\nep-pdf-arhiv.log";
 const UTRIP = process.env.NEP_PDF_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\nep-pdf-arhiv.utrip";
 const ZAKLEP = process.env.NEP_PDF_ZAKLEP ?? "C:\\Users\\lukak\\avtonet-db\\nep-pdf-arhiv.lock";
