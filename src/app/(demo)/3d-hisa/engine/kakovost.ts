@@ -43,7 +43,12 @@ export type Kakovost = {
   vzorcev: () => number;
   najvecVzorcev: number;
   /** Izriši do `vzorcev` vzorcev in vrni PNG. Uporablja se za gumb Fotoreal. */
-  zajemi: (vzorcev: number, obNapredku?: (n: number, skupaj: number) => void) => Promise<Blob | null>;
+  zajemi: (
+    vzorcev: number,
+    obNapredku?: (n: number, skupaj: number) => void,
+    /** Kolikokrat večja stranica od zaslonske (1 = kot na zaslonu, 2 = štirikrat več pikslov). */
+    faktor?: number
+  ) => Promise<Blob | null>;
   unici: () => void;
 };
 
@@ -237,6 +242,9 @@ export function ustvariKakovost(ctx: {
   };
 
   const nastaviVelikost = (w: number, h: number) => {
+    // Veriga učinkov mora slediti tudi gostoti pikslov, ne le velikosti okna:
+    // pri izvozu v 4K se spremeni prav ta.
+    composer.setPixelRatio(renderer.getPixelRatio());
     composer.setSize(w, h);
     renderer.getDrawingBufferSize(velikost);
     for (const rt of [akA, akB, zaSliko]) rt.setSize(velikost.x, velikost.y);
@@ -249,7 +257,30 @@ export function ustvariKakovost(ctx: {
    * Vmes se preda nadzor brskalniku (requestAnimationFrame), sicer bi se stran
    * med izračunom zamrznila in bi bilo videti kot okvara.
    */
-  const zajemi = async (koliko: number, obNapredku?: (n: number, skupaj: number) => void) => {
+  const zajemi = async (koliko: number, obNapredku?: (n: number, skupaj: number) => void, faktor = 2) => {
+    /**
+     * IZVOZ JE VEČJI OD ZASLONA.
+     *
+     * Zaslonska slika ima toliko pikslov, kolikor jih ima okno; na 1600 px
+     * široki sliki je okenski okvir tri piksle in ograja ena črta. Izvoz zato
+     * začasno poveča gostoto izrisa (privzeto dvakratno stranico, torej
+     * štirikrat več pikslov) — drobne stvari, ki jih zaslon ne premore,
+     * dobijo prostor, in slika je uporabna tudi natisnjena.
+     *
+     * Meja 3840 px ni okrasna: nad njo teksture presežejo, kar zna grafična
+     * kartica nasloviti (`maxTextureSize`), in izvoz bi tiho vrnil črno sliko.
+     */
+    const el = renderer.domElement;
+    const sirina = el.clientWidth || velikost.x;
+    const visina = el.clientHeight || velikost.y;
+    const staroRazmerjePikslov = renderer.getPixelRatio();
+    const strop = Math.min(3840, renderer.capabilities.maxTextureSize);
+    const zeljeno = Math.max(1, Math.min(faktor, strop / Math.max(1, sirina)));
+
+    renderer.setPixelRatio(zeljeno);
+    renderer.setSize(sirina, visina, false);
+    nastaviVelikost(sirina, visina);
+
     ponastavi();
     for (let i = 0; i < koliko; i++) {
       izrisiVzorec();
@@ -277,7 +308,14 @@ export function ustvariKakovost(ctx: {
       slika.data.set(piksli.subarray(od, od + velikost.x * 4), y * velikost.x * 4);
     }
     ctx2d.putImageData(slika, 0, 0);
-    return await new Promise<Blob | null>((r) => platno.toBlob(r, "image/png"));
+    const blob = await new Promise<Blob | null>((r) => platno.toBlob(r, "image/png"));
+
+    // Vrni zaslon v prvotno gostoto; brez tega bi stran po enem izvozu do
+    // konca seje risala v 4K in bi bila videti pokvarjeno počasna.
+    renderer.setPixelRatio(staroRazmerjePikslov);
+    renderer.setSize(sirina, visina, false);
+    nastaviVelikost(sirina, visina);
+    return blob;
   };
 
   return {

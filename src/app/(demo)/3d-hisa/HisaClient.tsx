@@ -111,6 +111,26 @@ export default function HisaClient() {
     }
   };
 
+  /**
+   * Sledilnik poti: pravi izračun svetlobe z odboji, v dvakratni ločljivosti.
+   * Traja minute in ves ta čas obremeni grafično kartico — zato je napisano
+   * ob gumbu, ne šele potem, ko uporabnik čaka in ne ve, zakaj.
+   */
+  const sledilnik = async () => {
+    if (!motorRef.current || renderStanje) return;
+    try {
+      setRenderStanje("Sledilnik poti: pripravljam …");
+      await motorRef.current.sledilnik(300, (n, skupaj, korakOpis) => {
+        setRenderStanje(`Sledilnik poti — ${korakOpis}: ${n}/${skupaj} prehodov`);
+      });
+      setRenderStanje("Slika sledilnika shranjena ✓");
+      setTimeout(() => setRenderStanje(null), 8000);
+    } catch (e) {
+      setRenderStanje(`Sledilnik ni uspel: ${e instanceof Error ? e.message.slice(0, 80) : "neznana napaka"}`);
+      setTimeout(() => setRenderStanje(null), 10000);
+    }
+  };
+
   const izvoziKadre = async () => {
     if (!motorRef.current || renderStanje) return;
     try {
@@ -207,6 +227,15 @@ export default function HisaClient() {
             className="rounded-full bg-amber-500/85 px-4 py-2 text-xs font-semibold text-zinc-950 backdrop-blur transition hover:bg-amber-400 disabled:opacity-60"
           >
             ✨ Fotoreal — izostri in shrani PNG
+          </button>
+          <button
+            type="button"
+            onClick={sledilnik}
+            disabled={renderStanje !== null}
+            className="rounded-full bg-violet-500/85 px-4 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-violet-400 disabled:opacity-60"
+            title="Pravi izračun svetlobe z odboji. Traja nekaj minut in ves čas dela grafična kartica."
+          >
+            🔬 Sledilnik poti — najboljša kakovost (min.)
           </button>
           <button
             type="button"

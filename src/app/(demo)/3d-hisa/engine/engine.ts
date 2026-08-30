@@ -7,6 +7,7 @@ import { zgradiOkolico } from "./okolica";
 import { ustvariSvetlobo, type Cas } from "./svetloba";
 import { Sprehod } from "./kontrole";
 import { ustvariKakovost } from "./kakovost";
+import { izrisiSSledilnikom } from "./sledilnik";
 
 export type { Cas };
 export type Nacin = "sprehod" | "ogled";
@@ -22,6 +23,14 @@ export type Motor = {
    * Vse izriše tukajšnja grafična kartica — nič ne gre v oblak.
    */
   fotoreal: (vzorcev?: number, obNapredku?: (n: number, skupaj: number) => void) => Promise<void>;
+  /**
+   * Sledilnik poti: pravi izračun svetlobe z odboji. Traja minute, teče na
+   * tukajšnji grafični kartici in vrne PNG.
+   */
+  sledilnik: (
+    vzorcev?: number,
+    obNapredku?: (n: number, skupaj: number, korak: string) => void
+  ) => Promise<void>;
   /** Koliko vzorcev ima trenutna slika (za napis "izostrujem …"). */
   vzorcev: () => { zdaj: number; najvec: number };
   obLockChange: (cb: (zaklenjen: boolean) => void) => void;
@@ -65,7 +74,13 @@ export async function ustvariMotor(
   const javi = (p: number, k: string) => obNapredku?.(p, k);
 
   javi(5, "Priprava prikazovalnika");
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  /**
+   * `preserveDrawingBuffer` je nujen, ker sliko s platna beremo (izvoz kadrov,
+   * sledilnik poti). Brez njega brskalnik vsebino platna po izrisu zavrže in
+   * `toBlob` vrne prazno sliko — ne vedno, ampak odvisno od trenutka, kar je
+   * najslabša vrsta napake.
+   */
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -188,9 +203,16 @@ export async function ustvariMotor(
   const smer = new THREE.Vector3();
   const cilj = new THREE.Vector3();
   let ziv = true;
+  /**
+   * Med izvozom (Fotoreal, sledilnik poti) zanka miruje. Sicer bi si zanka in
+   * izvoz podajala isto platno: zanka bi vsak drugi izris povozila z zaslonsko
+   * različico, izvoz pa bi tekel v 4K pri vsaki sličici — počasneje in narobe.
+   */
+  let izrisPavziran = false;
   const zanka = () => {
     if (!ziv) return;
     requestAnimationFrame(zanka);
+    if (izrisPavziran) return;
     const dt = Math.min(ura.getDelta(), 0.05);
     if (nacin === "ogled") {
       orbit.update();
@@ -290,7 +312,14 @@ export async function ustvariMotor(
     },
     izvoziKadre,
     fotoreal: async (vzorcev = 400, obNapredku) => {
-      const blob = await kakovost.zajemi(vzorcev, obNapredku);
+      izrisPavziran = true;
+      let blob: Blob | null = null;
+      try {
+        blob = await kakovost.zajemi(vzorcev, obNapredku);
+      } finally {
+        izrisPavziran = false;
+        kakovost.ponastavi();
+      }
       if (!blob) return;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -299,6 +328,34 @@ export async function ustvariMotor(
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     },
     vzorcev: () => ({ zdaj: kakovost.vzorcev(), najvec: kakovost.najvecVzorcev }),
+    sledilnik: async (vzorcev = 300, obNapredku) => {
+      izrisPavziran = true;
+      let izid: { blob: Blob | null; vzorcev: number } = { blob: null, vzorcev: 0 };
+      try {
+        izid = await izrisiSSledilnikom({
+          renderer,
+          scena,
+          kamera,
+          // Nebo in zvezde imata lasten senčilnik, ki ga sledilnik ne pozna.
+          skrij: [okolica.nebo, svetloba.zvezde],
+          nebo: okolica.nebo,
+          vzorcev,
+          faktor: 2,
+          obNapredku,
+        });
+      } finally {
+        izrisPavziran = false;
+        // Sledilnik je zamenjal velikost in ozadje; akumulacija mora začeti znova.
+        nastaviVelikost();
+        kakovost.ponastavi();
+      }
+      if (!izid.blob) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(izid.blob);
+      a.download = `sledilnik_${izid.vzorcev}vz_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
     nastaviNacin: (n) => {
       nacin = n;
       orbit.enabled = n === "ogled";
