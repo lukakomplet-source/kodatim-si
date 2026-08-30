@@ -53,3 +53,8 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Zaklep, ki ga je ustvarjala napaka z neubezanimi posevnicami v poti
+# (worker-avtonet/src/pdf-arhiv.ts). Pot je popravljena; ce se datoteka s tem
+# imenom se kdaj pojavi, pomeni, da tece stara koda.
+*pdf-arhiv.lock
