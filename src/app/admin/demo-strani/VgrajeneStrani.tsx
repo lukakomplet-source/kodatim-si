@@ -70,7 +70,18 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
                   <span className="font-mono text-zinc-700">
                     {item.url ? item.url.replace(/^https?:\/\//, "") : `/${item.slug}`}
                   </span>
-                  {item.stranka && ` · ${item.stranka}`}
+                </p>
+                {/* Stranka je tu izpisana namenoma vidno: seznam odgovarja tudi
+                    na vprasanje, kateremu podjetju je aplikacijo mogoce zaracunati.
+                    Kadar stranke ni, to pise - prazno polje bi bilo videti kot
+                    podatek, ki ga imamo, pa ga nimamo. */}
+                <p className="mt-1 text-xs">
+                  <span className="text-zinc-400">Stranka: </span>
+                  {item.stranka ? (
+                    <span className="font-medium text-zinc-700">{item.stranka}</span>
+                  ) : (
+                    <span className="text-amber-700">ni določena</span>
+                  )}
                 </p>
                 <p className="mt-1.5 text-xs text-zinc-600">{item.opis}</p>
               </div>
