@@ -70,6 +70,14 @@ export type VgrajenaDemoStran = {
   stranka: string | null;
   vrsta: DemoVrsta;
   opis: string;
+  /**
+   * Celoten naslov, kadar aplikacija ne živi na tej domeni.
+   *
+   * Brez tega je bil ta seznam uporaben samo za poti v tem repozitoriju,
+   * aplikacije na lastnih domenah pa nikjer — kar je natanko težava, ki jo
+   * seznam rešuje: dokončana aplikacija, do katere ni klika od nikoder.
+   */
+  url?: string;
 };
 
 export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
@@ -96,6 +104,24 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     vrsta: "aplikacija",
     opis:
       "Interaktivni 3D sprehod okoli hiše (WASD + miška, dan/zahod/noč, ogled okolice). Obstoječe stanje po Street View; prenova po PZI načrtih sledi.",
+  },
+  {
+    slug: "kompletko",
+    naziv: "EscortOps — Kompletko",
+    stranka: "Kompletko d.o.o.",
+    vrsta: "aplikacija",
+    url: "https://app.kompletko.com",
+    opis:
+      "Naročila in razporejanje spremljevalnih vozil: pregled voženj, voznikov in dokumentov. Teče na lastni domeni.",
+  },
+  {
+    slug: "prevzemavto",
+    naziv: "PrevzemAvto — uvoz vozil",
+    stranka: null,
+    vrsta: "aplikacija",
+    url: "https://uvozi.kodatim.si",
+    opis:
+      "Aplikacija za uvoz vozil: izračun stroškov, dokumentacija in vodenje prevzemov. Teče na poddomeni kodatim.si.",
   },
 ];
 

@@ -28,11 +28,17 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
    * on localhost points at localhost and one copied on kodatim.si points at
    * kodatim.si.
    */
-  function copyLink(slug: string) {
+  /** Celoten naslov: zunanja aplikacija ima svojega, domača pot na tem izvoru. */
+  function povezavaDo(item: VgrajenaDemoStran): string {
+    if (item.url) return item.url;
     const origin = typeof window === "undefined" ? "" : window.location.origin;
-    void navigator.clipboard?.writeText(`${origin}/${slug}`);
-    setCopied(slug);
-    setTimeout(() => setCopied((c) => (c === slug ? null : c)), 2000);
+    return `${origin}/${item.slug}`;
+  }
+
+  function copyLink(item: VgrajenaDemoStran) {
+    void navigator.clipboard?.writeText(povezavaDo(item));
+    setCopied(item.slug);
+    setTimeout(() => setCopied((c) => (c === item.slug ? null : c)), 2000);
   }
 
   return (
@@ -61,7 +67,9 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
                   </span>
                 </p>
                 <p className="mt-1 truncate text-xs text-zinc-500">
-                  <span className="font-mono text-zinc-700">/{item.slug}</span>
+                  <span className="font-mono text-zinc-700">
+                    {item.url ? item.url.replace(/^https?:\/\//, "") : `/${item.slug}`}
+                  </span>
                   {item.stranka && ` · ${item.stranka}`}
                 </p>
                 <p className="mt-1.5 text-xs text-zinc-600">{item.opis}</p>
@@ -69,7 +77,7 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
 
               <div className="flex flex-wrap items-center gap-2">
                 <a
-                  href={`/${item.slug}`}
+                  href={item.url ?? `/${item.slug}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
@@ -79,7 +87,7 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
                 </a>
                 <button
                   type="button"
-                  onClick={() => copyLink(item.slug)}
+                  onClick={() => copyLink(item)}
                   className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
                 >
                   {copied === item.slug ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
