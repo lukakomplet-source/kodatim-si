@@ -8,8 +8,11 @@ import { ustvariSvetlobo, type Cas } from "./svetloba";
 import { Sprehod } from "./kontrole";
 import { ustvariKakovost } from "./kakovost";
 import { izrisiSSledilnikom } from "./sledilnik";
+import { ustvariRezanje, type IzbranaEtaza, type NastavitvePrereza } from "./rezanje";
+import { NACRT } from "./nacrt";
 
 export type { Cas };
+export type { IzbranaEtaza, NastavitvePrereza };
 export type Nacin = "sprehod" | "ogled";
 export type Varianta = "obstojece" | "prenova";
 
@@ -18,6 +21,12 @@ export type Motor = {
   nastaviNacin: (nacin: Nacin) => void;
   nastaviVarianto: (v: Varianta) => void;
   zahtevajSprehod: () => void;
+  /** Odreži vse nad izbrano etažo (hiša za lutke). */
+  nastaviEtazo: (e: IzbranaEtaza) => void;
+  /** Navpičen prerez skozi hišo, kot v SolidWorksu. */
+  nastaviPrerez: (n: NastavitvePrereza) => void;
+  /** Razpon drsnika prereza v metrih modela. */
+  mejePrereza: () => { x: [number, number]; z: [number, number] };
   /**
    * Fotoreal: izostri trenutni pogled z veliko vzorci in shrani PNG.
    * Vse izriše tukajšnja grafična kartica — nič ne gre v oblak.
@@ -126,6 +135,21 @@ export async function ustvariMotor(
    * vzorci premika po svojem disku.
    */
   const kakovost = ustvariKakovost({ renderer, scena, kamera, sonce: svetloba.sonce });
+
+  /**
+   * Rezanje modela. Materiale hiše dobi PO tem, ko sta obe varianti zgrajeni,
+   * ker si ob zagonu naredi kopije tistih, ki jih uporablja tudi okolica.
+   */
+  const rezanje = ustvariRezanje({
+    renderer,
+    hisa: [hisa.skupina, prenova.skupina],
+    okolica: okolica.skupina,
+    kote: {
+      pritlicjeStrop: NACRT.pritlicjeStrop,
+      nadstropjeStrop: NACRT.nadstropjeStrop,
+      kapY: NACRT.podstrehaTla + NACRT.kolencna,
+    },
+  });
 
   const orbit = new OrbitControls(kamera, canvas);
   orbit.target.set(0, 3.2, 0);
@@ -328,6 +352,15 @@ export async function ustvariMotor(
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     },
     vzorcev: () => ({ zdaj: kakovost.vzorcev(), najvec: kakovost.najvecVzorcev }),
+    nastaviEtazo: (e) => {
+      rezanje.nastaviEtazo(e);
+      kakovost.ponastavi(); // druga slika, stari vzorci ne veljajo
+    },
+    nastaviPrerez: (n) => {
+      rezanje.nastaviPrerez(n);
+      kakovost.ponastavi();
+    },
+    mejePrereza: () => rezanje.meje,
     sledilnik: async (vzorcev = 300, obNapredku) => {
       izrisPavziran = true;
       let izid: { blob: Blob | null; vzorcev: number } = { blob: null, vzorcev: 0 };
@@ -385,6 +418,7 @@ export async function ustvariMotor(
       window.removeEventListener("keydown", tipkaDol);
       window.removeEventListener("keyup", tipkaGor);
       orbit.dispose();
+      rezanje.unici();
       kakovost.unici();
       renderer.dispose();
     },

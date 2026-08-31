@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Cas, Motor, Nacin, Varianta, ZacetneNastavitve } from "./engine/engine";
+import type { Cas, IzbranaEtaza, Motor, Nacin, Varianta, ZacetneNastavitve } from "./engine/engine";
 
 /**
  * 3D model se (tako kot Leaflet na /nepremicnine) uvozi šele v useEffect —
@@ -12,6 +12,17 @@ import type { Cas, Motor, Nacin, Varianta, ZacetneNastavitve } from "./engine/en
  *   ?cas=dan|zahod|noc & nacin=ogled|sprehod & stanje=obstojece|prenova
  *   & cam=x,y,z & look=x,y,z & spawn=x,y,z
  */
+
+/**
+ * Etaže po PZI kotah. Številke v oznakah so namenoma spredaj — v pogovoru se
+ * reče "daj mi drugi štuk", ne "daj mi nadstropje".
+ */
+const ETAZE: { id: IzbranaEtaza; oznaka: string; opis: string }[] = [
+  { id: "vse", oznaka: "Vse", opis: "Cela hiša s streho" },
+  { id: "pritlicje", oznaka: "1", opis: "Pritličje — odreže vse nad koto +2,46 (pod stropom)" },
+  { id: "nadstropje", oznaka: "2", opis: "Nadstropje — odreže vse nad koto +5,21 (pod stropom)" },
+  { id: "podstreha", oznaka: "3", opis: "Podstreha — odreže streho nad kapjo +6,62" },
+];
 
 const CASI: { id: Cas; oznaka: string }[] = [
   { id: "dan", oznaka: "☀️ Dan" },
@@ -35,6 +46,17 @@ export default function HisaClient() {
   const [varianta, setVarianta] = useState<Varianta>("prenova");
   const [zaklenjen, setZaklenjen] = useState(false);
   const [renderStanje, setRenderStanje] = useState<string | null>(null);
+  /**
+   * Rezanje modela. Etaža in prerez sta ločena: etažo pogosto hočeš brez
+   * prereza (pogled od zgoraj v tloris), prerez pa brez etaže (cela hiša,
+   * prerezana po sredini) — in včasih oboje hkrati.
+   */
+  const [etaza, setEtaza] = useState<IzbranaEtaza>("vse");
+  const [prerezVklopljen, setPrerezVklopljen] = useState(false);
+  const [prerezOs, setPrerezOs] = useState<"x" | "z">("z");
+  const [prerezObrnjen, setPrerezObrnjen] = useState(false);
+  const [prerezPolozaj, setPrerezPolozaj] = useState(0);
+  const [meje, setMeje] = useState<{ x: [number, number]; z: [number, number] } | null>(null);
 
   const pripravljen = napredek >= 100;
 
@@ -63,6 +85,10 @@ export default function HisaClient() {
       }
       motor.obLockChange(setZaklenjen);
       motorRef.current = motor;
+      const m = motor.mejePrereza();
+      setMeje(m);
+      // Drsnik naj začne na sredini hiše — tam je prerez najbolj poveden.
+      setPrerezPolozaj((m.z[0] + m.z[1]) / 2);
       setCas(zacetek.cas!);
       setNacin(zacetek.nacin!);
       setVarianta(zacetek.varianta!);
@@ -91,6 +117,26 @@ export default function HisaClient() {
     `rounded-full px-3 py-1.5 text-xs font-semibold transition ${
       aktiven ? "bg-accent text-white" : "bg-white/10 text-white/80 hover:bg-white/20"
     }`;
+
+  const izberiEtazo = (e: IzbranaEtaza) => {
+    setEtaza(e);
+    motorRef.current?.nastaviEtazo(e);
+  };
+
+  const posodobiPrerez = (spr: Partial<{ vklopljen: boolean; os: "x" | "z"; polozaj: number; obrnjen: boolean }>) => {
+    const vklopljen = spr.vklopljen ?? prerezVklopljen;
+    const os = spr.os ?? prerezOs;
+    const obrnjen = spr.obrnjen ?? prerezObrnjen;
+    // Ob menjavi osi drsnik skoči na sredino nove osi; stara vrednost bi lahko
+    // padla čisto zunaj hiše in prerez bi bil videti kot izklopljen.
+    const polozaj =
+      spr.polozaj ?? (spr.os && meje ? (meje[spr.os][0] + meje[spr.os][1]) / 2 : prerezPolozaj);
+    setPrerezVklopljen(vklopljen);
+    setPrerezOs(os);
+    setPrerezObrnjen(obrnjen);
+    setPrerezPolozaj(polozaj);
+    motorRef.current?.nastaviPrerez({ vklopljen, os, polozaj, obrnjen });
+  };
 
   /**
    * Fotoreal: trenutni pogled se izriše štiristokrat in povpreči. Traja nekaj
@@ -197,6 +243,68 @@ export default function HisaClient() {
               🚶 Sprehod
             </button>
           </div>
+
+          {/* etaže — odreže vse nad izbrano, streha odpade */}
+          {nacin === "ogled" && (
+            <div className="flex gap-1 rounded-full bg-zinc-900/70 p-1 backdrop-blur">
+              {ETAZE.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => izberiEtazo(e.id)}
+                  className={gumb(etaza === e.id)}
+                  title={e.opis}
+                >
+                  {e.oznaka}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* prerez — ravnina, ki jo peljemo skozi hišo */}
+          {nacin === "ogled" && (
+            <div className="flex flex-col gap-1.5 rounded-2xl bg-zinc-900/70 p-2 backdrop-blur">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => posodobiPrerez({ vklopljen: !prerezVklopljen })}
+                  className={gumb(prerezVklopljen)}
+                >
+                  ✂️ Prerez
+                </button>
+                {prerezVklopljen && (
+                  <>
+                    <button type="button" onClick={() => posodobiPrerez({ os: "z" })} className={gumb(prerezOs === "z")}>
+                      S–J
+                    </button>
+                    <button type="button" onClick={() => posodobiPrerez({ os: "x" })} className={gumb(prerezOs === "x")}>
+                      V–Z
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => posodobiPrerez({ obrnjen: !prerezObrnjen })}
+                      className={gumb(false)}
+                      title="Zamenjaj vidno polovico"
+                    >
+                      ⇄
+                    </button>
+                  </>
+                )}
+              </div>
+              {prerezVklopljen && meje && (
+                <input
+                  type="range"
+                  min={meje[prerezOs][0]}
+                  max={meje[prerezOs][1]}
+                  step={0.05}
+                  value={prerezPolozaj}
+                  onChange={(ev) => posodobiPrerez({ polozaj: Number(ev.target.value) })}
+                  className="w-52 accent-accent"
+                  aria-label="Položaj prereza"
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 

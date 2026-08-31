@@ -210,6 +210,12 @@ async function vprasaj(slika: string, vprasanje: string, shema: unknown): Promis
       images: [readFileSync(slika).toString("base64")],
       stream: false,
       format: shema,
+      // keep_alive: kako dolgo Ollama drzi model v pomnilniku po zadnjem klicu.
+      // Brez tega uporabi privzetih 5 min in llama-server je 31. 8. narasel na
+      // 7,8 GB (obicajno 2,5 GB) ter tlacil pomnilnik na 80 %. Med slikami je
+      // vec sekund premora, zato model brez skode sprostimo hitro; ob naslednji
+      // sliki se nalozi znova (nekaj sekund).
+      keep_alive: "30s",
       options: { temperature: 0, num_ctx: 4096 },
     }),
   });
