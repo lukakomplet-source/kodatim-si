@@ -123,6 +123,15 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     opis:
       "Aplikacija za uvoz vozil: izračun stroškov, dokumentacija in vodenje prevzemov. Teče na poddomeni kodatim.si.",
   },
+  {
+    slug: "kontex",
+    naziv: "Kontex — predstavitvena stran",
+    stranka: "Kontex",
+    vrsta: "spletna_stran",
+    url: "https://kontex.si",
+    opis:
+      "Predstavitvena stran z obrazcem za povpraševanja (pošilja prek Resenda na info@kontex.si). Gostuje na Cloudflare Pages.",
+  },
 ];
 
 /**
