@@ -1,5 +1,6 @@
 import "server-only";
 import { chatJSON } from "@/lib/openai";
+import { opombeVNavodilo, opombeZa } from "./opombe";
 import { OZNAKE_KAROSERIJE, oznakaZnacilke, opisVozila, razvrstiPoVrednosti, type Vozilo } from "./vozilo";
 import { skupnaPodobnost, type Cenitev, type Primerljiv } from "./cenitev";
 
@@ -124,11 +125,18 @@ export async function aiPreveriUjemanje(
   ].join("\n");
 
   const poIndeksu = new Map<number, { podobnost: number; razlog: string }>();
+
+  // Uporabnikovi popravki iz prejsnjih ocen gredo v navodilo presojevalcu.
+  // Prav tu se je pokazala potreba: pri VW Arteonu je primerjava predfacelift in
+  // facelift imela za isti avto, ceprav sta to razlicna avta z razlicno ceno.
+  const opombe = await opombeZa("primerjava", { znamka: cilj.znamka, model: cilj.model });
+  const sistem = SISTEM_UJEMANJE + opombeVNavodilo(opombe);
+
   await Promise.all(
     kosi.map(async (kos) => {
       try {
         const odgovor = await chatJSON<{ ocene?: { i: number; podobnost: number; razlog: string }[] }>(
-          SISTEM_UJEMANJE,
+          sistem,
           `${glavaCilja}\n\nKANDIDATI:\n${JSON.stringify(kos.kandidati)}`,
           { temperature: 0 }
         );

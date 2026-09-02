@@ -104,20 +104,23 @@ export type CasNaTrgu = {
 
 /** Days between first sighting and leaving the board. */
 export function dniNaTrgu(
-  firstSeen: string,
-  statusSpremenjen: string | null,
-  /** The source's own "last change" date — proof the ad predates our first sighting. */
-  sourceZadnjaSprememba?: string | null
+  /** Ali zanesljivo vemo, kdaj je oglas prisel na trg (glej trg.ts v workerju). */
+  vstopZnan: boolean | null | undefined,
+  /** Kdaj je vstopil na trg — edini posten zacetek merjenja. */
+  vstopNaTrg: string | null | undefined,
+  statusSpremenjen: string | null
 ): number | null {
-  if (!statusSpremenjen) return null;
-  let zacetek = new Date(firstSeen).getTime();
-  if (sourceZadnjaSprememba) {
-    const vir = new Date(sourceZadnjaSprememba).getTime();
-    if (Number.isFinite(vir) && vir < zacetek) zacetek = vir;
-  }
-  const dni = (new Date(statusSpremenjen).getTime() - zacetek) / 86_400_000;
+  // Prej se je merilo od first_seen (in po potrebi od izvornega datuma). Oboje
+  // je napacno: first_seen pove le, kdaj smo oglas videli MI — ob prizigu
+  // zbiralnika smo naenkrat "zagledali" 53.650 oglasov, ki so bili na trgu ze
+  // mesece — "Zadnja sprememba" pa je datum UREJANJA, ne objave. Zato se meri
+  // samo tam, kjer smo prihod res videli; drugod ni stevilke.
+  if (vstopZnan !== true || !vstopNaTrg || !statusSpremenjen) return null;
+  const dni =
+    (new Date(statusSpremenjen).getTime() - new Date(vstopNaTrg).getTime()) / 86_400_000;
   return Number.isFinite(dni) && dni >= 0 ? dni : null;
 }
+
 
 export function casNaTrgu(dnevi: number[]): CasNaTrgu {
   if (dnevi.length === 0) {

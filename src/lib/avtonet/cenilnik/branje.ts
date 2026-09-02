@@ -2,6 +2,8 @@ import "server-only";
 import { chatJSON, chatJSONWithImages } from "@/lib/openai";
 import { isFirecrawlUnavailable, scrapeUrl } from "@/lib/firecrawl";
 import { createAvtonetClient } from "@/lib/avtonet/db";
+import { brezGlave, lokalniJson, lokalniModelNaVoljo, SHEMA_VOZILA } from "@/lib/avtonet/lokalniAi";
+import { opombeVNavodilo, opombeZa } from "./opombe";
 import {
   normalizirajBarvo,
   normalizirajGorivo,
@@ -42,6 +44,13 @@ export type BranjeRezultat = {
   /** Fields nothing in the source stated. */
   neznano: string[];
   opomba: string;
+  /**
+   * Kdo je vir prebral — lokalni model na tej kartici ali oblak.
+   *
+   * Ni okras: lokalni je manjši in kdaj spregleda kakšno številko, zato mora
+   * biti na zaslonu vidno, čigavemu branju gledaš rezultat.
+   */
+  bralec?: string;
 };
 
 const POLJA = [
@@ -249,28 +258,156 @@ export async function preberiIzBesedila(besedilo: string, izvor: Izvor = "besedi
   };
 }
 
+/** Kar lokalni model vrne poleg polj sheme. */
+type LokalnoBranje = {
+  znamka?: string | null;
+  model?: string | null;
+  verzija?: string | null;
+  letnik?: number | null;
+  km?: number | null;
+  kw?: number | null;
+  ccm?: number | null;
+  gorivo?: string | null;
+  menjalnik?: string | null;
+  karoserija?: string | null;
+  barva?: string | null;
+  cena?: number | null;
+  znacilke?: string[] | null;
+  facelift?: string | null;
+};
+
+/**
+ * Ali je branje sploh uporabno.
+ *
+ * Brez znamke in modela cenilnik nima česa iskati — tak izid je enak neuspehu
+ * in je pošteno, da se takrat obrnemo na oblak, namesto da uporabniku vrnemo
+ * prazen obrazec in ga pustimo ugibati, zakaj.
+ */
+function branjeUporabno(v: Vozilo): boolean {
+  return Boolean(v.znamka && v.model);
+}
+
+const NAVODILO_SLIKE = `Preberi podatke o vozilu s teh posnetkov oglasa.
+
+Preberi natančno, kar PIŠE (znamka, model, izvedenka, letnik, kilometri, moč v kW ali KM,
+gorivo, menjalnik, karoserija, cena). Česar ne vidiš, pusti null — NE ugibaj.
+
+To ni vljudnostna zahteva: ko je bil model priganjan, naj polja vseeno izpolni, si je pri
+resničnem posnetku izmislil letnik 2020 in moč 140 kW, ki ju na sliki sploh ni bilo. Prazno polje
+uporabnik dopolni v treh sekundah, izmišljeno pa tiho pokvari primerjavo.
+
+Poleg tega poglej FOTOGRAFIJE vozila in dodaj v "znacilke" samo tisto opremo, ki je jasno vidna
+(LED/matrix žarometi, panoramska streha, oblika platišč, usnjeni ali športni sedeži, velik zaslon,
+digitalni merilniki, vlečna kljuka).
+
+Posebej pomembno je polje "facelift": oceni, ali gre za prenovljeno različico serije ("facelift")
+ali za predfacelift. Sklepaj po obliki žarometov, maske, odbijača, volana in zaslona. Če se ne da
+zanesljivo ločiti, napiši null. Napačno določen facelift pokvari primerjavo bolj kot manjkajoč.`;
+
+/**
+ * Cena se vprasa POSEBEJ, z eno samo nalogo.
+ *
+ * Merjeno na resnicnem posnetku: v enotnem navodilu je model ceno bodisi
+ * spregledal bodisi vzel neto namesto bruto (15.958 namesto 18.990) in ob tem
+ * zacel ugibati se letnik in moc. Eno vprasanje o eni stvari je pri tem modelu
+ * dokazano zanesljivejse od enega dolgega navodila - isto se je pokazalo pri
+ * vizualnem pregledu oglasov.
+ */
+const SHEMA_CENE = {
+  type: "object",
+  properties: {
+    cena: { type: ["number", "null"] },
+    valuta: { type: ["string", "null"] },
+  },
+  required: ["cena"],
+} as const;
+
+const VPRASANJE_CENE =
+  "Katera cena je napisana na tem oglasu? Vrni samo številko brez pik in vejic. " +
+  "Če sta navedeni dve ceni — večja bruto (končna) in manjša neto (brez DDV, 'Net', 'brez DDV') — " +
+  "vrni VEČJO. Če cene ni videti, vrni null.";
+
+async function preberiCeno(slike: string[]): Promise<number | null> {
+  const izid = await lokalniJson<{ cena?: number | null }>(VPRASANJE_CENE, SHEMA_CENE, slike);
+  if (!izid.ok) return null;
+  const c = izid.podatki.cena;
+  return typeof c === "number" && Number.isFinite(c) && c > 100 ? c : null;
+}
+
+/**
+ * Posnetek oglasa prebere LOKALNI model na tej grafični kartici.
+ *
+ * Zakaj lokalno: to je branje slike, ki ga zna model tukaj — brez plačevanja po
+ * sliki in brez pošiljanja vsebine ven. Kartica je itak prižgana za vizualni
+ * pregled oglasov.
+ *
+ * Oblak ostaja rezerva in ne tekmec: kadar lokalni model ne prebere niti znamke
+ * in modela (ali sploh ne teče), gre poizvedba v oblak, uporabnik pa na zaslonu
+ * vidi, čigavo branje gleda. Tiho zamenjavo bi bilo nemogoče razhroščevati.
+ */
 export async function preberiIzSlik(
   dataUrls: string[],
   opcije?: { vidnaOprema?: boolean }
 ): Promise<BranjeRezultat> {
-  // For photos of the CAR (not a screenshot of the advert's spec table), the
-  // user wants visible equipment recognised — LED headlights, a panoramic roof,
-  // the alloy design, leather, a large screen. That is reading a visible fact,
-  // not inventing one, so it is allowed; anything not clearly visible still
-  // stays null.
+  const slike = dataUrls.slice(0, 4);
+
+  if (await lokalniModelNaVoljo()) {
+    const opombe = await opombeZa("branje");
+    const izid = await lokalniJson<LokalnoBranje>(
+      NAVODILO_SLIKE + opombeVNavodilo(opombe),
+      {
+        ...SHEMA_VOZILA,
+        properties: {
+          ...SHEMA_VOZILA.properties,
+          facelift: { type: ["string", "null"], enum: ["facelift", "predfacelift", null] },
+        },
+      },
+      slike.map(brezGlave)
+    );
+
+    if (izid.ok) {
+      const surovo = izid.podatki;
+      // Facelift potuje naprej kot značilka: primerjava jih že tehta, zato ni
+      // treba spreminjati oblike vozila povsod po cenilniku.
+      const znacilke = [...(surovo.znacilke ?? [])];
+      if (surovo.facelift === "facelift" || surovo.facelift === "predfacelift") {
+        znacilke.push(surovo.facelift);
+      }
+      // Cena je edino polje, ki ga splaca vprasati se enkrat posebej: brez nje
+      // uporabnik ne vidi, ali je oglas pod ali nad trgom.
+      const cena =
+        typeof surovo.cena === "number" && surovo.cena > 100
+          ? surovo.cena
+          : await preberiCeno(slike.map(brezGlave));
+      const vozilo = vVozilo({ ...surovo, znacilke, cena } as SurovoBranje);
+      if (branjeUporabno(vozilo)) {
+        const { znano, neznano } = razvrstiPolja(vozilo);
+        return {
+          vozilo,
+          izvor: "slika",
+          znano,
+          neznano,
+          bralec: `lokalni model (${izid.model}, ${(izid.ms / 1000).toFixed(1)} s)`,
+          opomba:
+            (surovo.facelift ? `Prepoznan kot ${surovo.facelift}. ` : "") +
+            (neznano.length > 0
+              ? `S posnetka ni bilo mogoče prebrati: ${neznano.join(", ")}. Ta polja lahko dopolnite ročno.`
+              : "Vsa ključna polja so bila prebrana s posnetka."),
+        };
+      }
+    }
+  }
+
+  // Rezerva: lokalni model ne teče ali ni prebral niti znamke in modela.
   const navodilo = opcije?.vidnaOprema
     ? "Preberi podatke o vozilu s teh fotografij. Kar jasno vidiš na sliki (LED/matrix žarometi, " +
       "panoramska streha, oblika platišč, usnjeni/športni sedeži, velik zaslon, digitalni merilniki), " +
       "dodaj v 'znacilke'. Česar ne vidiš jasno, NE ugibaj."
     : "Preberi podatke o vozilu iz tega posnetka oglasa.";
-  const surovo = await chatJSONWithImages<SurovoBranje>(
-    SISTEM,
-    navodilo,
-    dataUrls.slice(0, 4),
-    // The spec table on a car advert is dense small text; low detail loses the
-    // digits that matter most (mileage, power, price).
-    { temperature: 0, imageDetail: "high" }
-  );
+  const surovo = await chatJSONWithImages<SurovoBranje>(SISTEM, navodilo, slike, {
+    temperature: 0,
+    imageDetail: "high",
+  });
   const vozilo = vVozilo(surovo);
   const { znano, neznano } = razvrstiPolja(vozilo);
   return {
@@ -278,6 +415,7 @@ export async function preberiIzSlik(
     izvor: "slika",
     znano,
     neznano,
+    bralec: "oblak (lokalni model ni prebral ključnih polj)",
     opomba:
       neznano.length > 0
         ? `S posnetka ni bilo mogoče prebrati: ${neznano.join(", ")}. Ta polja lahko dopolnite ročno.`

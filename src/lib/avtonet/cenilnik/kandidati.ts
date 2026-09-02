@@ -28,6 +28,11 @@ import {
 
 export type KandidatVrstica = {
   id: string;
+  /** Ali je oglas prenovljena razlicica serije. null = ni znano. */
+  facelift?: boolean | null;
+  /** Ali zanesljivo vemo, kdaj je prisel na trg (sicer casa ni mogoce meriti). */
+  vstop_znan?: boolean | null;
+  vstop_na_trg?: string | null;
   avtonet_id: string;
   url: string;
   naziv: string | null;
@@ -61,7 +66,7 @@ const STOLPCI_OSNOVA =
   "id, avtonet_id, url, naziv, znamka, model, verzija, letnik, km, ccm, kw, gorivo, menjalnik, " +
   "pogon, karoserija, barva, serija, cena_eur, cena_prvotna_eur, status, first_seen, last_seen, " +
   "status_spremenjen, je_dealer, lokacija, source_zadnja_sprememba, naslednji_oglas_id" +
-  ", vstop_znan, vstop_na_trg";
+  ", vstop_znan, vstop_na_trg, facelift";
 
 const STOLPCI = `${STOLPCI_OSNOVA}, oprema_znacilke`;
 

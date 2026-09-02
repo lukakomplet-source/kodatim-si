@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Opomba } from "./Opomba";
 import {
   AlertTriangle,
   ArrowRight,
@@ -299,7 +300,15 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
           </div>
         )}
 
-        <p className="mt-3 text-xs text-zinc-500">{branje.opomba}</p>
+        <p className="mt-3 text-xs text-zinc-500">
+          {branje.opomba}
+          {branje.bralec ? (
+            <>
+              {" "}
+              <span className="text-zinc-400">Prebral: {branje.bralec}.</span>
+            </>
+          ) : null}
+        </p>
       </section>
 
       {/* ---------- Ocena ---------- */}
@@ -443,6 +452,65 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
         )}
       </section>
 
+      {/* ---------- Za koliko so bili taki avti dejansko prodani ---------- */}
+      {(() => {
+        // Samo zakljuceni oglasi z IZMERLJIVIM casom: tisti, ki smo jim videli
+        // prihod na trg. Pri starejsih "cas do prodaje" ni meritev, ampak cas od
+        // dneva, ko smo prizgali zbiralnik - taka stevilka je slabsa od nobene.
+        const prodani = cenitev.primerljivi
+          .filter((p) => p.status !== "aktiven" && p.cena !== null && p.cena > 0)
+          .slice(0, 8);
+        if (prodani.length === 0) return null;
+        const zMeritvijo = prodani.filter((p) => p.dniNaTrgu !== null).length;
+        return (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+              <Gauge className="h-4 w-4 text-accent" />
+              Za koliko so šli taki avti z oglasnika ({prodani.length})
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Zadnja cena, preden je oglas izginil — najbližje javnemu podatku o prodajni ceni.
+              Vir ne potrdi prodaje, zato tu piše „izginil“, ne „prodan“.
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {prodani.map((p) => (
+                <div
+                  key={p.avtonetId}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs"
+                >
+                  <span className="min-w-0 flex-1 truncate text-zinc-700">
+                    {p.naziv ?? `${p.znamka ?? ""} ${p.model ?? ""}`}
+                    <span className="text-zinc-400">
+                      {p.letnik ? ` · ${p.letnik}` : ""}
+                      {p.km !== null ? ` · ${Math.round(p.km).toLocaleString("sl-SI")} km` : ""}
+                    </span>
+                  </span>
+                  <span className="font-semibold text-zinc-900">{eur(p.cena)}</span>
+                  <span className="w-24 text-right text-zinc-500">
+                    {p.dniNaTrgu !== null ? `${Math.round(p.dniNaTrgu)} dni` : "čas ni znan"}
+                  </span>
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-zinc-400 hover:text-zinc-700"
+                  >
+                    oglas ↗
+                  </a>
+                </div>
+              ))}
+            </div>
+            {zMeritvijo < prodani.length && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Pri {prodani.length - zMeritvijo} od teh čas na trgu ni merljiv — bili so na
+                oglasniku že pred začetkom našega spremljanja, zato njihovega prihoda nismo videli.
+                Cena je kljub temu uporabna.
+              </p>
+            )}
+          </section>
+        );
+      })()}
+
       {/* ---------- Primerljiva vozila ---------- */}
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 px-5 py-4">
@@ -485,6 +553,8 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
           only for a domestic avto.net ad already in our own market, where there
           is nothing to import. */}
       {branje.izvor !== "baza" && branje.izvor !== "avtonet" && <UvoznaKalkulacija cenitev={cenitev} />}
+
+      <Opomba znamka={cenitev.cilj.znamka} model={cenitev.cilj.model} />
     </div>
   );
 }

@@ -301,8 +301,13 @@ export async function oceniVozilo(cilj: Vozilo, utezi: Utezi = PRIVZETE_UTEZI): 
         lokacija: r.lokacija,
         firstSeen: r.first_seen,
         statusSpremenjen: r.status_spremenjen,
-        dniNaTrgu: dniNaTrgu(r.first_seen, r.status_spremenjen, r.source_zadnja_sprememba),
-        znacilke: r.oprema_znacilke ?? [],
+        dniNaTrgu: dniNaTrgu(r.vstop_znan, r.vstop_na_trg, r.status_spremenjen),
+        // Facelift iz baze pristane med znacilkami, ker vrata v podobnosti
+        // berejo prav tam - isti kanal kot za branje lokalnega modela.
+        znacilke: [
+          ...(r.oprema_znacilke ?? []),
+          ...(r.facelift === true ? ["facelift"] : r.facelift === false ? ["predfacelift"] : []),
+        ],
         podobnost: ocena.skupno,
         ocena,
         aiPodobnost: null,

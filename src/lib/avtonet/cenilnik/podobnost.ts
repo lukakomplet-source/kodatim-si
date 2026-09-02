@@ -214,6 +214,19 @@ export function oceniPodobnost(cilj: Vozilo, kandidat: Vozilo, utezi: Utezi = PR
  * The gate factor (0..1) and the human reasons behind it. Each mismatch that
  * both sources actually state multiplies the score down; unknowns are skipped.
  */
+/**
+ * Ali vozilo velja za facelift — iz značilk, ker tam pristane tako branje
+ * lokalnega modela kot podatek iz baze.
+ *
+ * Vrne null, kadar se ne ve. Neznano ni isto kot različno.
+ */
+function faceliftStatus(v: Vozilo): "facelift" | "predfacelift" | null {
+  const znacilke = (v.znacilke ?? []).map((z) => z.toLowerCase());
+  if (znacilke.some((z) => z === "predfacelift" || z.includes("predfacelift"))) return "predfacelift";
+  if (znacilke.some((z) => z === "facelift" || z.includes("facelift"))) return "facelift";
+  return null;
+}
+
 function vrata(cilj: Vozilo, kandidat: Vozilo): { faktor: number; razlogi: string[] } {
   let faktor = 1;
   const razlogi: string[] = [];
@@ -236,6 +249,22 @@ function vrata(cilj: Vozilo, kandidat: Vozilo): { faktor: number; razlogi: strin
       faktor *= 0.55;
       razlogi.push("bistveno drugačna moč");
     }
+  }
+
+  // Facelift proti predfaceliftu.
+  //
+  // Uporabnikov primer, ki je to pravilo sprožil: VW Arteon predfacelift
+  // (fizične tipke na volanu, manjši zaslon) proti faceliftu (volan na dotik,
+  // prostostoječi zaslon). Isti model, isti motor, isti letnik — a drug avto in
+  // druga cena. Doslej ju je primerjava imela za enaka.
+  //
+  // Vrata se sprožijo SAMO, kadar je status znan na obeh straneh: neznano ni
+  // isto kot različno, in ugibanje bi tu izločilo pol dobrih primerjav.
+  const faceliftCilj = faceliftStatus(cilj);
+  const faceliftKandidat = faceliftStatus(kandidat);
+  if (faceliftCilj && faceliftKandidat && faceliftCilj !== faceliftKandidat) {
+    faktor *= 0.5;
+    razlogi.push(faceliftKandidat === "facelift" ? "facelift (cilj ni)" : "predfacelift (cilj je facelift)");
   }
 
   return { faktor, razlogi };
