@@ -49,6 +49,85 @@ export function najemMediane(
   return rezultat;
 }
 
+/**
+ * OCENA NAJEMNINE ZA VSAK OGLAS, ne le za investicijski cilj.
+ *
+ * Mediane so ločene PO TIPU, ker se trgi ne obnašajo enako: stanovanje se
+ * oddaja po drugem €/m² kot poslovni prostor, hiša pa se v praksi oddaja po
+ * stanovanjskih cenah (najemnik plača bivalno površino, ne strehe). Zato hiša
+ * uporabi stanovanjsko mediano, poslovni prostor svojo.
+ *
+ * Ključ je `tip|regija`; če za tip in regijo ni petih vzorcev, se poskusi tip
+ * čez vso državo, in šele nato se odpove. Odpoved je pomembna: "ni ocene" je
+ * pošten odgovor, izmišljena številka pa bi šla naravnost v izračun donosa.
+ */
+export function najemMedianePoTipu(
+  vrstice: { tip: string | null; regija: string | null; cena_eur: number | null; povrsina_m2: number | null }[]
+): NajemMediane {
+  const skupine = new Map<string, number[]>();
+  const dodaj = (kljuc: string, v: number) => {
+    const arr = skupine.get(kljuc) ?? [];
+    arr.push(v);
+    skupine.set(kljuc, arr);
+  };
+  for (const v of vrstice) {
+    if (!v.tip) continue;
+    const m2 = povrsinaZaIzracun(v.tip, v.povrsina_m2);
+    if (v.cena_eur === null || m2 === null || m2 <= 10) continue;
+    const naM2 = Number(v.cena_eur) / m2;
+    if (!Number.isFinite(naM2) || naM2 <= 0) continue;
+    dodaj(`${v.tip}|`, naM2);
+    if (v.regija) dodaj(`${v.tip}|${v.regija}`, naM2);
+  }
+  const rezultat: NajemMediane = new Map();
+  for (const [kljuc, arr] of skupine) {
+    if (arr.length >= 5) rezultat.set(kljuc, { naM2: Math.round(mediana(arr)! * 100) / 100, vzorec: arr.length });
+  }
+  return rezultat;
+}
+
+export type OcenaNajemnineOglasa = {
+  /** Mesečna najemnina: iz oglasa (oddaja) ali ocenjena (prodaja). */
+  mesecna: number;
+  naM2: number;
+  vzorec: number;
+  /** Iz katere skupine je mediana — za pošten prikaz vira. */
+  obmocje: string;
+  /** Bruto donos: letna najemnina / cena. Null pri oddajnih oglasih. */
+  brutoDonosPct: number | null;
+};
+
+/**
+ * Koliko bi ta nepremičnina nesla v najem in kakšen donos je to pri njeni ceni.
+ * Vrne null, kadar ni ne površine ne dovolj velikega vzorca — raje nič kot
+ * številka, ki je nihče ne more braniti.
+ */
+export function oceniNajemninoOglasa(
+  v: { tip: string | null; regija: string | null; povrsina_m2: number | null; cena_eur: number | null },
+  mediane: NajemMediane
+): OcenaNajemnineOglasa | null {
+  if (!v.tip) return null;
+  // Hiša se odda kot stanovanje: najemnik plača bivalno površino.
+  const tipZaNajem = v.tip === "hisa" ? "stanovanje" : v.tip;
+  const povrsina = povrsinaZaIzracun(v.tip, v.povrsina_m2);
+  if (povrsina === null || povrsina <= 10) return null;
+
+  const vRegiji = v.regija ? mediane.get(`${tipZaNajem}|${v.regija}`) : undefined;
+  const vDrzavi = mediane.get(`${tipZaNajem}|`);
+  const med = vRegiji ?? vDrzavi;
+  if (!med) return null;
+
+  const mesecna = Math.round(med.naM2 * povrsina);
+  const cena = v.cena_eur === null ? null : Number(v.cena_eur);
+  return {
+    mesecna,
+    naM2: med.naM2,
+    vzorec: med.vzorec,
+    obmocje: vRegiji && v.regija ? v.regija : "vsa Slovenija",
+    brutoDonosPct: cena !== null && cena > 1000 ? Math.round(((mesecna * 12) / cena) * 1000) / 10 : null,
+  };
+}
+
 function mediana(vrednosti: number[]): number | null {
   if (vrednosti.length === 0) return null;
   const s = [...vrednosti].sort((a, b) => a - b);

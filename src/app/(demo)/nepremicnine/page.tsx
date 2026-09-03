@@ -10,6 +10,9 @@ import {
   najemMediane,
   oceniKandidata,
   type OcenaKandidata,
+  najemMedianePoTipu,
+  oceniNajemninoOglasa,
+  type OcenaNajemnineOglasa,
 } from "@/lib/nepremicnine/cilj";
 import { bboxOkoli, kandidatiZaSredisce, razdaljaKm } from "@/lib/nepremicnine/kraji";
 import { IskalnaVrstica } from "./IskalnaVrstica";
@@ -58,6 +61,8 @@ type Vrstica = {
   agencija: string | null;
   telefon: string | null;
   slika_url: string | null;
+  /** Koliko fotografij ima oglas pri viru — značka "N fotografij" na kartici. */
+  st_slik: number | null;
   lat: number | null;
   lng: number | null;
   first_seen: string;
@@ -256,22 +261,37 @@ export default async function NepremicninePage({
     });
   }
 
+  /**
+   * NAJEMNINE SE PREBEREJO VEDNO, ne samo ob investicijskem cilju.
+   *
+   * Prej je oceno najemnine videl samo tisti, ki je iskal z investicijskim
+   * ciljem. Vprašanje "koliko bi to neslo v najem" pa je prvo vprašanje pri
+   * vsakem oglasu, tudi kadar človek samo brska. En sam poizvedbeni klic za
+   * celo stran, zato je zastonj.
+   *
+   * Tipi se NE filtrirajo: poslovni prostor ima svoj trg in svojo mediano.
+   */
+  const { data: najemni } = await db
+    .from("nep_oglasi")
+    .select("tip, regija, cena_eur, povrsina_m2")
+    .eq("status", "aktiven")
+    .eq("posel", "oddaja")
+    .gt("cena_eur", 100)
+    .lt("cena_eur", 20000)
+    .limit(8000);
+  const najemniVrstice = (najemni ?? []) as {
+    tip: string | null;
+    regija: string | null;
+    cena_eur: number | null;
+    povrsina_m2: number | null;
+  }[];
+  const medianePoTipu = najemMedianePoTipu(najemniVrstice);
+
   let ocene: Map<string, OcenaKandidata> | null = null;
   if (cilj) {
-    // Mediane najemnin €/m² po regijah iz NAŠIH najemnih oglasov — en sam
-    // query za vse kandidate (enota hiše se oddaja kot stanovanje).
-    const { data: najemni } = await db
-      .from("nep_oglasi")
-      .select("regija, cena_eur, povrsina_m2")
-      .eq("status", "aktiven")
-      .eq("posel", "oddaja")
-      .eq("tip", "stanovanje")
-      .gt("cena_eur", 100)
-      .lt("cena_eur", 10000)
-      .limit(5000);
-    const mediane = najemMediane(
-      (najemni ?? []) as { regija: string | null; cena_eur: number | null; povrsina_m2: number | null }[]
-    );
+    // Cilj uporablja stanovanjske mediane po regijah (enota hiše se odda kot
+    // stanovanje) — ista številka kot doslej, da se ocene ciljev ne premaknejo.
+    const mediane = najemMediane(najemniVrstice.filter((v) => v.tip === "stanovanje"));
     ocene = new Map(vrstice.map((v) => [v.id, oceniKandidata(cilj, v, mediane)]));
     if (razvrsti === "cilj") {
       vrstice = [...vrstice].sort((a, b) => {
@@ -570,8 +590,52 @@ export default async function NepremicninePage({
           const znizana = v.cena_prvotna_eur !== null && v.cena_eur !== null && v.cena_eur < v.cena_prvotna_eur;
           const dni = dniNaTrgu(v.first_seen, zdaj);
           const oc = cilj && ocene ? (ocene.get(v.id) ?? null) : null;
+          // Najemnina in donos za VSAK oglas; pri oddajnih je najemnina kar cena.
+          const najem: OcenaNajemnineOglasa | null =
+            v.posel === "oddaja" ? null : oceniNajemninoOglasa(v, medianePoTipu);
           return (
-            <article key={v.id} className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <article key={v.id} className="flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              {/*
+                SLIKA PO REFERENCI, NE PO KOPIJI.
+                Brskalnik jo naloži naravnost z izvirnika — datoteke ne kopiramo
+                ne na strežnik ne na disk. Tako zahteva nepremicnine.net, ki ima
+                v robots.txt `Content-Signal: use=reference` (izrecen pridržek
+                pravic po 4. členu direktive EU 2019/790), in tako je pošteno do
+                vsakega vira: slika ostane njegova, promet vidi on, klik pelje
+                nanj.
+                `loading="lazy"` pomeni, da se naloži šele, ko prideš do nje —
+                pri stotih karticah na strani je razlika med "nekaj slik" in
+                "sto zahtevkov na vir" ob vsakem odprtju iskalnika.
+              */}
+              <a
+                href={v.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative block aspect-[4/3] w-full overflow-hidden bg-zinc-100"
+                title="Odpri oglas pri viru"
+              >
+                {v.slika_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={v.slika_url}
+                    alt={v.naslov ?? "Fotografija nepremičnine"}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover transition duration-300 hover:scale-[1.03]"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                    Brez fotografije
+                  </span>
+                )}
+                {v.st_slik !== null && v.st_slik > 1 && (
+                  <span className="absolute bottom-2 right-2 rounded-full bg-zinc-900/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+                    {v.st_slik} fotografij
+                  </span>
+                )}
+              </a>
+
+              <div className="flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
@@ -698,6 +762,28 @@ export default async function NepremicninePage({
                 </div>
               )}
 
+              {/* Koliko bi to neslo v najem — na vsakem oglasu, ne le ob cilju.
+                  Vsak € izvira iz naših najemnih oglasov; vzorec je izpisan,
+                  da je vidno, kako trdna je ocena. */}
+              {najem && (
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-xl bg-emerald-50/60 px-3 py-2 ring-1 ring-emerald-100">
+                  <span className="text-xs text-zinc-600">
+                    V najem ~<strong className="text-emerald-800">{najem.mesecna.toLocaleString("sl-SI")} €/mes</strong>
+                  </span>
+                  {najem.brutoDonosPct !== null && (
+                    <span className="text-xs text-zinc-600">
+                      bruto donos{" "}
+                      <strong className={najem.brutoDonosPct >= 5 ? "text-emerald-800" : "text-zinc-800"}>
+                        {najem.brutoDonosPct.toLocaleString("sl-SI")} %
+                      </strong>
+                    </span>
+                  )}
+                  <span className="text-[10px] text-zinc-400">
+                    ocena · mediana {najem.naM2.toLocaleString("sl-SI")} €/m² ({najem.obmocje}, n={najem.vzorec})
+                  </span>
+                </div>
+              )}
+
               {v.opis && <p className="mt-2 line-clamp-3 text-xs text-zinc-500">{v.opis}</p>}
 
               {/* Velik, nespregledljiv gumb na izvirnik: slike in galerija so tam. */}
@@ -736,6 +822,7 @@ export default async function NepremicninePage({
                 >
                   ANALIZIRAJ
                 </Link>
+              </div>
               </div>
             </article>
           );
