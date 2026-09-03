@@ -336,6 +336,14 @@ async function pregledSeznamov(
     /** Največ strani v tem prehodu čez rezino; brez omejitve = do konca. */
     najvecStraniTu = Number.POSITIVE_INFINITY
   ): Promise<void> => {
+      /**
+       * Meja strani na rezino velja TUDI v polnem obhodu, ne le v preletu —
+       * prav v polnem obhodu se je 915-stranska rezina razvila v tridesetourni
+       * krog. Obvelja manjša od obeh mej.
+       */
+      if (vir.najvecStraniNaRezino !== undefined) {
+        najvecStraniTu = Math.min(najvecStraniTu, vir.najvecStraniNaRezino);
+      }
       let straniTu = 0;
       let stran = odStrani;
       let zadnja: number | null = null;

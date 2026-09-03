@@ -120,6 +120,20 @@ export type VirAdapter = {
    */
   dnevniProracunVira?: number;
   /**
+   * Največ strani ZNOTRAJ ENE REZINE v polnem obhodu.
+   *
+   * Varovalka proti napačnemu številu zadetkov. 3. 9. 2026 je rezina
+   * "prodaja/obalno-kraska/stanovanje" na nepremicnine.net javila 22.873
+   * zadetkov in s tem 915 strani; zanka jih je poslušno prehodila in en sam
+   * krog je trajal 30 ur — v tem času ni prišla na vrsto nobena druga regija,
+   * 2. faza pa je dobila štiri minute pred iztekom dneva.
+   *
+   * Nobena kategorija slovenskega portala nima devetsto strani. Če jih vir
+   * javi, je narobe prebrana številka in ne trg. Rotacija rezin poskrbi, da se
+   * odrezani del pobere naslednjič — izgube ni, je pa meja.
+   */
+  najvecStraniNaRezino?: number;
+  /**
    * INKREMENTALNO BRANJE — najmočnejši vzvod, ki ga imamo.
    *
    * Če vir seznam razvrsti od najnovejšega, so novi oglasi na prvih straneh.

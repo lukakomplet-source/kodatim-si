@@ -384,6 +384,22 @@ export async function preberiDetajl(page: Page): Promise<Detajl> {
 export const adapter: VirAdapter = {
   vir: VIR,
   omejitve: OMEJITVE,
+  /**
+   * MEJE, KI JIH ADAPTER DOSLEJ NI IMEL.
+   *
+   * Brez njih je en krog 2.–3. 9. 2026 naredil 4.567 zahtevkov in trajal 30 ur.
+   * To ni bilo niti vljudno do vira niti koristno za bazo: ves dan je šel v eno
+   * regijo, podrobnosti (2. faza) pa so ostale pri 2 % oglasov — zato iskalnik
+   * po sobah, energetskem razredu in opremi ni imel po čem iskati.
+   *
+   * Zdaj je dan razdeljen: 1. faza dobi 400 strani (dovolj za sveže oglase v
+   * vseh rezinah), preostanek dnevnega proračuna pa gre v 2. fazo, kjer se
+   * baza dejansko poglablja.
+   */
+  najvecStrani: 400,
+  najvecStraniNaRezino: 40,
+  dnevnaMejaStrani: 400,
+  dnevniProracunVira: 1600,
   pricakovanRazpon: PRICAKOVAN_RAZPON,
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
@@ -394,7 +410,9 @@ export const adapter: VirAdapter = {
     "Pogoji (avg. 2020) prepovedujejo meta-iskanje in robote; izjema velja samo za SPLOŠNE iskalnike. Za komercialno rabo je predviden predhoden dogovor z MEGANET. Slik ne kopiramo, oglas vedno kaže na izvirnik.",
   // 2. faza je pri tem viru dražja od seznamov (Cloudflare pusti skozi prvo
   // zahtevo vsakega konteksta), zato majhna kvota in isti razmik kot seznami.
-  detajli: { zamikMs: 6000, kvota: 250, preberi: preberiDetajl },
+  // Kvota 250 na krog je pri 68.000 oglasih pomenila 272 dni do polne baze.
+  // Pri 6 s razmika je 1.200 detajlov ~2 uri dela na dan in ~8 tednov do konca.
+  detajli: { zamikMs: 6000, kvota: 1200, preberi: preberiDetajl },
   rezine: vseRezine,
   seznamUrl: (r, stran) => seznamUrl(r as Rezina, stran),
   preberiSeznam,
