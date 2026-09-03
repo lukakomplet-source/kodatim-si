@@ -161,6 +161,34 @@ export async function zajemiDetajle(
       .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lt.${zdaj}`);
 
   /**
+   * PREVERBA OBSTOJA — ista pot, drugo vprašanje.
+   *
+   * Ta vrsta NE filtrira `detajl_zajet`: zanima nas oglas, ki ga dolgo nismo
+   * videli na seznamu, ne glede na to, ali ima podrobnosti. Njegova stran je
+   * dokaz: 404/410 pomeni, da ga na trgu ni več (prodan ali umaknjen), 200 pa
+   * osveži `last_seen` in s tem dokaže nasprotno.
+   *
+   * Zakaj je to potrebno. Izginotja so doslej smela slediti samo iz SKLENJENEGA
+   * kroga rotacije, ker en zagon prebere le del kataloga. Pri bolhi se krog ob
+   * 60 zahtevkih na dan sklene enkrat na dva tedna, zato je bilo 3. 9. 2026 od
+   * 4.951 aktivnih oglasov 4.897 takih, ki jih nismo videli teden dni ali več —
+   * in nobeden ni bil označen za izginulega. Označiti jih vse bi bilo narobe
+   * (nismo pogledali), pustiti jih vse pa tudi (baza kaže prodane hiše).
+   * Preverba obstoja to razreši z dokazom namesto s sklepanjem.
+   */
+  const PRAG_STAROSTI_DNI = 7;
+  const pragStarosti = new Date(Date.now() - PRAG_STAROSTI_DNI * 86_400_000).toISOString();
+  const preverbaObstoja = () =>
+    db
+      .from("nep_oglasi")
+      .select(POLJA)
+      .eq("vir", vir.vir)
+      .eq("status", "aktiven")
+      .lt("last_seen", pragStarosti)
+      .lt("detajl_poskusov", NAJVEC_POSKUSOV)
+      .or(`detajl_naslednji_poskus.is.null,detajl_naslednji_poskus.lt.${zdaj}`);
+
+  /**
    * VRSTA IMA PREDNOSTNI RED, NE ZAPOREDJA.
    *
    * Izmerjeno pri bolhi: 2.829 od 3.203 aktivnih oglasov ima ceno IN površino
@@ -178,11 +206,19 @@ export async function zajemiDetajle(
    */
   const kvota = vir.detajli.kvota;
   const zaRep = Math.max(1, Math.floor(kvota / 5));
-  const [manjkaRes, noviRes, stariRes] = await Promise.all([
+  /**
+   * Četrtina kroga gre v preverbo obstoja. Ne več: baza se mora tudi
+   * poglabljati, ne le čistiti. Ne manj: dokler prodanih ne odkrivamo, jih
+   * iskalnik ponuja naprej in vsak tak zadetek je izgubljen čas uporabnika.
+   */
+  const zaObstoj = Math.max(1, Math.floor(kvota / 4));
+  const [obstojRes, manjkaRes, noviRes, stariRes] = await Promise.all([
+    preverbaObstoja().order("last_seen", { ascending: true }).limit(zaObstoj),
     osnova().is("povrsina_m2", null).order("cena_eur", { ascending: false, nullsFirst: false }).limit(kvota),
     osnova().order("first_seen", { ascending: false }).limit(kvota),
     osnova().order("first_seen", { ascending: true }).limit(zaRep),
   ]);
+  if (obstojRes.error) throw new Error(`Branje vrste za preverbo obstoja ni uspelo: ${obstojRes.error.message}`);
   if (manjkaRes.error) throw new Error(`Branje prednostne vrste ni uspelo: ${manjkaRes.error.message}`);
   if (noviRes.error) throw new Error(`Branje vrste detajlov ni uspelo: ${noviRes.error.message}`);
   if (stariRes.error) throw new Error(`Branje repa vrste ni uspelo: ${stariRes.error.message}`);
@@ -190,6 +226,7 @@ export async function zajemiDetajle(
   // Razredi se prekrivajo; vrstni red vstavljanja določi prednost.
   const poId = new Map<string, Vrstica>();
   for (const v of [
+    ...((obstojRes.data ?? []) as Vrstica[]),
     ...((manjkaRes.data ?? []) as Vrstica[]),
     ...((stariRes.data ?? []) as Vrstica[]),
     ...((noviRes.data ?? []) as Vrstica[]),
@@ -201,6 +238,7 @@ export async function zajemiDetajle(
   log("info", "prednostna vrsta 2. faze", {
     vir: vir.vir,
     brezPovrsine: (manjkaRes.data ?? []).length,
+    zaPreverboObstoja: (obstojRes.data ?? []).length,
     skupajVKrogu: vrsta.length,
   });
   const { count: skupajCaka } = await db
@@ -314,7 +352,16 @@ export async function zajemiDetajle(
 
           const { error: e } = await db
             .from("nep_oglasi")
-            .update({ ...vrsticaBaze, detajl_zajet: new Date().toISOString(), detajl_naslednji_poskus: null })
+            .update({
+              ...vrsticaBaze,
+              detajl_zajet: new Date().toISOString(),
+              detajl_naslednji_poskus: null,
+              // Stran se je odprla s statusom 200 — to je DOKAZ, da je oglas še
+              // na trgu, in velja enako kot da bi ga videli na seznamu. Brez
+              // tega bi preverba obstoja isti oglas jemala v vsak krog, ker bi
+              // `last_seen` ostal star.
+              last_seen: new Date().toISOString(),
+            })
             .eq("id", o.id);
           if (e) throw new Error(`Zapis detajla ni uspel: ${e.message}`);
 

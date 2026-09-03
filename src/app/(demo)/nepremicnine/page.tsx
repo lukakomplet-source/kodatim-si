@@ -63,6 +63,8 @@ type Vrstica = {
   slika_url: string | null;
   /** Koliko fotografij ima oglas pri viru — značka "N fotografij" na kartici. */
   st_slik: number | null;
+  /** Kdaj je oglas prešel v "izginil" — datum na znački v pogledu "Ni več na trgu". */
+  status_spremenjen: string | null;
   lat: number | null;
   lng: number | null;
   first_seen: string;
@@ -115,7 +117,15 @@ export default async function NepremicninePage({
   const ai: NepFiltri = razklad?.filtri ?? {};
 
   const cilj = razklad?.cilj ?? null;
-  const pogled = st("pogled") === "zemljevid" ? "zemljevid" : "seznam";
+  /**
+   * "prodane" je pogled na oglase, ki jih na trgu ni več. Ne trdimo, da so
+   * prodani — vir pove samo, da je stran izginila (HTTP 404/410) ali da oglasa
+   * ob sklenjenem obhodu ni bilo več. Prodaja in umik sta z naše strani
+   * nerazločljiva, zato je naslov "Ni več na trgu" in ne "Prodano".
+   */
+  const pogledParam = st("pogled");
+  const pogled = pogledParam === "zemljevid" ? "zemljevid" : pogledParam === "prodane" ? "prodane" : "seznam";
+  const prodane = pogled === "prodane";
 
   // Radij: središče se razreši v šifrantu krajev (toleranca na sklone).
   const db0 = createAvtonetClient();
@@ -175,7 +185,11 @@ export default async function NepremicninePage({
 
   const zdaj = odcitekUre();
   const db = db0;
-  let qy = db.from("nep_oglasi").select("*", { count: "exact" }).eq("status", "aktiven").eq("posel", posel);
+  let qy = db
+    .from("nep_oglasi")
+    .select("*", { count: "exact" })
+    .eq("status", prodane ? "izginil" : "aktiven")
+    .eq("posel", posel);
   if (tipi.length === 1) qy = qy.eq("tip", tipi[0]);
   else if (tipi.length > 1) qy = qy.in("tip", tipi);
   if (regija) qy = qy.eq("regija", regija);
@@ -566,6 +580,13 @@ export default async function NepremicninePage({
             Seznam
           </Link>
           <Link
+            href={povezava({ pogled: "prodane", stran: "" })}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 ${prodane ? "bg-accent text-white" : "text-zinc-600 hover:bg-zinc-50"}`}
+            title="Oglasi, ki jih pri viru ni več"
+          >
+            Ni več na trgu
+          </Link>
+          <Link
             href={povezava({ pogled: "zemljevid", stran: "" })}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 ${pogled === "zemljevid" ? "bg-accent text-white" : "text-zinc-600 hover:bg-zinc-50"}`}
           >
@@ -583,6 +604,15 @@ export default async function NepremicninePage({
             ceno odpre podrobnosti.
           </p>
         </div>
+      )}
+
+      {prodane && (
+        <p className="mt-3 rounded-xl bg-zinc-100 px-4 py-2.5 text-xs leading-snug text-zinc-600">
+          Oglasi, ki jih pri viru <strong>ni več</strong> — stran je vrnila 404/410 ali pa jih ob sklenjenem obhodu ni
+          bilo več na seznamu. Ali so <strong>prodani ali samo umaknjeni, ne vemo</strong>: vir tega ne pove in
+          izmišljati si ne bomo. Cena je zadnja, ki smo jo videli, zato so ti oglasi uporabni kot primerjava —
+          po čem se je res prodajalo, ne po čem se ponuja.
+        </p>
       )}
 
       <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -703,7 +733,13 @@ export default async function NepremicninePage({
                 {v.vec_enot && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-700">Več enot</span>}
                 {v.za_obnovo && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">Za obnovo</span>}
                 {v.za_investicijo && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600">Investicija</span>}
-                {dni >= 180 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Dolgo na trgu</span>}
+                {dni >= 180 && !prodane && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Dolgo na trgu</span>}
+                {prodane && (
+                  <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    Ni več na trgu
+                    {v.status_spremenjen ? ` · ${new Date(v.status_spremenjen).toLocaleDateString("sl-SI")}` : ""}
+                  </span>
+                )}
               </div>
 
               {/* Mini-izračun proti cilju: iste ločnice kot v kalkulatorju —
