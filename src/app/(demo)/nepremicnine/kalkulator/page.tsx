@@ -97,7 +97,7 @@ export default async function KalkulatorPage({
   if (zacetek.prenova === null && ciljPrenova !== null) zacetek.prenova = ciljPrenova;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="mx-auto max-w-7xl px-4 py-8">
       <Link
         href="/nepremicnine"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 hover:text-accent"
@@ -110,9 +110,10 @@ export default async function KalkulatorPage({
         Investicijski kalkulator
       </h1>
       <p className="mt-1.5 max-w-3xl text-sm text-zinc-500">
-        Stavba je vredna toliko, kot zasluži: najemnine → NOI → cap rate → cena. Spodaj še kredit po
-        slovenskih bančnih pravilih (Banka Slovenije), denarni tok in donos na vloženi denar. Vsak
-        drsnik takoj preračuna vse.
+        Tri vprašanja: koliko vložiš, koliko ti vsak mesec ostane in ali je to dober posel. Zgoraj
+        odgovor v treh številkah, spodaj vsa globina — kredit po pravilih Banke Slovenije, prenova
+        po postavkah, davek za fizično osebo ali d.o.o., ocena 0–100 in slika čez deset let. Vsako
+        polje takoj preračuna vse.
       </p>
       <NepNav aktiven="/nepremicnine/kalkulator" jeAdmin={jeAdmin} />
       <KalkulatorClient zacetek={zacetek} />
