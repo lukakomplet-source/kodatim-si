@@ -283,7 +283,17 @@ export const adapter: VirAdapter = {
   pravno:
     "Pogoji uporabe scrapinga ne omenjajo, prepovedujejo pa vsebino »prepisovati, ponovno objavljati in razširjati« brez pisnega dovoljenja družbe Salomon d.o.o. robots.txt prepoveduje /admin, /oddaja in /moj-salomon — teh ne odpiramo. Ker dovoljenje ni izrecno, je vir privzeto IZKLOPLJEN.",
   hlajenjeUr: 6,
-  detajli: { zamikMs: 8000, kvota: 120, preberi: preberiDetajl },
+  /**
+   * Meje, ki jih adapter ni imel — ista lekcija kot pri nepremicnine.net
+   * (3. 9. 2026, ena rezina je javila 915 strani in krog je trajal 30 ur).
+   * Vir ima ~1.200 aktivnih oglasov, zato so meje majhne in vseeno zadostne.
+   */
+  najvecStrani: 80,
+  najvecStraniNaRezino: 25,
+  dnevnaMejaStrani: 80,
+  dnevniProracunVira: 400,
+  // 1.185 aktivnih, 51 % ze ima podrobnosti: 300 na krog dokonca bazo v dveh dneh.
+  detajli: { zamikMs: 8000, kvota: 300, preberi: preberiDetajl },
   rezine: vseRezine,
   seznamUrl: (r, stran) => seznamUrl(r as SalomonRezina, stran),
   preberiSeznam,

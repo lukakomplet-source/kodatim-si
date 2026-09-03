@@ -279,9 +279,20 @@ export const adapter: VirAdapter = {
   crawlDelayS: null,
   pravno:
     "Splošni pogoji, razdelek 8: prepovedano je meta-iskanje in »uporaba avtomatskih poizvedb ali drugih robotov«; izjema velja SAMO za splošne spletne iskalnike, vertikalni so izvzeti. Prepovedano je tudi kopiranje vsebine oglasov in vključevanje v drugo storitev. Zato je vir privzeto IZKLOPLJEN — vklopi ga lahko samo človek. robots.txt prepoveduje /userarea/, /accounts/, /api/v1/userarea/, /listing-mortgage-inquiry/ — teh ne odpiramo nikoli.",
+  /**
+   * Meje po isti lekciji kot pri nepremicnine.net (3. 9. 2026): brez dnevne
+   * meje in brez meje na rezino zna en krog ob napačno prebranem številu
+   * zadetkov teči ure in požreti cel dan, podrobnosti pa ostanejo prazne.
+   * Vir ima ~3.000 aktivnih oglasov, zato je 600 zahtevkov na dan dovolj za
+   * sveže sezname in polno 2. fazo.
+   */
   najvecStrani: 120,
+  najvecStraniNaRezino: 30,
+  dnevnaMejaStrani: 120,
+  dnevniProracunVira: 600,
   hlajenjeUr: 6,
-  detajli: { zamikMs: 6000, kvota: 150, preberi: preberiDetajl },
+  // 2.994 aktivnih oglasov: pri 450 detajlih na krog je baza polna v nekaj dneh.
+  detajli: { zamikMs: 6000, kvota: 450, preberi: preberiDetajl },
   rezine: vseRezine,
   seznamUrl: (r, stran) => seznamUrl(r as SiolRezina, stran),
   preberiSeznam,
