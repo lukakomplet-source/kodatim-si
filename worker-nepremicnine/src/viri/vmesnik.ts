@@ -163,6 +163,19 @@ export type VirAdapter = {
    * Naš dejanski razmik je `omejitve.zamikMs` in je nikoli ne sme podkoračiti.
    */
   crawlDelayS?: number | null;
+  /**
+   * Ali smemo PDF/slikovni arhiv delati pri TEM viru.
+   *
+   * Ni isto kot `slikePolitika`. Ta zastavica je izrecno DOVOLJENJE, ki ga
+   * postavi človek po pregledu robots.txt in pogojev; brez nje se arhiv ne
+   * dela. Povod: nepremicnine.net ima v robots.txt
+   * `Content-Signal: use=reference` — izrecen pridržek pravic po 4. členu
+   * direktive EU 2019/790. Ko je bil vir 3. 9. 2026 vklopljen, ga je PDF
+   * arhivar začel arhivirati skupaj z vsemi fotografijami, ker je pogled
+   * kandidatov gledal samo `omogocen`. Kopija cele strani s slikami je natanko
+   * to, kar `reference` izključuje.
+   */
+  dovoljenArhivSlik?: boolean;
   /** Kaj o zajemu pravijo pogoji uporabe tega vira — vidno v konzoli. */
   pravno?: string;
   rezine(): Rezina[];

@@ -462,18 +462,50 @@ export async function porabaDanes(db: Db, vir: string): Promise<number> {
   }
 }
 
+/**
+ * Prištej porabo — VARNO PRED DVEMA PROCESOMA.
+ *
+ * Prva različica je brala vrednost, ji prištela in zapisala nazaj. Z enim
+ * procesom je to delovalo; odkar isto knjigo pišeta zbiralnik IN arhivar, se
+ * zapisi izgubljajo: 3. 9. 2026 je bilo v knjigi vira 114 zahtevkov, v
+ * arhivarjevi podknjigi pa 490 — podknjiga je bila večja od celote, kar je
+ * nemogoče. Izgubljeni zapisi so nevarni v ENO smer: vir izgleda manj obiskan,
+ * kot je, in dobi več zahtevkov, kot smo mu obljubili.
+ *
+ * Zato optimistično zaklepanje: piši samo, če je vrednost še vedno tista, ki
+ * smo jo prebrali (`eq` na staro vrednost). Če je ni več, je nekdo pisal vmes
+ * in poskusimo znova s svežo. Pet poskusov je pri dveh procesih z razmiki
+ * desetih sekund več kot dovolj.
+ */
 export async function dodajPorabo(db: Db, vir: string, koliko: number): Promise<void> {
   if (koliko <= 0) return;
   const dan = danesKljuc();
-  const doslej = await porabaDanes(db, vir);
-  const skupaj = Number.isFinite(doslej) ? doslej + koliko : koliko;
-  try {
-    await db.from("nep_statistika").upsert({
-      kljuc: `poraba:${vir}`,
-      podatki: { dan, strani: skupaj },
-      izracunano: new Date().toISOString(),
-    });
-  } catch {
-    // Knjigovodstvo porabe ne sme podreti zbiranja.
+  const kljuc = `poraba:${vir}`;
+  for (let poskus = 0; poskus < 5; poskus++) {
+    try {
+      const { data } = await db.from("nep_statistika").select("podatki").eq("kljuc", kljuc).maybeSingle();
+      const p = (data?.podatki ?? null) as Partial<PorabaDneva> | null;
+      const staro = p && p.dan === dan ? Math.max(0, Number(p.strani ?? 0)) : 0;
+      const novo = { dan, strani: staro + koliko };
+      const zdaj = new Date().toISOString();
+
+      if (!p) {
+        const { error } = await db.from("nep_statistika").insert({ kljuc, podatki: novo, izracunano: zdaj });
+        if (!error) return;
+        continue; // nekdo je vrstico ustvaril pred nami — preberi znova
+      }
+
+      // Posodobi SAMO, če je vrstica še vedno taka, kot smo jo prebrali.
+      const { data: zadeto } = await db
+        .from("nep_statistika")
+        .update({ podatki: novo, izracunano: zdaj })
+        .eq("kljuc", kljuc)
+        .eq("podatki", p as unknown as string)
+        .select("kljuc");
+      if (zadeto && zadeto.length > 0) return;
+    } catch {
+      // Knjigovodstvo porabe ne sme podreti zbiranja.
+      return;
+    }
   }
 }

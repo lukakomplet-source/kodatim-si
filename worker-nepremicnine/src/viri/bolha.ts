@@ -356,6 +356,12 @@ export const adapter: VirAdapter = {
    * vsak dan brez blokade do stropa 160 in ob vsaki blokadi pade nazaj.
    */
   dnevniProracunVira: 60,
+  /**
+   * Arhiv je pri bolhi dovoljen po pregledu robots.txt: prepovedane slikovne
+   * poti so v PREPOVEDANE_SLIKOVNE_POTI in se jih ne dotaknemo, velika slika
+   * (/image-w920x690) na seznamu ni. Content-Signal robots.txt nima.
+   */
+  dovoljenArhivSlik: true,
   hlajenjeUr: 12,
   /**
    * IZMERJENO 21. 8. 2026 (`npm run test:razvrstitev bolha.com`): od 30 kartic

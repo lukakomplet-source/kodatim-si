@@ -396,6 +396,30 @@ async function main(): Promise<void> {
        * del — novi oglasi so hitro pokvarljivi, arhiv pa lahko počaka dan.
        */
       const adapter = najdiVir(k.vir);
+
+      /**
+       * ARHIV SAMO TAM, KJER JE IZRECNO DOVOLJEN.
+       *
+       * Pogled kandidatov gleda `omogocen` — torej ali vir zbiramo. To ni isto
+       * kot "smemo delati kopijo strani in fotografij". Ko je bil 3. 9. 2026
+       * vklopljen nepremicnine.net, ki ima v robots.txt
+       * `Content-Signal: use=reference` (izrecen pridržek pravic po 4. členu
+       * direktive EU 2019/790), ga je arhivar začel kopirati skupaj s
+       * fotografijami. Zastavico postavi človek po pregledu pogojev, koda pa
+       * privzeto ne kopira ničesar.
+       */
+      if (!adapter?.dovoljenArhivSlik) {
+        log(`${k.vir}: arhiv slik pri tem viru ni dovoljen — preskakujem (glej dovoljenArhivSlik)`);
+        await db.from("nep_pdfji").insert({
+          vir: k.vir,
+          vir_id: k.vir_id,
+          url: k.url,
+          razlog: "nedovoljen",
+          cena_eur: k.cena_eur,
+        });
+        continue;
+      }
+
       if (adapter?.dnevniProracunVira !== undefined && adapter.dnevnaMejaStrani !== undefined) {
         const pr = await proracunVira(db, k.vir, {
           osnova: adapter.dnevniProracunVira,
