@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { logActivity } from "@/lib/activity/log";
 import { aiBusinessAnalysisSource } from "@/lib/enrichment/sources/aiBusinessAnalysis";
 import { pickBestContact } from "@/lib/enrichment/bestContactPick";
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   );
   if (ids.length === 0) return NextResponse.json({ error: "Izberite vsaj en lead." }, { status: 400 });
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const startedAt = Date.now();
 
   let analyzed = 0;

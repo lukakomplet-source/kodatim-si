@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
 const COLUMNS: (keyof IntelLead)[] = [
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ni izbranih leadov." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data, error } = await admin
     .from("intel_leads")
     .select(COLUMNS.join(","))

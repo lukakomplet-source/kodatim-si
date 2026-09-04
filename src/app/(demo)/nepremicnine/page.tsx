@@ -14,6 +14,12 @@ import {
   oceniNajemninoOglasa,
   type OcenaNajemnineOglasa,
 } from "@/lib/nepremicnine/cilj";
+import {
+  oceniTurizem,
+  type Atrakcija,
+  type OcenaTurizma,
+  type TurizemObcina,
+} from "@/lib/nepremicnine/turizem";
 import { bboxOkoli, kandidatiZaSredisce, razdaljaKm } from "@/lib/nepremicnine/kraji";
 import { IskalnaVrstica } from "./IskalnaVrstica";
 import { MojaIskanja, type ShranjenoIskanje } from "./MojaIskanja";
@@ -115,6 +121,12 @@ export default async function NepremicninePage({
   const segmenti = [...kontekst.split("⏵"), q].map((s) => s.trim()).filter(Boolean);
   const razklad = segmenti.length > 0 ? razlozVec(segmenti) : null;
   const ai: NepFiltri = razklad?.filtri ?? {};
+  /**
+   * Turistični način bere širši nabor kandidatov in jih razvrsti v pomnilniku —
+   * tako kot investicijski cilj in radij. Brez tega bi razvrstitev po
+   * turističnem potencialu urejala samo trenutno stran in bi bila brez pomena.
+   */
+  const turizem = Boolean(ai.turizem);
 
   const cilj = razklad?.cilj ?? null;
   /**
@@ -255,7 +267,7 @@ export default async function NepremicninePage({
   // Cilj, radij in zemljevid potrebujejo VEČ kot eno stran: preberemo do 300
   // kandidatov, ocenimo/izmerimo/razvrstimo tu, šele nato režemo na strani.
   const KANDIDATOV_MAX = 300;
-  const nacinVsi = Boolean(cilj || radij || pogled === "zemljevid");
+  const nacinVsi = Boolean(cilj || radij || turizem || pogled === "zemljevid");
   qy = qy.order("id", { ascending: true });
   qy = nacinVsi ? qy.range(0, KANDIDATOV_MAX - 1) : qy.range((stran - 1) * NA_STRAN, stran * NA_STRAN - 1);
 
@@ -300,6 +312,29 @@ export default async function NepremicninePage({
     povrsina_m2: number | null;
   }[];
   const medianePoTipu = najemMedianePoTipu(najemniVrstice);
+
+  /**
+   * TURISTIČNI NAČIN. Obe tabeli sta majhni (54 atrakcij, 212 občin) in se
+   * bereta v enem klicu na stran — dražje bi bilo računati brez njiju.
+   */
+  let atrakcije: Atrakcija[] = [];
+  let obcineTurizem: TurizemObcina[] = [];
+  if (turizem) {
+    const [aRes, oRes] = await Promise.all([
+      db.from("nep_atrakcije").select("ime, tip, lat, lng, moc").eq("vkljuceno", true).limit(500),
+      db.from("nep_turizem_obcine").select("obcina, prenocitve, lat, lng").not("lat", "is", null).limit(500),
+    ]);
+    atrakcije = (aRes.data ?? []) as Atrakcija[];
+    obcineTurizem = (oRes.data ?? []) as TurizemObcina[];
+
+    // Razvrstitev po turističnem potencialu: privzeta v tem načinu, ker je to
+    // edino, po čemer uporabnik v turističnem iskanju sploh primerja.
+    if (razvrsti === "turizem" || razvrsti === "najnovejsi") {
+      const tocke = new Map<string, number>();
+      for (const v of vrstice) tocke.set(v.id, oceniTurizem(v, atrakcije, obcineTurizem)?.tocke ?? -1);
+      vrstice = [...vrstice].sort((a, b) => (tocke.get(b.id) ?? -1) - (tocke.get(a.id) ?? -1));
+    }
+  }
 
   let ocene: Map<string, OcenaKandidata> | null = null;
   if (cilj) {
@@ -534,6 +569,7 @@ export default async function NepremicninePage({
           Razvrsti
           <select name="razvrsti" defaultValue={razvrsti} className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm text-zinc-900">
             {cilj && <option value="cilj">ustreznost cilju (AI)</option>}
+            {turizem && <option value="turizem">turistični potencial</option>}
             <option value="novi">najnovejši</option>
             <option value="cena_nizja">najcenejši</option>
             <option value="cena_visja">najdražji</option>
@@ -623,6 +659,7 @@ export default async function NepremicninePage({
           // Najemnina in donos za VSAK oglas; pri oddajnih je najemnina kar cena.
           const najem: OcenaNajemnineOglasa | null =
             v.posel === "oddaja" ? null : oceniNajemninoOglasa(v, medianePoTipu);
+          const tur: OcenaTurizma | null = turizem ? oceniTurizem(v, atrakcije, obcineTurizem) : null;
           return (
             <article key={v.id} className="flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
               {/*
@@ -817,6 +854,29 @@ export default async function NepremicninePage({
                   <span className="text-[10px] text-zinc-400">
                     ocena · mediana {najem.naM2.toLocaleString("sl-SI")} €/m² ({najem.obmocje}, n={najem.vzorec})
                   </span>
+                </div>
+              )}
+
+              {/* Turistični potencial: bližina + obisk + zmožnost enot.
+                  Vsaka številka pove svoj vir; kar ni podatek, je označeno
+                  kot ocena. Dovoljenja za kratkoročno oddajanje ne moremo
+                  vedeti, zato je pod tem opozorilo in ne točka. */}
+              {tur && (
+                <div className="mt-2 rounded-xl bg-sky-50 px-3 py-2.5 ring-1 ring-sky-100">
+                  <p className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-sky-900">Turistični potencial</span>
+                    <span className="text-[11px] font-bold text-sky-700">{tur.tocke}/100</span>
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-xs text-zinc-600">
+                    {tur.razlaga.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-[10px] leading-snug text-zinc-400">
+                    Ali je kratkoročno oddajanje tu sploh dovoljeno, ne vemo — pri etažni lastnini je potrebno
+                    soglasje solastnikov, občine imajo svoje odloke, objekt mora biti kategoriziran. Preveri, preden
+                    računaš.
+                  </p>
                 </div>
               )}
 

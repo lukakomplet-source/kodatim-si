@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { requireAdmin } from "@/lib/require-admin";
 import { logActivity } from "@/lib/activity/log";
 import { mergeContactPersonName } from "@/lib/enrichment/contactMerge";
@@ -29,7 +29,7 @@ export async function markContacted(leadId: string): Promise<ActionResult> {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: lead } = await admin
     .from("intel_leads")
     .select("lead_status")
@@ -77,7 +77,7 @@ export async function assignTags(leadId: string, tags: string[]): Promise<Action
     new Set(tags.map((t) => t.trim()).filter(Boolean))
   ).slice(0, 30);
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ tags: clean })
@@ -104,7 +104,7 @@ export async function updateStatus(
     return { error: "Neveljaven status." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ lead_status: status })
@@ -131,7 +131,7 @@ export async function updatePriority(
     return { error: "Neveljavna prioriteta." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ priority })
@@ -157,7 +157,7 @@ export async function setReminderDate(
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ reminder_date: date })
@@ -199,7 +199,7 @@ export async function updateLead(
     return { error: "Ime podjetja ne sme biti prazno." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin.from("intel_leads").update(fields).eq("id", leadId);
 
   if (error) return { error: "Sprememb ni bilo mogoče shraniti." };
@@ -272,7 +272,7 @@ export async function createLead(
   // and whitelisted here so it can never write arbitrary keys.
   Object.assign(customFields, parseExtraFields(formData.get("extra_fields")));
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   const email = field("email");
   const website = field("website");
@@ -356,7 +356,7 @@ export async function bulkAssignTags(
   const clean = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
   if (clean.length === 0) return { error: "Vnesite vsaj eno oznako." };
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: rows } = await admin
     .from("intel_leads")
     .select("id, tags")
@@ -392,7 +392,7 @@ export async function bulkUpdateStatus(
     return { error: "Neveljaven status." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ lead_status: status })
@@ -411,7 +411,7 @@ export async function deleteLead(leadId: string): Promise<ActionResult> {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin.from("intel_leads").delete().eq("id", leadId);
 
   if (error) return { error: "Leada ni bilo mogoče izbrisati." };
@@ -430,7 +430,7 @@ export async function bulkDeleteLeads(leadIds: string[]): Promise<ActionResult> 
 
   if (leadIds.length === 0) return { error: "Ni izbranih leadov." };
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin.from("intel_leads").delete().in("id", leadIds);
 
   if (error) return { error: "Leadov ni bilo mogoče izbrisati." };
@@ -448,7 +448,7 @@ export async function requeueEnrichment(leadId: string): Promise<ActionResult> {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin
     .from("intel_leads")
     .update({ enrichment_status: "queued", enrichment_error: null })
@@ -480,7 +480,7 @@ export async function detectDuplicates(
 
   if (leadIds.length === 0) return { error: "Ni leadov za preverjanje." };
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: candidates, error } = await admin.rpc("intel_find_duplicate_candidates", {
     p_lead_ids: leadIds,
     p_threshold: 0.55,
@@ -520,7 +520,7 @@ export async function importSuggestedContact(contactId: string): Promise<ActionR
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: contact } = await admin
     .from("intel_lead_contacts")
     .select("id, lead_id, full_name, status")
@@ -562,7 +562,7 @@ export async function dismissSuggestedContact(contactId: string): Promise<Action
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: contact } = await admin
     .from("intel_lead_contacts")
     .select("id, lead_id, full_name")

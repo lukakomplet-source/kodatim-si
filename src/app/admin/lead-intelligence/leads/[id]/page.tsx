@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 import { getLeadActivity } from "@/lib/activity/queries";
 import { getLeadContacts } from "@/lib/lead-intelligence/contacts";
@@ -15,7 +15,7 @@ export default async function LeadDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = createAdminClient();
+  const supabase = createLeadClient();
 
   const [{ data: lead }, activity, contacts] = await Promise.all([
     supabase.from("intel_leads").select("*").eq("id", id).single(),

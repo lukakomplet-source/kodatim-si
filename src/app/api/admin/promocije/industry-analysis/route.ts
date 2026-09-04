@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { chatJSON } from "@/lib/openai";
 import type { IndustryAnalysis, IndustrySolution } from "@/lib/promocije/types";
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Manjka kampanja ali panoga." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   try {
     const ai = await chatJSON<AiResponse>(SYSTEM_PROMPT, `Panoga: ${industry}`, {

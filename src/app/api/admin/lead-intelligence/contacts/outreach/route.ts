@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { chatJSON } from "@/lib/openai";
 import { logActivity } from "@/lib/activity/log";
 import type { OutreachSequence } from "@/lib/lead-intelligence/contactTypes";
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   }
   if (!contactId) return NextResponse.json({ error: "Manjka kontakt." }, { status: 400 });
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: contact } = await admin
     .from("intel_lead_contacts")
     .select("id, lead_id, full_name, job_title, department, lead:intel_leads(company_name, ai_analysis)")

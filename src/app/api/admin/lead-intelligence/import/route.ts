@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { enqueueLeads } from "@/lib/enrichment/queue";
 import { IMPORT_FIELDS, type ImportField } from "@/lib/lead-intelligence/types";
 
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     ? (body.source as (typeof SOURCES)[number])
     : "manual";
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   let importId = body.importId;
   if (body.isFirstChunk || !importId) {

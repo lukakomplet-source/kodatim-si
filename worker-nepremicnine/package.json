@@ -21,7 +21,8 @@
     "test:seznam": "tsx src/test-seznam.ts",
     "test:detajl": "tsx src/test-detajl.ts",
     "detajli": "tsx src/detajli-once.ts",
-    "pdf-arhiv": "tsx src/pdf-arhiv.ts"
+    "pdf-arhiv": "tsx src/pdf-arhiv.ts",
+    "uvoz:turizem": "tsx src/uvoz-turizem.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

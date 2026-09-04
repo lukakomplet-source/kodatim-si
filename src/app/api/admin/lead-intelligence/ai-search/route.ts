@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { buildTargetProfile, findMatchingLeads, rankCandidates } from "@/lib/promocije/targeting";
 import type { IntelLead } from "@/lib/lead-intelligence/types";
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
   if (!query) return NextResponse.json({ error: "Vnesite iskalni pojem." }, { status: 400 });
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   try {
     const { count } = await admin.from("intel_leads").select("id", { count: "exact", head: true });

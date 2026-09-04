@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { scrapeUrl, isFirecrawlUnavailable } from "@/lib/firecrawl";
 import { contactDiscoverySource } from "@/lib/enrichment/sources/contactDiscovery";
 import { applyContactDiscoveryResult } from "@/lib/enrichment/contactPipeline";
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
   if (!leadId) return NextResponse.json({ error: "Manjka lead." }, { status: 400 });
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { data: lead } = await admin.from("intel_leads").select("*").eq("id", leadId).single();
   if (!lead) return NextResponse.json({ error: "Leada ni bilo mogoče najti." }, { status: 404 });
 

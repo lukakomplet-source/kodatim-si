@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Globe,
   Mail,
+  Activity,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -100,6 +101,12 @@ const NAV_ITEMS: {
     label: "Vloge",
     icon: <ShieldCheck className={ICON_CLASS} />,
     permission: "roles.manage",
+  },
+  {
+    href: "/admin/nadzor",
+    label: "Nadzor zbiralnikov",
+    icon: <Activity className={ICON_CLASS} />,
+    permission: "dashboard.view",
   },
   {
     href: "/admin/demo-strani",

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { requireAdmin } from "@/lib/require-admin";
 import { enqueueLeads } from "@/lib/enrichment/queue";
 
@@ -72,7 +72,7 @@ export async function importScrapedLeads(
 
   if (!Array.isArray(rows) || rows.length === 0) return { error: "Ni izbranih vrstic za uvoz." };
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   const names = rows.map((r) => r.company_name.trim()).filter(Boolean);
   const vats = rows.map((r) => clean(r.vat_id)).filter((v): v is string => Boolean(v));

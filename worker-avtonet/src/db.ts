@@ -22,6 +22,67 @@ export function connect(): Db {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+/**
+ * Napake, ki so posledica POVEZAVE in ne vsebine.
+ *
+ * Med tekom 4. 9. je Caddy pred lokalno bazo dvakrat zabelezil
+ * "server closed idle connection" (ob 10:18:24 in 10:31:48). To je tekma pri
+ * ponovni uporabi povezave: odjemalec poslje zahtevek natanko v trenutku, ko
+ * streznik zapira mirujoco povezavo, in Node javi "fetch failed". Takih
+ * dogodkov je vsak dan nekaj (29. 8. sedemnajst) in z zapisom nimajo nobene
+ * zveze — poskus cez sekundo uspe.
+ *
+ * Prazno sporocilo sodi sem iz istega razloga: opazovano je bilo, ko sta se
+ * vsebnika baze segrevala in odgovor sploh ni imel telesa. Prav tako
+ * "Empty or invalid json" (PGRST102), ki se je pokazal kot stiri napake v
+ * stirih sekundah in nato nikoli vec — telo zahtevka je po poti razpadlo, z
+ * vsebino zapisa pa ni bilo nic narobe.
+ */
+const OMREZNA_NAPAKA =
+  /fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|network|other side closed|empty or invalid json/i;
+
+function jeOmrezna(napaka: { message?: string } | null): boolean {
+  if (!napaka) return false;
+  const s = (napaka.message ?? "").trim();
+  return s === "" || OMREZNA_NAPAKA.test(s);
+}
+
+/**
+ * Ponovi zahtevek, kadar je padla povezava — vsebinske napake vrne takoj.
+ *
+ * Zamiki 1/3/9 s: okno zaprte mirujoce povezave je kratko, a en sam ponovni
+ * poskus po dveh sekundah je 4. 9. dvakrat pristal v istem oknu in s tem
+ * koncal vecurni pregled. Vsebinske napake (krsitev omejitve, napacen stolpec)
+ * se NE ponavljajo — te se z drugim poskusom ne popravijo.
+ */
+async function znovaObOmrezni<T extends { error: { message: string } | null }>(
+  poskus: () => PromiseLike<T>
+): Promise<T> {
+  const zamiki = [1_000, 3_000, 9_000];
+  let izid = await poskus();
+  for (let i = 0; i < zamiki.length && jeOmrezna(izid.error); i += 1) {
+    await new Promise((r) => setTimeout(r, zamiki[i]));
+    izid = await poskus();
+  }
+  return izid;
+}
+
+/**
+ * Isto delo, a najvec `hkrati` zahtevkov naenkrat.
+ *
+ * Ena stran ima do 48 oglasov in doslej je sprozila 48 hkratnih povezav proti
+ * lokalni bazi. Vec hkratnih povezav pomeni vec priloznosti za zgornjo tekmo,
+ * pridobitve v hitrosti pa nobene: pisanje traja nekaj deset milisekund, tako
+ * da je pet zaporednih desetic prakticno enako hitro.
+ */
+async function vKosih<T, R>(vrstice: T[], hkrati: number, delo: (v: T) => Promise<R>): Promise<R[]> {
+  const izhod: R[] = [];
+  for (let i = 0; i < vrstice.length; i += hkrati) {
+    izhod.push(...(await Promise.all(vrstice.slice(i, i + hkrati).map(delo))));
+  }
+  return izhod;
+}
+
 export type UpsertOutcome = {
   novi: ParsedRow[];
   spremembeCene: { row: ParsedRow; staraCena: number; novaCena: number }[];
@@ -165,20 +226,22 @@ export async function upsertListings(
   // ago) is not worth failing the batch for; ignoreDuplicates lets it pass.
   const idPoAvtonet = new Map<string, string>();
   if (zaVstavitev.length > 0) {
-    const { data: vstavljeni, error: insErr } = await db
-      .from("avtonet_oglasi")
-      .upsert(zaVstavitev, { onConflict: "avtonet_id", ignoreDuplicates: true })
-      .select("id, avtonet_id");
+    const { data: vstavljeni, error: insErr } = await znovaObOmrezni(() =>
+      db
+        .from("avtonet_oglasi")
+        .upsert(zaVstavitev, { onConflict: "avtonet_id", ignoreDuplicates: true })
+        .select("id, avtonet_id")
+    );
     if (insErr) throw new Error(`Vstavljanje oglasov ni uspelo: ${insErr.message}`);
     for (const v of vstavljeni ?? []) idPoAvtonet.set(v.avtonet_id as string, v.id as string);
   }
 
   // Known adverts refreshed. Supabase has no batch "different values per row"
   // update, so these run in parallel rather than in sequence — the round trips
-  // overlap instead of stacking, which is what cost the time.
+  // overlap instead of stacking, which is what cost the time. Deset hkrati in
+  // ne vseh naenkrat: glej vKosih().
   if (zaPosodobitev.length > 0) {
-    const results = await Promise.all(
-      zaPosodobitev.map((u) => {
+    const results = await vKosih(zaPosodobitev, 10, (u) => {
         const patch: Record<string, unknown> = {
           last_seen: now,
           cena_eur: u.row.cenaEur,
@@ -206,17 +269,18 @@ export async function upsertListings(
             patch.vrnjen_krat = (prev.vrnjen_krat ?? 0) + 1;
           }
         }
-        return db.from("avtonet_oglasi").update(patch).eq("id", u.id);
-      })
-    );
+        return znovaObOmrezni(() => db.from("avtonet_oglasi").update(patch).eq("id", u.id));
+      });
     // A transient blip (observed live: an error with an EMPTY message while the
-    // DB containers were warming up) must not sink an hours-long sweep. Failed
-    // rows get one short retry; only a repeat failure stops the run.
+    // DB containers were warming up) must not sink an hours-long sweep. Kar tu
+    // se ostane, je prezivelo ze stiri poskuse v trinajstih sekundah, zato je
+    // zadnji poskus namenjen vsebinskim napakam, ki se med tem popravijo same
+    // (npr. vrstica, ki jo je vzporedni zapis ravnokar zaklenil).
     const spodleteli = zaPosodobitev.filter((_, i) => results[i].error);
     if (spodleteli.length > 0) {
       await new Promise((r) => setTimeout(r, 2000));
-      const ponovno = await Promise.all(
-        spodleteli.map((u) =>
+      const ponovno = await vKosih(spodleteli, 10, (u) =>
+        znovaObOmrezni(() =>
           db
             .from("avtonet_oglasi")
             .update({ last_seen: now, cena_eur: u.row.cenaEur, km: u.row.km, status: u.status })
@@ -278,7 +342,9 @@ export async function upsertListings(
     const zaVpis = (await imaV2(db))
       ? posnetki
       : posnetki.map(({ razlog: _razlog, ...p }) => p);
-    const { error: snapErr } = await db.from("avtonet_posnetki").insert(zaVpis);
+    const { error: snapErr } = await znovaObOmrezni(() =>
+      db.from("avtonet_posnetki").insert(zaVpis)
+    );
     if (snapErr) throw new Error(`Zapis posnetkov ni uspel: ${snapErr.message}`);
   }
 
@@ -502,19 +568,10 @@ export async function saveDetail(db: Db, oglasId: string, detail: DetailZapis): 
     delete patch.slike_urls;
   }
 
-  const { error } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
+  const { error } = await znovaObOmrezni(() =>
+    db.from("avtonet_oglasi").update(patch).eq("id", oglasId)
+  );
   if (!error) return;
-
-  // "Empty or invalid json" (PGRST102) showed up live as four failures within
-  // four seconds and then never again — a transient network blip corrupting
-  // request bodies, not a content problem. One short retry absorbs exactly
-  // that; a real error fails again and is reported as before.
-  if (/empty or invalid json/i.test(error.message)) {
-    await new Promise((r) => setTimeout(r, 1500));
-    const { error: ponovno } = await db.from("avtonet_oglasi").update(patch).eq("id", oglasId);
-    if (!ponovno) return;
-    throw new Error(`Zapis podrobnosti ni uspel: ${ponovno.message}`);
-  }
   throw new Error(`Zapis podrobnosti ni uspel: ${error.message}`);
 }
 

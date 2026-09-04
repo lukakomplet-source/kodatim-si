@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import { chatJSON } from "@/lib/openai";
 
 const SYSTEM_PROMPT = `Si asistent za organizacijo baze poslovnih leadov. Za vsako podjetje v seznamu (identificirano z "id") določi:
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     // no body provided — use default limit
   }
 
-  const admin = createAdminClient();
+  const admin = createLeadClient();
 
   const { data: leads, error } = await admin
     .from("intel_leads")

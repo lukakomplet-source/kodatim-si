@@ -28,6 +28,13 @@ export type NepFiltri = {
   zaInvesticijo?: boolean;
   noviDni?: number;
   padecCene?: boolean;
+  /**
+   * Turistični način: "booking", "apartmaji", "blizu atrakcije", "veliko
+   * turizma". Ni navaden filter — vklopi izračun turističnega potenciala
+   * (bližina atrakcije + prenočitve v občini + zmožnost enot) in razvrstitev
+   * po njem.
+   */
+  turizem?: boolean;
   razvrsti?: string;
 };
 
@@ -139,6 +146,27 @@ export function razlozi(vprasanje: string, osnova?: Razklad | null): Razklad {
     f.vecEnot = true;
     razumljeno.push("več enot");
   }
+  /**
+   * TURISTIČNI NAČIN.
+   *
+   * Uporabnikov stavek: "hiše, ko lahko iz nje naredim booking, več enot blizu
+   * neke atraktivnosti ali pa ko je statistično velik volumen turizma".
+   * Prepoznati je treba oboje — bližino znamenitosti IN obisk — ker je vsak
+   * zase polovica odgovora.
+   *
+   * Turistični namen skoraj vedno pomeni tudi več enot; če uporabnik enot ni
+   * omenil, jih ne vsiljujemo kot filter (sicer bi izpadle hiše, ki jih je
+   * mogoče razdeliti, a oglas tega ne pove), ampak jih upoštevamo v oceni.
+   */
+  if (
+    /booking|airbnb|apartmaj|turist|turiz|nočitv|nocitv|oddajanje na noč|kratkorочn|kratkoroč|počitnišk\w*\s+oddaj|atrakc|atraktivn|znamenitost|blizu\s+(?:jezera|morja|smučišč|term)/i.test(
+      t
+    )
+  ) {
+    f.turizem = true;
+    razumljeno.push("turistični potencial (bližina atrakcije + prenočitve v občini)");
+  }
+
   const enot = t.match(/(?:vsaj|min\.?|najmanj)\s*(\d+)\s*(?:enot|stanovanj|apartma)/);
   if (enot) {
     f.enotMin = Number(enot[1]);

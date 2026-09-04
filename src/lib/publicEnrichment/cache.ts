@@ -1,5 +1,5 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 
 export type CacheProvider = "companywall" | "bizi" | "website";
 
@@ -33,7 +33,7 @@ export async function readCache(
   parserVersion = 1
 ): Promise<CachedEntry | null> {
   try {
-    const admin = createAdminClient();
+    const admin = createLeadClient();
     const { data, error } = await admin
       .from("public_enrichment_cache")
       .select("html, parsed_fields, source_url, fetched_at")
@@ -66,7 +66,7 @@ export async function writeCache(
   parserVersion = 1
 ): Promise<void> {
   try {
-    const admin = createAdminClient();
+    const admin = createLeadClient();
     await admin.from("public_enrichment_cache").upsert(
       {
         provider,

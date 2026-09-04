@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/require-admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import {
   buildTargetProfile,
   findMatchingLeads,
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (step === "strategy") {
-      const admin = createAdminClient();
+      const admin = createLeadClient();
       const knowledge = await searchKnowledge(admin, theme, 5);
       const strategy = await buildChannelStrategy(theme, kind, {
         senderContext: typeof body.senderContext === "string" ? body.senderContext : "",
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       const profile = body.profile as TargetProfile | undefined;
       if (!profile) return NextResponse.json({ error: "Manjka iskalni profil." }, { status: 400 });
 
-      const admin = createAdminClient();
+      const admin = createLeadClient();
       const { leads, excludedNoRevenue } = await findMatchingLeads(admin, profile);
 
       // How many of the base actually carry one of these codes, and how big the
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       const leadIds = Array.isArray(body.leadIds) ? (body.leadIds as string[]).slice(0, 40) : [];
       if (leadIds.length === 0) return NextResponse.json({ error: "Izberite vsaj eno podjetje." }, { status: 400 });
 
-      const admin = createAdminClient();
+      const admin = createLeadClient();
       const { data } = await admin.from("intel_leads").select("*").in("id", leadIds);
       const leads = (data ?? []) as unknown as IntelLead[];
 

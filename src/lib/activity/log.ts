@@ -1,5 +1,5 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createLeadClient } from "@/lib/leadDb";
 import type { ActivityType } from "./types";
 
 /**
@@ -12,7 +12,7 @@ export async function logActivity(
   content: string | null,
   userId: string | null
 ): Promise<void> {
-  const admin = createAdminClient();
+  const admin = createLeadClient();
   const { error } = await admin.from("intel_lead_activity").insert({
     lead_id: leadId,
     type,

@@ -83,11 +83,12 @@ async function procesorInPomnilnik(): Promise<Partial<Sistem>> {
  * Stran se osvezuje in vsak obisk je prej pomenil nov nvidia-smi in nov
  * PowerShell. Merjeno je to sicer hitro (0,2 in 0,4 s), a je zaganjanje
  * procesov ob vsakem izrisu nepotrebno tveganje na stroju, ki hkrati skrejpa,
- * arhivira in poganja model. Deset sekund starosti je za prikaz obremenitve
- * povsem dovolj.
+ * arhivira in poganja model. Dvajset sekund starosti je za prikaz obremenitve
+ * povsem dovolj — nadzorna stran se osvežuje na 30 s, zato ob vsakem izrisu
+ * nastane največ en par procesov.
  */
 let zadnja: { ob: number; vrednost: Sistem } | null = null;
-const VELJAVNOST_MS = 10_000;
+const VELJAVNOST_MS = 20_000;
 
 export async function preberiSistem(): Promise<Sistem> {
   if (zadnja && Date.now() - zadnja.ob < VELJAVNOST_MS) return zadnja.vrednost;
