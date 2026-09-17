@@ -188,7 +188,19 @@ try {
     $lokalno = (git rev-parse HEAD).Trim()
     $oddaljeno = (git rev-parse origin/main).Trim()
 
-    if ($lokalno -eq $oddaljeno) {
+    # Deploy samo, kadar je GitHub RES pred nami. Prej je tu stalo golo
+    # "$lokalno -eq $oddaljeno", kar je vsako razliko bralo kot novo verzijo -
+    # tudi kadar smo MI pred GitHubom (lokalni commit brez push). Takrat je
+    # git pull --ff-only tiho uspel (ni cesa potegniti), skripta pa je vseeno
+    # gradila: vsakih 5 minut je ustavila streznik, zacela build in nikoli
+    # prisla do enakosti. 17. 9. 2026 med 14:58 in 16:05 stran zato skoraj ni
+    # delovala - v dnevniku osem zaporednih "47ed28e -> 1b8c7a6" brez konca.
+    # merge-base --is-ancestor pove, kdo je pred kom: 0 = lokalno je prednik
+    # oddaljenega, torej je na GitHubu res nekaj novega.
+    git merge-base --is-ancestor $lokalno $oddaljeno *> $null
+    $oddaljenoJePredNami = ($LASTEXITCODE -eq 0) -and ($lokalno -ne $oddaljeno)
+
+    if (-not $oddaljenoJePredNami) {
         # Nic novega. Poskrbimo samo, da streznik sploh tece (npr. po
         # ponovnem zagonu racunalnika); ce tece - nas ali tuj (dev) -
         # koncamo tiho, da dnevnik ne raste.
