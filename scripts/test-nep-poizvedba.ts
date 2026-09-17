@@ -205,6 +205,30 @@ const primeri: Primer[] = [
     cilj: null,
     filtri: { tipi: ["hisa"], cenaMax: 1_200_000, kraj: "ljubljana" },
   },
+  {
+    ime: "rodilnik množine: „gradnja stanovanj“",
+    stavek: "nova gradnja stanovanj v ljubljani",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "ljubljana" },
+  },
+  {
+    ime: "„za oddajanje“ je namen kupca, ne iskanje najema",
+    stavek: "hiša na Obali za oddajanje turistom",
+    cilj: null,
+    filtri: { posel: "prodaja", tipi: ["hisa"], regija: "obalno-kraska", zaInvesticijo: true, turizem: true },
+  },
+  {
+    ime: "„da bi jo oddajal“ je prav tako namen",
+    stavek: "hiša za obnovo, da bi jo oddajal",
+    cilj: null,
+    filtri: { posel: "prodaja", tipi: ["hisa"], zaObnovo: true },
+  },
+  {
+    ime: "pravi najem ostane najem",
+    stavek: "stanovanje v najem v ljubljani",
+    cilj: null,
+    filtri: { posel: "oddaja", tipi: ["stanovanje"], kraj: "ljubljana" },
+  },
 ];
 
 let napak = 0;

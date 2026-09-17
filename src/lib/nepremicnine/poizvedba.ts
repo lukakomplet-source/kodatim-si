@@ -80,7 +80,9 @@ const TIPI_VZORCI: [RegExp, string[]][] = [
   // uporabnik pa besede "hiša" pri njih pogosto sploh ne napiše.
   [/\bvil[aeiou]\b|\bvil\b|dvojč\w+|vrstn\w+\s+hiš|bungalov|montažn\w+\s+hiš/i, ["hisa"]],
   [/\bhiš\w+|\bhis\w+/i, ["hisa"]],
-  [/stanovanj\w+|garsonjer\w+|sobno/i, ["stanovanje"]],
+  // \w* in ne \w+: rodilnik množine je gol „stanovanj“ („nova gradnja stanovanj“).
+  // Vrstni red ščiti: „večstanovanjska“ in „stanovanjska hiša“ ujameta vzorca nad tem.
+  [/stanovanj\w*|garsonjer\w+|sobno/i, ["stanovanje"]],
   // "zemlje", "zemljo", "zemljica" — uporabnik redko napiše "zemljišče".
   // Vzorec stoji ZA hišo in stanovanjem, zato "hiša z veliko zemljo" ostane hiša.
   [/zemljišč\w+|zemlj\w+|parcel\w+|posest|gradbišč\w+/i, ["posest"]],
@@ -124,7 +126,7 @@ const REGIJE_IMENA: [RegExp, string][] = [
   [/korošk/i, "koroska"],
   [/posavj|posavsk/i, "posavska"],
   [/gorišk|vipavsk|\bbrdih\b/i, "goriska"],
-  [/podravsk|haloz|slovensk\w*\s+goric/i, "podravska"],
+  [/podravsk|haloz|slovensk\w*\s+goric|pohorj/i, "podravska"],
   [/savinjsk|kozjansk/i, "savinjska"],
   [/ljubljan\w*\s+okolic|okolic\w*\s+ljubljane/i, "ljubljana-okolica"],
 ];
@@ -240,7 +242,15 @@ export function razlozi(vprasanje: string, osnova?: Razklad | null): Razklad {
   let razumljeno: string[] = [];
 
   // posel (privzeta prodaja samo pri svežem iskanju — ukaz je ne prepiše)
-  if (uj(/\bnajem|oddaj|za najeti|najeti\b/)) {
+  /**
+   * „ZA ODDAJANJE“ NI ODDAJA. „hiša na obali za oddajanje turistom“ je nakup
+   * z namenom oddajanja — kdor to napiše, noče seznama stanovanj v najem.
+   * Beseda „oddaj“ je doslej oboje zvalila v isti koš, tako da je iskalec
+   * naložbe dobil oglase za najem in nobene hiše za kupiti.
+   */
+  const namenOddajanja = uj(/za\s+oddaj\w*|oddajanj\w*|za\s+turist|za\s+najemnik|bi\s+\w{0,3}\s*oddaj/);
+
+  if (!namenOddajanja && uj(/\bnajem|oddaj|za najeti|najeti\b/)) {
     f.posel = "oddaja";
     razumljeno.push("najem");
   } else if (uj(/prodaj|kupi|nakup/)) {
