@@ -16,6 +16,55 @@ type Primer = {
 
 const primeri: Primer[] = [
   {
+    ime: "zemljišče: superlativ + podvrsta + €/m² (dobesedno, brez šumnikov)",
+    stavek: "najbolsa cena zemlje bliznji mesta na m2 zazidljivo pa tak",
+    cilj: null,
+    filtri: { tipi: ["posest"], podtip: "zazidljiv", razvrsti: "m2_nizja" },
+  },
+  {
+    ime: "stanovanje v centru + najcenejše (dobesedno, brez šumnikov)",
+    stavek: "najdi mi stanovanje v centru mesta ljubljane pa daj mi prvo najcenejse",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "ljubljana", center: true, razvrsti: "cena_nizja" },
+  },
+  {
+    ime: "isti stavek S šumniki da enak izid",
+    stavek: "najdi mi stanovanje v centru Ljubljane, prvo najcenejše",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "ljubljana", center: true, razvrsti: "cena_nizja" },
+  },
+  {
+    ime: "zazidljiva parcela: cena, kraj, razvrstitev na kvadrat",
+    stavek: "zazidljiva parcela pri Kranju do 80k najugodnejsa na kvadrat",
+    cilj: null,
+    filtri: { tipi: ["posest"], podtip: "zazidljiv", cenaMax: 80_000, kraj: "kranj", razvrsti: "m2_nizja" },
+  },
+  {
+    ime: "kmetijsko se loči od zazidljivega",
+    stavek: "kmetijsko zemljisce v prekmurju najcenejse",
+    cilj: null,
+    filtri: { tipi: ["posest"], podtip: "kmetijsko", razvrsti: "cena_nizja" },
+  },
+  {
+    ime: "obrobje NI center",
+    stavek: "stanovanje na obrobju Celja",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "celje", center: undefined },
+  },
+  {
+    ime: "blizu centra NI v centru",
+    stavek: "hisa blizu centra Maribora",
+    cilj: null,
+    filtri: { tipi: ["hisa"], center: undefined },
+  },
+  {
+    ime: "hiša z veliko zemljo ostane hiša, ne zemljišče",
+    stavek: "hisa z veliko zemljo do 250k",
+    cilj: null,
+    filtri: { tipi: ["hisa"], cenaMax: 250_000 },
+  },
+
+  {
     ime: "dobesedni stavek uporabnika (multi unit, 10enot po 650e, po prenovi 700k)",
     stavek:
       "daj najdi mi hišo ki bi bila primerna za multi unit pač da ima dosti kvadrature in vredi ceno pač da ni nora glede na osnovno ceno pa potem ko se bo prenovila da ima smisel za tisto rento v tistem kraju pač recimo najdeš mi hišo ali objekt ko se da naredit 10enot po 650e pa da je po prenovi pa to 700k recimo poglej ta kalkulator tut zram",
@@ -70,6 +119,91 @@ const primeri: Primer[] = [
     stavek: "hiša blizu Kopra",
     cilj: null,
     filtri: { tipi: ["hisa"], radijKm: 15, radijKraj: "kopra" },
+  },
+  // ── Iz korpusa 287 vrzeli: vsak primer spodaj je bil potrjena napaka. ──
+  {
+    ime: "„do 1000 m2“ NI cena (prej: do 1.000.000.000 €)",
+    stavek: "zazidljiva parcela do 1000 m2 pri Kranju",
+    cilj: null,
+    filtri: { tipi: ["posest"], podtip: "zazidljiv", povrsinaMax: 1000, cenaMax: undefined, kraj: "kranj" },
+  },
+  {
+    ime: "namen ni vrsta: „za gradnjo hiše“ ostane zemljišče",
+    stavek: "zemljisce za gradnjo hise v okolici Ptuja",
+    cilj: null,
+    filtri: { tipi: ["posest"], podtip: "zazidljiv", radijKraj: "ptuja" },
+  },
+  {
+    ime: "spodnja meja brez znaka €",
+    stavek: "premium stanovanja ljubljana center nad 500k",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], cenaMin: 500_000, center: true, razvrsti: "cena_visja" },
+  },
+  {
+    ime: "„nad 20 km“ ni cena, ampak radij",
+    stavek: "parcela nad 20 km od ljubljane",
+    cilj: null,
+    filtri: { tipi: ["posest"], radijKm: 20, radijKraj: "ljubljane", cenaMin: undefined },
+  },
+  {
+    ime: "vila je hiša, obala je regija",
+    stavek: "pokazi mi najdrazje vile na obali",
+    cilj: null,
+    filtri: { tipi: ["hisa"], regija: "obalno-kraska", razvrsti: "cena_visja" },
+  },
+  {
+    ime: "obrnjeni radij: „okoli Maribora 20 km“",
+    stavek: "hisa za obnovo okoli maribora 20km",
+    cilj: null,
+    filtri: { tipi: ["hisa"], radijKm: 20, radijKraj: "maribora", zaObnovo: true },
+  },
+  {
+    ime: "„blizu smučišča“ ni ime kraja",
+    stavek: "hisa blizu smucisca da bi delal apartmaje",
+    cilj: null,
+    filtri: { tipi: ["hisa"], turizem: true, radijKraj: undefined },
+  },
+  {
+    ime: "krajšava lj",
+    stavek: "stanovanje v lj do 200k",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "ljubljana", cenaMax: 200_000 },
+  },
+  {
+    ime: "sklon z izpadnim samoglasnikom: v Kopru",
+    stavek: "cim ceneje stanovanje v kopru",
+    cilj: null,
+    filtri: { kraj: "koper", regija: "obalno-kraska", razvrsti: "cena_nizja" },
+  },
+  {
+    ime: "dvobesedno ime v sklonu: v novem mestu",
+    stavek: "dvojcek v novem mestu",
+    cilj: null,
+    filtri: { tipi: ["hisa"], kraj: "novo mesto", regija: "dolenjska" },
+  },
+  {
+    ime: "prislov „najceneje“ + goli kvadrat",
+    stavek: "kje je najceneje kvadrat stanovanja v mariboru",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], kraj: "maribor", razvrsti: "m2_nizja" },
+  },
+  {
+    ime: "pokrajina brez kraja: Prekmurje",
+    stavek: "hisa z veliko zemljo v prekmurju",
+    cilj: null,
+    filtri: { tipi: ["hisa"], regija: "pomurska", zemljisceMin: 800 },
+  },
+  {
+    ime: "cena s tisočico brez pripone",
+    stavek: "hisa do 250.000 eur v zasavju",
+    cilj: null,
+    filtri: { tipi: ["hisa"], cenaMax: 250_000, regija: "zasavska" },
+  },
+  {
+    ime: "milijon je še vedno milijon (jeMera ga ne pobere)",
+    stavek: "hisa do 1,2m v ljubljani",
+    cilj: null,
+    filtri: { tipi: ["hisa"], cenaMax: 1_200_000, kraj: "ljubljana" },
   },
 ];
 

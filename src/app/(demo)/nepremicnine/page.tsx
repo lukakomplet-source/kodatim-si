@@ -177,12 +177,20 @@ export default async function NepremicninePage({
   const cenaMin = num("cenaMin") ?? ai.cenaMin ?? null;
   const cenaMax = num("cenaMax") ?? ai.cenaMax ?? null;
   const povrsinaMin = num("povrsinaMin") ?? ai.povrsinaMin ?? null;
+  const povrsinaMax = num("povrsinaMax") ?? ai.povrsinaMax ?? null;
   const zemljisceMin = num("zemljisceMin") ?? ai.zemljisceMin ?? null;
   const vecEnot = st("vecEnot") === "1" || ai.vecEnot === true;
   const zaObnovo = st("zaObnovo") === "1" || ai.zaObnovo === true;
   const zaInvesticijo = st("zaInvesticijo") === "1" || ai.zaInvesticijo === true;
   const noviDni = num("noviDni") ?? ai.noviDni ?? null;
   const enotMin = num("enotMin") ?? ai.enotMin ?? null;
+  /**
+   * Podvrsta in mestno jedro prideta lahko samo iz AI vrstice — v obrazcu
+   * polj zanju ni, ker sta smiselna le ob določenem tipu ("zazidljivo" pri
+   * zemljišču, "center" pri mestu) in bi ju obrazec moral skrivati in kazati.
+   */
+  const podtip = st("podtip") || ai.podtip || null;
+  const center = st("center") === "1" || ai.center === true;
   // Polja z oglasne strani (2. faza). Filtrirajo samo tiste oglase, ki jih je
   // detajlni zajem že obiskal — dokler se vrsta prazni, jih je vsak dan več.
   const sobMin = num("sobMin");
@@ -206,9 +214,22 @@ export default async function NepremicninePage({
   else if (tipi.length > 1) qy = qy.in("tip", tipi);
   if (regija) qy = qy.eq("regija", regija);
   if (kraj) qy = qy.ilike("kraj", `%${kraj}%`);
+  /**
+   * "zazidljivo" je v bazi podvrsta, ne tip. Iščemo z `ilike`, ker vir zapiše
+   * tudi "zazidljiva -" in "zazidljiva novo" — gola enakost bi izpustila 820
+   * od 8.334 zazidljivih parcel.
+   */
+  if (podtip) qy = qy.ilike("podtip", `%${podtip}%`);
+  /**
+   * Mestno jedro: kraj je prosto besedilo, zato "center" in "mesto" zajameta
+   * "Ljubljana center", "Ljubljana Center, Center" in "Ljubljana mesto",
+   * "Ljubljana okolica" pa pravilno odpade.
+   */
+  if (center) qy = qy.or("kraj.ilike.%center%,kraj.ilike.%mesto%");
   if (cenaMin !== null) qy = qy.gte("cena_eur", cenaMin);
   if (cenaMax !== null) qy = qy.lte("cena_eur", cenaMax);
   if (povrsinaMin !== null) qy = qy.gte("povrsina_m2", povrsinaMin);
+  if (povrsinaMax !== null) qy = qy.lte("povrsina_m2", povrsinaMax);
   if (zemljisceMin !== null) qy = qy.gte("zemljisce_m2", zemljisceMin);
   if (vecEnot) qy = qy.eq("vec_enot", true);
   if (zaObnovo) qy = qy.eq("za_obnovo", true);
@@ -406,6 +427,7 @@ export default async function NepremicninePage({
     cenaMin: cenaMin?.toString() ?? "",
     cenaMax: cenaMax?.toString() ?? "",
     povrsinaMin: povrsinaMin?.toString() ?? "",
+    povrsinaMax: povrsinaMax?.toString() ?? "",
     zemljisceMin: zemljisceMin?.toString() ?? "",
     vecEnot: vecEnot ? "1" : "",
     zaObnovo: zaObnovo ? "1" : "",
@@ -525,6 +547,10 @@ export default async function NepremicninePage({
         <label className="flex flex-col gap-1 text-xs font-medium text-zinc-500">
           Površina od (m²)
           <input name="povrsinaMin" type="number" defaultValue={povrsinaMin ?? ""} className="w-24 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-zinc-500">
+          Površina do (m²)
+          <input name="povrsinaMax" type="number" defaultValue={povrsinaMax ?? ""} className="w-24 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm" />
         </label>
         <label className="flex flex-col gap-1 text-xs font-medium text-zinc-500">
           Zemljišče od (m²)
