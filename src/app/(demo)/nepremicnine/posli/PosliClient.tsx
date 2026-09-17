@@ -31,6 +31,8 @@ export type NepPosel = {
   agencija: string | null;
   telefon: string | null;
   vir: string;
+  /** Kanonična nepremičnina — dva oglasa istega objekta imata isti id. */
+  nepremicninaId?: string | null;
   tocke: number;
   razlogi: string[];
 };

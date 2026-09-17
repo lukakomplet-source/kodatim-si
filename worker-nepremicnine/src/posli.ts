@@ -39,6 +39,8 @@ export type NepPosel = {
   agencija: string | null;
   telefon: string | null;
   vir: string;
+  /** Kanonična nepremičnina — dva oglasa istega objekta imata isti id. */
+  nepremicninaId: string | null;
   tocke: number;
   razlogi: string[];
 };
@@ -49,6 +51,8 @@ type Vrstica = {
   povrsina_m2: number | null; zemljisce_m2: number | null; st_enot: number | null; st_enot_ocena: number | null;
   leto_izgradnje: number | null; vec_enot: boolean; za_obnovo: boolean; za_investicijo: boolean;
   first_seen: string; data_quality: number | null; agencija: string | null; telefon: string | null;
+  /** Kanonična nepremičnina; isti objekt iz dveh oglasov ima isti id. */
+  nepremicnina_id: string | null;
 };
 
 function mediana(v: number[]): number | null {
@@ -60,7 +64,7 @@ function mediana(v: number[]): number | null {
 
 export async function izracunajPosle(db: Db, log: (msg: string) => void): Promise<number> {
   const polja =
-    "id, vir, url, naslov, tip, regija, kraj, cena_eur, cena_prvotna_eur, cena_m2_eur, povrsina_m2, zemljisce_m2, st_enot, st_enot_ocena, leto_izgradnje, vec_enot, za_obnovo, za_investicijo, first_seen, data_quality, agencija, telefon";
+    "id, vir, url, naslov, tip, regija, kraj, cena_eur, cena_prvotna_eur, cena_m2_eur, povrsina_m2, zemljisce_m2, st_enot, st_enot_ocena, leto_izgradnje, vec_enot, za_obnovo, za_investicijo, first_seen, data_quality, agencija, telefon, nepremicnina_id";
   const prodajni = await preberiVse<Vrstica>(db, "nep_oglasi", polja, (q) =>
     q.eq("status", "aktiven").eq("posel", "prodaja").gte("cena_eur", 10_000)
   );
@@ -236,12 +240,54 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       najemOpis: najem?.opis ?? null,
       najemVzorec: najem?.vzorec ?? 0,
       agencija: o.agencija, telefon: o.telefon, vir: o.vir,
+      nepremicninaId: o.nepremicnina_id,
       tocke: Math.min(100, tocke), razlogi,
     });
   }
 
   posli.sort((a, b) => b.tocke - a.tocke || a.cena - b.cena);
-  const najboljsi = posli.slice(0, 200);
+
+  /**
+   * ENA NEPREMIČNINA — EN POSEL.
+   *
+   * Vir isti objekt pogosto objavi večkrat: "Koroška Bela, Potoška pot" je bila
+   * 17. 9. 2026 v bazi enkrat kot hiša in enkrat kot stanovanje, z isto ceno,
+   * isto površino in istim naslovom oglasa. Takih skupin je bilo 6.025, v njih
+   * 10.624 odvečnih oglasov — trinajst odstotkov baze. V feedu to pomeni, da
+   * ista hiša zasede tri od dvajsetih mest in potisne ven tri druge priložnosti.
+   *
+   * Ključ je kanonična nepremičnina, kadar jo združevalnik pozna; sicer
+   * vsebina (vir, cena, površina, kraj), ker je prav ta kombinacija tisto, kar
+   * človek na zaslonu prepozna kot "isto hišo". Ker je seznam že urejen po
+   * točkah, prvi zadetek v skupini je najboljši — in ta ostane.
+   */
+  const videni = new Set<string>();
+  const brezPodvojenih = posli.filter((p) => {
+    /**
+     * OBA KLJUČA, ne eden ali drugi.
+     *
+     * Kanoničnemu `nepremicnina_id` ni mogoče zaupati samega: "Koroška Bela,
+     * Potoška pot" je imela kot hiša in kot stanovanje RAZLIČEN kanonični id,
+     * ker ju združevalnik ni povezal (ločil ju je prav tip). Če bi se ustavili
+     * pri njem, bi ista hiša ostala v feedu dvakrat — po popravku listanja jih
+     * je bilo takih še enajst skupin.
+     *
+     * Vsebinski ključ ujame prav te; kanonični pa tiste, kjer se cena ali
+     * zapis kraja med objavama malce razlikujeta. Posel odpade, če ga ujame
+     * KATERI KOLI od obeh.
+     */
+    const kljuci = [
+      `v|${p.vir}|${p.cena}|${p.povrsina ?? "?"}|${(p.kraj ?? "").toLowerCase().trim()}`,
+      ...(p.nepremicninaId ? [`k|${p.nepremicninaId}`] : []),
+    ];
+    if (kljuci.some((k) => videni.has(k))) return false;
+    for (const k of kljuci) videni.add(k);
+    return true;
+  });
+  const odstranjenih = posli.length - brezPodvojenih.length;
+  if (odstranjenih > 0) log(`posli: ${odstranjenih} podvojenih objav istega objekta izpuščenih`);
+
+  const najboljsi = brezPodvojenih.slice(0, 200);
 
   const { error } = await db.from("nep_statistika").upsert({
     kljuc: "posli",

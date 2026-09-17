@@ -176,7 +176,22 @@ export async function preberiVse<T>(
 ): Promise<T[]> {
   const vse: T[] = [];
   for (let od = 0; ; od += 1000) {
-    let q = db.from(tabela).select(polja).range(od, od + 999);
+    /**
+     * `ORDER BY` JE OBVEZEN, KER LISTAMO.
+     *
+     * PostgreSQL brez urejanja ne jamči vrstnega reda vrstic. Ob branju po
+     * straneh (`range(0–999)`, `range(1000–1999)`, …) to pomeni, da se lahko
+     * ista vrstica pojavi na dveh straneh, druga pa na nobeni — in oboje se
+     * zgodi tiho.
+     *
+     * Izmerjeno 17. 9. 2026: deal feed je imel 200 vnosov, a samo 125 različnih
+     * oglasov. Uporabnik je na zaslonu videl isto hišo trikrat zapored,
+     * petinsedemdeset drugih pa v feed sploh ni prišlo. Ista past je veljala za
+     * vsakega odjemalca te funkcije — kraje in geokodiranje prav tako.
+     *
+     * `id` je primarni ključ, torej enolično urejanje brez dodatnega indeksa.
+     */
+    let q = db.from(tabela).select(polja).order("id", { ascending: true }).range(od, od + 999);
     if (filter) q = filter(q as unknown as Graditelj) as unknown as typeof q;
     const { data, error } = await q;
     if (error) throw new Error(`Branje ${tabela}: ${error.message}`);
