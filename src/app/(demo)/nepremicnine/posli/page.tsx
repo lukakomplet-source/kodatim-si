@@ -23,6 +23,26 @@ export default async function NepPosliPage() {
   const podatki = (data?.podatki ?? null) as { posli?: NepPosel[]; pregledanih?: number } | null;
   const posli = podatki?.posli ?? [];
 
+  /**
+   * SLIKE SE POBEREJO SPROTI, ne vpišejo v predizračun.
+   *
+   * Deal feed je JSON, ki nastane ob pregledu trga in nato stoji do naslednjega.
+   * Če bi vanj zapisali naslov fotografije, bi se postaral takoj, ko oglas
+   * zamenja sliko — kartica bi kazala fotografijo, ki je pri viru ni več.
+   * Ena poizvedba za vse posle na strani je cenejša od te napake.
+   */
+  const idji = posli.map((p) => p.id);
+  const slike = new Map<string, { slikaUrl: string | null; stSlik: number | null }>();
+  if (idji.length > 0) {
+    const { data: vrstice } = await db
+      .from("nep_oglasi")
+      .select("id, slika_url, st_slik")
+      .in("id", idji);
+    for (const v of (vrstice ?? []) as { id: string; slika_url: string | null; st_slik: number | null }[]) {
+      slike.set(v.id, { slikaUrl: v.slika_url, stSlik: v.st_slik });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-zinc-900 sm:text-3xl">
@@ -48,7 +68,7 @@ export default async function NepPosliPage() {
           Deal feed še ni izračunan — nastane ob prvem pregledu trga po tej nadgradnji.
         </p>
       ) : (
-        <PosliClient posli={posli} />
+        <PosliClient posli={posli} slike={Object.fromEntries(slike)} />
       )}
     </div>
   );

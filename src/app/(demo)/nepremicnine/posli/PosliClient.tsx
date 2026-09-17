@@ -35,6 +35,9 @@ export type NepPosel = {
   razlogi: string[];
 };
 
+/** Naslov fotografije in njihovo število — pobrano sproti, ne iz deal feeda. */
+export type SlikaPosla = { slikaUrl: string | null; stSlik: number | null };
+
 const eur = (v: number | null) => (v === null ? "—" : `${Math.round(v).toLocaleString("sl-SI")} €`);
 const KORAK = 20;
 
@@ -48,7 +51,14 @@ const TIPI_OZNAKE: Record<string, string> = {
   pocitniski_objekt: "Počitniški objekt",
 };
 
-export function PosliClient({ posli }: { posli: NepPosel[] }) {
+export function PosliClient({
+  posli,
+  slike,
+}: {
+  posli: NepPosel[];
+  /** id oglasa -> fotografija; prazno, dokler oglas nima pobrane slike. */
+  slike: Record<string, SlikaPosla>;
+}) {
   const [tip, setTip] = useState("");
   const [regija, setRegija] = useState("");
   const [samoEnote, setSamoEnote] = useState(false);
@@ -114,7 +124,44 @@ export function PosliClient({ posli }: { posli: NepPosel[] }) {
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filtrirani.slice(0, prikazanih).map((p) => (
-          <article key={p.id} className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <article key={p.id} className="flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+            {/*
+              SLIKA PO REFERENCI, NE PO KOPIJI — isto kot na iskalniku.
+              Brskalnik jo naloži naravnost z izvirnika; datoteke ne kopiramo
+              ne na strežnik ne na disk. Tako zahteva nepremicnine.net, ki ima
+              v robots.txt `Content-Signal: use=reference` (izrecen pridržek
+              pravic po 4. členu direktive EU 2019/790). `loading="lazy"`
+              pomeni, da se naloži šele, ko prideš do nje.
+            */}
+            <a
+              href={p.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative block aspect-[4/3] w-full overflow-hidden bg-zinc-100"
+              title="Odpri oglas pri viru"
+            >
+              {slike[p.id]?.slikaUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={slike[p.id]!.slikaUrl!}
+                  alt={p.naslov ?? "Fotografija nepremičnine"}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover transition duration-300 hover:scale-[1.03]"
+                />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                  Brez fotografije
+                </span>
+              )}
+              {(slike[p.id]?.stSlik ?? 0) > 1 && (
+                <span className="absolute bottom-2 right-2 rounded-full bg-zinc-900/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+                  {slike[p.id]!.stSlik} fotografij
+                </span>
+              )}
+            </a>
+
+            <div className="flex flex-1 flex-col p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
@@ -183,6 +230,7 @@ export function PosliClient({ posli }: { posli: NepPosel[] }) {
               >
                 ANALIZIRAJ
               </Link>
+            </div>
             </div>
           </article>
         ))}
