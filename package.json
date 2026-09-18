@@ -10,7 +10,8 @@
     "worker": "tsx scripts/worker.ts",
     "test:enrichment": "tsx scripts/test-public-enrichment.ts",
     "test:poizvedba": "tsx scripts/test-nep-poizvedba.ts",
-    "test:posel": "tsx scripts/test-nep-posel.ts"
+    "test:posel": "tsx scripts/test-nep-posel.ts",
+    "preveri:voznje": "tsx scripts/preveri-voznje.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
