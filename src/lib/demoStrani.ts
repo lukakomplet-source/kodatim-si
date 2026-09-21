@@ -128,6 +128,7 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     naziv: "URVIS Razlakiranje Kovin — predogled",
     stranka: "URVIS",
     vrsta: "spletna_stran",
+    url: "https://kodatim.si/urvis",
     opis:
       "Klon obstoječe strani urvis.si (prenešen z Replita), začasno gostovan tukaj dokler ne dobi lastne domene nazaj. Kontaktni obrazec pošilja na info@kodatim.si, ne na pravo stranko.",
   },
