@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="sl" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upravljanje Voznega Parka - Vojnik</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#0284c7',
+                            600: '#0369a1',
+                            700: '#035388',
+                            900: '#0c2a4a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans text-slate-800 antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-wrap items-center justify-between py-3 gap-3">
+                <!-- Logo & Title -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-brand-500/30">
+                        <i class="fa-solid fa-car-side"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="font-bold text-lg leading-tight tracking-wide text-white">Vozni Park Vojnik</h1>
+                            <!-- Mode indicator badge -->
+                            <span id="nav-mode-badge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <i class="fa-solid fa-eye"></i> Gledalec
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-400">Nadzor dveh vozil Hyundai & Evidenca Vinjet</p>
+                    </div>
+                </div>
+
+                <!-- Live Status Counters -->
+                <div class="hidden lg:flex items-center gap-3 text-xs font-medium">
+                    <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>V Vojniku: <strong id="cnt-vojnik" class="text-emerald-400">0</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                        <span>Na čiščenju: <strong id="cnt-ciscenje" class="text-amber-400">0</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                        <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        <span>Na furi: <strong id="cnt-fura" class="text-blue-400">0</strong></span>
+                    </div>
+                </div>
+
+                <!-- Admin & Tools Action Buttons -->
+                <div class="flex items-center gap-2">
+                    <div id="spectator-nav-actions" class="flex items-center gap-2">
+                        <button onclick="openLoginModal()" class="text-xs bg-brand-600 hover:bg-brand-500 text-white font-semibold px-3.5 py-2 rounded-xl transition duration-150 flex items-center gap-2 shadow-sm">
+                            <i class="fa-solid fa-lock text-xs"></i>
+                            <span>Prijava Admin</span>
+                        </button>
+                    </div>
+
+                    <div id="admin-nav-actions" class="hidden flex items-center gap-2">
+                        <button onclick="openPinModal()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-key text-xs text-amber-400"></i>
+                            <span class="hidden sm:inline">Spremeni PIN</span>
+                        </button>
+                        <button onclick="logoutAdmin()" class="text-xs bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-right-from-bracket text-xs"></i>
+                            <span class="hidden sm:inline">Odjava</span>
+                        </button>
+                    </div>
+
+                    <button onclick="promptResetData()" title="Ponastavi podatke" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2.5 py-2 rounded-xl border border-slate-700 transition">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+
+        <!-- Dynamic Warning Alerts Banner -->
+        <div id="alerts-container" class="space-y-3"></div>
+
+        <!-- Quick Filter / Overview Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200">
+            <div>
+                <h2 class="text-xl font-bold text-slate-900">Pregled Vozil</h2>
+                <p class="text-sm text-slate-500">Hitra sprememba statusa, kilometrov, servisov in poškodb</p>
+            </div>
+            <div class="flex items-center gap-2 self-start sm:self-auto">
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1">Filter:</span>
+                <button onclick="setFilter('all')" id="btn-filter-all" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 text-white shadow-sm transition">Vsa vozila</button>
+                <button onclick="setFilter('beli')" id="btn-filter-beli" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition">Beli Hyundai</button>
+                <button onclick="setFilter('sivi')" id="btn-filter-sivi" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition">Sivi Hyundai</button>
+            </div>
+        </div>
+
+        <!-- Vehicles Grid -->
+        <div id="vehicles-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Vehicle Cards Rendered Here Dynamically -->
+        </div>
+
+        <!-- SECTION: EVIDENCA VINJET ZA VOZILA (Excel Style Table) -->
+        <section class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden space-y-0">
+            <div class="p-5 sm:p-6 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl border border-amber-500/30">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-extrabold tracking-wide text-white uppercase">EVIDENCA VINJET ZA VOZILA</h3>
+                        <p class="text-xs text-slate-400">Pregled veljavnosti po državah (SLO, AT, CZ, CH in dodatne države)</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 text-[11px] text-slate-300 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Veljavno (&gt;30d)
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 ml-1"></span> Kmalu (&le;30d)
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500 ml-1"></span> Poteklo
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider">
+                            <th class="p-3.5 border-r border-slate-200 min-w-[150px]">Registrska št.</th>
+                            <th class="p-3.5 border-r border-slate-200 min-w-[170px]">Slovenija (Slo)</th>
+                            <th class="p-3.5 border-r border-slate-200 min-w-[130px]">Avstrija (At)</th>
+                            <th class="p-3.5 border-r border-slate-200 min-w-[170px]">Češka (Cz)</th>
+                            <th class="p-3.5 border-r border-slate-200 min-w-[130px]">Švica (Ch)</th>
+                            <th id="th-ext1" class="p-3.5 border-r border-slate-200 min-w-[150px]">Dodatno 1</th>
+                            <th id="th-ext2" class="p-3.5 border-r border-slate-200 min-w-[150px]">Dodatno 2</th>
+                            <th class="p-3.5 border-r border-slate-200 min-w-[160px]">Opombe</th>
+                            <th class="p-3.5 text-center min-w-[110px]">Urejanje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vignette-table-body" class="divide-y divide-slate-200 text-slate-800 font-medium">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+                <span><i class="fa-solid fa-circle-info mr-1 text-brand-600"></i> Datumski statusi se preračunavajo samodejno. Urejanje je omogočeno v Admin načinu.</span>
+            </div>
+        </section>
+
+        <!-- Quick Summary Table of Expiries & Statuses -->
+        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-check text-brand-600"></i>
+                    <h3 class="font-bold text-slate-800">Skupni pregled dokumentov in servisov</h3>
+                </div>
+                <span class="text-xs text-slate-500">Servisni interval: vsakih 15.000 km</span>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-100/70 text-xs uppercase text-slate-500 font-semibold">
+                        <tr>
+                            <th class="px-6 py-3">Vozilo</th>
+                            <th class="px-6 py-3">Lokacija / Status</th>
+                            <th class="px-6 py-3">Trenutni km</th>
+                            <th class="px-6 py-3">Do servisa</th>
+                            <th class="px-6 py-3">SLO Vinjeta</th>
+                            <th class="px-6 py-3">Zavarovanje</th>
+                            <th class="px-6 py-3">Tehnični pregled</th>
+                            <th class="px-6 py-3">Poškodbe</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summary-table-body" class="divide-y divide-slate-100">
+                        <!-- Summary Rows Populated Dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer with Author Info -->
+    <footer class="bg-slate-900 text-slate-400 py-6 border-t border-slate-800 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+            <p>Vozni Park Vojnik &copy; 2026</p>
+            <p class="font-semibold text-slate-300 tracking-wider">Made by Janoš Brodej</p>
+        </div>
+    </footer>
+
+    <!-- Modal: Admin Login (PIN Entry) -->
+    <div id="login-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 transform transition-all">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-user-shield text-brand-500"></i>
+                    <span>Prijava Admina</span>
+                </h3>
+                <button onclick="closeLoginModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="login-form" onsubmit="handleLoginSubmit(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Vnesite Admin PIN</label>
+                    <div class="relative">
+                        <input type="password" id="input-admin-pin" required placeholder="••••" autocomplete="current-password"
+                            class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono text-center tracking-widest text-lg font-bold text-slate-800">
+                        <i class="fa-solid fa-key absolute left-3.5 top-4 text-slate-400"></i>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-2">Privzeti PIN je: <strong class="text-slate-600 font-mono">1234</strong></p>
+                </div>
+
+                <div id="login-error-msg" class="hidden text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation"></i> Nažalost vneseni PIN ni pravilen!
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeLoginModal()" class="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition">Prekliči</button>
+                    <button type="submit" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-right-to-bracket"></i> Prijava
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Change Admin PIN -->
+    <div id="pin-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 transform transition-all">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-key text-amber-400"></i>
+                    <span>Sprememba PIN Gesla</span>
+                </h3>
+                <button onclick="closePinModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="pin-form" onsubmit="handlePinChangeSubmit(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Trenutni PIN</label>
+                    <input type="password" id="input-old-pin" required placeholder="••••"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-center tracking-widest text-slate-800">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Novi PIN</label>
+                    <input type="password" id="input-new-pin" required placeholder="••••"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-center tracking-widest text-slate-800">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Ponovi Novi PIN</label>
+                    <input type="password" id="input-confirm-pin" required placeholder="••••"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none font-mono text-center tracking-widest text-slate-800">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closePinModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition">Prekliči</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold text-sm shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Shrani PIN
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Vignettes Table Row -->
+    <div id="vignette-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-100 transform transition-all flex flex-col max-h-[90vh]">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-map-location-dot text-amber-400"></i>
+                    <span id="vignette-modal-title">Urejanje Vinjet</span>
+                </h3>
+                <button onclick="closeVignetteModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="vignette-form" onsubmit="handleVignetteSubmit(event)" class="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                <input type="hidden" id="vignette-car-id" value="">
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Slovenija (Besedilo & Datum)</label>
+                        <input type="text" id="vig-slo-text" placeholder="npr. 30.04.2025 - 30.08.2026" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none mb-1">
+                        <label class="block text-[10px] font-semibold text-slate-400">Datum poteka (za avto izračun statusa):</label>
+                        <input type="date" id="vig-slo-expiry" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Avstrija (Besedilo & Datum)</label>
+                        <input type="text" id="vig-at-text" placeholder="npr. 31.01.2027" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none mb-1">
+                        <label class="block text-[10px] font-semibold text-slate-400">Datum poteka:</label>
+                        <input type="date" id="vig-at-expiry" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Češka (Besedilo & Datum)</label>
+                        <input type="text" id="vig-cz-text" placeholder="npr. 08.10.2025 - 07.10.2026" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none mb-1">
+                        <label class="block text-[10px] font-semibold text-slate-400">Datum poteka:</label>
+                        <input type="date" id="vig-cz-expiry" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Švica (Besedilo & Datum)</label>
+                        <input type="text" id="vig-ch-text" placeholder="npr. 31.01.2027" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none mb-1">
+                        <label class="block text-[10px] font-semibold text-slate-400">Datum poteka:</label>
+                        <input type="date" id="vig-ch-expiry" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                    </div>
+                </div>
+
+                <hr class="border-slate-200 my-2">
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Dodatno 1 -->
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-brand-700 block">Dodatno Polje 1</span>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Ime Države:</label>
+                            <input type="text" id="vig-ext1-country" placeholder="npr. Hrvaška" class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Vsebina / Datumi:</label>
+                            <input type="text" id="vig-ext1-text" placeholder="npr. 15.06.2026 - 15.09.2026" class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Datum poteka (izbirno):</label>
+                            <input type="date" id="vig-ext1-expiry" class="w-full px-3 py-1 text-xs rounded-lg border border-slate-300">
+                        </div>
+                    </div>
+
+                    <!-- Dodatno 2 -->
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-brand-700 block">Dodatno Polje 2</span>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Ime Države:</label>
+                            <input type="text" id="vig-ext2-country" placeholder="npr. Nemčija" class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Vsebina / Datumi:</label>
+                            <input type="text" id="vig-ext2-text" placeholder="npr. Brez" class="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500">Datum poteka (izbirno):</label>
+                            <input type="date" id="vig-ext2-expiry" class="w-full px-3 py-1 text-xs rounded-lg border border-slate-300">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Opombe</label>
+                    <input type="text" id="vig-notes" placeholder="npr. SIVI HYUNDAI" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300">
+                </div>
+
+                <div class="flex justify-end gap-3 pt-3">
+                    <button type="button" onclick="closeVignetteModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition">Prekliči</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Shrani Vinjete
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Damage Tracking (Sledenje Poškodbam) -->
+    <div id="damage-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 transform transition-all flex flex-col max-h-[85vh]">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-car-burst text-rose-500"></i>
+                    <span id="damage-modal-title">Sledenje Poškodbam</span>
+                </h3>
+                <button onclick="closeDamageModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
+                <!-- List of existing damages -->
+                <div>
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Evidentirane poškodbe vozil</h4>
+                    <div id="damage-list-container" class="space-y-3">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Add new damage form -->
+                <div id="damage-add-box" class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <h5 class="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus-circle text-brand-600"></i> Dodaj novo poškodbo / sliko
+                    </h5>
+                    <form id="damage-form" onsubmit="handleDamageSubmit(event)" class="space-y-3">
+                        <input type="hidden" id="damage-car-id" value="">
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Lokacija poškodbe</label>
+                                <input type="text" id="damage-input-loc" required placeholder="npr. Sprednji odbijač" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Resnost</label>
+                                <select id="damage-input-severity" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white">
+                                    <option value="Blaga">Blaga (Praska / Praska na laku)</option>
+                                    <option value="Srednja">Srednja (Udarec / Vdolbina)</option>
+                                    <option value="Huda">Huda (Večja poškodba / Karambol)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Opis poškodbe / Okoliščine</label>
+                            <input type="text" id="damage-input-desc" required placeholder="Natančen opis..." class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Povezava do slike (URL slike)</label>
+                            <input type="url" id="damage-input-img" required placeholder="https://primer.si/slika.jpg" class="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300">
+                        </div>
+
+                        <div class="flex justify-end pt-1">
+                            <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> Dodaj poškodbo in sliko
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button onclick="closeDamageModal()" class="px-4 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs transition">Zapri</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Update Kilometers & Service -->
+    <div id="km-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-slate-100 transform transition-all">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-gauge text-brand-500"></i>
+                    <span id="km-modal-title">Posodobi Kilometre</span>
+                </h3>
+                <button onclick="closeKmModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="km-form" onsubmit="handleKmSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="km-car-id" value="">
+                
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1">Skupni kilometri vozila</label>
+                    <div class="relative">
+                        <input type="number" id="input-current-km" required min="0" step="1"
+                            class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-semibold text-slate-800">
+                        <i class="fa-solid fa-road absolute left-3.5 top-3.5 text-slate-400"></i>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-brand-600 mb-1">Preostalo do servisa (s števca)</label>
+                    <div class="relative">
+                        <input type="number" id="input-remaining-km" required min="0" step="1"
+                            class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none font-semibold text-slate-800 bg-brand-50">
+                        <i class="fa-solid fa-wrench absolute left-3.5 top-3.5 text-brand-500"></i>
+                    </div>
+                    <p class="text-[10px] text-slate-500 mt-1.5"><i class="fa-solid fa-circle-info text-brand-500 mr-0.5"></i> Tukaj prepiši točno tisto številko, ki jo kaže avto (npr. 8387). Ko je narejen servis in avto kaže 15000, tukaj vpiši 15000.</p>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeKmModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition">Prekliči</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Shranjevanje
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Update Expiry Dates -->
+    <div id="dates-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-slate-100 transform transition-all">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-days text-brand-500"></i>
+                    <span id="dates-modal-title">Urejanje Datumov</span>
+                </h3>
+                <button onclick="closeDatesModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <form id="dates-form" onsubmit="handleDatesSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="dates-car-id" value="">
+                
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-ticket text-brand-600"></i> Veljavnost SLO Vinjete
+                    </label>
+                    <input type="date" id="input-vignette-date" required class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none text-slate-800">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-shield-halved text-emerald-600"></i> Veljavnost Zavarovanja
+                    </label>
+                    <input type="date" id="input-insurance-date" required class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none text-slate-800">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-clipboard-check text-indigo-600"></i> Tehnični Pregled
+                    </label>
+                    <input type="date" id="input-tech-date" required class="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none text-slate-800">
+                </div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" onclick="closeDatesModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium text-sm transition">Prekliči</button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> Shranjevanje
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: View Status History Log -->
+    <div id="history-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full overflow-hidden border border-slate-100 transform transition-all flex flex-col max-h-[85vh]">
+            <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-brand-500"></i>
+                    <span id="history-modal-title">Zgodovina Statusov</span>
+                </h3>
+                <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-white text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <div id="history-logs-container" class="space-y-4">
+                    <!-- History items rendered here -->
+                </div>
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                <button onclick="clearCarHistory()" id="btn-clear-history" class="text-xs text-rose-600 hover:text-rose-800 font-medium">Počisti zgodovino</button>
+                <button onclick="closeHistoryModal()" class="px-4 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs transition">Zapri</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 p-6 text-center space-y-4">
+            <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <h4 id="confirm-modal-title" class="text-base font-bold text-slate-900">Potrditev dejanja</h4>
+                <p id="confirm-modal-msg" class="text-xs text-slate-500 mt-1">Ste prepričani, da želite izvesti to dejanje?</p>
+            </div>
+            <div class="flex justify-center gap-3 pt-2">
+                <button id="confirm-cancel-btn" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">Prekliči</button>
+                <button id="confirm-ok-btn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition">Potrdi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 ease-out pointer-events-none">
+        <div id="toast-body" class="bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl border border-slate-700 flex items-center gap-3">
+            <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <span id="toast-msg" class="text-sm font-medium">Sporočilo</span>
+        </div>
+    </div>
+
+    <script>
+        // LocalStorage Keys
+        const STORAGE_KEY = 'hyundai_fleet_data_v4';
+        const PIN_STORAGE_KEY = 'hyundai_fleet_admin_pin';
+        const SERVICE_INTERVAL = 15000; // 15,000 km
+        const SERVICE_WARN_LIMIT = 2000; // Warn when remaining <= 2,000 km
+
+        // Global State
+        let isAdmin = false;
+        let adminPin = '1234';
+        let fleetData = {};
+        let activeFilter = 'all';
+        let currentActiveCarHistory = null;
+        let pendingConfirmCallback = null;
+
+        // Default Initial Data (z vašimi novimi poslanimi slikami)
+        const defaultFleetData = {
+            "sivi": {
+                id: "sivi",
+                name: "Sivi Hyundai",
+                plate: "CE 94-FRL",
+                colorBadge: "bg-slate-200 text-slate-800 border-slate-400",
+                img: "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&q=80&w=600",
+                status: "Na čiščenju",
+                lastStatusUpdate: new Date().toISOString(),
+                statusHistory: [
+                    { time: formatDateDisplay(new Date()), status: "Na čiščenju", note: "Avto se čisti notri in zunaj." }
+                ],
+                currentKm: 88400,
+                lastServiceKm: 88400,
+                vignetteExpiry: "2026-08-30",
+                insuranceExpiry: getFutureDateStr(180),
+                techExpiry: getFutureDateStr(8),
+                vignettes: {
+                    slo: { text: "30.04.2025 - 30.08.2026", expiry: "2026-08-30" },
+                    at: { text: "31.01.2027", expiry: "2027-01-31" },
+                    cz: { text: "8. 10. 2025 - 7. 10. 2026", expiry: "2026-10-07" },
+                    ch: { text: "31.01.2027", expiry: "2027-01-31" },
+                    ext1: { country: "Hrvaška", text: "15.06.2026 - 15.09.2026", expiry: "2026-09-15" },
+                    ext2: { country: "Nemčija", text: "Brez (Okoljska)", expiry: "" },
+                    notes: "SIVI HYUNDAI"
+                },
+                damages: [
+                    { id: "d1", date: "2026-02-14", location: "Zadnji odbijač desno", severity: "Blaga", desc: "Manjša praska na parkirišču", img: "", status: "Prijavljeno" }
+                ]
+            },
+            "beli": {
+                id: "beli",
+                name: "Beli Hyundai",
+                plate: "CE 84-AHZ",
+                colorBadge: "bg-slate-100 text-slate-800 border-slate-300",
+                img: "https://images.unsplash.com/photo-1590362891991-f776e747a588?auto=format&fit=crop&q=80&w=600",
+                status: "Vrnjen v Vojnik",
+                lastStatusUpdate: new Date().toISOString(),
+                statusHistory: [
+                    { time: formatDateDisplay(new Date()), status: "Vrnjen v Vojnik", note: "Notranje in zunanje čiščenje uspešno zaključeno." }
+                ],
+                currentKm: 63200,
+                lastServiceKm: 63200,
+                vignetteExpiry: "2027-01-21",
+                insuranceExpiry: getFutureDateStr(18),
+                techExpiry: getFutureDateStr(240),
+                vignettes: {
+                    slo: { text: "21.09.2025 - 21.01.2027", expiry: "2027-01-21" },
+                    at: { text: "31.01.2027", expiry: "2027-01-31" },
+                    cz: { text: "22. 10. 2025 - 21. 10. 2026", expiry: "2026-10-21" },
+                    ch: { text: "31.01.2027", expiry: "2027-01-31" },
+                    ext1: { country: "Italija", text: "Brez", expiry: "" },
+                    ext2: { country: "Dodatno", text: "-", expiry: "" },
+                    notes: "BELI HYUNDAI"
+                },
+                damages: []
+            }
+        };
+
+        // Date Helpers
+        function getFutureDateStr(daysOffset) {
+            const d = new Date();
+            d.setDate(d.getDate() + daysOffset);
+            return d.toISOString().split('T')[0];
+        }
+
+        function formatDateDisplay(dateObjStr) {
+            if (!dateObjStr) return '-';
+            const d = new Date(dateObjStr);
+            if (isNaN(d.getTime())) return dateObjStr;
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            const hours = String(d.getHours()).padStart(2, '0');
+            const mins = String(d.getMinutes()).padStart(2, '0');
+            return `${day}.${month}.${year} ob ${hours}:${mins}`;
+        }
+
+        function formatDateOnly(dateStr) {
+            if (!dateStr) return '-';
+            const parts = dateStr.split('-');
+            if (parts.length === 3) {
+                return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            }
+            return dateStr;
+        }
+
+        function calculateDaysRemaining(targetDateStr) {
+            if (!targetDateStr) return { days: 999, state: 'none', label: '-' };
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const target = new Date(targetDateStr);
+            target.setHours(0, 0, 0, 0);
+            
+            if (isNaN(target.getTime())) return { days: 999, state: 'none', label: targetDateStr };
+
+            const diffTime = target.getTime() - today.getTime();
+            const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (days < 0) return { days: Math.abs(days), isExpired: true, state: 'danger', label: `Poteklo pred ${Math.abs(days)} d` };
+            if (days <= 30) return { days, isExpired: false, state: 'warning', label: `Še ${days} d (Kmalu)` };
+            return { days, isExpired: false, state: 'ok', label: `Veljavno (${days} d)` };
+        }
+
+        function calculateServiceStatus(car) {
+            const nextServiceKm = car.lastServiceKm + SERVICE_INTERVAL;
+            const remainingKm = nextServiceKm - car.currentKm;
+            const drivenSinceService = car.currentKm - car.lastServiceKm;
+            const progressPercent = Math.min(100, Math.max(0, (drivenSinceService / SERVICE_INTERVAL) * 100));
+
+            const isUrgent = remainingKm <= SERVICE_WARN_LIMIT;
+            const isOverdue = remainingKm <= 0;
+
+            return {
+                nextServiceKm,
+                remainingKm,
+                progressPercent,
+                isUrgent,
+                isOverdue
+            };
+        }
+
+        function loadData() {
+            try {
+                const storedPin = localStorage.getItem(PIN_STORAGE_KEY);
+                if (storedPin) adminPin = storedPin;
+                else localStorage.setItem(PIN_STORAGE_KEY, adminPin);
+
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    fleetData = JSON.parse(stored);
+                } else {
+                    fleetData = JSON.parse(JSON.stringify(defaultFleetData));
+                    saveData();
+                }
+            } catch (e) {
+                console.error("Local storage error:", e);
+                fleetData = JSON.parse(JSON.stringify(defaultFleetData));
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(fleetData));
+            } catch (e) {
+                console.error("Save error:", e);
+            }
+        }
+
+        function showConfirmModal(title, msg, onOk) {
+            document.getElementById('confirm-modal-title').innerText = title;
+            document.getElementById('confirm-modal-msg').innerText = msg;
+            pendingConfirmCallback = onOk;
+
+            const modal = document.getElementById('confirm-modal');
+            modal.classList.remove('hidden');
+
+            document.getElementById('confirm-ok-btn').onclick = () => {
+                modal.classList.add('hidden');
+                if (pendingConfirmCallback) pendingConfirmCallback();
+            };
+            document.getElementById('confirm-cancel-btn').onclick = () => {
+                modal.classList.add('hidden');
+            };
+        }
+
+        function promptResetData() {
+            if (!checkAdminOrPrompt()) return;
+
+            showConfirmModal(
+                "Ponastavitev podatkov",
+                "Ali ste prepričani, da želite vse podatke vozil in vinjet ponastaviti na začetne vrednosti?",
+                () => {
+                    fleetData = JSON.parse(JSON.stringify(defaultFleetData));
+                    saveData();
+                    renderAll();
+                    showToast("Podatki so ponastavljeni na začetne.", "info");
+                }
+            );
+        }
+
+        function checkAdminOrPrompt() {
+            if (isAdmin) return true;
+            showToast("Za to dejanje se morate prijaviti kot Admin!", "warning");
+            openLoginModal();
+            return false;
+        }
+
+        function openLoginModal() {
+            document.getElementById('input-admin-pin').value = '';
+            document.getElementById('login-error-msg').classList.add('hidden');
+            document.getElementById('login-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('input-admin-pin').focus(), 100);
+        }
+
+        function closeLoginModal() {
+            document.getElementById('login-modal').classList.add('hidden');
+        }
+
+        function handleLoginSubmit(e) {
+            e.preventDefault();
+            const inputPin = document.getElementById('input-admin-pin').value.trim();
+
+            if (inputPin === adminPin) {
+                isAdmin = true;
+                closeLoginModal();
+                updateAdminUiState();
+                showToast("Uspešna prijava! Sedaj imate admin pravice.", "success");
+            } else {
+                document.getElementById('login-error-msg').classList.remove('hidden');
+            }
+        }
+
+        function logoutAdmin() {
+            isAdmin = false;
+            updateAdminUiState();
+            showToast("Odjavljeni ste iz Admin načina.", "info");
+        }
+
+        function openPinModal() {
+            if (!checkAdminOrPrompt()) return;
+            document.getElementById('input-old-pin').value = '';
+            document.getElementById('input-new-pin').value = '';
+            document.getElementById('input-confirm-pin').value = '';
+            document.getElementById('pin-modal').classList.remove('hidden');
+        }
+
+        function closePinModal() {
+            document.getElementById('pin-modal').classList.add('hidden');
+        }
+
+        function handlePinChangeSubmit(e) {
+            e.preventDefault();
+            const oldPin = document.getElementById('input-old-pin').value.trim();
+            const newPin = document.getElementById('input-new-pin').value.trim();
+            const confirmPin = document.getElementById('input-confirm-pin').value.trim();
+
+            if (oldPin !== adminPin) {
+                showToast("Trenutni PIN ni pravilen!", "warning");
+                return;
+            }
+
+            if (newPin.length < 4) {
+                showToast("Novi PIN mora imeti vsaj 4 znake!", "warning");
+                return;
+            }
+
+            if (newPin !== confirmPin) {
+                showToast("Novi PIN in potrditev se ne ujemata!", "warning");
+                return;
+            }
+
+            adminPin = newPin;
+            localStorage.setItem(PIN_STORAGE_KEY, adminPin);
+            closePinModal();
+            showToast("Admin PIN uspešno spremenjen!", "success");
+        }
+
+        function updateAdminUiState() {
+            const badge = document.getElementById('nav-mode-badge');
+            const specActions = document.getElementById('spectator-nav-actions');
+            const adminActions = document.getElementById('admin-nav-actions');
+
+            if (isAdmin) {
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-user-shield"></i> Način: Admin`;
+                specActions.classList.add('hidden');
+                adminActions.classList.remove('hidden');
+            } else {
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-eye"></i> Način: Gledalec`;
+                specActions.classList.remove('hidden');
+                adminActions.classList.add('hidden');
+            }
+
+            renderAll();
+        }
+
+        function getStatusBadgeHtml(status) {
+            switch (status) {
+                case 'Vrnjen v Vojnik':
+                    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm">
+                                <i class="fa-solid fa-house-circle-check text-emerald-600"></i> Vrnjen v Vojnik
+                            </span>`;
+                case 'Na čiščenju':
+                    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 shadow-sm">
+                                <i class="fa-solid fa-soap text-amber-600 animate-pulse"></i> Na čiščenju
+                            </span>`;
+                case 'Na furi':
+                default:
+                    return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 shadow-sm">
+                                <i class="fa-solid fa-car-side text-blue-600"></i> Na furi / Na poti
+                            </span>`;
+            }
+        }
+
+        function updateStatus(carId, newStatus) {
+            if (!isAdmin && newStatus === 'Na čiščenju') {
+                showToast("Gledalci ne morejo postaviti vozila na čiščenje!", "warning");
+                return;
+            }
+
+            const car = fleetData[carId];
+            if (!car) return;
+
+            let note = "";
+            if (newStatus === 'Na čiščenju') note = "Začetek notranjega in zunanjega čiščenja.";
+            else if (newStatus === 'Vrnjen v Vojnik') note = "Vozilo parkirano v Vojniku.";
+            else if (newStatus === 'Na furi') note = "Vozilo prevzeto za furi.";
+
+            car.status = newStatus;
+            const now = new Date();
+            car.lastStatusUpdate = now.toISOString();
+            
+            if (!car.statusHistory) car.statusHistory = [];
+            car.statusHistory.unshift({
+                time: formatDateDisplay(now),
+                status: newStatus,
+                note: note
+            });
+
+            saveData();
+            renderAll();
+            showToast(`${car.name}: Status spremenjen v "${newStatus}"`, "success");
+        }
+
+        function setFilter(filter) {
+            activeFilter = filter;
+            ['all', 'beli', 'sivi'].forEach(f => {
+                const btn = document.getElementById(`btn-filter-${f}`);
+                if (f === filter) {
+                    btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 text-white shadow-sm transition";
+                } else {
+                    btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition";
+                }
+            });
+            renderVehicles();
+        }
+
+        function renderAlerts() {
+            const container = document.getElementById('alerts-container');
+            container.innerHTML = '';
+            
+            const alerts = [];
+
+            Object.values(fleetData).forEach(car => {
+                const service = calculateServiceStatus(car);
+                if (service.isOverdue) {
+                    alerts.push({
+                        type: 'danger',
+                        icon: 'fa-triangle-exclamation',
+                        title: `Nujno: Servis pretečen! (${car.name})`,
+                        msg: `Presegli ste interval 15.000 km za ${Math.abs(service.remainingKm).toLocaleString('sl-SI')} km. Opravite servis čim prej!`
+                    });
+                } else if (service.isUrgent) {
+                    alerts.push({
+                        type: 'warning',
+                        icon: 'fa-wrench',
+                        title: `Opozorilo za servis: ${car.name}`,
+                        msg: `Do naslednjega rednega servisa je ostalo le še <strong class="underline">${service.remainingKm.toLocaleString('sl-SI')} km</strong>.`
+                    });
+                }
+
+                const vign = calculateDaysRemaining(car.vignetteExpiry);
+                if (vign.isExpired) {
+                    alerts.push({
+                        type: 'danger',
+                        icon: 'fa-ticket',
+                        title: `Nujno: SLO Vinjeta potekla! (${car.name})`,
+                        msg: `SLO vinjeta je potekla pred ${vign.days} dni (${formatDateOnly(car.vignetteExpiry)}).`
+                    });
+                } else if (vign.state === 'warning') {
+                    alerts.push({
+                        type: 'warning',
+                        icon: 'fa-ticket',
+                        title: `SLO Vinjeta kmalu poteče: ${car.name}`,
+                        msg: `SLO vinjeta poteče čez ${vign.days} dni (${formatDateOnly(car.vignetteExpiry)}).`
+                    });
+                }
+
+                const ins = calculateDaysRemaining(car.insuranceExpiry);
+                if (ins.isExpired) {
+                    alerts.push({
+                        type: 'danger',
+                        icon: 'fa-shield-halved',
+                        title: `Nujno: Zavarovanje poteklo! (${car.name})`,
+                        msg: `Zavarovanje je poteklo pred ${ins.days} dni (${formatDateOnly(car.insuranceExpiry)}).`
+                    });
+                } else if (ins.state === 'warning') {
+                    alerts.push({
+                        type: 'warning',
+                        icon: 'fa-shield-halved',
+                        title: `Zavarovanje kmalu poteče: ${car.name}`,
+                        msg: `Zavarovanje poteče čez ${ins.days} dni (${formatDateOnly(car.insuranceExpiry)}).`
+                    });
+                }
+
+                const tech = calculateDaysRemaining(car.techExpiry);
+                if (tech.isExpired) {
+                    alerts.push({
+                        type: 'danger',
+                        icon: 'fa-clipboard-check',
+                        title: `Nujno: Tehnični pregled potekel! (${car.name})`,
+                        msg: `Tehnični pregled je potekel pred ${tech.days} dni (${formatDateOnly(car.techExpiry)}).`
+                    });
+                } else if (tech.state === 'warning') {
+                    alerts.push({
+                        type: 'warning',
+                        icon: 'fa-clipboard-check',
+                        title: `Tehnični pregled kmalu poteče: ${car.name}`,
+                        msg: `Tehnični pregled poteče čez ${tech.days} dni (${formatDateOnly(car.techExpiry)}).`
+                    });
+                }
+            });
+
+            if (alerts.length === 0) return;
+
+            alerts.forEach(al => {
+                const isDanger = al.type === 'danger';
+                const bgClass = isDanger ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-amber-50 border-amber-200 text-amber-900';
+                const iconClass = isDanger ? 'text-rose-600 bg-rose-100' : 'text-amber-600 bg-amber-100';
+
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `p-4 rounded-2xl border ${bgClass} flex items-start gap-3 shadow-sm transition`;
+                alertDiv.innerHTML = `
+                    <div class="p-2.5 rounded-xl ${iconClass} shrink-0">
+                        <i class="fa-solid ${al.icon} text-lg"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="font-bold text-sm mb-0.5">${al.title}</h4>
+                        <p class="text-xs opacity-90">${al.msg}</p>
+                    </div>
+                `;
+                container.appendChild(alertDiv);
+            });
+        }
+
+        function renderVehicles() {
+            const grid = document.getElementById('vehicles-grid');
+            grid.innerHTML = '';
+
+            const carsToDisplay = Object.values(fleetData).filter(c => {
+                if (activeFilter === 'all') return true;
+                return c.id === activeFilter;
+            });
+
+            carsToDisplay.forEach(car => {
+                const service = calculateServiceStatus(car);
+                const vign = calculateDaysRemaining(car.vignetteExpiry);
+                const ins = calculateDaysRemaining(car.insuranceExpiry);
+                const tech = calculateDaysRemaining(car.techExpiry);
+                const activeDamagesCount = (car.damages || []).length;
+
+                const isCleaningActive = car.status === 'Na čiščenju';
+                let cleaningBtnHtml = '';
+                
+                if (isAdmin) {
+                    cleaningBtnHtml = `
+                        <button onclick="updateStatus('${car.id}', 'Na čiščenju')" 
+                            class="py-2.5 px-2 rounded-xl text-xs font-bold border transition flex flex-col items-center justify-center gap-1 ${isCleaningActive ? 'bg-amber-500 text-white border-amber-500 shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                            <i class="fa-solid fa-soap"></i>
+                            <span>Na čiščenju</span>
+                        </button>
+                    `;
+                } else {
+                    cleaningBtnHtml = `
+                        <div title="Samo Admin lahko postavi vozilo na čiščenje" 
+                            class="py-2.5 px-2 rounded-xl text-xs font-bold border transition flex flex-col items-center justify-center gap-1 bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed">
+                            <i class="fa-solid fa-lock text-[10px]"></i>
+                            <span>Na čiščenju</span>
+                        </div>
+                    `;
+                }
+
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col justify-between hover:shadow-md transition duration-200";
+
+                card.innerHTML = `
+                    <div>
+                        <!-- Header with Image & Plate -->
+                        <div class="relative h-48 bg-slate-900 overflow-hidden">
+                            <img src="${car.img}" alt="${car.name}" class="w-full h-full object-cover opacity-85 hover:scale-105 transition duration-500">
+                            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent"></div>
+                            
+                            <div class="absolute top-4 left-4 flex gap-2">
+                                <span class="px-3 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md text-white text-xs font-mono font-bold tracking-wider border border-slate-700">
+                                    <i class="fa-solid fa-id-card text-brand-500 mr-1.5"></i>${car.plate}
+                                </span>
+                            </div>
+
+                            <div class="absolute top-4 right-4">
+                                <button onclick="openDamageModal('${car.id}')" class="px-3 py-1 rounded-xl ${activeDamagesCount > 0 ? 'bg-rose-600 text-white font-bold' : 'bg-slate-900/80 text-slate-300'} backdrop-blur-md text-xs border border-slate-700 hover:bg-rose-700 transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-car-burst"></i>
+                                    <span>Poškodbe: ${activeDamagesCount}</span>
+                                </button>
+                            </div>
+
+                            <div class="absolute bottom-4 left-4 right-4 flex items-end justify-between">
+                                <div>
+                                    <h3 class="text-2xl font-extrabold text-white tracking-tight">${car.name}</h3>
+                                    <p class="text-xs text-slate-300">Zadnja sprememba: ${formatDateDisplay(car.lastStatusUpdate)}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Current Status Banner & Quick Actions -->
+                        <div class="p-5 bg-slate-50 border-b border-slate-100">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                <div>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">Trenutni Status</span>
+                                    ${getStatusBadgeHtml(car.status)}
+                                </div>
+                                <button onclick="openHistoryModal('${car.id}')" class="text-xs text-slate-500 hover:text-brand-600 font-medium flex items-center gap-1 self-start sm:self-auto bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                                    <i class="fa-solid fa-clock-rotate-left"></i> Zgodovina
+                                </button>
+                            </div>
+
+                            <!-- Fast Status Changing Buttons -->
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="updateStatus('${car.id}', 'Na furi')" 
+                                    class="py-2.5 px-2 rounded-xl text-xs font-bold border transition flex flex-col items-center justify-center gap-1 ${car.status === 'Na furi' ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                                    <i class="fa-solid fa-car-side"></i>
+                                    <span>Na furi</span>
+                                </button>
+
+                                ${cleaningBtnHtml}
+
+                                <button onclick="updateStatus('${car.id}', 'Vrnjen v Vojnik')" 
+                                    class="py-2.5 px-2 rounded-xl text-xs font-bold border transition flex flex-col items-center justify-center gap-1 ${car.status === 'Vrnjen v Vojnik' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                                    <i class="fa-solid fa-house-circle-check"></i>
+                                    <span>V Vojniku</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Kilometers & Service Progress Bar -->
+                        <div class="p-5 border-b border-slate-100 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold">
+                                        <i class="fa-solid fa-gauge-high"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-sm font-bold text-slate-800">Kilometri & Servis</h4>
+                                        <p class="text-xs text-slate-400">Trenutno: <strong class="text-slate-700 font-bold">${car.currentKm.toLocaleString('sl-SI')} km</strong></p>
+                                    </div>
+                                </div>
+                                <button onclick="openKmModal('${car.id}')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition flex items-center gap-1">
+                                    <i class="fa-solid ${isAdmin ? 'fa-pen-to-square text-brand-600' : 'fa-lock text-slate-400'}"></i> Posodobi km
+                                </button>
+                            </div>
+
+                            <!-- Service Progress Bar & Countdown -->
+                            <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                                <div class="flex justify-between items-center text-xs">
+                                    <span class="font-medium text-slate-600">Servisni interval (15.000 km)</span>
+                                    ${service.isUrgent ? 
+                                        `<span class="px-2 py-0.5 rounded-md font-bold text-rose-700 bg-rose-100 border border-rose-200 animate-pulse"><i class="fa-solid fa-bell mr-1"></i> Servis čez ${service.remainingKm.toLocaleString('sl-SI')} km!</span>` : 
+                                        `<span class="font-bold text-slate-700">Preostaja: ${service.remainingKm.toLocaleString('sl-SI')} km</span>`
+                                    }
+                                </div>
+
+                                <div class="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-500 ${service.isUrgent ? 'bg-rose-500' : 'bg-brand-500'}" style="width: ${service.progressPercent}%"></div>
+                                </div>
+
+                                <div class="flex justify-between items-center text-[11px] text-slate-400">
+                                    <span>Zadnji vnos: ${car.lastServiceKm.toLocaleString('sl-SI')} km</span>
+                                    <span>Naslednji servis: ${service.nextServiceKm.toLocaleString('sl-SI')} km</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Vignette, Insurance, Tech Inspection Grid -->
+                        <div class="p-5 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Dokumenti in veljavnost</h4>
+                                <button onclick="openDatesModal('${car.id}')" class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
+                                    <i class="fa-solid ${isAdmin ? 'fa-calendar-pen' : 'fa-lock text-slate-400'}"></i> Uredi datume
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <!-- SLO Vignette Box -->
+                                <div class="p-2.5 rounded-xl border ${getExpiryBoxStyle(vign)} flex flex-col justify-between">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="font-bold flex items-center gap-1">
+                                            <i class="fa-solid fa-ticket text-xs"></i> SLO Vinjeta
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-800">${formatDateOnly(car.vignetteExpiry)}</div>
+                                        <div class="text-[10px] mt-0.5 opacity-80">${vign.label}</div>
+                                    </div>
+                                </div>
+
+                                <!-- Insurance Box -->
+                                <div class="p-2.5 rounded-xl border ${getExpiryBoxStyle(ins)} flex flex-col justify-between">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="font-bold flex items-center gap-1">
+                                            <i class="fa-solid fa-shield-halved text-xs"></i> Zavarovanje
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-800">${formatDateOnly(car.insuranceExpiry)}</div>
+                                        <div class="text-[10px] mt-0.5 opacity-80">${ins.label}</div>
+                                    </div>
+                                </div>
+
+                                <!-- Tech Inspection Box -->
+                                <div class="p-2.5 rounded-xl border ${getExpiryBoxStyle(tech)} flex flex-col justify-between">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <span class="font-bold flex items-center gap-1">
+                                            <i class="fa-solid fa-clipboard-check text-xs"></i> Tehnični
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-slate-800">${formatDateOnly(car.techExpiry)}</div>
+                                        <div class="text-[10px] mt-0.5 opacity-80">${tech.label}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                grid.appendChild(card);
+            });
+        }
+
+        function getExpiryBoxStyle(calc) {
+            if (calc.isExpired) return 'bg-rose-50 border-rose-200 text-rose-800';
+            if (calc.state === 'warning') return 'bg-amber-50 border-amber-200 text-amber-800';
+            return 'bg-slate-50 border-slate-200 text-slate-700';
+        }
+
+        function renderVignetteTable() {
+            const tbody = document.getElementById('vignette-table-body');
+            tbody.innerHTML = '';
+
+            let ext1HeaderName = "Dodatno 1";
+            let ext2HeaderName = "Dodatno 2";
+
+            Object.values(fleetData).forEach(car => {
+                const v = car.vignettes || {};
+
+                if (v.ext1 && v.ext1.country) ext1HeaderName = v.ext1.country;
+                if (v.ext2 && v.ext2.country) ext2HeaderName = v.ext2.country;
+
+                const sloCalc = calculateDaysRemaining(v.slo ? v.slo.expiry : '');
+                const atCalc = calculateDaysRemaining(v.at ? v.at.expiry : '');
+                const czCalc = calculateDaysRemaining(v.cz ? v.cz.expiry : '');
+                const chCalc = calculateDaysRemaining(v.ch ? v.ch.expiry : '');
+                const ext1Calc = calculateDaysRemaining(v.ext1 ? v.ext1.expiry : '');
+                const ext2Calc = calculateDaysRemaining(v.ext2 ? v.ext2.expiry : '');
+
+                const row = document.createElement('tr');
+                row.className = "hover:bg-slate-50 transition border-b border-slate-200";
+
+                row.innerHTML = `
+                    <td class="p-3.5 border-r border-slate-200 bg-slate-50/50">
+                        <div class="font-bold text-slate-900">${car.plate}</div>
+                        <div class="text-[11px] text-slate-500">${car.name}</div>
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(sloCalc)}">
+                        <div class="font-semibold">${v.slo ? v.slo.text : '-'}</div>
+                        ${v.slo && v.slo.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${sloCalc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(atCalc)}">
+                        <div class="font-semibold">${v.at ? v.at.text : '-'}</div>
+                        ${v.at && v.at.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${atCalc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(czCalc)}">
+                        <div class="font-semibold">${v.cz ? v.cz.text : '-'}</div>
+                        ${v.cz && v.cz.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${czCalc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(chCalc)}">
+                        <div class="font-semibold">${v.ch ? v.ch.text : '-'}</div>
+                        ${v.ch && v.ch.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${chCalc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(ext1Calc)}">
+                        <div class="font-semibold">${v.ext1 ? v.ext1.text : '-'}</div>
+                        ${v.ext1 && v.ext1.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${ext1Calc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 ${getVignetteCellClass(ext2Calc)}">
+                        <div class="font-semibold">${v.ext2 ? v.ext2.text : '-'}</div>
+                        ${v.ext2 && v.ext2.expiry ? `<div class="text-[10px] mt-0.5 opacity-85">${ext2Calc.label}</div>` : ''}
+                    </td>
+                    <td class="p-3.5 border-r border-slate-200 text-slate-600 bg-slate-50/30">
+                        <span class="font-bold uppercase tracking-wider text-[11px]">${v.notes || car.name}</span>
+                    </td>
+                    <td class="p-3.5 text-center">
+                        <button onclick="openVignetteModal('${car.id}')" class="px-3 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold text-xs transition border border-brand-200 flex items-center justify-center gap-1 mx-auto shadow-sm">
+                            <i class="fa-solid ${isAdmin ? 'fa-pen-to-square' : 'fa-lock text-slate-400'}"></i> Uredi
+                        </button>
+                    </td>
+                `;
+
+                tbody.appendChild(row);
+            });
+
+            document.getElementById('th-ext1').innerText = ext1HeaderName;
+            document.getElementById('th-ext2').innerText = ext2HeaderName;
+        }
+
+        function getVignetteCellClass(calc) {
+            if (calc.isExpired) return 'bg-rose-100/80 text-rose-900 border-rose-200 font-semibold';
+            if (calc.state === 'warning') return 'bg-amber-100/80 text-amber-900 border-amber-200 font-semibold';
+            if (calc.state === 'ok') return 'bg-emerald-50 text-emerald-900 border-emerald-200';
+            return 'bg-white text-slate-700';
+        }
+
+        function openVignetteModal(carId) {
+            if (!checkAdminOrPrompt()) return;
+
+            const car = fleetData[carId];
+            if (!car) return;
+
+            const v = car.vignettes || {};
+            document.getElementById('vignette-car-id').value = carId;
+            document.getElementById('vignette-modal-title').innerText = `Urejanje Vinjet - ${car.name} (${car.plate})`;
+
+            document.getElementById('vig-slo-text').value = v.slo ? v.slo.text : '';
+            document.getElementById('vig-slo-expiry').value = v.slo ? v.slo.expiry : '';
+
+            document.getElementById('vig-at-text').value = v.at ? v.at.text : '';
+            document.getElementById('vig-at-expiry').value = v.at ? v.at.expiry : '';
+
+            document.getElementById('vig-cz-text').value = v.cz ? v.cz.text : '';
+            document.getElementById('vig-cz-expiry').value = v.cz ? v.cz.expiry : '';
+
+            document.getElementById('vig-ch-text').value = v.ch ? v.ch.text : '';
+            document.getElementById('vig-ch-expiry').value = v.ch ? v.ch.expiry : '';
+
+            document.getElementById('vig-ext1-country').value = v.ext1 ? v.ext1.country : 'Dodatno 1';
+            document.getElementById('vig-ext1-text').value = v.ext1 ? v.ext1.text : '';
+            document.getElementById('vig-ext1-expiry').value = v.ext1 ? v.ext1.expiry : '';
+
+            document.getElementById('vig-ext2-country').value = v.ext2 ? v.ext2.country : 'Dodatno 2';
+            document.getElementById('vig-ext2-text').value = v.ext2 ? v.ext2.text : '';
+            document.getElementById('vig-ext2-expiry').value = v.ext2 ? v.ext2.expiry : '';
+
+            document.getElementById('vig-notes').value = v.notes || car.name;
+
+            document.getElementById('vignette-modal').classList.remove('hidden');
+        }
+
+        function closeVignetteModal() {
+            document.getElementById('vignette-modal').classList.add('hidden');
+        }
+
+        function handleVignetteSubmit(e) {
+            e.preventDefault();
+            const carId = document.getElementById('vignette-car-id').value;
+            const car = fleetData[carId];
+            if (!car) return;
+
+            car.vignettes = {
+                slo: {
+                    text: document.getElementById('vig-slo-text').value.trim(),
+                    expiry: document.getElementById('vig-slo-expiry').value
+                },
+                at: {
+                    text: document.getElementById('vig-at-text').value.trim(),
+                    expiry: document.getElementById('vig-at-expiry').value
+                },
+                cz: {
+                    text: document.getElementById('vig-cz-text').value.trim(),
+                    expiry: document.getElementById('vig-cz-expiry').value
+                },
+                ch: {
+                    text: document.getElementById('vig-ch-text').value.trim(),
+                    expiry: document.getElementById('vig-ch-expiry').value
+                },
+                ext1: {
+                    country: document.getElementById('vig-ext1-country').value.trim(),
+                    text: document.getElementById('vig-ext1-text').value.trim(),
+                    expiry: document.getElementById('vig-ext1-expiry').value
+                },
+                ext2: {
+                    country: document.getElementById('vig-ext2-country').value.trim(),
+                    text: document.getElementById('vig-ext2-text').value.trim(),
+                    expiry: document.getElementById('vig-ext2-expiry').value
+                },
+                notes: document.getElementById('vig-notes').value.trim()
+            };
+
+            if (car.vignettes.slo.expiry) {
+                car.vignetteExpiry = car.vignettes.slo.expiry;
+            }
+
+            saveData();
+            renderAll();
+            closeVignetteModal();
+            showToast(`Evidenca vinjet za ${car.name} posodobljena!`, "success");
+        }
+
+        function renderSummaryTable() {
+            const tbody = document.getElementById('summary-table-body');
+            tbody.innerHTML = '';
+
+            Object.values(fleetData).forEach(car => {
+                const service = calculateServiceStatus(car);
+                const vign = calculateDaysRemaining(car.vignetteExpiry);
+                const ins = calculateDaysRemaining(car.insuranceExpiry);
+                const tech = calculateDaysRemaining(car.techExpiry);
+                const dmgCount = (car.damages || []).length;
+
+                const row = document.createElement('tr');
+                row.className = "hover:bg-slate-50/80 transition";
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 font-bold text-slate-900 flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full ${car.id === 'beli' ? 'bg-slate-300 border border-slate-400' : 'bg-slate-600'}"></span>
+                        ${car.name} (${car.plate})
+                    </td>
+                    <td class="px-6 py-4">${getStatusBadgeHtml(car.status)}</td>
+                    <td class="px-6 py-4 font-semibold text-slate-800">${car.currentKm.toLocaleString('sl-SI')} km</td>
+                    <td class="px-6 py-4">
+                        ${service.isUrgent ? 
+                            `<span class="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200">Servis čez ${service.remainingKm.toLocaleString('sl-SI')} km</span>` :
+                            `<span class="text-xs text-slate-600">${service.remainingKm.toLocaleString('sl-SI')} km</span>`
+                        }
+                    </td>
+                    <td class="px-6 py-4">${getSummaryPill(vign, car.vignetteExpiry)}</td>
+                    <td class="px-6 py-4">${getSummaryPill(ins, car.insuranceExpiry)}</td>
+                    <td class="px-6 py-4">${getSummaryPill(tech, car.techExpiry)}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="openDamageModal('${car.id}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold ${dmgCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-slate-100 text-slate-600'}">
+                            ${dmgCount > 0 ? `<i class="fa-solid fa-triangle-exclamation text-rose-600 mr-1"></i> ${dmgCount} poškodb` : 'Brez poškodb'}
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function getSummaryPill(calc, dateStr) {
+            if (calc.isExpired) {
+                return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">
+                            <i class="fa-solid fa-circle-exclamation"></i> Poteklo (${formatDateOnly(dateStr)})
+                        </span>`;
+            }
+            if (calc.state === 'warning') {
+                return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Še ${calc.days} d
+                        </span>`;
+            }
+            return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                        ${formatDateOnly(dateStr)} (${calc.days} d)
+                    </span>`;
+        }
+
+        function openDamageModal(carId) {
+            const car = fleetData[carId];
+            if (!car) return;
+
+            document.getElementById('damage-car-id').value = carId;
+            document.getElementById('damage-modal-title').innerText = `Sledenje Poškodbam - ${car.name}`;
+            document.getElementById('damage-add-box').classList.remove('hidden');
+
+            renderDamageList(carId);
+            document.getElementById('damage-modal').classList.remove('hidden');
+        }
+
+        function closeDamageModal() {
+            document.getElementById('damage-modal').classList.add('hidden');
+        }
+
+        function renderDamageList(carId) {
+            const car = fleetData[carId];
+            const container = document.getElementById('damage-list-container');
+            container.innerHTML = '';
+
+            if (!car.damages || car.damages.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl">Trenutno ni zabeleženih poškodb na tem vozilu.</p>`;
+                return;
+            }
+
+            car.damages.forEach((d, index) => {
+                const item = document.createElement('div');
+                item.className = "p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3";
+                
+                let sevBadge = "bg-amber-100 text-amber-800";
+                if (d.severity === 'Huda') sevBadge = "bg-rose-100 text-rose-800";
+                if (d.severity === 'Blaga') sevBadge = "bg-blue-100 text-blue-800";
+
+                let imgHtml = '';
+                if (d.img) {
+                    imgHtml = `<div class="mt-2"><a href="${d.img}" target="_blank" title="Poglej sliko v polni velikosti"><img src="${d.img}" alt="Slika poškodbe" class="w-24 h-24 object-cover rounded-lg border border-slate-300 hover:opacity-90 transition"></a></div>`;
+                }
+
+                item.innerHTML = `
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="space-y-1 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-xs text-slate-900">${d.location}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${sevBadge}">${d.severity}</span>
+                                <span class="text-[10px] text-slate-400 font-mono">${d.date}</span>
+                            </div>
+                            <p class="text-xs text-slate-600">${d.desc}</p>
+                            ${imgHtml}
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                            ${isAdmin ? `
+                                <button onclick="removeDamage('${carId}',${index})" class="text-xs text-rose-600 hover:text-rose-800 p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 transition" title="Izbriši poškodbo">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function handleDamageSubmit(e) {
+            e.preventDefault();
+
+            const carId = document.getElementById('damage-car-id').value;
+            const car = fleetData[carId];
+            if (!car) return;
+
+            const loc = document.getElementById('damage-input-loc').value.trim();
+            const sev = document.getElementById('damage-input-severity').value;
+            const desc = document.getElementById('damage-input-desc').value.trim();
+            const imgUrl = document.getElementById('damage-input-img').value.trim();
+
+            if (!car.damages) car.damages = [];
+            car.damages.push({
+                id: 'dmg_' + Date.now(),
+                date: formatDateOnly(new Date().toISOString().split('T')[0]),
+                location: loc,
+                severity: sev,
+                desc: desc,
+                img: imgUrl,
+                status: 'Prijavljeno'
+            });
+
+            saveData();
+            renderAll();
+            renderDamageList(carId);
+            
+            document.getElementById('damage-input-loc').value = '';
+            document.getElementById('damage-input-desc').value = '';
+            document.getElementById('damage-input-img').value = '';
+
+            showToast("Nova poškodba in slika sta uspešno dodani!", "success");
+        }
+
+        function removeDamage(carId, index) {
+            if (!checkAdminOrPrompt()) return;
+
+            const car = fleetData[carId];
+            if (!car || !car.damages) return;
+
+            showConfirmModal(
+                "Izbris poškodbe",
+                "Ali ste prepričani, da želite izbrisati ta zapisek o poškodbi?",
+                () => {
+                    car.damages.splice(index, 1);
+                    saveData();
+                    renderAll();
+                    renderDamageList(carId);
+                    showToast("Poškodba je bila odstranjena.", "info");
+                }
+            );
+        }
+
+        function renderCounters() {
+            let vojnikCount = 0;
+            let ciscenjeCount = 0;
+            let furaCount = 0;
+
+            Object.values(fleetData).forEach(car => {
+                if (car.status === 'Vrnjen v Vojnik') vojnikCount++;
+                else if (car.status === 'Na čiščenju') ciscenjeCount++;
+                else if (car.status === 'Na furi') furaCount++;
+            });
+
+            document.getElementById('cnt-vojnik').innerText = vojnikCount;
+            document.getElementById('cnt-ciscenje').innerText = ciscenjeCount;
+            document.getElementById('cnt-fura').innerText = furaCount;
+        }
+
+        function renderAll() {
+            renderAlerts();
+            renderVehicles();
+            renderVignetteTable();
+            renderSummaryTable();
+            renderCounters();
+        }
+
+        function openKmModal(carId) {
+            if (!checkAdminOrPrompt()) return;
+
+            const car = fleetData[carId];
+            if (!car) return;
+
+            const currentRemaining = (car.lastServiceKm + SERVICE_INTERVAL) - car.currentKm;
+
+            document.getElementById('km-car-id').value = carId;
+            document.getElementById('km-modal-title').innerText = `Posodobi Kilometre - ${car.name}`;
+            document.getElementById('input-current-km').value = car.currentKm;
+            document.getElementById('input-remaining-km').value = currentRemaining > 0 ? currentRemaining : 0;
+
+            document.getElementById('km-modal').classList.remove('hidden');
+        }
+
+        function closeKmModal() {
+            document.getElementById('km-modal').classList.add('hidden');
+        }
+
+        function handleKmSubmit(e) {
+            e.preventDefault();
+            const carId = document.getElementById('km-car-id').value;
+            const newKm = parseInt(document.getElementById('input-current-km').value, 10);
+            const remainingKm = parseInt(document.getElementById('input-remaining-km').value, 10);
+
+            const car = fleetData[carId];
+            if (!car || isNaN(newKm) || isNaN(remainingKm)) return;
+
+            car.currentKm = newKm;
+            car.lastServiceKm = newKm - (SERVICE_INTERVAL - remainingKm);
+
+            saveData();
+            renderAll();
+            closeKmModal();
+            showToast(`Kilometri posodobljeni! Preostalo do servisa: ${remainingKm.toLocaleString('sl-SI')} km`, "success");
+        }
+
+        function openDatesModal(carId) {
+            if (!checkAdminOrPrompt()) return;
+
+            const car = fleetData[carId];
+            if (!car) return;
+
+            document.getElementById('dates-car-id').value = carId;
+            document.getElementById('dates-modal-title').innerText = `Urejanje Dokumentov - ${car.name}`;
+            document.getElementById('input-vignette-date').value = car.vignetteExpiry;
+            document.getElementById('input-insurance-date').value = car.insuranceExpiry;
+            document.getElementById('input-tech-date').value = car.techExpiry;
+
+            document.getElementById('dates-modal').classList.remove('hidden');
+        }
+
+        function closeDatesModal() {
+            document.getElementById('dates-modal').classList.add('hidden');
+        }
+
+        function handleDatesSubmit(e) {
+            e.preventDefault();
+            const carId = document.getElementById('dates-car-id').value;
+            const car = fleetData[carId];
+            if (!car) return;
+
+            car.vignetteExpiry = document.getElementById('input-vignette-date').value;
+            car.insuranceExpiry = document.getElementById('input-insurance-date').value;
+            car.techExpiry = document.getElementById('input-tech-date').value;
+
+            if (car.vignettes && car.vignettes.slo) {
+                car.vignettes.slo.expiry = car.vignetteExpiry;
+            }
+
+            saveData();
+            renderAll();
+            closeDatesModal();
+            showToast(`Datumi za ${car.name} so bili uspešno shranjeni.`, "success");
+        }
+
+        function openHistoryModal(carId) {
+            const car = fleetData[carId];
+            if (!car) return;
+
+            currentActiveCarHistory = carId;
+            document.getElementById('history-modal-title').innerText = `Zgodovina Statusov - ${car.name}`;
+            const container = document.getElementById('history-logs-container');
+            container.innerHTML = '';
+
+            const clearBtn = document.getElementById('btn-clear-history');
+            if (isAdmin) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+
+            if (!car.statusHistory || car.statusHistory.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl">Ni zabeleženih sprememb statusa.</p>`;
+            } else {
+                car.statusHistory.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = "p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-3";
+                    div.innerHTML = `
+                        <div class="mt-0.5">${getStatusBadgeHtml(item.status)}</div>
+                        <div class="flex-1">
+                            <div class="text-[11px] text-slate-400 font-mono">${item.time}</div>
+                            ${item.note ? `<p class="text-xs text-slate-600 mt-1">${item.note}</p>` : ''}
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            document.getElementById('history-modal').classList.remove('hidden');
+        }
+
+        function closeHistoryModal() {
+            document.getElementById('history-modal').classList.add('hidden');
+        }
+
+        function clearCarHistory() {
+            if (!checkAdminOrPrompt()) return;
+            if (!currentActiveCarHistory) return;
+
+            const car = fleetData[currentActiveCarHistory];
+            if (!car) return;
+
+            showConfirmModal(
+                "Počisti zgodovino",
+                "Ali ste prepričani, da želite izbrisati celotno zgodovino statusov za to vozilo?",
+                () => {
+                    car.statusHistory = [];
+                    saveData();
+                    openHistoryModal(currentActiveCarHistory);
+                    showToast("Zgodovina statusov izbrisana.", "info");
+                }
+            );
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMsg.innerText = message;
+
+            if (type === 'success') {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400 text-lg";
+            } else if (type === 'warning') {
+                toastIcon.className = "fa-solid fa-triangle-exclamation text-amber-400 text-lg";
+            } else if (type === 'info') {
+                toastIcon.className = "fa-solid fa-circle-info text-blue-400 text-lg";
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        }
+
+        window.onload = function() {
+            loadData();
+            updateAdminUiState();
+        };
+    </script>
+</body>
+</html>

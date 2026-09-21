@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ExternalLink, FileText, TrendingDown } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, FileText, Search, TrendingDown } from "lucide-react";
 import { eur } from "@/lib/avtonet/analiza";
 import type { FiltriVozil } from "@/lib/avtonet/filtriVozil";
 import { FiltriVozilForm, type ZnamkaZModeli } from "../FiltriVozilForm";
@@ -43,12 +43,216 @@ export type Prodan = {
   serijaOpis: string | null;
   pogon: string | null;
   menjalnik: string | null;
+  karoserija: string | null;
   oprema: string[];
   opremaTeza: number | null;
   oznacenProdano: boolean;
 };
 
 type PdfVerzija = { id: number; razlog: string; cena: number | null; ustvarjen: string };
+
+/** Odgovor poti /api/avtonet/mobilede — nemški izrazi od AI, razponi iz kode. */
+type MobileDe = {
+  iskalniNiz: string;
+  nemsko: {
+    model: string | null;
+    karoserija: string | null;
+    getriebe: string | null;
+    kraftstoff: string | null;
+    antrieb: string | null;
+    obveznaOprema: string[];
+    zazelenaOprema: string[];
+    opozorila: string[];
+  } | null;
+  razponi: {
+    letoOd: number | null;
+    letoDo: number | null;
+    kmDo: number | null;
+    kwOd: number | null;
+    kwDo: number | null;
+    psOd: number | null;
+    psDo: number | null;
+  };
+  cenaSlo: number | null;
+  opozorilo: string | null;
+};
+
+type StanjeMobile = { tece: boolean; izid: MobileDe | null; napaka: string | null };
+
+/**
+ * Besedilo za v odložišče — sestavljeno v kodi, ne pri modelu.
+ *
+ * Kar prilepiš v iskalnik, mora biti vsakič enake oblike in vsebovati točne
+ * številke; če bi ta blok pisal jezikovni model, bi se oblika spreminjala,
+ * letnica ali kilometri pa bi se prej ali slej razšli s podatki oglasa.
+ */
+function besediloZaMobile(izid: MobileDe): string {
+  const n = izid.nemsko;
+  const r = izid.razponi;
+  const vrstice = [`Suchbegriff: ${izid.iskalniNiz}`];
+  if (r.letoOd && r.letoDo) vrstice.push(`Erstzulassung: ${r.letoOd}–${r.letoDo}`);
+  if (r.kmDo) vrstice.push(`Kilometer: bis ${r.kmDo.toLocaleString("de-DE")} km`);
+  if (r.kwOd && r.kwDo) vrstice.push(`Leistung: ${r.kwOd}–${r.kwDo} kW (${r.psOd}–${r.psDo} PS)`);
+  if (n?.karoserija) vrstice.push(`Karosserie: ${n.karoserija}`);
+  if (n?.kraftstoff) vrstice.push(`Kraftstoff: ${n.kraftstoff}`);
+  if (n?.getriebe) vrstice.push(`Getriebe: ${n.getriebe}`);
+  if (n?.antrieb) vrstice.push(`Antrieb: ${n.antrieb}`);
+  if (n && n.obveznaOprema.length > 0) vrstice.push(`Ausstattung (Pflicht): ${n.obveznaOprema.join(", ")}`);
+  if (n && n.zazelenaOprema.length > 0) vrstice.push(`Ausstattung (optional): ${n.zazelenaOprema.join(", ")}`);
+  // Slovenska cena je referenca, ne napoved nemške — zato je tako označena.
+  if (izid.cenaSlo) vrstice.push(`Primerjava: v SLO je tak avto šel za ${eur(izid.cenaSlo)}`);
+  return vrstice.join("\n");
+}
+
+/** Gumb, ki pove, da je kopiranje uspelo — brez tega uporabnik klika dvakrat. */
+function GumbKopiraj({ besedilo }: { besedilo: string }) {
+  const [kopirano, setKopirano] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(besedilo);
+          setKopirano(true);
+          setTimeout(() => setKopirano(false), 2000);
+        } catch {
+          // Brskalnik brez dovoljenja za odložišče: besedilo je vidno spodaj
+          // in ga je mogoče označiti ročno.
+        }
+      }}
+      className="inline-flex items-center gap-1 rounded bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700"
+    >
+      {kopirano ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {kopirano ? "kopirano" : "kopiraj"}
+    </button>
+  );
+}
+
+/**
+ * Kaj vtipkati in nastaviti na mobile.de.
+ *
+ * Panel ne skriva, od kod je kaj: nemški izrazi so prevod (AI), razponi so
+ * izračun iz podatkov tega oglasa (koda). Kadar prevoda ni bilo mogoče dobiti,
+ * ostanejo razponi in to je napisano — pol odgovora je boljše od izmišljenega
+ * celega.
+ */
+function PanelMobile({ stanje }: { stanje: StanjeMobile | undefined }) {
+  if (!stanje || stanje.tece) {
+    return (
+      <div className="mt-2 border-t border-zinc-100 pt-2 text-[11px] text-zinc-500">
+        pripravljam specifikacijo za mobile.de …
+      </div>
+    );
+  }
+  if (stanje.napaka || !stanje.izid) {
+    return (
+      <div className="mt-2 border-t border-zinc-100 pt-2 text-[11px] text-red-700">
+        {stanje.napaka ?? "Specifikacije ni bilo mogoče pripraviti."}
+      </div>
+    );
+  }
+  const izid = stanje.izid;
+  const n = izid.nemsko;
+  const r = izid.razponi;
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-zinc-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+          Iskanje na mobile.de
+        </span>
+        <div className="flex items-center gap-2">
+          <GumbKopiraj besedilo={besediloZaMobile(izid)} />
+          <a
+            href="https://suchen.mobile.de/fahrzeuge/search.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-accent hover:underline"
+          >
+            odpri mobile.de <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
+
+      <p className="rounded bg-white px-2 py-1 font-mono text-xs text-zinc-900 ring-1 ring-zinc-200">
+        {izid.iskalniNiz}
+      </p>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600">
+        {r.letoOd && r.letoDo && (
+          <span>
+            <strong className="font-medium text-zinc-800">Erstzulassung</strong> {r.letoOd}–{r.letoDo}
+          </span>
+        )}
+        {r.kmDo && (
+          <span>
+            <strong className="font-medium text-zinc-800">Kilometer</strong> bis {r.kmDo.toLocaleString("de-DE")}
+          </span>
+        )}
+        {r.kwOd && r.kwDo && (
+          <span>
+            <strong className="font-medium text-zinc-800">Leistung</strong> {r.kwOd}–{r.kwDo} kW ({r.psOd}–{r.psDo} PS)
+          </span>
+        )}
+        {n?.karoserija && (
+          <span>
+            <strong className="font-medium text-zinc-800">Karosserie</strong> {n.karoserija}
+          </span>
+        )}
+        {n?.kraftstoff && (
+          <span>
+            <strong className="font-medium text-zinc-800">Kraftstoff</strong> {n.kraftstoff}
+          </span>
+        )}
+        {n?.getriebe && (
+          <span>
+            <strong className="font-medium text-zinc-800">Getriebe</strong> {n.getriebe}
+          </span>
+        )}
+        {n?.antrieb && (
+          <span>
+            <strong className="font-medium text-zinc-800">Antrieb</strong> {n.antrieb}
+          </span>
+        )}
+      </div>
+
+      {n && n.obveznaOprema.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-zinc-400">obvezno:</span>
+          {n.obveznaOprema.map((o) => (
+            <span key={o} className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
+              {o}
+            </span>
+          ))}
+        </div>
+      )}
+      {n && n.zazelenaOprema.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-zinc-400">zaželeno:</span>
+          {n.zazelenaOprema.map((o) => (
+            <span key={o} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-700">
+              {o}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {izid.cenaSlo !== null && (
+        <p className="text-[11px] text-zinc-500">
+          V Sloveniji je tak avto šel za <strong className="text-zinc-800">{eur(izid.cenaSlo)}</strong> — to je
+          slovenska cena, ne napoved nemške. Nemški ceni prištej prevoz, DMV in registracijo.
+        </p>
+      )}
+      {n && n.opozorila.length > 0 && (
+        <ul className="list-inside list-disc text-[11px] text-zinc-500">
+          {n.opozorila.map((o, i) => (
+            <li key={i}>{o}</li>
+          ))}
+        </ul>
+      )}
+      {izid.opozorilo && <p className="text-[11px] text-amber-700">{izid.opozorilo}</p>}
+    </div>
+  );
+}
 
 type Povzetek = {
   medianaCene: number | null;
@@ -141,6 +345,10 @@ export function ProdaniClient({
 }) {
   const [pdfji, setPdfji] = useState<Record<string, PdfVerzija[] | null>>({});
   const [odprt, setOdprt] = useState<string | null>(null);
+  // Specifikacija za mobile.de na vrstico: enkrat izračunana ostane v stanju,
+  // da ponoven klik ne plača še enega klica AI za isti avto.
+  const [mobile, setMobile] = useState<Record<string, StanjeMobile>>({});
+  const [odprtMobile, setOdprtMobile] = useState<string | null>(null);
   const [filtriOdprti, setFiltriOdprti] = useState(steviloFiltrov > 0);
 
   // Arhiv za vse prikazane vrstice v enem klicu; brez tega bi vsaka vrstica
@@ -172,6 +380,45 @@ export function ProdaniClient({
     for (const [k, v] of Object.entries(sprememba)) u.set(k, String(v));
     return `/avtonet/prodani?${u.toString()}`;
   };
+
+  async function zaMobileDe(p: Prodan) {
+    if (mobile[p.avtonetId]?.izid) {
+      setOdprtMobile(odprtMobile === p.avtonetId ? null : p.avtonetId);
+      return;
+    }
+    setOdprtMobile(p.avtonetId);
+    setMobile((prej) => ({ ...prej, [p.avtonetId]: { tece: true, izid: null, napaka: null } }));
+    try {
+      const r = await fetch("/api/avtonet/mobilede", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          znamka: p.znamka,
+          model: p.model,
+          izvedenka: p.izvedenka,
+          generacija: p.generacija,
+          naziv: p.naziv,
+          letnik: p.letnik,
+          km: p.km,
+          kw: p.kw,
+          gorivo: p.gorivo,
+          menjalnik: p.menjalnik,
+          pogon: p.pogon,
+          karoserija: p.karoserija,
+          oprema: p.oprema,
+          cena: p.zadnjaCena,
+        }),
+      });
+      const telo = (await r.json()) as MobileDe & { napaka?: string };
+      if (!r.ok) throw new Error(telo.napaka ?? `strežnik je vrnil ${r.status}`);
+      setMobile((prej) => ({ ...prej, [p.avtonetId]: { tece: false, izid: telo, napaka: null } }));
+    } catch (e) {
+      setMobile((prej) => ({
+        ...prej,
+        [p.avtonetId]: { tece: false, izid: null, napaka: e instanceof Error ? e.message : "Klic ni uspel." },
+      }));
+    }
+  }
 
   return (
     <div className="mt-6">
@@ -477,6 +724,18 @@ export function ProdaniClient({
                       {!nalozeno ? "…" : "PDF ni bil arhiviran (oglas je izginil pred arhivom)"}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => void zaMobileDe(p)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+                  >
+                    <Search className="h-3 w-3" />
+                    {mobile[p.avtonetId]?.tece
+                      ? "pripravljam …"
+                      : odprtMobile === p.avtonetId
+                        ? "skrij mobile.de"
+                        : "za mobile.de"}
+                  </button>
                   <a
                     href={p.url}
                     target="_blank"
@@ -486,6 +745,8 @@ export function ProdaniClient({
                     izvirnik <ExternalLink className="h-3 w-3" />
                   </a>
                 </div>
+
+                {odprtMobile === p.avtonetId && <PanelMobile stanje={mobile[p.avtonetId]} />}
 
                 {jeOdprt && (
                   <div className="mt-2 flex flex-wrap gap-1.5 border-t border-zinc-100 pt-2">

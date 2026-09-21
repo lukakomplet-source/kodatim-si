@@ -100,9 +100,30 @@ type State = {
 /** Keyed by bucket, which is the provider except for per-host website buckets. */
 const states = new Map<string, State>();
 
+/**
+ * Per-host buckets are evicted once idle.
+ *
+ * Before the register enrichment (16. 9. 2026) a process saw a few hundred
+ * hosts in its lifetime. The register visits ~250.000 different company
+ * domains once each; a bucket per host that is never dropped would be tens
+ * of MB of dead state in the site process. A host idle for ten minutes has
+ * nothing left to pace, so its bucket goes.
+ */
+const MAX_BUCKETS_BEFORE_SWEEP = 2_000;
+const BUCKET_IDLE_MS = 10 * 60 * 1000;
+
+function sweepIdleHostBuckets(): void {
+  if (states.size < MAX_BUCKETS_BEFORE_SWEEP) return;
+  const now = Date.now();
+  for (const [bucket, s] of states) {
+    if (bucket.startsWith("website:") && now - s.lastRequestAt > BUCKET_IDLE_MS) states.delete(bucket);
+  }
+}
+
 function stateFor(bucket: string, provider: ProviderId = bucket as ProviderId): State {
   let s = states.get(bucket);
   if (!s) {
+    sweepIdleHostBuckets();
     // Settings always come from the provider — a per-host bucket inherits the
     // website provider's pace rather than inventing its own.
     const config = configFor(provider);

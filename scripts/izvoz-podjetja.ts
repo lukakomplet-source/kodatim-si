@@ -70,6 +70,17 @@ type Podjetje = {
   status: string | null;
   prvic_videno: string;
   zadnjic_videno: string;
+  ni_vec_od: string | null;
+  eposta: string | null;
+  telefon: string | null;
+  spletna_stran: string | null;
+  direktor: string | null;
+  zastopniki: string | null;
+  pravna_oblika: string | null;
+  velikost: string | null;
+  ustanovljeno: string | null;
+  trr: string | null;
+  regija: string | null;
   detail_url: string;
 };
 
@@ -87,6 +98,17 @@ const POLJA = [
   "status",
   "prvic_videno",
   "zadnjic_videno",
+  "ni_vec_od",
+  "eposta",
+  "telefon",
+  "spletna_stran",
+  "direktor",
+  "zastopniki",
+  "pravna_oblika",
+  "velikost",
+  "ustanovljeno",
+  "trr",
+  "regija",
   "detail_url",
 ].join(",");
 
@@ -104,6 +126,17 @@ const GLAVA = [
   "Status",
   "Prvič videno",
   "Zadnjič videno",
+  "Ni več v registru od",
+  "E-pošta",
+  "Telefon",
+  "Spletna stran",
+  "Direktor",
+  "Zastopniki",
+  "Pravna oblika",
+  "Velikost",
+  "Ustanovljeno",
+  "TRR",
+  "Regija",
   "AJPES povezava",
 ];
 
@@ -185,6 +218,17 @@ async function main(): Promise<void> {
       p.status,
       p.prvic_videno?.slice(0, 19).replace("T", " ") ?? null,
       p.zadnjic_videno?.slice(0, 19).replace("T", " ") ?? null,
+      p.ni_vec_od ? p.ni_vec_od.slice(0, 10) : null,
+      p.eposta,
+      p.telefon,
+      p.spletna_stran,
+      p.direktor,
+      p.zastopniki,
+      p.pravna_oblika,
+      p.velikost,
+      p.ustanovljeno,
+      p.trr,
+      p.regija,
       p.detail_url,
     ]);
   }
@@ -208,11 +252,13 @@ async function main(): Promise<void> {
   listPodjetja["!cols"] = [
     { wch: 12 }, { wch: 12 }, { wch: 46 }, { wch: 28 }, { wch: 30 },
     { wch: 8 }, { wch: 18 }, { wch: 16 }, { wch: 9 }, { wch: 38 },
-    { wch: 7 }, { wch: 19 }, { wch: 19 }, { wch: 50 },
+    { wch: 7 }, { wch: 19 }, { wch: 19 }, { wch: 12 },
+    { wch: 30 }, { wch: 18 }, { wch: 32 }, { wch: 26 }, { wch: 30 },
+    { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 24 }, { wch: 16 }, { wch: 50 },
   ];
   // Zamrznjena glava in filtri: brez tega je 200.000 vrstic v Excelu neuporabnih.
   listPodjetja["!freeze"] = { xSplit: 0, ySplit: 1 };
-  listPodjetja["!autofilter"] = { ref: `A1:N${vrstice.length}` };
+  listPodjetja["!autofilter"] = { ref: `A1:Z${vrstice.length}` };
   XLSX.utils.book_append_sheet(zvezek, listPodjetja, "Podjetja");
 
   const listSkd = XLSX.utils.aoa_to_sheet(povzetek);

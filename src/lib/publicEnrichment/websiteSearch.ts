@@ -1,6 +1,6 @@
 import { BLOCKED_DOMAINS } from "@/lib/enrichment/blockedDomains";
 import { stripHtmlToText } from "./htmlText";
-import { providerFetch } from "./httpClient";
+import { jeBesedilnaStran, preberiTeloOmejeno, providerFetch } from "./httpClient";
 
 /**
  * Last-resort website discovery for companies no registry lists a site for.
@@ -22,6 +22,8 @@ export type WebsiteSearchResult = {
   website: string | null;
   /** Slovenian, always set — what was tried and why it did or didn't work. */
   note: string;
+  /** True, kadar iskanje sploh ni bilo opravljeno (iskalnik zahteva CAPTCHA ali je v hlajenju). */
+  challenged?: boolean;
 };
 
 const HEADERS = {
@@ -35,7 +37,7 @@ const NAME_STOPWORDS = new Set([
   "podjetje", "storitve", "trgovina", "in", "za", "ter", "druge", "the",
 ]);
 
-function normalize(value: string): string {
+export function normalize(value: string): string {
   return value
     .toLowerCase()
     .replace(/[čć]/g, "c").replace(/š/g, "s").replace(/ž/g, "z").replace(/đ/g, "d")
@@ -44,7 +46,7 @@ function normalize(value: string): string {
 }
 
 /** The words that actually identify the company, longest first. */
-function identifyingTokens(companyName: string): string[] {
+export function identifyingTokens(companyName: string): string[] {
   return normalize(companyName)
     .split(" ")
     .filter((w) => w.length >= 3 && !NAME_STOPWORDS.has(w))
@@ -68,7 +70,7 @@ function parseDuckDuckGoResults(html: string): string[] {
   return [...new Set(urls)];
 }
 
-function hostOf(url: string): string | null {
+export function hostOf(url: string): string | null {
   try {
     return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
   } catch {
@@ -85,7 +87,7 @@ function hostOf(url: string): string | null {
  * genuinely distinctive (6+ character) word — and, without a tax-number match,
  * a Slovenian domain.
  */
-function pageBelongsToCompany(
+export function pageBelongsToCompany(
   pageText: string,
   host: string,
   tokens: string[],
@@ -134,8 +136,25 @@ const SEARCH_DEADLINE_MS = 12_000;
  */
 const ENGINE_TRIP_AFTER = 2;
 const ENGINE_COOLDOWN_MS = 10 * 60 * 1000;
+/**
+ * Po izzivu („bots use DuckDuckGo too“) daljše hlajenje. 16. 9. 2026: po ~20
+ * iskanjih v pol ure je DDG vrnil HTTP 202 z izzivom; pred tem popravkom se
+ * je to razčlenilo v nič zadetkov in poročalo kot „ni strani“, kar je bila
+ * neresnica o podjetju. Izziva ne rešujemo — počakamo.
+ */
+const ENGINE_CHALLENGE_COOLDOWN_MS = 60 * 60 * 1000;
 let engineFailures = 0;
 let engineBlockedUntil = 0;
+let engineChallenged = false;
+
+/** Ali je iskalnik ta hip sploh na voljo (ni v hlajenju). */
+export function searchEngineAvailable(): boolean {
+  return Date.now() >= engineBlockedUntil;
+}
+
+function looksLikeEngineChallenge(status: number, html: string): boolean {
+  return status === 202 || /bots use DuckDuckGo too|complete the following challenge|Select all squares/i.test(html);
+}
 
 export async function searchForWebsite(
   companyName: string,
@@ -165,7 +184,9 @@ export async function searchForWebsite(
   if (Date.now() < engineBlockedUntil) {
     return {
       website: null,
-      note: `spletno iskanje začasno preskočeno — iskalnik blokira zahtevke (403); nov poskus čez ${Math.ceil((engineBlockedUntil - Date.now()) / 60_000)} min`,
+      note: engineChallenged
+        ? `spletno iskanje začasno preskočeno — iskalnik zahteva CAPTCHA; nov poskus čez ${Math.ceil((engineBlockedUntil - Date.now()) / 60_000)} min`
+        : `spletno iskanje začasno preskočeno — iskalnik blokira zahtevke (403); nov poskus čez ${Math.ceil((engineBlockedUntil - Date.now()) / 60_000)} min`,
     };
   }
 
@@ -182,8 +203,18 @@ export async function searchForWebsite(
       if (engineFailures >= ENGINE_TRIP_AFTER) engineBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS;
       return { website: null, note: `spletno iskanje ni uspelo (HTTP ${res.status})` };
     }
+    html = (await preberiTeloOmejeno(res)).besedilo;
+    if (looksLikeEngineChallenge(res.status, html)) {
+      engineChallenged = true;
+      engineBlockedUntil = Date.now() + ENGINE_CHALLENGE_COOLDOWN_MS;
+      return {
+        website: null,
+        note: `iskalnik zahteva CAPTCHA (HTTP ${res.status}) — spletno iskanje počiva ${Math.round(ENGINE_CHALLENGE_COOLDOWN_MS / 60_000)} min`,
+        challenged: true,
+      };
+    }
     engineFailures = 0;
-    html = await res.text();
+    engineChallenged = false;
   } catch (err) {
     engineFailures += 1;
     if (engineFailures >= ENGINE_TRIP_AFTER) engineBlockedUntil = Date.now() + ENGINE_COOLDOWN_MS;
@@ -227,7 +258,12 @@ export async function searchForWebsite(
         rejected.push(`${candidate.host} (HTTP ${res.status})`);
         continue;
       }
-      const text = stripHtmlToText(await res.text());
+      if (!jeBesedilnaStran(res)) {
+        await res.body?.cancel().catch(() => {});
+        rejected.push(`${candidate.host} (ni spletna stran, ampak ${res.headers.get("content-type")})`);
+        continue;
+      }
+      const text = stripHtmlToText((await preberiTeloOmejeno(res)).besedilo);
       const proof = pageBelongsToCompany(text, candidate.host, tokens, vatDigits);
       if (!proof) {
         rejected.push(`${candidate.host} (ni dokaza, da pripada temu podjetju)`);

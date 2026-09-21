@@ -1,10 +1,13 @@
 import "server-only";
-import { open, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createAvtonetClient } from "@/lib/avtonet/db";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { preberiSistem, type Sistem } from "@/lib/avtonet/sistem";
+import { preberiNapredek } from "@/lib/registerPodjetij";
 
 const izvedi = promisify(execFile);
 
@@ -82,7 +85,46 @@ export type Nadzor = {
   sistem: Sistem;
   diski: Disk[];
   ob: string;
+  /** Neskladje med razlicico, ki tece, in tisto na disku; null = vse v redu. */
+  zastarelaGradnja: string | null;
 };
+
+/**
+ * Oznaka gradnje, s katero je ta proces vstal.
+ *
+ * Prebrana ob prvem uvozu modula, torej ob zagonu strezhnika. Ce se pozneje
+ * na disku pojavi druga oznaka, pomeni, da je bila mapa .next zamenjana POD
+ * tekocim procesom — natanko to se je zgodilo 19. 9. 2026 ob 23:22: stran je
+ * vracala 200 na naslovnici, vsaka se nenalozena podstran pa je padla na
+ * manjkajocem kosu, in tako je bilo 34 ur, ker tega ni nihce meril.
+ */
+const GRADNJA_OB_ZAGONU = preberiOznakoGradnje();
+
+function preberiOznakoGradnje(): string | null {
+  try {
+    // Sinhrono in namenoma: vrednost mora biti ujeta ob zagonu procesa, ne
+    // sele ob prvem vprasanju — do takrat je mapa lahko ze zamenjana.
+    return readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Kaj pokazati v nadzoru: null, kadar tekoca in zgrajena razlicica sovpadata. */
+async function preveriGradnjo(): Promise<string | null> {
+  if (!GRADNJA_OB_ZAGONU) return null;
+  let naDisku: string | null = null;
+  try {
+    naDisku = (await readFile(join(process.cwd(), ".next", "BUILD_ID"), "utf8")).trim();
+  } catch {
+    return null;
+  }
+  if (!naDisku || naDisku === GRADNJA_OB_ZAGONU) return null;
+  return (
+    `Stran tece na STARI gradnji (${GRADNJA_OB_ZAGONU}), na disku je ${naDisku}. ` +
+    "Podstrani, ki jih proces se ni nalozil, bodo padle na manjkajocem kosu — potreben je ponoven zagon strani."
+  );
+}
 
 // --- pomožno ---------------------------------------------------------------
 
@@ -267,9 +309,10 @@ export async function preberiNadzor(): Promise<Nadzor> {
   const { data: urnikData } = await db.from("avtonet_urnik").select("omogocen, ure").limit(1);
   const urnik = (urnikData?.[0] ?? null) as { omogocen: boolean; ure: string } | null;
 
-  const [zdAvtonet, zdNepremicnine] = await Promise.all([
+  const [zdAvtonet, zdNepremicnine, napredekKontaktov] = await Promise.all([
     zdravjeDelavca(ZDRAVJE_AVTONET),
     zdravjeDelavca(ZDRAVJE_NEPREMICNINE),
+    preberiNapredek().catch(() => null),
   ]);
 
   const [uPdf, uVid, uPodjetja, uNepPdf] = await Promise.all([
@@ -419,18 +462,62 @@ export async function preberiNadzor(): Promise<Nadzor> {
       opis: "Hodi po vseh 678 SKD kodah in polni register.",
       tece: starostS === null ? null : starostS < 10 * 60,
       starostS,
-      poce: uPodjetja.sporocilo,
+      poce: (() => {
+        // Krog: kateri, koliko dni že teče, ali čaka na naslednjega.
+        const k = (p.krog ?? null) as
+          | { st?: number; tece?: boolean; dni_tece?: number | null; naslednji_ob?: string | null; krog_dni?: number }
+          | null;
+        if (!k) return uPodjetja.sporocilo;
+        if (k.tece) {
+          return `krog ${k.st} · teče ${k.dni_tece ?? 0} dni · ${uPodjetja.sporocilo ?? ""}`.trim();
+        }
+        const naslednji = k.naslednji_ob
+          ? new Date(k.naslednji_ob).toLocaleString("sl-SI", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })
+          : "—";
+        return `krog ${k.st} končan · naslednji ob ${naslednji} (vsakih ${k.krog_dni ?? 3} dni)`;
+      })(),
       odstotek: typeof p.odstotek === "number" ? p.odstotek : null,
       eta: ura(typeof p.ur_do_konca === "number" ? p.ur_do_konca : null),
       stevilke: [
-        { oznaka: "Podjetij", vrednost: stevilo(p.podjetij) },
+        { oznaka: "Aktivnih podjetij", vrednost: stevilo(p.aktivnih ?? p.podjetij) },
+        { oznaka: "Ni več v registru", vrednost: stevilo(p.izginulih_skupaj ?? 0) },
+        { oznaka: "Novih v tem krogu", vrednost: stevilo((p.krog as { novih?: number } | null)?.novih ?? 0) },
         { oznaka: "Zadnjih 24 h", vrednost: stevilo(p.v24h) },
         { oznaka: "Poizvedb končanih", vrednost: stevilo(p.rezin_koncanih) },
         { oznaka: "Poizvedb v vrsti", vrednost: stevilo(p.rezin_caka) },
+        ...(napredekKontaktov
+          ? [
+              // Ista številka in isto pravilo kot na strani Register podjetij:
+              // ocena se pokaže samo, kadar se obogatitev res premika.
+              {
+                oznaka: "Obdelanih (splet + kartice)",
+                vrednost: `${stevilo(napredekKontaktov.prebranih)} · ${napredekKontaktov.odstotek} %`,
+              },
+              { oznaka: "Spletnih strani najdenih", vrednost: stevilo(napredekKontaktov.spletNajdenih) },
+              { oznaka: "Z e-pošto", vrednost: stevilo(napredekKontaktov.zEposto) },
+              {
+                oznaka: "AJPES kartice",
+                vrednost:
+                  napredekKontaktov.stanje === "vir_zahteva_captcha"
+                    ? `reCAPTCHA · ${stevilo(napredekKontaktov.ajpesKartic)} prebranih`
+                    : `${stevilo(napredekKontaktov.ajpesKartic)} prebranih`,
+              },
+              {
+                oznaka: "Kontakti",
+                vrednost: napredekKontaktov.teceZdaj
+                  ? napredekKontaktov.dniDoKonca
+                    ? `še ~${napredekKontaktov.dniDoKonca} dni`
+                    : "tempa še ni mogoče izmeriti"
+                  : "stojijo",
+              },
+            ]
+          : []),
       ],
       opozorilo: vsePada
         ? `teče, a pada: ${napakePodjetja.napak} od zadnjih ${napakePodjetja.vseh} vrstic dnevnika je napaka`
-        : null,
+        : napredekKontaktov && napredekKontaktov.prebranih > 0 && !napredekKontaktov.teceZdaj
+          ? `kontakti stojijo — zadnja prebrana kartica pred ${Math.round((napredekKontaktov.mirujeS ?? 0) / 60)} min (seznami tečejo naprej)`
+          : null,
     });
   }
 
@@ -496,9 +583,106 @@ export async function preberiNadzor(): Promise<Nadzor> {
     });
   }
 
+  // 7. Obogatitev podjetij (Lead Intelligence)
+  //
+  // Register AJPES pove, KDO podjetje je; kontaktov (telefon, e-posta,
+  // kontaktna oseba) pa ne objavlja - ti nastanejo sele z obogatitvijo. Zato
+  // je to locena kartica in ne stevilka znotraj registra: register je lahko
+  // 100 % prehojen, obogatitev pa hkrati stoji, in prav to se je skrivalo.
+  //
+  // POZOR NA DVE BAZI: register (`podjetja_register`) je v LOKALNEM Postgresu,
+  // CRM in vrsta (`intel_leads`, `enrichment_jobs`) pa v Supabase oblaku. Zato
+  // tu `createAdminClient()`, ne `createAvtonetClient()` - poizvedba po napacni
+  // bazi je 15. 9. 2026 pokazala prazno vrsto, ki prazna ni bila.
+  {
+    try {
+      const leadi = createAdminClient();
+
+      // Steje ze zgrajeno poizvedbo. Helper, ki bi poizvedbo gradil sam, se v
+      // tipe supabase-js ne da spraviti brez `any`: `.from()` in `.select()`
+      // vrneta razlicna gradnika.
+      const prestej = async (q: PromiseLike<{ count: number | null }>) => (await q).count ?? 0;
+      const glava = (tabela: string) =>
+        leadi.from(tabela).select("id", { count: "exact", head: true });
+
+      const preduro = new Date(Date.now() - 3_600_000).toISOString();
+      const [vseh, zEposto, sTelefonom, sStranjo, caka, tece, koncanih, padlih, vUri] =
+        await Promise.all([
+          prestej(glava("intel_leads")),
+          prestej(glava("intel_leads").not("email", "is", null)),
+          prestej(glava("intel_leads").not("phone", "is", null)),
+          prestej(glava("intel_leads").not("website", "is", null)),
+          prestej(glava("enrichment_jobs").eq("status", "pending")),
+          prestej(glava("enrichment_jobs").eq("status", "running")),
+          prestej(glava("enrichment_jobs").eq("status", "done")),
+          prestej(glava("enrichment_jobs").eq("status", "failed")),
+          // Merilo hitrosti: koliko poslov se je KONCALO v zadnji uri. ETA iz
+          // te stevilke je edini posten - vsaka vnaprejsnja ocena je ugibanje,
+          // ker je tempo odvisen od tega, kako hitro odgovarjajo tuji viri.
+          prestej(glava("enrichment_jobs").eq("status", "done").gte("updated_at", preduro)),
+        ]);
+
+      const vVrsti = caka + tece;
+      const obdelanih = koncanih + padlih;
+      const skupajPoslov = vVrsti + obdelanih;
+      const odstotek = skupajPoslov > 0 ? Math.round((obdelanih / skupajPoslov) * 100) : null;
+
+      // ETA samo, kadar je kaj izmerjenega. Brez tega raje nic kot stevilka,
+      // ki bi jo nekdo vzel resno.
+      const urDoKonca = vUri > 0 && vVrsti > 0 ? vVrsti / vUri : null;
+
+      skrejperji.push({
+        kljuc: "obogatitev",
+        ime: "Obogatitev podjetij — kontakti",
+        opis: "Poišče e-pošto, telefon in kontaktne osebe; AJPES jih ne objavlja.",
+        // „Dela“ pomeni: v zadnji uri se je kaj koncalo ali kaj ravno tece.
+        tece: vUri > 0 || tece > 0,
+        starostS: null,
+        poce:
+          tece > 0
+            ? `${stevilo(tece)} v obdelavi · ${stevilo(caka)} čaka · ${stevilo(vUri)} končanih v zadnji uri`
+            : vVrsti > 0
+              ? `${stevilo(vVrsti)} v vrsti, nič se ne obdeluje`
+              : "vrsta je prazna",
+        odstotek,
+        eta: ura(urDoKonca),
+        stevilke: [
+          { oznaka: "V vrsti", vrednost: stevilo(vVrsti) },
+          { oznaka: "Obdelanih", vrednost: stevilo(obdelanih) },
+          { oznaka: "Na uro", vrednost: stevilo(vUri) },
+          { oznaka: "Z e-pošto", vrednost: `${stevilo(zEposto)} / ${stevilo(vseh)}` },
+          { oznaka: "S telefonom", vrednost: stevilo(sTelefonom) },
+          { oznaka: "S spletno stranjo", vrednost: stevilo(sStranjo) },
+        ],
+        opozorilo:
+          vVrsti > 0 && vUri === 0 && tece === 0
+            ? `obogatitev stoji: ${stevilo(vVrsti)} čaka, v zadnji uri nič — delavec (npm run worker) ne teče`
+            : padlih > 0
+              ? `${stevilo(padlih)} poslov je padlo`
+              : null,
+      });
+    } catch (e) {
+      // Nedosegljiva baza leadov NE sme podreti cele nadzorne strani: ostalih
+      // sest kartic je takrat se vedno edini vir resnice o zbiralnikih.
+      skrejperji.push({
+        kljuc: "obogatitev",
+        ime: "Obogatitev podjetij — kontakti",
+        opis: "Poišče e-pošto, telefon in kontaktne osebe; AJPES jih ne objavlja.",
+        tece: null,
+        starostS: null,
+        poce: null,
+        odstotek: null,
+        eta: null,
+        stevilke: [],
+        opozorilo: `baze leadov ni bilo mogoče prebrati: ${e instanceof Error ? e.message : e}`,
+      });
+    }
+  }
+
   return {
     skrejperji,
     sistem,
+    zastarelaGradnja: await preveriGradnjo(),
     diski: seznamDiskov,
     ob: new Date().toISOString(),
   };
@@ -617,18 +801,55 @@ export async function preberiTabele(kljuc: string): Promise<Tabela[]> {
   }
 
   if (kljuc === "podjetja") {
-    const [{ data: zadnje }, { data: stanja }] = await Promise.all([
+    const { data: krogi } = await db
+      .from("podjetja_krogi")
+      .select("id, zacetek, konec, poizvedb, podjetij, novih, izginulih, premor_ms")
+      .order("id", { ascending: false })
+      .limit(20);
+    const tabelaKrogov: Tabela = {
+      naslov: "Krogi zajema (en krog = vseh 678 SKD kod)",
+      glava: ["Krog", "Začetek", "Konec", "Trajanje", "Poizvedb", "Aktivnih podjetij", "Novih", "Ni več v registru", "Premor"],
+      vrstice: ((krogi ?? []) as Record<string, unknown>[]).map((k) => {
+        const z = k.zacetek ? new Date(String(k.zacetek)).getTime() : 0;
+        const kon = k.konec ? new Date(String(k.konec)).getTime() : Date.now();
+        const dni = z ? Math.round(((kon - z) / 86_400_000) * 10) / 10 : 0;
+        return [
+          String(k.id),
+          kdaj(k.zacetek as string),
+          k.konec ? kdaj(k.konec as string) : "teče",
+          `${dni} dni`,
+          stevilo(k.poizvedb),
+          stevilo(k.podjetij),
+          stevilo(k.novih),
+          stevilo(k.izginulih),
+          k.premor_ms ? `${Number(k.premor_ms) / 1000} s` : "—",
+        ];
+      }),
+    };
+    // Stanja preštejemo s štirimi štetji namesto tako, da bi 68.000 vrstic
+    // prenesli po HTTP in jih prešteli v pomnilniku (1,4 MB na vsak izris te
+    // strani, ki se osvežuje vsakih 15 s).
+    const prestej = async (stanje: string): Promise<number> => {
+      const { count } = await db
+        .from("podjetja_rezine")
+        .select("id", { count: "exact", head: true })
+        .eq("stanje", stanje);
+      return count ?? 0;
+    };
+    const [{ data: zadnje }, stanjaStevila] = await Promise.all([
       db
         .from("podjetja_rezine")
         .select("koncan, skd, obcina, ulica, stanje, zadetkov, skupaj, napaka")
         .not("koncan", "is", null)
         .order("koncan", { ascending: false })
         .limit(30),
-      db.from("podjetja_rezine").select("stanje"),
+      Promise.all(
+        ["caka", "koncano", "razbito", "napaka"].map(async (v) => [v, await prestej(v)] as const)
+      ),
     ]);
-    const stetje = new Map<string, number>();
-    for (const s of (stanja ?? []) as { stanje: string }[]) stetje.set(s.stanje, (stetje.get(s.stanje) ?? 0) + 1);
+    const stetje = new Map<string, number>(stanjaStevila.filter(([, n]) => n > 0));
     return [
+      tabelaKrogov,
       {
         naslov: "Vrsta poizvedb",
         glava: ["Stanje", "Poizvedb"],

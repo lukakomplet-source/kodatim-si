@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Opomba } from "./Opomba";
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Calculator,
   Camera,
   ExternalLink,
+  FileText,
   Gauge,
   Link2,
   Loader2,
@@ -264,6 +265,138 @@ export function CenilnikClient() {
   );
 }
 
+type PdfVerzija = { id: number; razlog: string; cena: number | null; ustvarjen: string };
+
+/**
+ * Izginuli oglasi: za koliko so šli in kakšen avto je to sploh bil.
+ *
+ * Zakaj poleg cene še PDF: ko oglas izgine z Avto.neta, izgine z njim tudi
+ * galerija in opis — cena v vrstici pove „za koliko“, arhivirani PDF pa
+ * pokaže, KAJ je bilo za to ceno prodano (slike, oprema, besedilo ob zadnji
+ * ceni). Brez njega je vrstica številka brez konteksta, s katero se ponudbe
+ * ne da preveriti.
+ *
+ * Kazalo arhiva pride v ENEM klicu za vse prikazane vrstice — enako kot na
+ * strani Prodani. Poizvedba na vrstico bi ob vsakem izrisu sprožila osem
+ * klicev za podatek, ki se med izrisi ne spreminja.
+ */
+function IzginuliSeznam({ primerljivi }: { primerljivi: Primerljiv[] }) {
+  // Samo zakljuceni oglasi z IZMERLJIVIM casom: tisti, ki smo jim videli
+  // prihod na trg. Pri starejsih "cas do prodaje" ni meritev, ampak cas od
+  // dneva, ko smo prizgali zbiralnik - taka stevilka je slabsa od nobene.
+  const prodani = primerljivi
+    .filter((p) => p.status !== "aktiven" && p.cena !== null && p.cena > 0)
+    .slice(0, 8);
+  const [pdfji, setPdfji] = useState<Record<string, PdfVerzija[] | null>>({});
+  // Niz id-jev kot odvisnost: polje bi bilo ob vsakem izrisu nov objekt in
+  // učinek bi tekel v nedogled.
+  const kljuc = prodani.map((p) => p.avtonetId).join(",");
+
+  useEffect(() => {
+    if (!kljuc) return;
+    let odpovedano = false;
+    fetch(`/api/avtonet/pdfji?ids=${kljuc}`)
+      .then((r) => (r.ok ? r.json() : { verzije: {} }))
+      .then((data: { verzije: Record<string, PdfVerzija[]> }) => {
+        if (odpovedano) return;
+        // Vsak id dobi svoj vnos, tudi kadar arhiva ni: `null` pomeni
+        // „preverjeno, nimamo“, `undefined` pa „še ne vemo“ — dve različni
+        // stvari, ki ju vrstica pokaže z različnim besedilom.
+        setPdfji(Object.fromEntries(kljuc.split(",").map((i) => [i, data.verzije[i] ?? null])));
+      })
+      .catch(() => {
+        // Tiho: arhiv je dodatek k ceni, ne pogoj zanjo.
+      });
+    return () => {
+      odpovedano = true;
+    };
+  }, [kljuc]);
+
+  if (prodani.length === 0) return null;
+  const zMeritvijo = prodani.filter((p) => p.dniNaTrgu !== null).length;
+
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+        <Gauge className="h-4 w-4 text-accent" />
+        Za koliko so šli taki avti z oglasnika ({prodani.length})
+      </h2>
+      <p className="mt-1 text-xs text-zinc-500">
+        Zadnja cena, preden je oglas izginil — najbližje javnemu podatku o prodajni ceni.
+        Vir ne potrdi prodaje, zato tu piše „izginil“, ne „prodan“. Kjer imamo arhiv, odpre PDF
+        slike in opremo tistega oglasa.
+      </p>
+      <div className="mt-3 space-y-1.5">
+        {prodani.map((p) => {
+          const verzije = pdfji[p.avtonetId];
+          return (
+            <div
+              key={p.avtonetId}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs"
+            >
+              <span className="min-w-0 flex-1 truncate text-zinc-700">
+                {p.naziv ?? `${p.znamka ?? ""} ${p.model ?? ""}`}
+                <span className="text-zinc-400">
+                  {p.letnik ? ` · ${p.letnik}` : ""}
+                  {p.km !== null ? ` · ${Math.round(p.km).toLocaleString("sl-SI")} km` : ""}
+                </span>
+              </span>
+              <span className="font-semibold text-zinc-900">{eur(p.cena)}</span>
+              <span className="w-24 text-right text-zinc-500">
+                {p.dniNaTrgu !== null ? `${Math.round(p.dniNaTrgu)} dni` : "čas ni znan"}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {verzije === undefined ? (
+                  <span className="text-[11px] text-zinc-300">…</span>
+                ) : verzije === null || verzije.length === 0 ? (
+                  <span className="text-[11px] text-zinc-400" title="Oglas je izginil, preden smo ga arhivirali.">
+                    brez PDF
+                  </span>
+                ) : (
+                  verzije.map((verzija, i) => (
+                    <a
+                      key={verzija.id}
+                      href={`/api/avtonet/pdf/${verzija.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/20"
+                      // Več verzij pomeni, da je prodajalec vmes spreminjal ceno;
+                      // vsaka je svoj posnetek oglasa ob tisti ceni.
+                      title={
+                        i === 0
+                          ? "Arhiviran oglas s slikami in opremo"
+                          : `Posnetek oglasa ob ceni ${eur(verzija.cena)}`
+                      }
+                    >
+                      <FileText className="h-3 w-3" />
+                      {verzije.length === 1 ? "PDF" : i === 0 ? "PDF" : eur(verzija.cena)}
+                    </a>
+                  ))
+                )}
+                <a
+                  href={p.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-zinc-400 hover:text-zinc-700"
+                >
+                  oglas ↗
+                </a>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {zMeritvijo < prodani.length && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Pri {prodani.length - zMeritvijo} od teh čas na trgu ni merljiv — bili so na
+          oglasniku že pred začetkom našega spremljanja, zato njihovega prihoda nismo videli.
+          Cena je kljub temu uporabna.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function Rezultat({ odgovor }: { odgovor: Odgovor }) {
   const { branje, cenitev, razlaga } = odgovor;
   const v = cenitev.cilj;
@@ -453,63 +586,7 @@ function Rezultat({ odgovor }: { odgovor: Odgovor }) {
       </section>
 
       {/* ---------- Za koliko so bili taki avti dejansko prodani ---------- */}
-      {(() => {
-        // Samo zakljuceni oglasi z IZMERLJIVIM casom: tisti, ki smo jim videli
-        // prihod na trg. Pri starejsih "cas do prodaje" ni meritev, ampak cas od
-        // dneva, ko smo prizgali zbiralnik - taka stevilka je slabsa od nobene.
-        const prodani = cenitev.primerljivi
-          .filter((p) => p.status !== "aktiven" && p.cena !== null && p.cena > 0)
-          .slice(0, 8);
-        if (prodani.length === 0) return null;
-        const zMeritvijo = prodani.filter((p) => p.dniNaTrgu !== null).length;
-        return (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-              <Gauge className="h-4 w-4 text-accent" />
-              Za koliko so šli taki avti z oglasnika ({prodani.length})
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              Zadnja cena, preden je oglas izginil — najbližje javnemu podatku o prodajni ceni.
-              Vir ne potrdi prodaje, zato tu piše „izginil“, ne „prodan“.
-            </p>
-            <div className="mt-3 space-y-1.5">
-              {prodani.map((p) => (
-                <div
-                  key={p.avtonetId}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs"
-                >
-                  <span className="min-w-0 flex-1 truncate text-zinc-700">
-                    {p.naziv ?? `${p.znamka ?? ""} ${p.model ?? ""}`}
-                    <span className="text-zinc-400">
-                      {p.letnik ? ` · ${p.letnik}` : ""}
-                      {p.km !== null ? ` · ${Math.round(p.km).toLocaleString("sl-SI")} km` : ""}
-                    </span>
-                  </span>
-                  <span className="font-semibold text-zinc-900">{eur(p.cena)}</span>
-                  <span className="w-24 text-right text-zinc-500">
-                    {p.dniNaTrgu !== null ? `${Math.round(p.dniNaTrgu)} dni` : "čas ni znan"}
-                  </span>
-                  <a
-                    href={p.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-zinc-400 hover:text-zinc-700"
-                  >
-                    oglas ↗
-                  </a>
-                </div>
-              ))}
-            </div>
-            {zMeritvijo < prodani.length && (
-              <p className="mt-2 text-xs text-zinc-500">
-                Pri {prodani.length - zMeritvijo} od teh čas na trgu ni merljiv — bili so na
-                oglasniku že pred začetkom našega spremljanja, zato njihovega prihoda nismo videli.
-                Cena je kljub temu uporabna.
-              </p>
-            )}
-          </section>
-        );
-      })()}
+      <IzginuliSeznam primerljivi={cenitev.primerljivi} />
 
       {/* ---------- Primerljiva vozila ---------- */}
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">

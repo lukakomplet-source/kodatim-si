@@ -126,48 +126,141 @@ try {
         Zapisi "Streznik zagnan (PID $($p.Id), vrata $vrata)."
     }
 
+    <#
+      Po zamenjavi map preveri, da postrezena razlicica RES ustreza tisti na
+      disku. 19. 9. 2026 je med ustavitvijo in preimenovanjem nekdo (cuvaj ali
+      zaganjalnik) zagnal stran iz STARE .next, mapa pa je bila zamenjana pod
+      njo: naslovnica je vracala 200, vsaka se nenalozena podstran pa je padla
+      na manjkajocem kosu. Ker je bilo videti zdravo, je tako ostalo 34 ur.
+      Tiha neskladnost tu postane samodejni popravek.
+    #>
+    function PreveriDaTeceNovaGradnja {
+        $naDisku = ""
+        try { $naDisku = (Get-Content (Join-Path $PSScriptRoot ".next\BUILD_ID") -Raw).Trim() } catch { return }
+        if (-not $naDisku) { return }
+        # Oznake gradnje NI mogoce prebrati iz odgovora: Next 16 (App Router)
+        # je ne piše v HTML (preverjeno 21. 9. 2026). Zato jo proces ob zagonu
+        # zapise sam - glej src\instrumentation.ts - skupaj s svojim PID.
+        $zapis = Join-Path $mapa "tekoca-gradnja.txt"
+        for ($i = 1; $i -le 10; $i++) {
+            Start-Sleep -Seconds 3
+            $zasede = VrataZasedaPid
+            if (-not $zasede) { continue }
+            $vrstica = ""
+            try { $vrstica = (Get-Content $zapis -Raw -ErrorAction Stop).Trim() } catch { continue }
+            $deli = $vrstica -split '\s+'
+            if ($deli.Count -lt 2) { continue }
+            $tece = $deli[0]
+            $zapisalPid = [int]$deli[1]
+            # Zapis mora biti od procesa, ki TA HIP posluša; sicer je ostanek
+            # prejsnjega zagona in o tekoci gradnji ne pove nicesar.
+            if ($zapisalPid -ne $zasede) { continue }
+            if ($tece -eq $naDisku) {
+                Zapisi "Preverjeno: stran tece na gradnji $tece (enaka kot na disku)."
+                return
+            }
+            Zapisi "NESKLADJE: stran tece na gradnji $tece, na disku je $naDisku - zaganjam znova."
+            Stop-Process -Id $zasede -Force -ErrorAction SilentlyContinue
+            UstaviStreznik
+            Start-Sleep -Seconds 3
+            ZazeniStreznik
+            return
+        }
+        Zapisi "OPOZORILO: tekoce gradnje ni bilo mogoce preveriti (ni zapisa od procesa na vratih $vrata)."
+    }
+
     function ZgradiInZazeni {
-        # Ce vrata zaseda tuj proces, je to bodisi dev streznik (pustimo pri
-        # miru) bodisi "next start" te iste strani - prejsnja verzija, ki jo
-        # zaganja nadzornik iz Startup mape. Slednjo ustavimo in zgradimo novo;
-        # nadzornik jo bo sam znova zagnal ze s svezim buildom.
+        # Ce vrata zaseda tuj proces, ki NI ta stran (dev streznik), se ne
+        # vtikamo: koda je potegnjena, build in restart preskocimo.
         $zasede = VrataZasedaPid
         $moj = StreznikPid
         if ($zasede -and (-not ($moj -and ($zasede -eq $moj)))) {
             $tujec = Get-CimInstance Win32_Process -Filter "ProcessId = $zasede" -ErrorAction SilentlyContinue
             $staraVerzijaStrani = ($tujec -and $tujec.Name -eq "node.exe" -and $tujec.CommandLine -like "*$PSScriptRoot*" -and $tujec.CommandLine -like "*next*start*")
-            if ($staraVerzijaStrani) {
-                Zapisi "Na vratih $vrata je prejsnja verzija te strani (PID $zasede) - jo ustavljam za svez build."
-                Stop-Process -Id $zasede -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
-            } else {
+            if (-not $staraVerzijaStrani) {
                 Zapisi "Na vratih $vrata tece tuj proces (dev streznik?) - koda je potegnjena, build in restart preskocim."
                 return $true
             }
         }
-        # Streznik ustavimo pred buildom (Windows ne mara prepisovanja odprtih
-        # datotek v .next), prejsnji build pa spravimo za rollback.
-        UstaviStreznik
+
         $prejsnja = Join-Path $PSScriptRoot ".next_prejsnja"
         $trenutna = Join-Path $PSScriptRoot ".next"
-        if (Test-Path $prejsnja) { Remove-Item $prejsnja -Recurse -Force }
-        if (Test-Path $trenutna) { Rename-Item $trenutna ".next_prejsnja" }
+        $nova = Join-Path $PSScriptRoot ".next_nova"
 
-        Zapisi "npm run build ..."
+        # 1. GRADIMO, MEDTEM KO STARA VERZIJA SE STREZE.
+        #
+        # Prej je bil vrstni red obrnjen: najprej Stop-Process na strezniku,
+        # nato build. Ker build traja 5-9 minut, je bila kodatim.si ves ta cas
+        # nedosegljiva (Cloudflare 502) - 17. 9. 2026 med 14:58 in 15:59
+        # sedemkrat zapored. Z lastno izhodno mapo (NEXT_DIST_DIR) build ne
+        # povozi odprtih datotek v .next, zato streznik lahko tece do konca.
+        if (Test-Path $nova) { Remove-Item $nova -Recurse -Force }
+        Zapisi "npm run build (v .next_nova; stran medtem tece) ..."
+        $env:NEXT_DIST_DIR = ".next_nova"
         npm run build *> $buildLog
-        if ($LASTEXITCODE -ne 0) {
-            Zapisi "NAPAKA: build ni uspel - vracam prejsnjo verzijo. Podrobnosti: $buildLog"
-            if (Test-Path $trenutna) { Remove-Item $trenutna -Recurse -Force }
-            if (Test-Path $prejsnja) {
-                Rename-Item $prejsnja ".next"
-                ZazeniStreznik
-                Zapisi "Tece prejsnja verzija. Popravi kodo in pushni nov commit."
-            }
+        $izidBuilda = $LASTEXITCODE
+        # Spremenljivko POCISTIMO takoj: Start-Process podeduje okolje starsa,
+        # zato bi streznik sicer stregel iz .next_nova, ki jo tik zatem
+        # preimenujemo - in stran bi ostala brez svoje izhodne mape.
+        Remove-Item Env:NEXT_DIST_DIR -ErrorAction SilentlyContinue
+        if ($izidBuilda -ne 0) {
+            Zapisi "NAPAKA: build ni uspel - stran tece naprej v STARI verziji, brez izpada. Podrobnosti: $buildLog"
+            if (Test-Path $nova) { Remove-Item $nova -Recurse -Force }
             return $false
         }
-        if (Test-Path $prejsnja) { Remove-Item $prejsnja -Recurse -Force }
+
+        # 2. Sele zdaj zamenjamo mapo in znova zazenemo: izpad je nekaj
+        #    sekund namesto celega builda.
+        #
+        # Zastavica pove cuvaju in zaganjalniku (START-STRAN.bat), naj strani
+        # med tem NE zaganjata: 19. 9. 2026 je eden od njiju v tistih sekundah
+        # zagnal stran iz stare .next, mapa pa je bila zamenjana pod njo.
+        $zastavicaMenjave = "C:\Users\lukak\avtonet-db\stran.menjava"
+        Set-Content -Path $zastavicaMenjave -Value (Get-Date -Format "s") -ErrorAction SilentlyContinue
+        $zasede = VrataZasedaPid
+        if ($zasede) {
+            Zapisi "Nova verzija zgrajena - ustavljam staro (PID $zasede) za zamenjavo."
+            Stop-Process -Id $zasede -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+        UstaviStreznik
+        # Windows datoteke sprosti z zamikom: prvi poskus preimenovanja .next
+        # takoj po ustavitvi je 18. 9. 2026 vrnil "Access to the path is
+        # denied", cez tri sekunde pa je isti ukaz uspel. Zato poskusimo
+        # veckrat; ce ne gre, pustimo staro verzijo pri zivljenju.
+        $zamenjano = $false
+        for ($poskus = 1; $poskus -le 6; $poskus++) {
+            try {
+                if (Test-Path $prejsnja) { Remove-Item $prejsnja -Recurse -Force -ErrorAction Stop }
+                if (Test-Path $trenutna) { Rename-Item $trenutna ".next_prejsnja" -ErrorAction Stop }
+                Rename-Item $nova ".next" -ErrorAction Stop
+                $zamenjano = $true
+                break
+            } catch {
+                Start-Sleep -Seconds 3
+            }
+        }
+        if (-not $zamenjano) {
+            Zapisi "NAPAKA: nove verzije ni bilo mogoce postaviti na mesto (.next je zaklenjen) - zaganjam staro."
+            Remove-Item $zastavicaMenjave -ErrorAction SilentlyContinue
+            ZazeniStreznik
+            return $false
+        }
         Remove-Item $zastavicaNapake -ErrorAction SilentlyContinue
+        Remove-Item $zastavicaMenjave -ErrorAction SilentlyContinue
         ZazeniStreznik
+        PreveriDaTeceNovaGradnja
+
+        # Ce se nova verzija ob zagonu takoj sesuje, vrnemo prejsnjo - ta je
+        # ze zgrajena, zato je vrnitev hitra.
+        if ((Test-Path $zastavicaNapake) -and (Test-Path $prejsnja)) {
+            Zapisi "Nova verzija se ob zagonu sesula - vracam prejsnjo."
+            if (Test-Path $trenutna) { Remove-Item $trenutna -Recurse -Force }
+            Rename-Item $prejsnja ".next"
+            Remove-Item $zastavicaNapake -ErrorAction SilentlyContinue
+            ZazeniStreznik
+            return $false
+        }
         return $true
     }
 
