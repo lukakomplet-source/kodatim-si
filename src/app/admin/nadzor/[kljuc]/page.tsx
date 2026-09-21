@@ -19,7 +19,10 @@ const POVEZAVE: Record<string, { href: string; oznaka: string }[]> = {
   avtonet: [{ href: "/avtonet/pregled", oznaka: "Research konzola" }],
   pdf: [{ href: "/avtonet/pregled", oznaka: "Research konzola" }],
   vid: [{ href: "/avtonet/vid", oznaka: "Kaj model vidi (in oceni)" }],
-  podjetja: [{ href: "/admin/lead-skrejp", oznaka: "Lead skrejp" }],
+  podjetja: [
+    { href: "/admin/register-podjetij", oznaka: "Vsa podjetja v tabeli" },
+    { href: "/admin/lead-skrejp", oznaka: "Lead skrejp" },
+  ],
   nepremicnine: [{ href: "/nepremicnine/pregled", oznaka: "Research konzola" }],
   "nep-pdf": [{ href: "/nepremicnine/pregled", oznaka: "Research konzola" }],
 };

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/require-admin";
 import { preberiNadzor } from "@/lib/nadzor";
 import { Kartica } from "./Kartica";
 import { Osvezevanje } from "./Osvezevanje";
+import { ZivoOkno } from "./ZivoOkno";
 
 /**
  * Vsi zbiralniki na enem zaslonu.
@@ -43,6 +44,17 @@ export default async function NadzorPage() {
         podrobnosti in dnevnik tistega delavca.
       </p>
 
+      {/*
+        Neskladje med tekočo in zgrajeno različico je nevarnejše od ustavljenega
+        zbiralnika: stran vrača 200, zato je od zunaj videti zdrava, podstrani
+        pa padajo na manjkajočih kosih. 19. 9. 2026 je tako ostalo 34 ur.
+      */}
+      {nadzor.zastarelaGradnja ? (
+        <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
+          {nadzor.zastarelaGradnja}
+        </p>
+      ) : null}
+
       {stoji.length > 0 ? (
         <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
           Pozor pri {stoji.length} od {nadzor.skrejperji.length}:{" "}
@@ -64,6 +76,18 @@ export default async function NadzorPage() {
             <Kartica skrejper={s} />
           </Link>
         ))}
+      </div>
+
+      <h2 className="mt-8 text-sm font-semibold text-zinc-900">Kaj se skrejpa ta hip</h2>
+      <p className="mt-1 text-xs text-zinc-500">
+        Isto, kar teče v ukazni vrstici delavca — osvežuje se vsake 3 sekunde, tudi ko se
+        ostala stran ne. Rdeča vrstica je napaka.
+      </p>
+      <div className="mt-2 grid gap-3 lg:grid-cols-2">
+        <ZivoOkno kljuc="podjetja" naslov="AJPES — register podjetij" />
+        <ZivoOkno kljuc="avtonet" naslov="Avto.net — zbiralnik oglasov" />
+        <ZivoOkno kljuc="nepremicnine" naslov="Nepremičnine — zbiralnik" />
+        <ZivoOkno kljuc="pdf" naslov="Avto.net — arhiv PDF in slik" />
       </div>
 
       <h2 className="mt-8 text-sm font-semibold text-zinc-900">Obremenitev računalnika</h2>
