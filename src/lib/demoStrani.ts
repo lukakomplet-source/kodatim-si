@@ -124,6 +124,15 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Aplikacija za uvoz vozil: izračun stroškov, dokumentacija in vodenje prevzemov. Teče na poddomeni kodatim.si.",
   },
   {
+    slug: "vozni-park",
+    naziv: "Vozni park Vojnik — Janoš",
+    stranka: null,
+    vrsta: "aplikacija",
+    url: "https://kodatim.si/vozni-park",
+    opis:
+      "Vodenje voznega parka: stanje in zgodovina statusov vozil, kilometri in servis, dokumenti (vinjeta, tehnični, zavarovanje), poškodbe. Urejanje je za PIN-om. Teče na poti kodatim.si, podatki zaenkrat v brskalniku (localStorage), ne v bazi.",
+  },
+  {
     slug: "urvis",
     naziv: "URVIS Razlakiranje Kovin — predogled",
     stranka: "URVIS",
