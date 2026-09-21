@@ -55,6 +55,7 @@ type Vrstica = {
   serija_opis: string | null;
   pogon_norm: string | null;
   menjalnik_druzina: string | null;
+  karoserija: string | null;
   oprema_kljucna: Record<string, boolean> | null;
   oprema_teza: number | null;
   cena_primerljiva: boolean | null;
@@ -65,7 +66,7 @@ const POLJA =
   "id, avtonet_id, url, naziv, znamka, model, letnik, km, kw, gorivo, menjalnik, cena_eur, " +
   "cena_prvotna_eur, status, first_seen, status_spremenjen, je_dealer, lokacija, izvedenka, " +
   "vstop_znan, vstop_na_trg, " +
-  "generacija, serija_opis, pogon_norm, menjalnik_druzina, oprema_kljucna, oprema_teza, cena_primerljiva, vin";
+  "generacija, serija_opis, pogon_norm, menjalnik_druzina, oprema_kljucna, oprema_teza, cena_primerljiva, vin, karoserija";
 
 const num = (v: number | string | null): number | null => {
   if (v === null) return null;
@@ -267,6 +268,9 @@ export default async function ProdaniPage({
     serijaOpis: v.serija_opis,
     pogon: v.pogon_norm,
     menjalnik: v.menjalnik_druzina,
+    // Za iskanje na mobile.de: karoserija iz baze je podatek, ugibanje modela
+    // po imenu oglasa pa ne — Grand C-Max je model brez „Kombi“ v imenu.
+    karoserija: v.karoserija,
     oprema: Object.keys(v.oprema_kljucna ?? {}),
     opremaTeza: v.oprema_teza,
     oznacenProdano: v.status === "prodano",
