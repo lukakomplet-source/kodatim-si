@@ -106,14 +106,6 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Interaktivni 3D sprehod okoli hiše (WASD + miška, dan/zahod/noč, ogled okolice). Obstoječe stanje po Street View; prenova po PZI načrtih sledi.",
   },
   {
-    slug: "vozni-park",
-    naziv: "Vozni park Vojnik — Janoš",
-    stranka: null,
-    vrsta: "aplikacija",
-    opis:
-      "Vodenje voznega parka: stanje in zgodovina statusov vozil, voznik na vozilu, urejanje zaščiteno s PIN-om. Samostojna HTML aplikacija, podatki zaenkrat v brskalniku (localStorage), ne v bazi.",
-  },
-  {
     slug: "kompletko",
     naziv: "EscortOps — Kompletko",
     stranka: "Kompletko d.o.o.",
@@ -130,6 +122,15 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
     url: "https://uvozi.kodatim.si",
     opis:
       "Aplikacija za uvoz vozil: izračun stroškov, dokumentacija in vodenje prevzemov. Teče na poddomeni kodatim.si.",
+  },
+  {
+    slug: "vozni-park",
+    naziv: "Vozni park Vojnik — Janoš",
+    stranka: null,
+    vrsta: "aplikacija",
+    url: "https://kodatim.si/vozni-park",
+    opis:
+      "Vodenje voznega parka: stanje in zgodovina statusov vozil, kilometri in servis, dokumenti (vinjeta, tehnični, zavarovanje), poškodbe. Urejanje je za PIN-om. Teče na poti kodatim.si, podatki zaenkrat v brskalniku (localStorage), ne v bazi.",
   },
   {
     slug: "urvis",
