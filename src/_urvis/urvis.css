@@ -1,0 +1,281 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Inter:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.urvis-root.dark *));
+
+/*
+ * Scoped to .urvis-root instead of :root/body/h1-h6 (as in the original
+ * standalone site) so this stylesheet — loaded only on /urvis — can never
+ * repaint the rest of kodatim.si. See src/app/(demo)/urvis for the wrapper.
+ */
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-border: var(--primary-border);
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-secondary-border: var(--secondary-border);
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-muted-border: var(--muted-border);
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-border: var(--accent-border);
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-destructive-border: var(--destructive-border);
+
+  --font-sans: var(--app-font-sans);
+  --font-display: var(--app-font-display);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+.urvis-root {
+  --background: 240 5% 96%;
+  --foreground: 224 25% 7%;
+  --border: 220 14% 90%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 25% 7%;
+  --card-border: 220 14% 90%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 25% 7%;
+  --popover-border: 220 14% 90%;
+
+  --primary: 0 69% 50%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 224 22% 9%;
+  --secondary-foreground: 240 5% 96%;
+
+  --muted: 220 14% 90%;
+  --muted-foreground: 220 9% 46%;
+
+  --accent: 214 74% 48%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 220 14% 90%;
+  --ring: 0 69% 50%;
+
+  --app-font-sans: 'Inter', system-ui, sans-serif;
+  --app-font-display: 'Barlow Condensed', system-ui, sans-serif;
+  --radius: 0px;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.urvis-root.dark {
+  --background: 224 25% 7%;
+  --foreground: 240 5% 96%;
+  --border: 224 22% 16%;
+  --card: 224 22% 9%;
+  --card-foreground: 240 5% 96%;
+  --card-border: 224 22% 16%;
+  --popover: 224 22% 9%;
+  --popover-foreground: 240 5% 96%;
+  --popover-border: 224 22% 16%;
+
+  --primary: 0 69% 50%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 224 22% 12%;
+  --secondary-foreground: 240 5% 96%;
+
+  --muted: 224 22% 16%;
+  --muted-foreground: 220 9% 60%;
+
+  --accent: 214 74% 48%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 62% 30%;
+  --destructive-foreground: 240 5% 96%;
+
+  --input: 224 22% 16%;
+  --ring: 0 69% 50%;
+}
+
+.urvis-root {
+  font-family: var(--app-font-sans);
+  -webkit-font-smoothing: antialiased;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  overflow-x: hidden;
+}
+
+.urvis-root * {
+  border-color: hsl(var(--border));
+}
+
+.urvis-root h1,
+.urvis-root h2,
+.urvis-root h3,
+.urvis-root h4,
+.urvis-root h5,
+.urvis-root h6 {
+  font-family: var(--app-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  hyphens: manual;
+  overflow-wrap: break-word;
+}
+
+.urvis-root .glass-panel {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes urvis-slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Blog article prose ────────────────────────── */
+.urvis-root .article-content {
+  line-height: 1.8;
+  color: hsl(var(--foreground));
+  font-size: 1.0625rem;
+}
+
+.urvis-root .article-content p {
+  margin-bottom: 1.5rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.urvis-root .article-content h2 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--foreground));
+  margin-top: 3rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid hsl(var(--primary));
+  display: inline-block;
+}
+
+.urvis-root .article-content h3 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: hsl(var(--foreground));
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.urvis-root .article-content ul,
+.urvis-root .article-content ol {
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+}
+
+.urvis-root .article-content ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.urvis-root .article-content ul li {
+  padding-left: 1.25rem;
+  position: relative;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.urvis-root .article-content ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 6px;
+  height: 6px;
+  background: hsl(var(--primary));
+  border-radius: 0;
+}
+
+.urvis-root .article-content ol {
+  list-style-type: decimal;
+}
+
+.urvis-root .article-content ol li {
+  margin-bottom: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding-left: 0.25rem;
+}
+
+.urvis-root .article-content strong {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.urvis-root .article-content a {
+  color: hsl(var(--primary));
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: hsl(var(--primary) / 0.3);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.2s;
+}
+
+.urvis-root .article-content a:hover {
+  text-decoration-color: hsl(var(--primary));
+}
+
+.urvis-root .article-content .cta-block {
+  background: hsl(var(--secondary));
+  border-left: 4px solid hsl(var(--primary));
+  padding: 1.25rem 1.5rem;
+  margin-top: 2.5rem;
+  border-radius: 0;
+}
+
+.urvis-root .article-content .cta-block p {
+  color: hsl(var(--secondary-foreground) / 0.8);
+  margin-bottom: 0;
+  font-weight: 500;
+}
+
+.urvis-root .article-content .cta-block a {
+  color: hsl(var(--primary));
+}

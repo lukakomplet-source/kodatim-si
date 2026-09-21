@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,7 +23,12 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@urvis/*": [
+        "./src/_urvis/*"
+      ]
     }
   },
   "include": [
@@ -28,9 +37,16 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    ".next_nova/types/**/*.ts",
+    ".next_nova/dev/types/**/*.ts"
   ],
   // scripts/ so samostojna orodja, ki tecejo pod tsx (uvazajo .ts poti
   // neposredno) — niso del Next gradnje in jih zato tu ne preverjamo.
-  "exclude": ["node_modules", "worker-avtonet", "worker-podjetja", "scripts"]
+  "exclude": [
+    "node_modules",
+    "worker-avtonet",
+    "worker-podjetja",
+    "scripts"
+  ]
 }

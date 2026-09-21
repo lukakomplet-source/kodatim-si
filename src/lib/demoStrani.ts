@@ -124,6 +124,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Aplikacija za uvoz vozil: izračun stroškov, dokumentacija in vodenje prevzemov. Teče na poddomeni kodatim.si.",
   },
   {
+    slug: "urvis",
+    naziv: "URVIS Razlakiranje Kovin — predogled",
+    stranka: "URVIS",
+    vrsta: "spletna_stran",
+    opis:
+      "Klon obstoječe strani urvis.si (prenešen z Replita), začasno gostovan tukaj dokler ne dobi lastne domene nazaj. Kontaktni obrazec pošilja na info@kodatim.si, ne na pravo stranko.",
+  },
+  {
     slug: "kontex",
     naziv: "Kontex — predstavitvena stran",
     stranka: "Kontex",
