@@ -116,7 +116,14 @@ try {
     # V .next_nova in ne v .next, ker .next ta hip streze tekoca stran: Windows
     # datotek, ki jih drzi next start, ne pusti prepisati. Mapo pred gradnjo
     # pobrisemo, da v njej ne ostane nic od morebitne prejsnje prekinjene
-    # objave. distDir bere next.config.ts iz NEXT_DIST_DIR.
+    # objave.
+    #
+    # POGOJ: v next.config.ts mora biti vrstica
+    #     distDir: process.env.NEXT_DIST_DIR || ".next",
+    # Next 16 nima stikala --dist-dir in NEXT_DIST_DIR sam po sebi ne bere
+    # nikjer, zato je brez te vrstice spodnja nastavitev tiho brez ucinka in
+    # gradnja gre v .next pod nogami tekoce strani. Ce te vrstice ni, se
+    # objava ustavi na preverjanju BUILD_ID nekaj vrstic nize.
     Korak "2/8  Gradim novo verzijo v .next_nova"
     Opomba "Stran med tem tece naprej na stari zgradbi."
     if (Test-Path $mapaNova) { Remove-Item $mapaNova -Recurse -Force }
@@ -137,10 +144,16 @@ try {
     # Gradnja je na tem racunalniku ze tiho umrla sredi izvoza in pustila mapo
     # brez prerender-manifest.json - z izhodno kodo 0. BUILD_ID je prvo, kar
     # takrat manjka; brez tega preverjanja bi tako pohabljeno zgradbo
-    # prestavili cez delujoco.
+    # prestavili cez delujoco. Ista preverba ujame tudi manjkajoci distDir:
+    # takrat .next_nova sploh ne nastane.
     $potNoveGradnje = Join-Path $mapaNova "BUILD_ID"
     if (-not (Test-Path $potNoveGradnje)) {
-        Napaka "PREKINJAM: v .next_nova ni BUILD_ID - gradnja je nepopolna."
+        if (-not (Test-Path $mapaNova)) {
+            Napaka "PREKINJAM: mape .next_nova ni - gradnja je sla drugam."
+            Opomba "Manjka vrstica distDir: process.env.NEXT_DIST_DIR || `".next`", v next.config.ts."
+        } else {
+            Napaka "PREKINJAM: v .next_nova ni BUILD_ID - gradnja je nepopolna."
+        }
         Opomba "Stran tece naprej na stari zgradbi."
         exit 1
     }
