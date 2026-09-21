@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
   // preseglo pomnilnik in gradnja je tiho umrla sredi izvoza (manjkajoc
   // prerender-manifest.json, stran pa se ni vec zagnala). Stiri zadoscajo.
   experimental: { cpus: 4 },
+  // Kam gre zgrajena stran. Privzeto ".next", objava (objava.ps1) pa gradi v
+  // ".next_nova" — z drugo mapo lahko gradnja teče, MEDTEM ko stara verzija še
+  // streže obiskovalce, in se mapi zamenjata šele na koncu. Prej je moral
+  // strežnik pred gradnjo umreti (Windows ne pusti prepisovati odprtih datotek
+  // v .next) in kodatim.si je bil vsakič 5–9 minut nedosegljiv.
+  //
+  // Ta vrstica je edini način, da to sploh dela: Next 16 nima stikala
+  // --dist-dir in NEXT_DIST_DIR sam po sebi ne bere nikjer. Brez nje je
+  // `$env:NEXT_DIST_DIR = ".next_nova"` tiho brez učinka — gradnja gre v .next
+  // pod nogami tekoči strani, menjava pa nima česa preimenovati.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
 };
 
 export default nextConfig;
