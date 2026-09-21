@@ -106,6 +106,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Interaktivni 3D sprehod okoli hiše (WASD + miška, dan/zahod/noč, ogled okolice). Obstoječe stanje po Street View; prenova po PZI načrtih sledi.",
   },
   {
+    slug: "vozni-park",
+    naziv: "Vozni park Vojnik — Janoš",
+    stranka: null,
+    vrsta: "aplikacija",
+    opis:
+      "Vodenje voznega parka: stanje in zgodovina statusov vozil, voznik na vozilu, urejanje zaščiteno s PIN-om. Samostojna HTML aplikacija, podatki zaenkrat v brskalniku (localStorage), ne v bazi.",
+  },
+  {
     slug: "kompletko",
     naziv: "EscortOps — Kompletko",
     stranka: "Kompletko d.o.o.",
