@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import ScrapeCompanyForm from "./ScrapeCompanyForm";
 import AiCompanySearchForm from "./AiCompanySearchForm";
@@ -8,6 +9,10 @@ export default async function AdminCompaniesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  // Brez tega je postavitev edina zapora: vsaka RBAC vloga (tudi taka brez
+  // enega samega dovoljenja) je videla podjetja, prebrana s service-role
+  // odjemalcem, ki obide RLS. Ostale admin strani to preverbo imajo.
+  await requireAdmin();
   const { q } = await searchParams;
   const supabase = createAdminClient();
 
