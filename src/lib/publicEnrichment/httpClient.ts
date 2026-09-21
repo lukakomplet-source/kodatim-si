@@ -38,6 +38,101 @@ function parseRetryAfterMs(response: Response): number | undefined {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
+/**
+ * Meji pri branju telesa TUJEGA odgovora.
+ *
+ * Izmerjeno 17. 9. 2026 (scripts/preveri-omejitev-telesa.ts): brez teh meja je
+ * en sam odgovor prebral 381 MB in dvignil RSS procesa z 88 MB na 1.251 MB,
+ * počasen odgovor pa je zahtevo držal 60 s, čeprav je bila razglašena omejitev
+ * 8 s. Razlog: časovnik spodaj se prekliče v `finally`, torej takoj ko pridejo
+ * GLAVE; branje telesa po tem ni bilo omejeno z ničimer. Dve megabajti sta za
+ * iskanje e-pošte in telefona več kot dovolj — običajna stran je pod 500 kB.
+ */
+export const NAJVEC_BAJTOV_TELESA = envInt("HTTP_MAX_BODY_BYTES", 2_000_000);
+export const ROK_TELESA_MS = envInt("HTTP_BODY_TIMEOUT_MS", 10_000);
+
+const BESEDILNE_VRSTE = ["text/html", "application/xhtml+xml", "text/plain", "application/xml", "text/xml"];
+
+/**
+ * Ali je odgovor sploh stran, ki jo je smiselno brati kot besedilo.
+ *
+ * Brez tega je bila na vrsti tudi datoteka: podjetje, ki na svojem korenu
+ * streže video ali stisnjeno arhivsko datoteko, je odgovor dobilo prebran kot
+ * niz. Kadar glave `content-type` ni, poskusimo — pred pretiravanjem nas takrat
+ * varuje meja bajtov.
+ */
+export function jeBesedilnaStran(response: Response): boolean {
+  const vrsta = (response.headers.get("content-type") ?? "").toLowerCase();
+  if (!vrsta.trim()) return true;
+  return BESEDILNE_VRSTE.some((v) => vrsta.includes(v));
+}
+
+export type OmejenoTelo = {
+  besedilo: string;
+  /** Koliko bajtov je bilo res prebranih (do meje). */
+  bajtov: number;
+  /** Ali je bila vsebina prirezana, ker je presegla mejo. */
+  prirezano: boolean;
+};
+
+/**
+ * Prebere telo odgovora po koščkih in se ustavi pri meji bajtov ali ob roku.
+ *
+ * Povezavo ob prekinitvi tudi zapre (`reader.cancel()`), sicer bi tuji
+ * strežnik še naprej pošiljal v prazno.
+ */
+export async function preberiTeloOmejeno(
+  response: Response,
+  moznosti: { najvecBajtov?: number; rokMs?: number } = {}
+): Promise<OmejenoTelo> {
+  const najvecBajtov = moznosti.najvecBajtov ?? NAJVEC_BAJTOV_TELESA;
+  const rokMs = moznosti.rokMs ?? ROK_TELESA_MS;
+  const telo = response.body;
+  if (!telo) return { besedilo: "", bajtov: 0, prirezano: false };
+
+  const bralec = telo.getReader();
+  const dekoder = new TextDecoder("utf-8", { fatal: false });
+  const konec = Date.now() + rokMs;
+  let bajtov = 0;
+  let besedilo = "";
+  let prirezano = false;
+
+  try {
+    for (;;) {
+      const preostanek = konec - Date.now();
+      if (preostanek <= 0) {
+        prirezano = true;
+        break;
+      }
+      // Dirka med koščkom in rokom: brez nje bi en sam počasen košček držal
+      // zahtevo tako dolgo, kolikor se tujemu strežniku zljubi.
+      const kosec = await Promise.race([
+        bralec.read(),
+        new Promise<{ done: true; value: undefined }>((r) =>
+          setTimeout(() => r({ done: true, value: undefined }), preostanek)
+        ),
+      ]);
+      if (kosec.done) {
+        if (Date.now() >= konec) prirezano = true;
+        break;
+      }
+      const del = kosec.value as Uint8Array;
+      bajtov += del.byteLength;
+      if (bajtov > najvecBajtov) {
+        const koliko = del.byteLength - (bajtov - najvecBajtov);
+        besedilo += dekoder.decode(del.subarray(0, Math.max(0, koliko)), { stream: false });
+        prirezano = true;
+        break;
+      }
+      besedilo += dekoder.decode(del, { stream: true });
+    }
+  } finally {
+    // Tiho: povezava je lahko ze zaprta z druge strani.
+    await bralec.cancel().catch(() => {});
+  }
+  return { besedilo, bajtov: Math.min(bajtov, najvecBajtov), prirezano };
+}
+
 export type ProviderFetchOptions = RequestInit & {
   /** Overrides HTTP_TIMEOUT_MS for this call. */
   timeoutMs?: number;

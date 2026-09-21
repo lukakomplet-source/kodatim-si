@@ -463,6 +463,34 @@ export const ajpesProvider: PublicEnrichmentProvider = {
   },
 };
 
+/**
+ * Podrobnosti enega podjetja, brez ovinka čez lead.
+ *
+ * Register podjetij (podjetja_register) ima iz seznama zadetkov samo naziv,
+ * naslov in matično — e-pošte in telefona tam NI, ker ju AJPES pokaže šele na
+ * kartici podjetja. Delavec, ki register dopolnjuje, potrebuje natanko to in
+ * nič drugega, zato tu ne gradimo IntelLeada in ne pišemo diagnostike: ista,
+ * preizkušena pot do strani in isti razčlenjevalnik, le brez okolice.
+ *
+ * Zaklep (withAjpesLock) znotraj readDetailPage ostane ključen: izbira
+ * podjetja in branje kartice morata biti nedeljiva, sicer vmesna zahteva
+ * drugega podjetja vrne okrnjeno stran.
+ */
+export async function preberiPodrobnostiPodjetja(
+  detailUrl: string,
+  ime: string
+): Promise<{ polja: Record<string, string>; napaka: string | null }> {
+  const zahteve: ProviderRequestLog[] = [];
+  const preverbe: ParserCheck[] = [];
+  const izid = await readDetailPage(detailUrl, ime, null, zahteve, preverbe, () => ({}));
+  const polja: Record<string, string> = {};
+  for (const [kljuc, kandidat] of Object.entries(izid.fields ?? {})) {
+    const v = kandidat?.value;
+    if (typeof v === "string" && v.trim()) polja[kljuc] = v.trim();
+  }
+  return { polja, napaka: izid.failed ? izid.note.slice(0, 1600) : null };
+}
+
 async function readDetailPage(
   detailUrl: string,
   companyName: string,
@@ -489,7 +517,23 @@ async function readDetailPage(
       // batches behind a source that has nothing to give.
       const selectText = stripHtmlToText(selectResult.html);
       if (!looksLikeCompanyCard(selectText)) {
-        return { stub: true as const, length: selectText.length };
+        return {
+          stub: true as const,
+          length: selectText.length,
+          status: selectResult.status,
+          // Izvleček gre v sporočilo: 15. 9. je stran deset ur zapored
+          // poročala „okrnjena stran (4.670 znakov)“, ločen proces z isto kodo
+          // pa je isto kartico odprl — brez vsebine stuba se vzroka ni dalo
+          // razbrati. Prvih nekaj sto znakov pove, ali je to prijava,
+          // preusmeritev ali zaščitna stena.
+          // Glava (meni) je na vsaki strani enaka in dolga ~300 znakov, zato
+          // gre v izvleček tudi KONEC strani — tam je vsebina, ki jo je vir
+          // dejansko postregel.
+          izvlecek: (() => {
+            const t = selectText.replace(/\s+/g, " ");
+            return t.length <= 1200 ? t : `${t.slice(0, 300)} […] ${t.slice(-900)}`;
+          })(),
+        };
       }
 
       const read = await fetchAjpesAuthed(prsUrl, selectResult.session);
@@ -518,7 +562,14 @@ async function readDetailPage(
     });
 
     if (outcome.stub) {
-      const reason = `AJPES je vrnil okrnjeno stran brez podatkov podjetja (${outcome.length} znakov, brez oznake "matična številka") — naslov strani iz seznama zadetkov za to podjetje ne odpre kartice`;
+      // 16. 9. 2026: kartica pride z imenom in matično, namesto vsebine pa
+      // „Preverjanje CAPTCHA poteka“ + google.com/recaptcha (v3). Vsebino
+      // naloži šele brskalnik, ki preverjanje opravi. To ni okrnjena stran in
+      // ne napaka te kartice, ampak zaščita vira — imenujmo jo s pravim imenom,
+      // da nadzor in delavec vesta, da pomaga samo čakanje.
+      const reason = /CAPTCHA/i.test(outcome.izvlecek)
+        ? `AJPES zahteva reCAPTCHA preverjanje za kartice podjetij (HTTP ${outcome.status}, ${outcome.length} znakov) — vsebino kartice dobi le brskalnik, ki preverjanje opravi; pomaga samo hlajenje`
+        : `AJPES je vrnil okrnjeno stran brez podatkov podjetja (HTTP ${outcome.status}, ${outcome.length} znakov, brez oznake "matična številka") — naslov strani iz seznama zadetkov za to podjetje ne odpre kartice. Začetek strani: «${outcome.izvlecek}»`;
       return {
         note: `AJPES: strani podjetja ni bilo mogoče odpreti — ${reason}.`,
         skippedReason: reason,
