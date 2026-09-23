@@ -282,6 +282,15 @@ const PRAVNE_OBLIKE =
  * ugibanje iz imena — odpiralni cas, interna stevilka in status zaloge so
  * podatki, ki jih fizicna oseba nima kam vpisati.
  */
+/**
+ * Besede, ki kazejo na dejavnost, ceprav pravne oblike v imenu ni.
+ *
+ * Ne dokazujejo trgovca - podjetnik brez oznake in fizicna oseba s tako
+ * izbranim imenom sta videti enako - zato ob zadetku oznaka ostane "ne vemo".
+ * Izmerjeno 23. 9. 2026: med 14.548 aktivnimi oglasi fizicnih oseb sta taka dva.
+ */
+const TRGOVSKO_BESEDISCE = /(prevoz|avtohi[sš]|autohaus|motors|car\s?cent|trgovin|salon|leasing|rent|posredni[sš]tv)/i;
+
 const TRGOVSKA_POLJA = ["Ponedeljek", "Torek", "Sreda", "Četrtek", "Petek", "Sobota", "Nedelja", "Interna številka", "Status zaloge"];
 
 /** Katero od trgovskih polj je na kartici; null, ce nobeno. */
@@ -323,7 +332,16 @@ export function oceniDealerja(
   if (trgovskoPoljeIme) return { jeDealer: true, dokaz: `kartica ima trgovsko polje „${trgovskoPoljeIme}“` };
   if (naziv && PRAVNE_OBLIKE.test(naziv)) return { jeDealer: true, dokaz: `pravna oblika v nazivu (${naziv})` };
   // "Registrirani uporabnik avto.net od <date>" marks a private account.
-  if (registriranUporabnik) return { jeDealer: false, dokaz: "oglas pravi „Registrirani uporabnik avto.net“" };
+  if (registriranUporabnik) {
+    // Racun je lahko registriran na fizicno osebo, ime pa vseeno kaze na
+    // dejavnost ("M&M Prevozi"). Trdega dokaza ni v nobeno smer, zato ne
+    // trdimo nicesar - tak oglas ne gre med fizicne osebe, a ga tudi ne
+    // razglasimo za trgovca.
+    if (naziv && TRGOVSKO_BESEDISCE.test(naziv)) {
+      return { jeDealer: null, dokaz: `ime kaze na dejavnost (${naziv}), a trdega dokaza ni` };
+    }
+    return { jeDealer: false, dokaz: "oglas pravi „Registrirani uporabnik avto.net“" };
+  }
   return { jeDealer: null, dokaz: null };
 }
 

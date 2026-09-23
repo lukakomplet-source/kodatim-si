@@ -24,3 +24,8 @@ for (const p of primeri) {
   const oznaka = r.jeDealer === true ? "TRGOVEC" : r.jeDealer === false ? "fizicna oseba" : "NE VEMO";
   console.log(`${p.opis.padEnd(40)} -> ${oznaka.padEnd(14)} ${r.dokaz ?? "—"}`);
 }
+
+// Dodano 23. 9. 2026 po preverjanju: ime, ki kaze na dejavnost, ne sme
+// obveljati za fizicno osebo, tudi ce je racun registriran na osebo.
+const robni = oceniDealerja("M&M Prevozi", true, false, false, null);
+console.log(`${"NOVO: poslovno ime, a registriran uporabnik".padEnd(40)} -> ${robni.jeDealer === null ? "NE VEMO" : robni.jeDealer ? "TRGOVEC" : "fizicna oseba"}       ${robni.dokaz ?? "—"}`);

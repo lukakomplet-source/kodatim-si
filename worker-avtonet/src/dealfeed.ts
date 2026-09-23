@@ -103,7 +103,7 @@ export function odsekPoslov(deals: Deal[], odVseh?: number): string {
  * mazro in pogosto DDV, avto pa je ze enkrat sel skozi odkup.
  *
  * `jeDealer === false` in nic drugega: null pomeni, da razclenjevalnik
- * prodajalca ni prebral (23. 9.: 475 aktivnih oglasov), in tak oglas ne sme v
+ * prodajalca ni prebral (23. 9. po dopolnitvi dokazov: 80 aktivnih oglasov), in tak oglas ne sme v
  * seznam "fizicne osebe" - ce ne vemo, ne trdimo.
  */
 /** Posli fizicnih oseb IN koliko poslov je bilo danes sploh ocenjenih. */
