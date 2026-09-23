@@ -44,6 +44,8 @@ export type DetailData = {
   barva: string | null;
   lokacija: string | null;
   prodajalec_naziv: string | null;
+  /** Na cem stoji ocena o prodajalcu; null, kadar dokaza ni. */
+  prodajalec_dokaz: string | null;
   je_dealer: boolean | null;
   oprema: string | null;
   opis: string | null;
@@ -271,21 +273,63 @@ const PRAVNE_OBLIKE =
  * every inference below it — the previous version did not read that line at all
  * and fell back to guessing from the company name.
  */
+/**
+ * Polja, ki jih ima na kartici SAMO trgovec.
+ *
+ * Izmerjeno 23. 9. 2026 na vseh aktivnih oglasih: med 14.548 oglasi, ki so
+ * oznaceni kot fizicna oseba, jih NOBEN nima nobenega od teh polj; med 475
+ * oglasi brez oznake jih ima 395. Locljivost je torej popolna in ne gre za
+ * ugibanje iz imena — odpiralni cas, interna stevilka in status zaloge so
+ * podatki, ki jih fizicna oseba nima kam vpisati.
+ */
+const TRGOVSKA_POLJA = ["Ponedeljek", "Torek", "Sreda", "Četrtek", "Petek", "Sobota", "Nedelja", "Interna številka", "Status zaloge"];
+
+/** Katero od trgovskih polj je na kartici; null, ce nobeno. */
+export function trgovskoPolje(pairs: Record<string, string> | null | undefined): string | null {
+  if (!pairs) return null;
+  return TRGOVSKA_POLJA.find((k) => k in pairs) ?? null;
+}
+
+export type OcenaProdajalca = {
+  /** true = trgovec, false = fizicna oseba, null = ne vemo. */
+  jeDealer: boolean | null;
+  /** Na cem odlocitev stoji — zapise se v bazo, da je pozneje preverljiva. */
+  dokaz: string | null;
+};
+
+/**
+ * Kdo prodaja: trgovec ali fizicna oseba.
+ *
+ * Vrstni red dokazov je od najmocnejsega navzdol. Davcna stevilka v vrstici
+ * "Narocnik objave oglasa" je dokoncna: fizicna oseba je nima, zato jo je
+ * prisotnost postavi med poslovne subjekte. Doslej je razclenjevalnik to
+ * stevilko namenoma ZAVRGEL (glej extractNarocnik), zato je najmocnejsi dokaz
+ * padel v kos - oglasi trgovcev brez pravne oblike v imenu so ostali NULL in
+ * so se 23. 9. 2026 znasli v porocilu "Top posli danes", ki naj bi kazalo samo
+ * fizicne osebe.
+ *
+ * Odsotnost dokazov NI dokaz o fizicni osebi: ostane null in klicatelj se mora
+ * odlociti, ali sme takega prodajalca sploh pokazati.
+ */
 export function oceniDealerja(
   naziv: string | null,
   registriranUporabnik: boolean,
-  trgovec = false
-): boolean | null {
-  if (trgovec) return true;
-  if (naziv && PRAVNE_OBLIKE.test(naziv)) return true;
+  trgovec = false,
+  imaDavcno = false,
+  trgovskoPoljeIme: string | null = null
+): OcenaProdajalca {
+  if (trgovec) return { jeDealer: true, dokaz: "oglas pravi „Registriran kot trgovec“" };
+  if (imaDavcno) return { jeDealer: true, dokaz: "naročnik objave ima davčno številko" };
+  if (trgovskoPoljeIme) return { jeDealer: true, dokaz: `kartica ima trgovsko polje „${trgovskoPoljeIme}“` };
+  if (naziv && PRAVNE_OBLIKE.test(naziv)) return { jeDealer: true, dokaz: `pravna oblika v nazivu (${naziv})` };
   // "Registrirani uporabnik avto.net od <date>" marks a private account.
-  if (registriranUporabnik) return false;
-  return null;
+  if (registriranUporabnik) return { jeDealer: false, dokaz: "oglas pravi „Registrirani uporabnik avto.net“" };
+  return { jeDealer: null, dokaz: null };
 }
 
 /** Lines in the seller block that are not the seller's name. */
 const NI_NAZIV =
-  /^(TELEFON|Registrirani uporabnik|Registriran kot|Zadnja sprememba|Ogledov|Pošlji e-mail|Dodatne možnosti|Oglejte si tudi|Kupujte varno|Vprašaj|Kontakt|Lokacija|Naslov|Delovni čas|E-mail|Naročnik objave|www\.|https?:)/i;
+  /^(TELEFON|Registrirani uporabnik|Registriran kot|Zadnja sprememba|Ogledov|Pošlji e-mail|Dodatne možnosti|Oglejte si tudi|Kupujte varno|Vprašaj|Kontakt|Lokacija|Naslov|Delovni čas|E-mail|Naročnik objave|www\.|https?:|arhivski tehnični podatki|natisni ponudbo|prikaži|vsi oglasi|med obratovalnim časom|ponedeljek od)/i;
 
 /** A street address rather than a name: "HRUŠEVEC 72, 8351 STRAŽA". */
 const JE_NASLOV = /\d{4}\s+\p{Lu}|^\p{Lu}[\p{Lu}\s.]+\s\d+$/u;
@@ -306,23 +350,27 @@ const POSTNA_STEVILKA = /\b\d{4}\s+\p{Lu}[\p{L}\s.-]{2,}/u;
  * shows the street and the town on separate lines and often omits the postcode
  * entirely.
  */
-function extractNarocnik(text: string): { naziv: string | null; naslov: string | null } {
+function extractNarocnik(text: string): { naziv: string | null; naslov: string | null; imaDavcno: boolean } {
   const m = text.match(/Naročnik objave oglasa:\s*([^\n]+)/i);
-  if (!m) return { naziv: null, naslov: null };
+  if (!m) return { naziv: null, naslov: null, imaDavcno: false };
 
   const deli = m[1].split(",").map((d) => d.replace(/\s+/g, " ").trim()).filter(Boolean);
-  if (deli.length === 0) return { naziv: null, naslov: null };
+  if (deli.length === 0) return { naziv: null, naslov: null, imaDavcno: false };
 
-  // Drop the tax number and the country; what is left is name, street, town.
+  // Davcna stevilka ostane v imenu, naslovu pa ne sodi - zato jo tu izlocimo
+  // iz besedila, a si jo ZAPOMNIMO: je najmocnejsi dokaz, da za oglasom stoji
+  // poslovni subjekt in ne fizicna oseba.
+  const imaDavcno = deli.some((d) => /^D[ŠS]\s*:?\s*(SI)?\s*\d{6,}/i.test(d));
   const uporabni = deli.filter((d) => !/^D[ŠS]\s*:/i.test(d) && !/^Slovenij/i.test(d));
   const naziv = uporabni[0] ?? null;
   const naslov = uporabni.slice(1).join(", ") || null;
-  return { naziv: clean(naziv), naslov: clean(naslov) };
+  return { naziv: clean(naziv), naslov: clean(naslov), imaDavcno };
 }
 
-function extractProdajalec(text: string): {
+function extractProdajalec(text: string, pairs: Record<string, string>): {
   naziv: string | null;
   jeDealer: boolean | null;
+  dokaz: string | null;
   naslov: string | null;
   registriranOd: string | null;
 } {
@@ -330,9 +378,17 @@ function extractProdajalec(text: string): {
   const narocnik = extractNarocnik(text);
   const idx = all.findIndex((l) => /^Prodajalec$/i.test(l));
   if (idx === -1) {
+    const ocenaBrezBloka = oceniDealerja(
+      narocnik.naziv,
+      /Registrirani uporabnik avto\.net/i.test(text),
+      /Registriran kot trgovec/i.test(text),
+      narocnik.imaDavcno,
+      trgovskoPolje(pairs)
+    );
     return {
       naziv: narocnik.naziv,
-      jeDealer: oceniDealerja(narocnik.naziv, false, /Registriran kot trgovec/i.test(text)),
+      jeDealer: ocenaBrezBloka.jeDealer,
+      dokaz: ocenaBrezBloka.dokaz,
       naslov: narocnik.naslov,
       registriranOd: clean(text.match(/avto\.net od\s+([\d.]+)/i)?.[1] ?? null),
     };
@@ -366,9 +422,11 @@ function extractProdajalec(text: string): {
   const naslov = narocnik.naslov ?? zPosto ?? uporabne.find((l) => JE_NASLOV.test(l)) ?? null;
   const naziv = uporabne.find((l) => !JE_NASLOV.test(l) && !POSTNA_STEVILKA.test(l)) ?? narocnik.naziv;
 
+  const ocena = oceniDealerja(clean(naziv), registriran, trgovec, narocnik.imaDavcno, trgovskoPolje(pairs));
   return {
     naziv: clean(naziv),
-    jeDealer: oceniDealerja(clean(naziv), registriran, trgovec),
+    jeDealer: ocena.jeDealer,
+    dokaz: ocena.dokaz,
     naslov: clean(naslov),
     registriranOd: clean(registriranOd),
   };
@@ -423,7 +481,7 @@ function extractNaslov(naslov: string | undefined, text: string): string | null 
 export function parseDetail(raw: DetailRaw): DetailData {
   const { pairs, text } = raw;
   const blok = extractOpremaBlok(text);
-  const prodajalec = extractProdajalec(text);
+  const prodajalec = extractProdajalec(text, pairs);
   const all = lines(text);
 
   // "2019 / 6" — year and month of first registration.
@@ -451,6 +509,10 @@ export function parseDetail(raw: DetailRaw): DetailData {
     lokacija: pick(pairs, "Kraj ogleda", "Lokacija", "Kraj") ?? prodajalec.naslov,
     prodajalec_naziv: prodajalec.naziv ?? pick(pairs, "Prodajalec", "Ponudnik", "Trgovec"),
     je_dealer: prodajalec.jeDealer,
+    // Zakaj tako: brez tega se za nazaj ne da preveriti niti ene oznake -
+    // 23. 9. 2026 v shranjenih podatkih ni bilo niti enega niza
+    // "Registriran kot trgovec" (preverjeno na 56.431 aktivnih oglasih).
+    prodajalec_dokaz: prodajalec.dokaz,
     // The flat text stays exactly as it was, so nothing downstream that already
     // reads `oprema` has to change.
     oprema: clean(blok.vrstice.join("; ").slice(0, 4000)),

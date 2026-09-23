@@ -37,11 +37,11 @@ async function main(): Promise<void> {
     if (vrstice.length === 0) break;
     pregledanih += vrstice.length;
 
-    const dealerji = vrstice.filter((v) => oceniDealerja(v.prodajalec_naziv, false) === true);
+    const dealerji = vrstice.filter((v) => oceniDealerja(v.prodajalec_naziv, false).jeDealer === true);
     if (dealerji.length > 0) {
       const { error: updErr } = await db
         .from("avtonet_oglasi")
-        .update({ je_dealer: true })
+        .update({ je_dealer: true, prodajalec_dokaz: "pravna oblika v nazivu (dopolnjeno za nazaj)" })
         .in(
           "id",
           dealerji.map((d) => d.id)

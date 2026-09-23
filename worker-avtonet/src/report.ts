@@ -1,5 +1,5 @@
 import type { Db } from "./db.js";
-import { odsekPoslov, preberiPosle } from "./dealfeed.js";
+import { odsekPoslov, preberiPosleZStevilom } from "./dealfeed.js";
 import { posljiEnkratNaDan, type Izid } from "./posta.js";
 
 /**
@@ -177,10 +177,10 @@ export async function sendDailyReport(db: Db, report: DailyReport): Promise<Izid
   const to = process.env.REPORT_EMAIL_TO;
   if (!to) return "ni_nastavljeno";
 
-  const posli = await preberiPosle(db, 10);
+  const { posli, odVseh: poslovSkupaj } = await preberiPosleZStevilom(db, 10);
   const html = renderReportHtml(report).replace(
     "</body></html>",
-    `${odsekPoslov(posli)}</body></html>`
+    `${odsekPoslov(posli, poslovSkupaj)}</body></html>`
   );
 
   return posljiEnkratNaDan(
