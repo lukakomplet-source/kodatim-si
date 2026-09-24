@@ -106,6 +106,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Interaktivni 3D sprehod okoli hiše (WASD + miška, dan/zahod/noč, ogled okolice). Obstoječe stanje po Street View; prenova po PZI načrtih sledi.",
   },
   {
+    slug: "render",
+    naziv: "Render — nekoč in danes (Celje)",
+    stranka: null,
+    vrsta: "aplikacija",
+    opis:
+      "Obnova starih fotografij, drsnik nekoč/danes in 2,5D gibanje. Računa se lokalno na grafični (RTX 3060), nič v oblaku. Javno so vidni samo izdelki z urejenim virom in licenco; konzola je v adminu pod Render.",
+  },
+  {
     slug: "kompletko",
     naziv: "EscortOps — Kompletko",
     stranka: "Kompletko d.o.o.",

@@ -26,6 +26,17 @@ const MAPA = process.env.AVTONET_PDF_MAPA ?? "C:\\avtonet-arhiv";
 const LOG = process.env.AVTONET_VID_LOG ?? "C:\\Users\\lukak\\avtonet-db\\vid.log";
 const UTRIP = process.env.AVTONET_VID_UTRIP ?? "C:\\Users\\lukak\\avtonet-db\\vid.utrip";
 const ZAKLEP = process.env.AVTONET_VID_ZAKLEP ?? "C:\\Users\\lukak\\avtonet-db\\vid.lock";
+/**
+ * Zastavica, s katero render (worker-render) zasede grafično.
+ *
+ * Grafična ima 12 GB: model za render in ta model skupaj ne gresta varno.
+ * Render pred nalogo zapiše zastavico in sprosti Ollamo; mi pred vsakim
+ * oglasom pogledamo vanjo in počakamo, sicer bi model naložili nazaj sredi
+ * renderja.
+ */
+const ZASTAVICA_GPU = process.env.RENDER_ZASTAVICA ?? "D:\\kodatim-render\\gpu-zaseden.flag";
+/** Dlje od tega nobena naloga faze 1 ne traja; starejša zastavica je zapuščena. */
+const ZASTAVICA_NAJDLJE_MS = 3 * 3600_000;
 /** Koliko oglasov naenkrat vzamemo iz vrste. */
 const SVEZENJ = 8;
 
@@ -80,6 +91,46 @@ function prevzemiZaklep(): boolean {
 
 async function spanec(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Številka render naloge, ki trenutno zaseda grafično; null, če je prosta.
+ *
+ * Zastavica velja samo, če proces, ki jo je zapisal, še živi in ni starejša od
+ * 3 ur. Brez tega bi padec render delavca (ali izpad elektrike med nalogo)
+ * vizualni pregled ustavil za vedno — tiho, ker bi utrip ves čas tekel.
+ */
+function graficnaZasedena(): string | null {
+  let vsebina: string;
+  try {
+    vsebina = readFileSync(ZASTAVICA_GPU, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const z = JSON.parse(vsebina) as { pid?: number; naloga?: number; zacetek?: string };
+    const starost = Date.now() - Date.parse(z.zacetek ?? "");
+    if (!z.pid || !zivProces(z.pid) || !(starost < ZASTAVICA_NAJDLJE_MS)) return null;
+    return String(z.naloga ?? "?");
+  } catch {
+    // Render zastavico zapiše z zamenjavo datoteke, zato napol zapisane ni;
+    // nečitljiva je tuja in ne sme ustaviti dela.
+    return null;
+  }
+}
+
+/** Čaka, dokler render ne sprosti grafične. Med čakanjem piše utrip (nadzornik!). */
+async function pocakajNaGraficno(): Promise<void> {
+  let naloga = graficnaZasedena();
+  if (!naloga) return;
+  const zacetek = Date.now();
+  log(`Graficno zaseda render (naloga ${naloga}) - cakam.`);
+  while (naloga) {
+    utrip(`cakam na graficno (render naloga ${naloga})`);
+    await spanec(15_000);
+    naloga = graficnaZasedena();
+  }
+  log(`Graficna spet prosta po ${Math.round((Date.now() - zacetek) / 1000)} s - nadaljujem.`);
 }
 
 /**
@@ -427,6 +478,7 @@ async function main(): Promise<void> {
       }
 
       for (const n of naloge) {
+        await pocakajNaGraficno();
         utrip("berem " + n.avtonet_id);
         const slike = slikeOglasa(n.avtonet_id);
         if (slike.length === 0) {

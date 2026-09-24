@@ -47,6 +47,7 @@
     "node_modules",
     "worker-avtonet",
     "worker-podjetja",
+    "worker-render",
     "scripts"
   ]
 }
