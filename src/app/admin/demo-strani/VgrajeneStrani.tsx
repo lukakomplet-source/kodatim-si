@@ -63,7 +63,7 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
   function povezavaDo(item: VgrajenaDemoStran): string {
     if (item.url) return item.url;
     const origin = typeof window === "undefined" ? "" : window.location.origin;
-    return `${origin}/${item.slug}`;
+    return `${origin}${item.pot ?? `/${item.slug}`}`;
   }
 
   function copyLink(item: VgrajenaDemoStran) {
@@ -88,7 +88,7 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
             </p>
             <p className="mt-1 truncate text-xs text-zinc-500">
               <span className="font-mono text-zinc-700">
-                {item.url ? item.url.replace(/^https?:\/\//, "") : `/${item.slug}`}
+                {item.url ? item.url.replace(/^https?:\/\//, "") : (item.pot ?? `/${item.slug}`)}
               </span>
             </p>
             {/* Stranka je izpisana vidno: seznam odgovarja tudi na vprašanje,
@@ -107,7 +107,7 @@ export default function VgrajeneStrani({ items }: { items: readonly VgrajenaDemo
 
           <div className="flex flex-wrap items-center gap-2">
             <a
-              href={item.url ?? `/${item.slug}`}
+              href={item.url ?? item.pot ?? `/${item.slug}`}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"

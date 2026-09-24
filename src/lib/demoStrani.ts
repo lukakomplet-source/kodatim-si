@@ -78,6 +78,11 @@ export type VgrajenaDemoStran = {
    * seznam rešuje: dokončana aplikacija, do katere ni klika od nikoder.
    */
   url?: string;
+  /**
+   * Pot na tej domeni, kadar se aplikacija ne odpre na /<slug> — npr. Render,
+   * ki se odpre v svoji konzoli v adminu, ne na javni strani.
+   */
+  pot?: string;
 };
 
 export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
@@ -107,11 +112,12 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
   },
   {
     slug: "render",
+    pot: "/admin/render",
     naziv: "Render — nekoč in danes (Celje)",
     stranka: null,
     vrsta: "aplikacija",
     opis:
-      "Obnova starih fotografij, drsnik nekoč/danes in 2,5D gibanje. Računa se lokalno na grafični (RTX 3060), nič v oblaku. Javno so vidni samo izdelki z urejenim virom in licenco; konzola je v adminu pod Render.",
+      "Obnova starih fotografij, drsnik nekoč/danes in 2,5D gibanje. Računa se lokalno na grafični (RTX 3060), nič v oblaku. Tu se odpre konzola (nalaganje, naloge, izdelki, objava); javni ogled objavljenega je na kodatim.si/render.",
   },
   {
     slug: "kompletko",

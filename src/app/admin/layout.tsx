@@ -16,7 +16,6 @@ import {
   Mail,
   Activity,
   Factory,
-  Clapperboard,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -115,12 +114,6 @@ const NAV_ITEMS: {
     label: "Nadzor zbiralnikov",
     icon: <Activity className={ICON_CLASS} />,
     permission: "dashboard.view",
-  },
-  {
-    href: "/admin/render",
-    label: "Render",
-    icon: <Clapperboard className={ICON_CLASS} />,
-    permission: "crm.view",
   },
   {
     href: "/admin/demo-strani",
