@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     // izjema eslint javi ~22.000 opozoril, med katerimi se resnične napake v
     // src/ preprosto izgubijo.
     ".next_prejsnja/**",
+    // Objava gradi v .next_nova, preden mapi zamenja -- ravno tako strojno
+    // generirana koda in ravno tako ~22.000 opozoril, ce je ne izpustimo.
+    ".next_nova/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
