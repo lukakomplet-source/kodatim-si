@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/require-admin";
-import { filtriIz, preberiNapredek, preberiPaket } from "@/lib/registerPodjetij";
+import { filtriIz, poizvedbaIz, preberiNapredek, preberiPaket } from "@/lib/registerPodjetij";
+import { skdByCode } from "@/lib/skd";
+import { AiIskanje } from "./AiIskanje";
 import { Ploscice } from "./Ploscice";
 import { Seznam } from "./Seznam";
 
@@ -39,13 +41,28 @@ export default async function RegisterPodjetijPage({
 
   // Isti filtri, kot jih dobi API ob drsenju — ena sama resnica o tem, kaj je
   // v seznamu.
-  const poizvedba = new URLSearchParams();
-  if (filtri.q) poizvedba.set("q", filtri.q);
-  if (filtri.skd) poizvedba.set("skd", filtri.skd);
-  if (filtri.kraj) poizvedba.set("kraj", filtri.kraj);
-  if (filtri.samoEposta) poizvedba.set("eposta", "1");
-  if (filtri.samoBrezDetajlov) poizvedba.set("brez", "1");
-  if (filtri.vkljuciIzginule) poizvedba.set("izginuli", "1");
+  const poizvedba = poizvedbaIz(filtri);
+
+  // Kaj je AI razumel, kot oznake s križcem: vsaka vodi na isto iskanje brez
+  // sebe. Tako se vidi, zakaj je podjetje v seznamu, in napačno razumljen del
+  // se odstrani z enim klikom.
+  const brez = (kljuc: string, vrednost?: string) => {
+    const q = new URLSearchParams(poizvedba);
+    if (vrednost === undefined) q.delete(kljuc);
+    else {
+      const ostane = (q.get(kljuc) ?? "").split(",").filter((x) => x && x !== vrednost);
+      if (ostane.length) q.set(kljuc, ostane.join(","));
+      else q.delete(kljuc);
+    }
+    const aiVprasanje = prvi("ai");
+    if (aiVprasanje) q.set("ai", aiVprasanje);
+    return `/admin/register-podjetij?${q}`;
+  };
+  const oznake: { besedilo: string; href: string }[] = [
+    ...filtri.skdVec.map((k) => ({ besedilo: `Dejavnost ${k} ${skdByCode(k)?.label ?? ""}`.trim(), href: brez("skdv", k) })),
+    ...filtri.besede.map((b) => ({ besedilo: `V imenu: „${b}“`, href: brez("beseda", b) })),
+    ...(filtri.kraj ? [{ besedilo: `Kraj ali občina: ${filtri.kraj}`, href: brez("kraj") }] : []),
+  ];
 
 
   return (
@@ -70,6 +87,25 @@ export default async function RegisterPodjetijPage({
 
       {/* Števci in vrstica na dnu berejo isti vir, da se ne razideta. */}
       <Ploscice zacetni={napredek} />
+
+      <AiIskanje zacetno={prvi("ai")} />
+      {oznake.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-zinc-500">
+            {filtri.skdVec.length && filtri.besede.length ? "Dejavnost ALI beseda v imenu, v kraju:" : "Iščem:"}
+          </span>
+          {oznake.map((o) => (
+            <Link
+              key={o.href + o.besedilo}
+              href={o.href}
+              title="Odstrani"
+              className="flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 font-medium text-accent hover:bg-accent/20"
+            >
+              {o.besedilo} <span aria-hidden>×</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <form method="get" className="mt-5 flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 ring-1 ring-zinc-200">
         <label className="flex flex-col gap-1">
@@ -111,6 +147,8 @@ export default async function RegisterPodjetijPage({
           <input type="checkbox" name="izginuli" value="1" defaultChecked={filtri.vkljuciIzginule} className="h-4 w-4" />
           vključi izginula
         </label>
+        {filtri.skdVec.length > 0 && <input type="hidden" name="skdv" value={filtri.skdVec.join(",")} />}
+        {filtri.besede.length > 0 && <input type="hidden" name="beseda" value={filtri.besede.join(",")} />}
         <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white">
           Filtriraj
         </button>

@@ -43,16 +43,39 @@ export type Filtri = {
   q: string;
   skd: string;
   kraj: string;
+  /**
+   * Več SKD šifer hkrati (npr. 43.910, 43.990) — pride iz AI iskanja.
+   * Skupaj z `besede` tvori en pogoj ALI: podjetje ustreza, če ima eno od teh
+   * dejavnosti ALI eno od besed v nazivu (frčade dela tudi „Krovstvo X s.p.“,
+   * ki je v registru morda pod splošno gradbeno šifro).
+   */
+  skdVec: string[];
+  besede: string[];
   samoEposta: boolean;
   samoBrezDetajlov: boolean;
   vkljuciIzginule: boolean;
 };
+
+/** Šifra ali njen začetek: 43, 43.9, 43.91, 43.910. */
+const VZOREC_SKD = /^\d{2}(\.\d{1,3})?$/;
+
+function seznam(v: string, najvec: number): string[] {
+  return v
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, najvec);
+}
 
 export function filtriIz(preberi: (kljuc: string) => string): Filtri {
   return {
     q: preberi("q").trim(),
     skd: preberi("skd").trim(),
     kraj: preberi("kraj").trim(),
+    skdVec: seznam(preberi("skdv"), 20).filter((k) => VZOREC_SKD.test(k)),
+    besede: seznam(preberi("beseda"), 8)
+      .map((b) => ocistiIskanje(b))
+      .filter((b) => b.length >= 3),
     samoEposta: preberi("eposta") === "1",
     samoBrezDetajlov: preberi("brez") === "1",
     vkljuciIzginule: preberi("izginuli") === "1",
@@ -135,8 +158,16 @@ export async function preberiPaket(
   // postati filter „prazen niz“ — ta bi tiho izločil vrstice z NULL.
   const skd = ocistiVrednost(f.skd);
   if (skd) p = p.ilike("skd", `${skd}%`);
-  const kraj = ocistiVrednost(f.kraj);
-  if (kraj) p = p.ilike("kraj", `%${kraj}%`);
+  // Dejavnost ALI beseda v nazivu (en pogoj); z ostalimi filtri velja IN.
+  const aliDejavnost = [
+    ...f.skdVec.map((k) => `skd.like."${k}%"`),
+    ...f.besede.map((b) => `naziv.ilike."%${b}%"`),
+  ];
+  if (aliDejavnost.length > 0) p = p.or(aliDejavnost.join(","));
+  // Kraj velja tudi za občino: „Vojnik“ zajame še Frankolovo in Novo Celje,
+  // ki imata svojo pošto, a spadata v občino Vojnik.
+  const kraj = ocistiIskanje(f.kraj);
+  if (kraj) p = p.or(`kraj.ilike."%${kraj}%",obcina.ilike."%${kraj}%"`);
   if (f.samoEposta) p = p.not("eposta", "is", null);
   if (f.samoBrezDetajlov) p = p.is("detajli_ob", null);
   // Privzeto samo podjetja, ki so še v registru — izginula so zgodovina.
@@ -262,4 +293,18 @@ export async function preberiNapredek(): Promise<Napredek | null> {
     mirujeS,
     teceZdaj,
   };
+}
+
+/** URL parametri za filtre — stran (prvi paket) in odjemalec (drsenje) jih morata poslati enako. */
+export function poizvedbaIz(f: Filtri): URLSearchParams {
+  const q = new URLSearchParams();
+  if (f.q) q.set("q", f.q);
+  if (f.skd) q.set("skd", f.skd);
+  if (f.kraj) q.set("kraj", f.kraj);
+  if (f.skdVec.length) q.set("skdv", f.skdVec.join(","));
+  if (f.besede.length) q.set("beseda", f.besede.join(","));
+  if (f.samoEposta) q.set("eposta", "1");
+  if (f.samoBrezDetajlov) q.set("brez", "1");
+  if (f.vkljuciIzginule) q.set("izginuli", "1");
+  return q;
 }
