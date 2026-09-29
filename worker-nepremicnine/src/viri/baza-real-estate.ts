@@ -420,9 +420,15 @@ export const adapter: VirAdapter = {
   // Crawl-delay ni naveden; 8 s je naš privzeti razmik za tuje vire.
   omejitve: { zamikMs: 8_000 },
   crawlDelayS: null,
-  // Poln obhod vidi ~1.900 kartic (1215 + 67 + 649) manj prodanih/oddanih;
-  // pod 600 je skoraj gotovo pokvarjeno branje, ne trg.
-  pricakovanRazpon: [600, 6_000],
+  /**
+   * Seznam hrani ARHIV prodanih: od 1.215 "zadetkov" prodaje v Sloveniji je
+   * aktivnih le ~200 na prvih ~8 straneh, od 9. naprej so vse kartice PRODANO
+   * (izmerjeno 29. 9. 2026 na strani 9: 30 od 30). Glavna zanka rezino po dveh
+   * takih straneh pravilno zapusti. Prvi pravi obhod je dal 337 aktivnih
+   * oglasov (198 prodaja SI, 120 oddaja SI, 19 prodaja HR) — prvotna meja 600
+   * je temeljila na napačni oceni in je vir lažno razglasila za pokvarjenega.
+   */
+  pricakovanRazpon: [150, 3_000],
   slikePolitika: "referenca",
   dovoljenArhivSlik: false,
   svezKontekstNaStran: false,
