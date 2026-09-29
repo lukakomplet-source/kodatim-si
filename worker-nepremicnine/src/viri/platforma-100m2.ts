@@ -532,6 +532,101 @@ export function karticeIzHtml(
   return { kartice, zadnjaStran, skupajZadetkov: skupaj };
 }
 
+/**
+ * KLASIČNA PREDLOGA 100m2 ("100kvadratov", brez Next.js): stoja-trade.si.
+ *
+ * Kartica je strežniško izrisan HTML:
+ *   <div class="pzl-item …"> … data-id="543706" …
+ *   <a href="…/nepremicnina/543706-oddaja-stanovanje-…" class="… about">
+ *     <h5>Oddaja<span>OS27571560AP</span></h5>
+ *     <h3>Ljubljana mesto, Vič-Rudnik</h3>
+ *     <h4>Stanovanje | Garsonjera | 2024 | 21 m<sup>2</sup></h4>
+ *     <strong>410 €/mesec</strong>
+ * Lokacija v celoti je v alt slike: "Lokacija: Ljubljana mesto, Vič-Rudnik, Vič"
+ * (regija, četrt/občina, naselje).
+ *
+ * Kartico preslikamo v ISTI zapis (Zapis100m2), ki ga da Next.js različica,
+ * zato normaliziraj() — tip, podtip, enote, regija, prava cena — ostane en sam
+ * in že recenziran. Fotografij ne beremo (bunny.100m2.si, kot pri ostalih).
+ */
+// Stoja piše decimalno PIKO ("136.4 m2") in tisočice s piko ("650.000 €").
+// stevilo() iz parse.ts loči oboje; slepo brisanje pik je iz 136,4 m² naredilo 1.364.
+const SLO_STEVILO = (x: string): number | null => {
+  const n = stevilo(x.replace(/\s/g, ""));
+  return n !== null && n > 0 ? n : null;
+};
+
+export function karticeIzHtmlKlasika(
+  html: string,
+  stran: number,
+  nastavitve: { osnova: string; agencija: string; vir: string }
+): { kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov: number | null } {
+  const kartice: SurovaKartica[] = [];
+  const videni = new Set<string>();
+  for (const kos of html.split('<div class="pzl-item').slice(1)) {
+    const url = kos.match(/href="(https?:\/\/[^"]+\/nepremicnina\/(\d+)-[^"]+)"/);
+    if (!url || videni.has(url[2])) continue;
+    const h5 = kos.match(/<h5>([\s\S]*?)<span>([\s\S]*?)<\/span>\s*<\/h5>/);
+    const posel = goloBesedilo(h5?.[1] ?? "");
+    if (!posel) continue;
+    videni.add(url[2]);
+    const sifra = goloBesedilo(h5?.[2] ?? "") || null;
+    const h3 = goloBesedilo(kos.match(/<h3>([\s\S]*?)<\/h3>/)?.[1] ?? "");
+    const lokacija = (kos.match(/alt="Lokacija:\s*([^"]+)"/)?.[1] ?? h3).split(",").map((x) => x.trim()).filter(Boolean);
+    const deli = goloBesedilo((kos.match(/<h4>([\s\S]*?)<\/h4>/)?.[1] ?? "").replace(/<sup>2<\/sup>/g, "2"))
+      .split("|")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const cena = goloBesedilo(kos.match(/<strong>([\s\S]*?)<\/strong>/)?.[1] ?? "");
+
+    const [vrsta = null, podvrsta = null] = deli.filter((d) => !/^\d{4}$/.test(d) && !/m2$/i.test(d));
+    const leto = deli.find((d) => /^(1[6-9]|20)\d{2}$/.test(d)) ?? null;
+    const kvadrature = deli.filter((d) => /m2$/i.test(d)).map((d) => SLO_STEVILO(d.replace(/m2$/i, "")));
+    const jeZemljisce = /parcel|zemlji/i.test(vrsta ?? "");
+    const regijaText = lokacija.length >= 2 ? lokacija[0] : null;
+    const kljuc = (regijaText ?? "").toLowerCase().replace(/č/g, "c").replace(/š/g, "s").replace(/ž/g, "z").replace(/[^a-z]/g, "");
+    const znanaRegija = kljuc in REGIJE;
+    const cenaSt = SLO_STEVILO((cena.match(/[\d.,]+/)?.[0] ?? "").trim());
+
+    const z: Zapis100m2 = {
+      id: url[2],
+      offer_type_text: posel,
+      internal_ident: sifra,
+      property_type_text: vrsta,
+      property_subtype_text: podvrsta,
+      country: znanaRegija ? "si" : null,
+      region_text: regijaText,
+      district_text: lokacija.length >= 3 ? lokacija[1] : null,
+      city_text: lokacija.length >= 2 ? lokacija[lokacija.length - 1] : (lokacija[0] ?? null),
+      size_correct: !jeZemljisce && kvadrature[0] ? String(kvadrature[0]) : null,
+      size_parcel: jeZemljisce ? (kvadrature[0] ? String(kvadrature[0]) : null) : kvadrature[1] ? String(kvadrature[1]) : null,
+      price: cenaSt !== null ? String(cenaSt) : null,
+      price_correct_text: cena || null,
+      year_built: leto,
+    };
+    const naslov = [posel, vrsta, podvrsta, lokacija.join(", ")].filter(Boolean).join(", ");
+    kartice.push({
+      url: url[1],
+      virId: url[2],
+      lokacija: lokacija.join(", ") || null,
+      naslovVrstica: naslov,
+      opis: [naslov, deli.join(" | "), cena].filter(Boolean).join(". "),
+      cenaBesedilo: cena || null,
+      telefon: null,
+      agencija: nastavitve.agencija,
+      slika: null,
+      stSlik: null,
+      surovo: z as unknown as Record<string, unknown>,
+    });
+  }
+  // "Nepremičnine (665)" v glavi seznama; zadnja stran iz povezav oštevilčenja
+  // (deljenje s kartami te strani bi na zadnji, nepolni strani dalo nesmisel).
+  const skupaj = Number(html.match(/<h1>\s*Nepremičnine\s*(?:<span>)?\s*\((\d+)\)/)?.[1] ?? NaN);
+  const strani = [...html.matchAll(/[?&](?:amp;)?page=(\d+)/g)].map((m) => Number(m[1]));
+  const zadnjaStran = strani.length > 0 ? Math.max(stran, ...strani) : kartice.length > 0 ? stran : null;
+  return { kartice, zadnjaStran, skupajZadetkov: Number.isFinite(skupaj) ? skupaj : null };
+}
+
 export function normaliziraj(k: SurovaKartica, r: Rezina): NormaliziranOglas {
   const z = (k.surovo ?? {}) as Zapis100m2 & { dejstvaOpisa?: DejstvaOpisa | null };
   const d = z.dejstvaOpisa ?? null;
@@ -585,6 +680,11 @@ type Nastavitve100m2 = {
   dnevniProracunVira: number;
   najvecStraniNaRezino: number;
   pravno: string;
+  /** Razmik med zahtevki; privzeto 8 s. Nikoli pod Crawl-delay vira. */
+  zamikMs?: number;
+  crawlDelayS?: number | null;
+  /** "next" (privzeto): RSC tok; "klasika": starejša predloga s .pzl-item. */
+  predloga?: "next" | "klasika";
 };
 
 /**
@@ -607,9 +707,9 @@ function adapter100m2(n: Nastavitve100m2): VirAdapter {
     stran <= 1 ? `${n.osnova}/nepremicnine` : `${n.osnova}/nepremicnine?page=${stran}`;
   return {
     vir: n.vir,
-    // Crawl-delay ni naveden; 8 s je naš najmanjši razmik za tuje vire.
-    omejitve: { zamikMs: 8_000 },
-    crawlDelayS: null,
+    // Privzeto 8 s (naš najmanjši razmik za tuje vire); vir s Crawl-delay dobi svojega.
+    omejitve: { zamikMs: n.zamikMs ?? 8_000 },
+    crawlDelayS: n.crawlDelayS ?? null,
     pricakovanRazpon: n.pricakovanRazpon,
     slikePolitika: "referenca",
     dovoljenArhivSlik: false,
@@ -624,11 +724,13 @@ function adapter100m2(n: Nastavitve100m2): VirAdapter {
     rezine: () => [rezina],
     seznamUrl,
     preberiHttp: async (r, stran, ua) =>
-      karticeIzHtml(await prenesi(seznamUrl(r, stran), ua), stran, {
-        osnova: n.osnova,
-        agencijaId: n.agencijaId,
-        agencija: n.agencija,
-      }),
+      n.predloga === "klasika"
+        ? karticeIzHtmlKlasika(await prenesi(seznamUrl(r, stran), ua), stran, { osnova: n.osnova, agencija: n.agencija, vir: n.vir })
+        : karticeIzHtml(await prenesi(seznamUrl(r, stran), ua), stran, {
+            osnova: n.osnova,
+            agencijaId: n.agencijaId,
+            agencija: n.agencija,
+          }),
     preberiSeznam: async () => {
       throw new Error(`${n.vir} se bere brez brskalnika (preberiHttp)`);
     },
@@ -974,4 +1076,51 @@ export const adapterC21: VirAdapter = {
 };
 
 /** Vsi trije, za register v index.ts (vsak se v nep_viri vpiše IZKLOPLJEN). */
-export const adapterji: VirAdapter[] = [adapterC21, adapterVilaPortoroz, adapterMaklerBled];
+/**
+ * mondreal.com — MONDREAL d.o.o., Ljubljana. 58 oglasov (29. 9. 2026).
+ * Iz drugega kroga presoje (agencije z IZKLJUČNIM inventarjem): 38 % njenih
+ * oglasov ni na nepremicnine.net — tam je deal pogosto prvi ali edini.
+ */
+export const adapterMondreal: VirAdapter = adapter100m2({
+  vir: "mondreal.com",
+  osnova: "https://mondreal.com",
+  agencijaId: "3",
+  agencija: "MONDREAL d.o.o. (mondreal.com)",
+  pricakovanRazpon: [11, 400],
+  // 6 strani po 11 oglasov; 8 na dan pusti rezervo za rast.
+  dnevnaMejaStrani: 8,
+  dnevniProracunVira: 10,
+  najvecStraniNaRezino: 15,
+  pravno:
+    "robots.txt (29. 9. 2026): User-Agent * Allow /, brez Crawl-delay in Content-Signal. Edini pogoji so posredniški " +
+    "splošni pogoji MONDREAL d.o.o. za naročnike; o samodejnem dostopu, zbirkah ali ponovni rabi ne govorijo. Presoja " +
+    "in dva neodvisna skeptika (pravni + tehnični, 29. 9. 2026) omejitve niso našli — to je odsotnost prepovedi, ne " +
+    "izrecno dovoljenje. Hranimo samo dejstva s povezavo na izvirnik, brez fotografij in besedil opisov.",
+});
+
+/**
+ * stoja-trade.si — Stoja trade d.o.o. 665 oglasov (29. 9. 2026), 31 % jih ni
+ * na nepremicnine.net. Klasična predloga platforme in Crawl-delay: 30.
+ */
+export const adapterStojaTrade: VirAdapter = adapter100m2({
+  vir: "stoja-trade.si",
+  osnova: "https://www.stoja-trade.si",
+  agencijaId: "97",
+  agencija: "Stoja trade d.o.o. (stoja-trade.si)",
+  predloga: "klasika",
+  // robots.txt: Crawl-delay 30 -> 35 s, da smo zanesljivo nad njim.
+  zamikMs: 35_000,
+  crawlDelayS: 30,
+  pricakovanRazpon: [17, 2_000],
+  // ~40 strani po ~17 oglasov. 20 na dan (~12 minut branja) = obhod v dveh dneh.
+  dnevnaMejaStrani: 20,
+  dnevniProracunVira: 24,
+  najvecStraniNaRezino: 60,
+  pravno:
+    "robots.txt (29. 9. 2026): User-agent * Allow /, Crawl-delay: 30 (spoštujemo s 35 s). Spletišče nima ločenih pogojev " +
+    "uporabe; povezava \"Pogoji uporabe\" odpre PDF s splošnimi pogoji poslovanja v prometu z nepremičninami, ki o " +
+    "samodejnem dostopu, zbirkah ali ponovni rabi ne govori (prebran v celoti). Presoja in dva neodvisna skeptika " +
+    "(29. 9. 2026) omejitve niso našli. Hranimo samo dejstva s povezavo na izvirnik, brez fotografij.",
+});
+
+export const adapterji: VirAdapter[] = [adapterC21, adapterVilaPortoroz, adapterMaklerBled, adapterMondreal, adapterStojaTrade];

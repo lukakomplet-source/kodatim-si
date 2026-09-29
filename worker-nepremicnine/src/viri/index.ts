@@ -9,7 +9,7 @@ import { adapter as kvadrat } from "./kvadrat.js";
 // tiste, ki potrebujejo dovoljenje). Vsi se berejo BREZ brskalnika (preberiHttp).
 import { adapter as croatiaEstate } from "./croatia-estate.js";
 import { adapter as bazaRealEstate } from "./baza-real-estate.js";
-import { adapterC21, adapterVilaPortoroz, adapterMaklerBled } from "./platforma-100m2.js";
+import { adapterC21, adapterVilaPortoroz, adapterMaklerBled, adapterMondreal, adapterStojaTrade } from "./platforma-100m2.js";
 import { adapter as kwSlovenia } from "./kw-slovenia.js";
 import { adapter as agentiNep } from "./agenti-nep.js";
 import { adapter as thinkslovenia } from "./thinkslovenia.js";
@@ -53,6 +53,10 @@ export const VIRI: VirAdapter[] = [
   adapterC21,
   adapterVilaPortoroz,
   adapterMaklerBled,
+  // Drugi krog (29. 9.): agenciji z IZKLJUČNIM inventarjem — 38 % oz. 31 %
+  // njunih oglasov ni na nepremicnine.net; tam se deal pokaže prvi.
+  adapterMondreal,
+  adapterStojaTrade,
   kwSlovenia,
   agentiNep,
   acasa,
