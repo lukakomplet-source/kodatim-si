@@ -166,6 +166,19 @@ export type VirAdapter = {
    * čeprav je še na trgu (recenzija 29. 9. 2026).
    */
   izginotjaZanesljiva?: boolean;
+  /**
+   * Obseg vira po državi: izginotja po seznamih presojaj samo za oglase te
+   * države (glej oznaciIzginule), v preverbi obstoja 2. faze imajo prednost.
+   */
+  izginotjaDrzava?: string;
+  /**
+   * Največ zadetkov, ki jih REGIONALNA rezina lahko ima. Več pomeni, da vir
+   * poti ne pozna in vrača cel katalog — 29. 9. 2026 sta "goriska" in
+   * "obalno-kraska" na nepremicnine.net vrnili po 22.678 stanovanj (Ljubljana
+   * 653) in 53.673 oglasov je dobilo napačno regijo. Taka rezina se preskoči
+   * z zapisom napake, oglasi iz nje se ne shranijo.
+   */
+  najvecZadetkovNaRezino?: number;
   /** Koliko ur počakamo, če vir vseeno zavrne (spoštovanje blokade). */
   hlajenjeUr?: number;
   /**

@@ -60,8 +60,22 @@ export function vseRezine(): Rezina[] {
   return out;
 }
 
+/**
+ * POT NA STRANI NI VEDNO NAŠA OZNAKA REGIJE. Vir poti "goriska" in
+ * "obalno-kraska" ne pozna in zanju vrne CEL katalog (29. 9. 2026: 22.678
+ * stanovanj v obeh, 653 v Ljubljani) — tako je 53.673 oglasov iz Poreča,
+ * Zagreba in Ljubljane dobilo regijo "goriska". Poti za obe regiji sta na
+ * strani poimenovani po Primorski; seznam regij na strani nam vrača 403,
+ * zato ju preveri varovalka najvecZadetkovNaRezino: če je pot spet napačna,
+ * se rezina preskoči z zapisom v nep_napake in ne shrani ničesar.
+ */
+const POT_REGIJE: Record<string, string> = {
+  goriska: "severna-primorska",
+  "obalno-kraska": "juzna-primorska",
+};
+
 export function seznamUrl(r: Rezina, stran: number): string {
-  const osnova = `https://www.nepremicnine.net/oglasi-${r.posel}/${r.regija}/${r.tip}/`;
+  const osnova = `https://www.nepremicnine.net/oglasi-${r.posel}/${POT_REGIJE[r.regija] ?? r.regija}/${r.tip}/`;
   return stran <= 1 ? osnova : `${osnova}${stran}/`;
 }
 
@@ -401,6 +415,12 @@ export const adapter: VirAdapter = {
   dnevnaMejaStrani: 400,
   dnevniProracunVira: 1600,
   pricakovanRazpon: PRICAKOVAN_RAZPON,
+  // Po popravku poti regij seznami berejo samo Slovenijo; hrvaške oglase tega
+  // vira preverja le 2. faza, zato jih izginotja po seznamih ne smejo zadeti.
+  izginotjaDrzava: "SI",
+  // Prave regionalne rezine so imele 29. 9. 2026 največ 989 zadetkov
+  // (oddaja/ljubljana-mesto/poslovni-prostor), cel katalog pa 1.938-22.909.
+  najvecZadetkovNaRezino: 1500,
   slikePolitika: "referenca",
   svezKontekstNaStran: true,
   // robots.txt tega vira Crawl-delay NE navaja (preverjeno 20.-21. 8. 2026);

@@ -12,6 +12,7 @@
     "test:nastanitev": "tsx src/test-nastanitev.ts",
     "obogati:nastanitve": "tsx src/obogati-nastanitve.ts",
     "uvoz:etn": "tsx src/uvoz-etn.ts",
+    "popravi:regije": "tsx src/popravi-regije.ts",
     "uvoz:hr-nastanitve": "tsx src/uvoz-hr-nastanitve.ts",
     "ponovne:objave": "tsx src/zazeni-ponovne-objave.ts",
     "test:ponovne-objave": "tsx src/test-ponovne-objave.ts",

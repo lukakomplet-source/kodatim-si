@@ -215,21 +215,39 @@ export async function zajemiDetajle(
    * iskalnik ponuja naprej in vsak tak zadetek je izgubljen čas uporabnika.
    */
   const zaObstoj = Math.max(1, Math.floor(kvota / 4));
-  const [obstojRes, manjkaRes, noviRes, stariRes] = await Promise.all([
+  /**
+   * Vir z obsegom države (nepremicnine.net: seznami berejo samo Slovenijo)
+   * ima zunaj obsega na tisoče oglasov, ki jih seznam nikoli več ne pokaže
+   * (29. 9. 2026: 52.000 hrvaških). Po last_seen so vedno najstarejši, zato
+   * bi zasedli vso preverbo obstoja. Oglasi v obsegu gredo prvi, preostanek
+   * dobijo drugi — tudi te je treba preverjati, sicer jih iskalnik kaže
+   * kot aktivne, ko so že prodani.
+   */
+  const [obstojVObseguRes, obstojRes, manjkaRes, noviRes, stariRes] = await Promise.all([
+    vir.izginotjaDrzava
+      ? preverbaObstoja().eq("drzava", vir.izginotjaDrzava).order("last_seen", { ascending: true }).limit(zaObstoj)
+      : Promise.resolve({ data: [], error: null }),
     preverbaObstoja().order("last_seen", { ascending: true }).limit(zaObstoj),
     osnova().is("povrsina_m2", null).order("cena_eur", { ascending: false, nullsFirst: false }).limit(kvota),
     osnova().order("first_seen", { ascending: false }).limit(kvota),
     osnova().order("first_seen", { ascending: true }).limit(zaRep),
   ]);
+  if (obstojVObseguRes.error) throw new Error(`Branje vrste za preverbo obstoja ni uspelo: ${obstojVObseguRes.error.message}`);
   if (obstojRes.error) throw new Error(`Branje vrste za preverbo obstoja ni uspelo: ${obstojRes.error.message}`);
   if (manjkaRes.error) throw new Error(`Branje prednostne vrste ni uspelo: ${manjkaRes.error.message}`);
   if (noviRes.error) throw new Error(`Branje vrste detajlov ni uspelo: ${noviRes.error.message}`);
   if (stariRes.error) throw new Error(`Branje repa vrste ni uspelo: ${stariRes.error.message}`);
 
+  const obstoj = new Map<string, Vrstica>();
+  for (const v of [...((obstojVObseguRes.data ?? []) as Vrstica[]), ...((obstojRes.data ?? []) as Vrstica[])]) {
+    if (obstoj.size >= zaObstoj) break;
+    obstoj.set(v.id, v);
+  }
+
   // Razredi se prekrivajo; vrstni red vstavljanja določi prednost.
   const poId = new Map<string, Vrstica>();
   for (const v of [
-    ...((obstojRes.data ?? []) as Vrstica[]),
+    ...obstoj.values(),
     ...((manjkaRes.data ?? []) as Vrstica[]),
     ...((stariRes.data ?? []) as Vrstica[]),
     ...((noviRes.data ?? []) as Vrstica[]),
@@ -241,7 +259,7 @@ export async function zajemiDetajle(
   log("info", "prednostna vrsta 2. faze", {
     vir: vir.vir,
     brezPovrsine: (manjkaRes.data ?? []).length,
-    zaPreverboObstoja: (obstojRes.data ?? []).length,
+    zaPreverboObstoja: obstoj.size,
     skupajVKrogu: vrsta.length,
   });
   const { count: skupajCaka } = await db

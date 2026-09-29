@@ -396,6 +396,31 @@ async function pregledSeznamov(
               zadnjaStran,
             });
           }
+          // Rezina, ki vrača cel katalog (vir poti ne pozna): preskoči, ne shrani.
+          if (
+            stran === 1 &&
+            vir.najvecZadetkovNaRezino !== undefined &&
+            skupajZadetkov !== null &&
+            skupajZadetkov !== undefined &&
+            skupajZadetkov > vir.najvecZadetkovNaRezino
+          ) {
+            log("warn", "rezina vraca cel katalog - preskocena", {
+              vir: vir.vir,
+              rezina: rezina.oznaka,
+              skupajZadetkov,
+              meja: vir.najvecZadetkovNaRezino,
+            });
+            await db.from("nep_napake").insert({
+              vir: vir.vir,
+              url: vir.seznamUrl(rezina, 1),
+              tip: "seznam",
+              sporocilo: `Rezina ${rezina.oznaka} javi ${skupajZadetkov} zadetkov (meja ${vir.najvecZadetkovNaRezino}) — pot je verjetno napačna in vrača cel katalog; oglasov ne shranimo, sicer bi dobili napačno regijo.`,
+            });
+            // Pravih oglasov te regije nismo videli: krog ni popoln, sicer bi
+            // izginotja zadela vse oglase regije.
+            popoln = false;
+            break;
+          }
 
           /**
            * PRAZNA PRVA STRAN — dve stanji, ki sta na videz enaki.
@@ -737,7 +762,7 @@ async function pregledSeznamov(
   if (popoln && vir.izginotjaZanesljiva !== false && videnihVKrogu >= vir.pricakovanRazpon[0]) {
     // Mejna vrednost je začetek KROGA, ne tega zagona: oglas, ki smo ga videli
     // pred desetimi dnevi na drugem koncu rotacije, ni izginil.
-    izginulih = await oznaciIzginule(db, zacetekKroga ?? zacetek, vir.vir);
+    izginulih = await oznaciIzginule(db, zacetekKroga ?? zacetek, vir.vir, vir.izginotjaDrzava);
   } else if (!delnaRezina && !blokada && !napaka && videnihVKrogu < vir.pricakovanRazpon[0]) {
     log("warn", "premalo najdenih - verjetno sprememba selektorjev", {
       vir: vir.vir,

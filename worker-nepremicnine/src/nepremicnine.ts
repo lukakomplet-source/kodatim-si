@@ -215,14 +215,15 @@ export async function naloziKraje(db: Db): Promise<Map<string, KrajVrstica[]>> {
 /**
  * Regije, kjer tuj istoimenski kraj skoraj zagotovo pomeni napačen zadetek.
  *
- * "obalno-kraska" NAMENOMA ni na seznamu: vir pod to regijo objavlja tudi vse
- * tujino (Istra, Zagreb, Turčija, Ciper), zato bi jih pravilo pustilo brez
- * koordinat. Tam se zanesemo na to, da najdiKraj ob enakem imenu izbere
- * slovenski kraj.
+ * "obalno-kraska" je bila prej NAMENOMA izpuščena, ker so pod njo prihajali
+ * tudi Istra, Zagreb, Turčija, Ciper. Vzrok ni bil vir, ampak naša napačna pot
+ * (29. 9. 2026: "goriska" in "obalno-kraska" sta vračali cel katalog). Po
+ * popravku poti (POT_REGIJE v viri/nepremicnine-net.ts) in popravi-regije.ts
+ * sta obe regiji spet samo slovenski.
  */
 const SI_REGIJE = new Set([
   "ljubljana-mesto", "ljubljana-okolica", "podravska", "savinjska", "gorenjska",
-  "dolenjska", "notranjska", "goriska", "koroska",
+  "dolenjska", "notranjska", "obalno-kraska", "goriska", "koroska",
   "pomurska", "posavska", "zasavska",
 ]);
 
@@ -231,15 +232,17 @@ const REGIJA_REZERVA: Record<string, string> = { "ljubljana-mesto": "ljubljana" 
 
 /** Oglasom brez koordinat pripiše centroid kraja (označeno kot približno). */
 export async function geokodirajOglase(db: Db, kraji: Map<string, KrajVrstica[]>): Promise<number> {
-  const brez = await preberiVse<{ id: string; kraj: string | null; regija: string | null }>(
-    db, "nep_oglasi", "id, kraj, regija", (q) => q.is("lat", null).not("kraj", "is", null)
+  const brez = await preberiVse<{ id: string; kraj: string | null; regija: string | null; drzava: string | null }>(
+    db, "nep_oglasi", "id, kraj, regija, drzava", (q) => q.is("lat", null).not("kraj", "is", null)
   );
   let zadetih = 0;
   for (let i = 0; i < brez.length; i += 50) {
     const paket = brez.slice(i, i + 50);
     await Promise.all(
       paket.map(async (o) => {
-        let k = o.kraj ? najdiKraj(o.kraj, kraji) : null;
+        // Ob soimenjaku v obeh državah odloča država oglasa, kadar je znana
+        // (popravi-regije.ts); sicer kot doslej slovenski kraj.
+        let k = o.kraj ? najdiKraj(o.kraj, kraji, o.drzava ?? "SI") : null;
         // Raje brez koordinate kot z napačno: oglas iz slovenske regije, ki bi
         // se ujel le s tujim istoimenskim krajem, ostane negeokodiran.
         if (k && o.regija && SI_REGIJE.has(o.regija) && k.drzava !== "SI") k = null;
@@ -247,7 +250,7 @@ export async function geokodirajOglase(db: Db, kraji: Map<string, KrajVrstica[]>
         if (!k) return;
         const { error } = await db
           .from("nep_oglasi")
-          .update({ lat: k.lat, lng: k.lng, lokacija_natancnost: "priblizno" })
+          .update({ lat: k.lat, lng: k.lng, lokacija_natancnost: "priblizno", ...(o.drzava ? {} : { drzava: k.drzava }) })
           .eq("id", o.id);
         if (!error) zadetih += 1;
       })

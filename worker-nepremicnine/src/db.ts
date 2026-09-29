@@ -259,16 +259,25 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
  * drugih portalov za izginule. Varovalka >40 % in dvo-udarčno pravilo kot
  * pri avtomobilih.
  */
-export async function oznaciIzginule(db: Db, zacetekPregleda: string, vir: string): Promise<number> {
+/**
+ * `drzava`: presojaj samo oglase te države (in tiste brez države). Vir, ki na
+ * seznamih bere samo del svojega kataloga — nepremicnine.net po popravku poti
+ * regij samo Slovenijo —, bi sicer vsak hrvaški oglas razglasil za izginulega.
+ */
+export async function oznaciIzginule(db: Db, zacetekPregleda: string, vir: string, drzava?: string): Promise<number> {
+  // PostgREST filter; brez države pogoj, ki je vedno resničen, da veriga ostane enaka.
+  const omeji = drzava ? `drzava.eq.${drzava},drzava.is.null` : "vir.not.is.null";
   const { count: aktivnih } = await db
     .from("nep_oglasi")
     .select("*", { count: "exact", head: true })
     .eq("vir", vir)
+    .or(omeji)
     .eq("status", "aktiven");
   const { count: neVidenih } = await db
     .from("nep_oglasi")
     .select("*", { count: "exact", head: true })
     .eq("vir", vir)
+    .or(omeji)
     .eq("status", "aktiven")
     .lt("last_seen", zacetekPregleda);
   // Kdor je spet viden, mu odsotnost pobrišemo — VEDNO, tudi če danes ni
@@ -278,6 +287,7 @@ export async function oznaciIzginule(db: Db, zacetekPregleda: string, vir: strin
     .from("nep_oglasi")
     .update({ manjka_od: null })
     .eq("vir", vir)
+    .or(omeji)
     .gte("last_seen", zacetekPregleda)
     .not("manjka_od", "is", null);
 
@@ -293,6 +303,7 @@ export async function oznaciIzginule(db: Db, zacetekPregleda: string, vir: strin
     .from("nep_oglasi")
     .select("id, manjka_od")
     .eq("vir", vir)
+    .or(omeji)
     .eq("status", "aktiven")
     .lt("last_seen", zacetekPregleda)
     .not("manjka_od", "is", null)
@@ -317,6 +328,7 @@ export async function oznaciIzginule(db: Db, zacetekPregleda: string, vir: strin
     .from("nep_oglasi")
     .update({ manjka_od: now })
     .eq("vir", vir)
+    .or(omeji)
     .eq("status", "aktiven")
     .lt("last_seen", zacetekPregleda)
     .is("manjka_od", null);
