@@ -165,3 +165,40 @@ transparent link to the original notice, and not to store personal data. If a do
 
 Kind regards,
 `[Name, title]` · `[Company, address]` · `[e-mail, phone]`
+
+---
+
+# Agencije z izključnim inventarjem (drugi krog, 29. 9. 2026)
+
+Po naših podatkih se deal pokaže **prvi** tam, kjer oglasa ni na nepremicnine.net. Delež aktivnih oglasov posamezne
+agencije, ki jih nepremicnine.net nima: RE/MAX 78 %, Ljubljana nepremičnine 63 %, INSA 48 %, Mesto nepremičnin 41 %,
+Borza nepremičnin 32 %. Pri vseh petih je tehnični dostop odprt, pravno obvestilo pa rabo omejuje na nekomercialno
+ali pogojev ni mogoče prebrati — zato prosimo. (MONDREAL in Stoja trade sta presojo prestala in sta že v zbiralniku.)
+
+| Agencija | Oglasov | Zakaj dovoljenje | Kontakt |
+|---|---|---|---|
+| Ljubljana nepremičnine d.o.o. | ~5.700 (SI + HR) | pravno obvestilo: „le v nekomercialne namene … ne sme se jih kopirati … brez pisnega dovoljenja" | info@ljn.si, 01 244 50 00 |
+| INSA d.o.o. (Maribor) | 65 | „vsaka druga oblika uporabe … v komercialne namene je prepovedana … brez predhodnega pisnega dovoljenja" | nepremicnine@insa.si, 02 33 05 800 |
+| Mesto nepremičnin d.o.o. | 436 | stran „Avtorske pravice": samo nekomercialna, osebna raba | info@mestonepremicnin.si |
+| Borza nepremičnin d.o.o. | ~48 | pogoji v PDF vrnejo HTTP 403 — ni jih mogoče prebrati; Crawl-delay 120 | info@b-n.si, 03 492 42 22 |
+| RE/MAX Slovenija | 2.518 | trenutnih pogojev ni (SPA brez strani s pogoji); zadnji berljivi (2013) prepovedujejo obdelavo podatkov | preveri na re-max.si |
+
+## Pismo 7 — agenciji (enak osnutek za vse zgoraj, zamenjaj ime)
+
+**Zadeva:** Prošnja za dovoljenje za prikaz vaših oglasov v iskalniku SBN Nepremičnine
+
+Spoštovani,
+
+v podjetju `[naziv podjetja]` razvijamo SBN Nepremičnine, iskalnik, ki kupcem na enem mestu pokaže ponudbo nepremičnin
+in vsakega obiskovalca pošlje na izvirni oglas. Vaši oglasi so pogosto objavljeni samo na vaši strani — prav zato bi jih
+radi pokazali, a vaše pravno obvestilo rabo omejuje na nekomercialne namene, zato vas prosimo za dovoljenje.
+
+Kako bi jih prikazovali: samo dejstva (vrsta, lokacija, površina, cena), **vsak zadetek s povezavo na vaš oglas**, brez
+kopiranja fotografij in besedil opisov, brez podatkov o agentih. Stran bi obiskali enkrat na dan, z iskreno
+identifikacijo `KodaTimBot/1.0 (+https://kodatim.si)` in razmikom, ki ga določite vi. Na zahtevo takoj prenehamo in
+izbrišemo. Če vam je ljubši izvoz (XML/feed), ga z veseljem uporabimo namesto branja strani.
+
+Za vas to pomeni dodatne obiske kupcev na vaših oglasih, brez stroškov.
+
+Lep pozdrav,
+`[ime, priimek, funkcija]` · `[naziv podjetja]` · `[e-pošta, telefon]`
