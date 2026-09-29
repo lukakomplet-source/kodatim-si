@@ -19,6 +19,13 @@ export type SurovaKartica = {
   agencija: string | null;
   slika: string | null;
   stSlik: number | null;
+  /**
+   * Strukturirani podatki vira (API, RSS, RSC), kakor jih je vir poslal. Viri
+   * brez brskalnika imajo število sob, zemljišče ali oddaljenost od morja kot
+   * POLJE — škoda bi jih bilo zliti v besedilo in nato iz njega ugibati.
+   * normaliziraj() jih prebere; v bazo gredo samo prek raw.
+   */
+  surovo?: Record<string, unknown>;
 };
 
 /** Enota dela: en seznam z lastno paginacijo. Adapter vanjo skrije svoje. */
@@ -149,6 +156,16 @@ export type VirAdapter = {
    * števcu strani stala dve tretjini kataloga.
    */
   razvrsceniPoNovosti?: boolean;
+  /**
+   * Ali iz tega, da oglasa v krogu nismo videli, smemo sklepati, da ga ni več.
+   *
+   * Privzeto da. NE pri viru, katerega seznam pokaže le del kataloga in se do
+   * preostanka pride samo po poti, ki je ne uporabljamo — immozentral.com
+   * pokaže prvih 12 oglasov na pogled, ostalo je za POST obrazcem. Tam bi bil
+   * vsak oglas nad dvanajstim ob sklenjenem krogu razglašen za izginulega,
+   * čeprav je še na trgu (recenzija 29. 9. 2026).
+   */
+  izginotjaZanesljiva?: boolean;
   /** Koliko ur počakamo, če vir vseeno zavrne (spoštovanje blokade). */
   hlajenjeUr?: number;
   /**
@@ -179,7 +196,31 @@ export type VirAdapter = {
   /** Kaj o zajemu pravijo pogoji uporabe tega vira — vidno v konzoli. */
   pravno?: string;
   rezine(): Rezina[];
+  /**
+   * Pri virih brez brskalnika je to naslov, ki se izpiše v dnevniku in v
+   * nep_napake — zahtevek sam sestavi preberiHttp (lahko je POST s telesom).
+   */
   seznamUrl(r: Rezina, stran: number): string;
+  /**
+   * VIR BREZ BRSKALNIKA: dokumentiran javni API, vir RSS ali strežniško izrisan
+   * HTML, ki ga dobi vsak odjemalec enako. Seznam se prebere z enim HTTP
+   * zahtevkom. Glavna zanka ga pokliče NAMESTO page.goto + preberiSeznam,
+   * z istim skupnim ritmom (pocakajNaVrsto), istim dnevnim proračunom in
+   * isto obravnavo blokad — HTTP ni izjema od vljudnosti, je le cenejši za
+   * oba konca: vir ne izriše JavaScripta za nas, mi ne zaženemo Chromiuma
+   * (~300 MB na stroju, ki je pomnilniško na robu).
+   *
+   * NE za notranje poti, najdene v JavaScriptu strani — to ni javni API (glej
+   * bolha: api.bolha.com; sodnedrazbe.si: /public/publication/list).
+   *
+   * Blokado javi tako, da vrže Error s "HTTP 403" ali "HTTP 429" v sporočilu;
+   * `ua` je iskrena identiteta iz identiteta.ts in jo MORA poslati.
+   */
+  preberiHttp?(
+    r: Rezina,
+    stran: number,
+    ua: string
+  ): Promise<{ kartice: SurovaKartica[]; zadnjaStran: number | null; skupajZadetkov?: number | null }>;
   /**
    * `skupajZadetkov` je število, ki ga o rezini pove VIR SAM (npr.
    * "Št. ustreznih oglasov: 0"). Loči dve stanji, ki sta na videz enaki in

@@ -106,3 +106,154 @@ export function cenaIz(besedilo: string): number | null {
   const n = stevilo(m[1]);
   return n !== null && n > 0 ? n : null;
 }
+
+/**
+ * NASTANITVENI OBJEKTI — hotel, penzion, gostišče, apartmajska hiša …
+ *
+ * Povod: uporabnik išče "hotele nad 10 ali 12 enot" za booking. V bazi je bilo
+ * 28. 9. 2026 med 79.511 aktivnimi oglasi NIČ takih z zaznanimi ≥10 enotami —
+ * ne zato, ker jih ni, ampak ker je izOpisa() poznal samo "stanovanja",
+ * "apartmaje" in "enote". Hotel ne piše "ima 25 enot", piše "hotel s 25
+ * sobami", "13 enot / 28 postelj", "penzion z restavracijo in 11 sobami".
+ *
+ * Sobe štejejo kot enote SAMO v nastanitvenem kontekstu. "Hiša s 5 sobami" je
+ * ena družinska hiša, ne pet enot; "penzion z 11 sobami" pa je enajst enot za
+ * oddajo. Zato se najprej ugotovi vrsta objekta, šele nato se štejejo sobe.
+ *
+ * Pasti, izmerjene na resničnih oglasih:
+ *   - "STUDIO APARTMA. BLIŽINA HOTELA BELVEDERE"  -> stanovanje, ne hotel
+ *   - "stanovanje v luksuznem aparthotelu"          -> ena enota v hotelu
+ *   - "ZAZIDLJIVA PARCELA NAD HOTELOM METROPOL"      -> parcela
+ *   - "Dnevna soba z 2 ležišči" (projekt vile)       -> ni nastanitev
+ * Beseda za objekt, pred katero stoji "bližina", "nad", "ob", "v" ..., opisuje
+ * SOSEDA in ne predmeta prodaje.
+ */
+export type Nastanitev = {
+  /** hotel | penzion | hostel | motel | apartmajska_hisa | turisticna_kmetija | gostisce | nastanitveni_objekt */
+  vrsta: string | null;
+  sob: number | null;
+  apartmajev: number | null;
+  /** Ležišča/postelje — niso enote, a so edina številka, ki jo marsikateri oglas pove. */
+  lezisc: number | null;
+  /** Nastanitvene enote, ki jih oglas TRDI (sobe, apartmaji, "N enot"). */
+  enot: number | null;
+  /** Ocena enot iz ležišč (÷ 2,5), kadar oglas enot ne pove. Nikoli trditev. */
+  enotOcena: number | null;
+};
+
+const VRSTE_NASTANITVE: [string, RegExp][] = [
+  // Vrstni red je prednost: "gostinski objekt, hotel, apartmaji" je hotel.
+  ["hotel", /(?:apart[\s-]?)?hotel(?:a|u|om|i|ov|e)?\b|hotelsk[a-zčšž]*\s+(?:kompleks|objekt|poslopj|sob)|\bgarni\b/g],
+  ["penzion", /\bpenzion[a-zčšž]*/g],
+  ["hostel", /\bhostel[a-zčšž]*/g],
+  ["motel", /\bmotel[a-zčšž]*/g],
+  [
+    "apartmajska_hisa",
+    // Brez "turistični objekt": to je siolova KATEGORIJA ("Turistični objekt,
+    // Vikend"), ki je apartmajsko hišo naredila iz vsakega vikenda. "Hiša z
+    // apartmajem" (ednina) je ena hiša; šteje šele množina ali število ≥ 3.
+    /apartmajsk[a-zčšž]*\s+(?:hiš|objekt|vil|kompleks|naselj)|(?:hiš|vil)[a-zčšž]*\s+[sz]\s+apartma(?:ji|jema)\b/g,
+  ],
+  ["turisticna_kmetija", /turističn[a-zčšž]*\s+kmetij/g],
+  ["gostisce", /\bgostišč[a-zčšž]*|\bgostisc[a-z]*|gostinsk[a-zčšž]*\s+(?:objekt|nastanitv)/g],
+  // "kamp" namenoma NI vrsta: v bazi je bil v 20 zadetkih skoraj vedno sosed
+  // ("100 m od Kampa Natura"), možnost ("kamp prikolica") ali ena hiška v
+  // kampu — natančnost prenizka za filter, ki obljublja nastanitveni objekt.
+  ["nastanitveni_objekt", /nastanitven[a-zčšž]*\s+(?:objekt|kapacitet|enot)|nočitven[a-zčšž]*\s+kapacitet|sob[a-z]*\s+za\s+(?:oddajo|goste|turiste)/g],
+];
+
+/**
+ * Kar stoji tik pred besedo in pove, da gre za soseda: "v bližini hotela",
+ * "nad hotelom", "200 m od hotela", "v luksuznem aparthotelu".
+ */
+const SOSED_PRED = /(?:bližin[a-zčšž]*|blizu|nasproti|poleg|zraven|\bnad|\bpod|\bob|\bpri|\bod|\bdo|\bza|\bv(?:\s+(?:luksuzn|nov|prenovljen|znan|priljubljen)[a-zčšž]*)?)\s+$/;
+
+/**
+ * Pri hiši, parceli in vikendu mora vrsta stati NA ZAČETKU (naslov in prvi
+ * stavki). Tam oglas pove, kaj prodaja; dlje v opisu so sosedje ("Hotel Union
+ * je pet minut stran"). Poslovni in počitniški objekti tega pogoja nimajo, ker
+ * je pri njih hotel pogosto šele v tretjem stavku.
+ */
+const SAMO_ZACETEK = new Set(["hisa", "posest", "vikend"]);
+const ZACETEK_ZNAKOV = 150;
+
+/**
+ * MOŽNOST NI TRDITEV. "možnost ureditve 15 enot", "projekt za 20 apartmajev",
+ * "could be converted into 12 rooms" niso enote, ki OBSTAJAJO — so ideja
+ * prodajalca. izOpisa() to loči že od začetka (stEnot proti stEnotOcena); ta
+ * detektor je prvotno vse zapisal kot trditev, kar je recenzent adapterja
+ * thinkslovenia.com ujel na "možnost 15 enot" → st_enot 15 (29. 9. 2026).
+ */
+const MOZNOST_PRED = /(možnost|mogoč|lahko|\bbi\s|potencial|predvid|uredit|preuredit|projekt|dovoljen|zazidal|izdela|possib|could|potential|option|project|planned|permit|convert)/;
+
+function vseStevilke(t: string, re: RegExp, min: number, max: number): { trditev: number | null; moznost: number | null } {
+  let trditev: number | null = null;
+  let moznost: number | null = null;
+  for (const m of t.matchAll(re)) {
+    const n = Number(m[1]);
+    if (!Number.isFinite(n) || n < min || n > max) continue;
+    const kje = m.index ?? 0;
+    if (MOZNOST_PRED.test(t.slice(Math.max(0, kje - 40), kje))) {
+      if (moznost === null || n > moznost) moznost = n;
+    } else if (trditev === null || n > trditev) trditev = n;
+  }
+  return { trditev, moznost };
+}
+
+export function nastanitevIz(besedilo: string, tip?: string | null): Nastanitev {
+  const prazno: Nastanitev = { vrsta: null, sob: null, apartmajev: null, lezisc: null, enot: null, enotOcena: null };
+  // Eno stanovanje ali garaža ni nastanitveni objekt, kakor koli ga opis hvali
+  // ("stanovanje v aparthotelu", "studio v bližini hotela").
+  if (tip === "stanovanje" || tip === "garaza") return prazno;
+  const t = ` ${besedilo.toLowerCase().replace(/\s+/g, " ")} `;
+
+  let vrsta: string | null = null;
+  for (const [ime, re] of VRSTE_NASTANITVE) {
+    for (const m of t.matchAll(re)) {
+      const kje = m.index ?? 0;
+      if (SOSED_PRED.test(t.slice(Math.max(0, kje - 28), kje))) continue;
+      if (tip && SAMO_ZACETEK.has(tip) && kje > ZACETEK_ZNAKOV) continue;
+      vrsta = ime;
+      break;
+    }
+    if (vrsta) break;
+  }
+
+  // (?<![\d.,]) — "2004 sobe" ne sme dati 004 sob in "1.466 m²" ne 466.
+  const B = "[a-zčšžćđ]+\\s+";
+  const sobV = vseStevilke(t, new RegExp(`(?<![\\d.,])(\\d{1,3})\\s*(?:${B}){0,2}sob(?:ami|ah|e)?\\b`, "g"), 1, 500);
+  const apartmajevV = vseStevilke(
+    t,
+    // Samo množina: "5 apartmajev", "3 apartmaji", "2 apartmaja". Ednina ob
+    // številu je šifra ("Medulin REGI 117 Apartma 42 m2" ni 117 apartmajev).
+    new RegExp(`(?<![\\d.,])(\\d{1,3})\\s*(?:${B}){0,2}apartma(?:jev|ji|jih|ja|je|jema)\\b`, "g"),
+    2,
+    300
+  );
+  const enotV = vseStevilke(t, new RegExp(`(?<![\\d.,])(\\d{1,3})\\s*(?:${B}){0,2}enot(?:e|ami|ah)?\\b`, "g"), 2, 500);
+  // "60+10 ležišč" — osnovna in dodatna; štejemo osnovna.
+  const leziscV = vseStevilke(t, /(?<![\d.,])(\d{1,4})\s*(?:\+\s*\d{1,3}\s*)?(?:[a-zčšžćđ]+\s+)?(?:ležišč|lezisc|postelj)/g, 4, 3000);
+
+  const sob = sobV.trditev;
+  const apartmajev = apartmajevV.trditev;
+  const enotBesedilo = enotV.trditev;
+  const lezisc = leziscV.trditev ?? leziscV.moznost;
+  const moznihEnot = [sobV.moznost, apartmajevV.moznost, enotV.moznost].filter((x): x is number => x !== null);
+
+  // Hiša s tremi ali več apartmaji JE apartmajska hiša, tudi če tega ne reče.
+  if (!vrsta && apartmajev !== null && apartmajev >= 3) vrsta = "apartmajska_hisa";
+  if (!vrsta) return prazno;
+
+  /**
+   * Enote = NAJVEČJA trditev, ne vsota. "20 sob in 5 apartmajev" je lahko 25
+   * enot ali pa 20 sob v petih apartmajih — iz besedila se tega ne da ločiti.
+   * Podcenitev skrije oglas pod mejo "10+", precenitev pa bi pokazala penzion
+   * s šestimi sobami kot hotel z dvanajstimi; prvo je manjše zlo.
+   */
+  const trditve = [sob, apartmajev, enotBesedilo].filter((x): x is number => x !== null);
+  const enot = trditve.length > 0 ? Math.max(...trditve) : null;
+  // Ocena: najprej možnost, ki jo vir sam omeni ("možnost 15 enot"), sicer iz ležišč.
+  const enotOcena =
+    enot !== null ? null : moznihEnot.length > 0 ? Math.max(...moznihEnot) : lezisc !== null ? Math.max(1, Math.round(lezisc / 2.5)) : null;
+  return { vrsta, sob, apartmajev, lezisc, enot, enotOcena };
+}

@@ -4,7 +4,8 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 import { seIskrenoPredstavljamo, uporabniskiAgent } from "./identiteta.js";
 import { connect, oznaciIzginule, shraniOglase, type Db } from "./db.js";
 import { VIRI, najdiVir } from "./viri/index.js";
-import type { VirAdapter } from "./viri/vmesnik.js";
+import type { VirAdapter, Rezina } from "./viri/vmesnik.js";
+import { zaznajPonovneObjave } from "./ponovne-objave.js";
 import { geokodirajOglase, naloziKraje, poveziNepremicnine } from "./nepremicnine.js";
 import { izracunajPosle } from "./posli.js";
 import { preveriIskanja } from "./iskanja.js";
@@ -207,7 +208,14 @@ async function pregledSeznamov(
     await razbremeniKontekst(ctx).catch(() => {});
     return ctx;
   };
-  const preberiStran = async (url: string) => {
+  const preberiStran = async (url: string, rezina: Rezina, stran: number) => {
+    // Vir brez brskalnika (API, RSS, strežniški HTML): en HTTP zahtevek — a z
+    // ISTIM ritmom in štetjem zahtevkov kot stran v brskalniku.
+    if (vir.preberiHttp) {
+      await pocakajNaVrsto(db, vir.vir, zamikMs);
+      zahtevkov += 1;
+      return await zOmejitvijo("preberiHttp", vir.preberiHttp(rezina, stran, uporabniskiAgent()), 60_000);
+    }
     const ctx = vir.svezKontekstNaStran ? await novKontekst() : (skupni.ctx ??= await novKontekst());
     try {
       const page = await zOmejitvijo("newPage", ctx.newPage());
@@ -369,7 +377,7 @@ async function pregledSeznamov(
           break;
         }
         try {
-          const { kartice, zadnjaStran, skupajZadetkov } = await preberiStran(vir.seznamUrl(rezina, stran));
+          const { kartice, zadnjaStran, skupajZadetkov } = await preberiStran(vir.seznamUrl(rezina, stran), rezina, stran);
 
           /**
            * Ali znamo prebrati stevilo zadetkov, se pokaze SAMO na pravi
@@ -609,7 +617,11 @@ async function pregledSeznamov(
   };
 
   try {
-    browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
+    // Vir brez brskalnika ga ne potrebuje; Chromium je ~300 MB, stroj pa je
+    // pomnilniško na robu (28. 9. 2026 je sistem ubijal gradnje).
+    if (!vir.preberiHttp) {
+      browser = await zOmejitvijo("chromium.launch", chromium.launch({ args: ["--no-sandbox"] }), 90_000);
+    }
 
     /**
      * KROG IMA DVA DELA IN OBA STA POTREBNA.
@@ -694,26 +706,47 @@ async function pregledSeznamov(
   const delnaRezina = !krogSklenjen;
   if (delnaRezina || blokada || napaka) popoln = false;
   const zacetekKroga = (polniZapis?.podatki as { ob?: string } | null)?.ob ?? null;
+  /**
+   * KOLIKO SMO VIDELI V CELEM KROGU, ne v tem zagonu.
+   *
+   * Vir, ki ga beremo v več dneh (dnevni proračun), sklene krog z zagonom, ki
+   * je prebral morda samo zadnjo stran. Primerjava `videni.size` (ta zagon) s
+   * pričakovanim razponom KATALOGA ga je zato ob vsakem sklenjenem krogu
+   * razglasila za pokvarjenega — in ker je ista primerjava varovala tudi
+   * označevanje izginulih, prodani oglasi pri takem viru nikoli niso izginili.
+   * Našla sta jo recenzenta novih adapterjev (29. 9. 2026); zadela bi vsak vir
+   * z večdnevnim krogom. Merilo je zdaj število oglasov tega vira, videnih od
+   * začetka kroga — ista meja, ki jo uporablja oznaciIzginule.
+   */
+  let videnihVKrogu = videni.size;
+  if (krogSklenjen && zacetekKroga) {
+    const { count } = await db
+      .from("nep_oglasi")
+      .select("id", { count: "exact", head: true })
+      .eq("vir", vir.vir)
+      .gte("last_seen", zacetekKroga);
+    if (count !== null) videnihVKrogu = Math.max(videni.size, count);
+  }
   if (krogSklenjen) {
     await db.from("nep_statistika").upsert({
       kljuc: `polni:${vir.vir}`,
-      podatki: { ob: new Date().toISOString(), prejsnji: zacetekKroga, najdenihZadnjic: videni.size },
+      podatki: { ob: new Date().toISOString(), prejsnji: zacetekKroga, najdenihZadnjic: videnihVKrogu },
       izracunano: new Date().toISOString(),
     });
   }
-  if (popoln && videni.size >= vir.pricakovanRazpon[0]) {
+  if (popoln && vir.izginotjaZanesljiva !== false && videnihVKrogu >= vir.pricakovanRazpon[0]) {
     // Mejna vrednost je začetek KROGA, ne tega zagona: oglas, ki smo ga videli
     // pred desetimi dnevi na drugem koncu rotacije, ni izginil.
     izginulih = await oznaciIzginule(db, zacetekKroga ?? zacetek, vir.vir);
-  } else if (!delnaRezina && !blokada && !napaka && videni.size < vir.pricakovanRazpon[0]) {
+  } else if (!delnaRezina && !blokada && !napaka && videnihVKrogu < vir.pricakovanRazpon[0]) {
     log("warn", "premalo najdenih - verjetno sprememba selektorjev", {
       vir: vir.vir,
-      najdenih: videni.size,
+      najdenih: videnihVKrogu,
       pricakovano: vir.pricakovanRazpon,
     });
     await db
       .from("nep_viri")
-      .update({ zdravje: "degraded", opomba: `Najdenih ${videni.size}, pričakovano vsaj ${vir.pricakovanRazpon[0]}` })
+      .update({ zdravje: "degraded", opomba: `V krogu najdenih ${videnihVKrogu}, pričakovano vsaj ${vir.pricakovanRazpon[0]}` })
       .eq("vir", vir.vir);
   }
   await objavi({ izginulih, rezin_koncanih: obdelanihRezin });
@@ -721,13 +754,13 @@ async function pregledSeznamov(
   // Zdravje: pri DELNEM pregledu (kvota, rotacija) je merilo, ali smo sploh
   // kaj dobili — ne število, ki velja za cel katalog. Sicer bi vljudno
   // odmerjen pregled vsak dan lažno kričal "degraded".
-  const zdravo = blokada ? videni.size > 0 : delnaRezina ? videni.size > 0 : videni.size >= vir.pricakovanRazpon[0];
+  const zdravo = blokada ? videni.size > 0 : delnaRezina ? videni.size > 0 : videnihVKrogu >= vir.pricakovanRazpon[0];
   await db
     .from("nep_viri")
     .update({
       zdravje: zdravo ? "healthy" : "degraded",
       zadnji_pregled: new Date().toISOString(),
-      zadnjic_najdenih: videni.size,
+      zadnjic_najdenih: delnaRezina ? videni.size : videnihVKrogu,
       ...(zdravo ? { opomba: delnaRezina ? `Delni pregled (kvota ${vir.najvecStrani ?? "-"} strani): ${videni.size} oglasov` : null } : {}),
     })
     .eq("vir", vir.vir);
@@ -1065,6 +1098,12 @@ async function knjigovodstvo(db: Db): Promise<void> {
     l(`nepremičnine: +${p.novihNepremicnin} novih, ${p.povezav} povezav, ${p.kandidatov} kandidatov`);
   } catch (e) {
     log("warn", "povezovanje padlo", { napaka: e instanceof Error ? e.message : String(e) });
+  }
+  // Pred posli: ponovna objava z nižjo ceno postane vidno znižanje in s tem posel.
+  try {
+    await zaznajPonovneObjave(db, l);
+  } catch (e) {
+    log("warn", "ponovne objave padle", { napaka: e instanceof Error ? e.message : String(e) });
   }
   try {
     await izracunajPosle(db, l);

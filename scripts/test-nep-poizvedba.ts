@@ -229,6 +229,61 @@ const primeri: Primer[] = [
     cilj: null,
     filtri: { posel: "oddaja", tipi: ["stanovanje"], kraj: "ljubljana" },
   },
+  // ── Hoteli (28. 9. 2026): "za te hotele pa samo nad 10 al pa 12 enot" ──
+  {
+    ime: "hoteli nad 10 al pa 12 enot (dobesedno)",
+    stavek: "za te hotele pa samo nad 10 al pa 12 enot da mi najde",
+    cilj: null,
+    filtri: { nastanitev: true, enotMin: 10, turizem: true, tipi: undefined, vecEnot: undefined },
+  },
+  {
+    ime: "hotel: sobe so enote",
+    stavek: "hoteli z vsaj 12 sobami na obali",
+    cilj: null,
+    filtri: { nastanitev: true, enotMin: 12, regija: "obalno-kraska" },
+  },
+  {
+    ime: "apartmajska hiša ne omeji tipa na hišo",
+    stavek: "apartmajska hiša 10+ enot v istri",
+    cilj: null,
+    filtri: { nastanitev: true, enotMin: 10, tipi: undefined },
+  },
+  {
+    ime: "penzion, 12 ali več sob, blizu Bleda",
+    stavek: "penzion 12 ali več sob blizu bleda",
+    cilj: null,
+    filtri: { nastanitev: true, enotMin: 12, radijKraj: "bleda" },
+  },
+  {
+    ime: "hotel z več enotami: vec_enot ni merilo",
+    stavek: "hotel z 12 ali več enot",
+    cilj: null,
+    filtri: { nastanitev: true, enotMin: 12, vecEnot: undefined },
+  },
+  {
+    ime: "PAST: sobe stanovanja niso enote",
+    stavek: "stanovanje z vsaj 3 sobami v ljubljani",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], enotMin: undefined, nastanitev: undefined },
+  },
+  {
+    ime: "PAST: stanovanje blizu hotela ni iskanje hotela",
+    stavek: "stanovanje blizu hotela v portorožu",
+    cilj: null,
+    filtri: { tipi: ["stanovanje"], nastanitev: undefined },
+  },
+  {
+    ime: "stari primer: vsaj 3 enote ostane več enot",
+    stavek: "hiša z vsaj 3 enotami",
+    cilj: null,
+    filtri: { tipi: ["hisa"], enotMin: 3, vecEnot: true },
+  },
+  {
+    ime: "turizem brez šumnikov: blizu smučišča",
+    stavek: "hisa blizu smucisca",
+    cilj: null,
+    filtri: { turizem: true },
+  },
 ];
 
 let napak = 0;

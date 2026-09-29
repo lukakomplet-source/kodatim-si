@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext } from "playwright";
+import { nastanitevIz } from "./parse.js";
 import type { Db } from "./db.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
 import { pocakajNaVrsto } from "./stanje-vira.js";
@@ -43,6 +44,8 @@ type Vrstica = {
   detajl_poskusov: number | null;
   cena_eur: number | string | null;
   povrsina_m2: number | string | null;
+  tip: string | null;
+  naslov: string | null;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -143,7 +146,7 @@ export async function zajemiDetajle(
   }
 
   const zdaj = new Date().toISOString();
-  const POLJA = "id, url, vir_id, detajl_poskusov, cena_eur, povrsina_m2";
+  const POLJA = "id, url, vir_id, detajl_poskusov, cena_eur, povrsina_m2, tip, naslov";
   /**
    * Oglas, ki se po toliko poskusih še vedno ne da prebrati, ni več kandidat.
    * Brez te meje je pokvarjena stran vsak krog spet med prvimi in jemlje
@@ -333,6 +336,26 @@ export async function zajemiDetajle(
           // da tiha okvara parserja ne izgleda kot uspešno prazen zajem.
           const vrsticaBaze = vrsticaIzDetajla(detajl);
           if (Object.keys(vrsticaBaze).length === 0) throw new Error("detajlna stran brez podatkov");
+
+          /**
+           * Nastanitveni objekt iz DALJŠEGA opisa. Seznam pokaže naslov in
+           * odrezek; „penzion z 11 sobami“ je pogosto šele v tretjem stavku
+           * detajla. Piše se samo, kar je bilo zaznano: detektor, ki ne najde
+           * ničesar, ne sme pobrisati tistega, kar je našel seznam.
+           */
+          if (detajl.opis) {
+            const n = nastanitevIz(`${o.naslov ?? ""} ${detajl.opis}`, o.tip);
+            if (n.vrsta) {
+              vrsticaBaze.nastanitev = n.vrsta;
+              if (n.lezisc !== null) vrsticaBaze.st_lezisc = n.lezisc;
+              if (n.enot !== null) {
+                vrsticaBaze.st_enot = n.enot;
+                if (n.enot >= 2) vrsticaBaze.vec_enot = true;
+              } else if (n.enotOcena !== null) {
+                vrsticaBaze.st_enot_ocena = n.enotOcena;
+              }
+            }
+          }
 
           /**
            * Cena na kvadratni meter se izračuna ob zapisu cene ALI površine.

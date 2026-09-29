@@ -20,6 +20,7 @@ import {
   type OcenaTurizma,
   type TurizemObcina,
 } from "@/lib/nepremicnine/turizem";
+import { odstraniDvojnike, type DrugOglas } from "@/lib/nepremicnine/dvojniki";
 import { bboxOkoli, kandidatiZaSredisce, razdaljaKm } from "@/lib/nepremicnine/kraji";
 import { IskalnaVrstica } from "./IskalnaVrstica";
 import { MojaIskanja, type ShranjenoIskanje } from "./MojaIskanja";
@@ -44,6 +45,8 @@ const NA_STRAN = 30;
 type Vrstica = {
   id: string;
   url: string;
+  vir: string;
+  nepremicnina_id: string | null;
   naslov: string | null;
   tip: string | null;
   podtip: string | null;
@@ -61,6 +64,9 @@ type Vrstica = {
   vec_enot: boolean;
   st_enot: number | null;
   st_enot_ocena: number | null;
+  /** hotel | penzion | apartmajska_hisa … — zazna zbiralnik iz opisa (parse.ts). */
+  nastanitev: string | null;
+  st_lezisc: number | null;
   za_obnovo: boolean;
   za_investicijo: boolean;
   opis: string | null;
@@ -98,6 +104,18 @@ const TIPI_OZNAKE: Record<string, string> = {
   garaza: "Garaža",
   vikend: "Vikend",
   pocitniski_objekt: "Počitniški objekt",
+};
+
+/** Vrste nastanitvenih objektov, kakor jih zazna zbiralnik (parse.ts, nastanitevIz). */
+const NASTANITEV_OZNAKA: Record<string, string> = {
+  hotel: "hotel",
+  penzion: "penzion",
+  hostel: "hostel",
+  motel: "motel",
+  apartmajska_hisa: "apartmajska hiša",
+  turisticna_kmetija: "turistična kmetija",
+  gostisce: "gostišče",
+  nastanitveni_objekt: "nastanitveni objekt",
 };
 
 export default async function NepremicninePage({
@@ -184,6 +202,10 @@ export default async function NepremicninePage({
   const zaInvesticijo = st("zaInvesticijo") === "1" || ai.zaInvesticijo === true;
   const noviDni = num("noviDni") ?? ai.noviDni ?? null;
   const enotMin = num("enotMin") ?? ai.enotMin ?? null;
+  // Hoteli, penzioni, apartmajske hiše — stolpec, ki ga zbiralnik zazna iz
+  // opisa. Tipa ne omejuje: hotel je v bazi lahko hiša, poslovni prostor,
+  // počitniški objekt ali parcela z dovoljenjem.
+  const nastanitev = st("nastanitev") === "1" || ai.nastanitev === true;
   /**
    * Podvrsta in mestno jedro prideta lahko samo iz AI vrstice — v obrazcu
    * polj zanju ni, ker sta smiselna le ob določenem tipu ("zazidljivo" pri
@@ -236,6 +258,7 @@ export default async function NepremicninePage({
   if (zaInvesticijo) qy = qy.eq("za_investicijo", true);
   if (noviDni !== null) qy = qy.gte("first_seen", new Date(zdaj - noviDni * 86_400_000).toISOString());
   if (enotMin !== null) qy = qy.or(`st_enot.gte.${enotMin},st_enot_ocena.gte.${enotMin}`);
+  if (nastanitev) qy = qy.not("nastanitev", "is", null);
   // Padec cene: izračunani stolpec padec_pct (PostgREST ne zna primerjati
   // dveh stolpcev — prejšnja različica je vračala HTTP 400).
   if (padecCene) qy = qy.not("padec_pct", "is", null);
@@ -309,6 +332,19 @@ export default async function NepremicninePage({
   }
 
   /**
+   * DVOJNIKI. V načinu "vsi" imamo cel nabor kandidatov, zato je isti objekt
+   * z več portalov mogoče zanesljivo združiti (dvojniki.ts). Pri navadnem
+   * listanju po straneh ne: dvojnik z naslednje strani bi ostal, število
+   * zadetkov pa bi lagalo.
+   */
+  let tudiNa = new Map<string, DrugOglas[]>();
+  if (nacinVsi) {
+    const brezDvojnikov = odstraniDvojnike(vrstice);
+    vrstice = brezDvojnikov.vrstice;
+    tudiNa = brezDvojnikov.tudiNa;
+  }
+
+  /**
    * NAJEMNINE SE PREBEREJO VEDNO, ne samo ob investicijskem cilju.
    *
    * Prej je oceno najemnine videl samo tisti, ki je iskal z investicijskim
@@ -356,6 +392,82 @@ export default async function NepremicninePage({
       vrstice = [...vrstice].sort((a, b) => (tocke.get(b.id) ?? -1) - (tocke.get(a.id) ?? -1));
     }
   }
+
+  /**
+   * DEJANSKE CENE (GURS ETN). Vsi ostali podatki na kartici so ZAHTEVANE
+   * cene; ta je edina, po kateri se je res prodajalo. Mediana naselja za
+   * zadnji dve leti, samo tržni posli brez dražb in stečajev (uvoz-etn.ts).
+   * Dokler ZIP-ov nihče ne uvozi, je tabela prazna in se ne pokaže nič.
+   */
+  const naseljeKljuc = (kraj: string | null) => (kraj ?? "").split(",")[0].trim().toLowerCase();
+  const etnVrsta = (tip: string | null) => (tip === "stanovanje" ? "stanovanje" : tip === "hisa" ? "hisa" : null);
+  const etn = new Map<string, { mediana: number; n: number; od: number; do: number; stanje: string }>();
+  {
+    const naselja = [...new Set(vrstice.filter((v) => etnVrsta(v.tip)).map((v) => naseljeKljuc(v.kraj)).filter(Boolean))];
+    if (naselja.length > 0) {
+      const { data: med } = await db
+        .from("nep_etn_mediane")
+        .select("ime, vrsta, n, mediana_m2, od_leta, do_leta, stanje")
+        .eq("raven", "naselje")
+        .in("ime", naselja.slice(0, 200));
+      for (const m of (med ?? []) as { ime: string; vrsta: string; n: number; mediana_m2: number | string; od_leta: number; do_leta: number; stanje: string }[]) {
+        etn.set(`${m.ime}|${m.vrsta}`, { mediana: Number(m.mediana_m2), n: m.n, od: m.od_leta, do: m.do_leta, stanje: m.stanje });
+      }
+    }
+  }
+  const etnStanje = [...etn.values()][0]?.stanje ?? null;
+
+  /**
+   * PONOVNE OBJAVE (ponovne-objave.ts): oglas je bil umaknjen in znova objavljen
+   * pod novo številko. Kadar je cenejši, je prvotna cena že prenesena in
+   * znižanje je vidno — oznaka pove, OD KOD je, sicer bi bil videti kot nov oglas
+   * z znižanjem, ki ga v zgodovini ni.
+   */
+  const ponovne = new Map<string, { cena: number; url: string }>();
+  if (vrstice.length > 0) {
+    const { data: po } = await db
+      .from("nep_spremembe")
+      .select("oglas_id, staro")
+      .eq("tip", "ponovna_objava")
+      .in("oglas_id", vrstice.map((v) => v.id));
+    for (const p of (po ?? []) as { oglas_id: string; staro: { cena?: number; url?: string } | null }[]) {
+      if (p.staro?.cena) ponovne.set(p.oglas_id, { cena: Number(p.staro.cena), url: p.staro.url ?? "" });
+    }
+  }
+
+  /**
+   * HRVAŠKA HOTELSKA PONUDBA (register kategoriziranih objektov, mint.gov.hr).
+   * SURS pokriva samo slovenske občine; za hrvaško obalo, kjer je večina
+   * hotelov z 10+ enotami, bi turistična ocena sicer rekla samo "ni podatka".
+   * Ključ je ime kraja brez šumnikov — vsak del kraja oglasa posebej
+   * ("Istrska, Umag" → istrska, umag).
+   */
+  const brezSumnikovKraj = (x: string) =>
+    x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().replace(/\s+/g, " ").trim();
+  const hrPonudba = new Map<string, { objektov: number; enot: number; hotelov: number; stanje: string }>();
+  if (turizem) {
+    const kljuci = [...new Set(vrstice.flatMap((v) => (v.kraj ?? "").split(",").map(brezSumnikovKraj).filter((k) => k.length > 2)))];
+    if (kljuci.length > 0) {
+      const { data: hr } = await db
+        .from("nep_hr_nastanitve")
+        .select("kraj_kljuc, vrsta, enot, stanje")
+        .in("kraj_kljuc", kljuci.slice(0, 300));
+      for (const h of (hr ?? []) as { kraj_kljuc: string; vrsta: string; enot: number | null; stanje: string }[]) {
+        const p = hrPonudba.get(h.kraj_kljuc) ?? { objektov: 0, enot: 0, hotelov: 0, stanje: h.stanje };
+        p.objektov += 1;
+        p.enot += h.enot ?? 0;
+        if (/^hotel/i.test(h.vrsta)) p.hotelov += 1;
+        hrPonudba.set(h.kraj_kljuc, p);
+      }
+    }
+  }
+  const hrZaOglas = (kraj: string | null) => {
+    for (const del of (kraj ?? "").split(",").map(brezSumnikovKraj)) {
+      const p = hrPonudba.get(del);
+      if (p) return { kraj: del, ...p };
+    }
+    return null;
+  };
 
   let ocene: Map<string, OcenaKandidata> | null = null;
   if (cilj) {
@@ -434,6 +546,7 @@ export default async function NepremicninePage({
     zaInvesticijo: zaInvesticijo ? "1" : "",
     noviDni: noviDni?.toString() ?? "",
     enotMin: enotMin?.toString() ?? "",
+    nastanitev: nastanitev ? "1" : "",
     padecCene: padecCene ? "1" : "",
     sobMin: sobMin?.toString() ?? "",
     sPodrobnostmi: st("sPodrobnostmi") === "1" ? "1" : "",
@@ -751,6 +864,27 @@ export default async function NepremicninePage({
                     </p>
                   )}
                   {v.cena_m2_eur !== null && <p className="text-[11px] text-zinc-400">{eur(v.cena_m2_eur)}/m²</p>}
+                  {ponovne.has(v.id) && (
+                    <p
+                      className="text-[11px] font-medium text-amber-600"
+                      title="Oglas je bil umaknjen in znova objavljen pod novo številko pri istem viru in agenciji — pogost način znižanja cene, ki ga sicer ne vidiš."
+                    >
+                      ponovna objava · prej {eur(ponovne.get(v.id)!.cena)}
+                    </p>
+                  )}
+                  {(() => {
+                    const m = etn.get(`${naseljeKljuc(v.kraj)}|${etnVrsta(v.tip)}`);
+                    if (!m || v.cena_m2_eur === null) return null;
+                    const odmik = Math.round((Number(v.cena_m2_eur) / m.mediana - 1) * 100);
+                    return (
+                      <p
+                        className={`text-[11px] font-medium ${odmik <= -15 ? "text-emerald-600" : odmik >= 15 ? "text-rose-500" : "text-zinc-500"}`}
+                        title={`Mediana dejanskih prodaj v naselju ${m.od}–${m.do} (GURS ETN, ${m.n} tržnih poslov, brez dražb in stečajev)`}
+                      >
+                        {odmik > 0 ? "+" : ""}{odmik} % od prodaj ({eur(m.mediana)}/m²)
+                      </p>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -775,7 +909,16 @@ export default async function NepremicninePage({
                   <div className="flex justify-between"><dt className="text-zinc-400">Enot</dt><dd className="font-medium">{v.st_enot} potrjeno</dd></div>
                 )}
                 {v.st_enot === null && v.st_enot_ocena !== null && (
-                  <div className="flex justify-between"><dt className="text-zinc-400">Enot (možnost)</dt><dd className="font-medium">~{v.st_enot_ocena}</dd></div>
+                  <div className="flex justify-between">
+                    <dt className="text-zinc-400">{v.nastanitev && v.st_lezisc !== null ? "Enot (ocena iz ležišč)" : "Enot (možnost)"}</dt>
+                    <dd className="font-medium">~{v.st_enot_ocena}</dd>
+                  </div>
+                )}
+                {v.nastanitev && (
+                  <div className="flex justify-between"><dt className="text-zinc-400">Objekt</dt><dd className="font-medium">{NASTANITEV_OZNAKA[v.nastanitev] ?? v.nastanitev}</dd></div>
+                )}
+                {v.st_lezisc !== null && (
+                  <div className="flex justify-between"><dt className="text-zinc-400">Ležišč</dt><dd className="font-medium">{v.st_lezisc}</dd></div>
                 )}
                 {v.agencija && (
                   <div className="col-span-2 flex justify-between gap-2"><dt className="text-zinc-400">Prodaja</dt><dd className="truncate font-medium" title={v.agencija}>{v.agencija}</dd></div>
@@ -897,6 +1040,15 @@ export default async function NepremicninePage({
                     {tur.razlaga.map((r, i) => (
                       <li key={i}>{r}</li>
                     ))}
+                    {(() => {
+                      const hr = tur.obcina ? null : hrZaOglas(v.kraj);
+                      return hr ? (
+                        <li>
+                          Hotelska ponudba kraja: {hr.objektov} kategoriziranih objektov ({hr.hotelov} hotelov) s{" "}
+                          {hr.enot.toLocaleString("sl-SI")} enotami (register MINT RH, stanje {hr.stanje}).
+                        </li>
+                      ) : null;
+                    })()}
                   </ul>
                   <p className="mt-1.5 text-[10px] leading-snug text-zinc-400">
                     Ali je kratkoročno oddajanje tu sploh dovoljeno, ne vemo — pri etažni lastnini je potrebno
@@ -906,6 +1058,22 @@ export default async function NepremicninePage({
                 </div>
               )}
 
+              {(tudiNa.get(v.id)?.length ?? 0) > 0 && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  <span className="font-medium text-zinc-600">Isti objekt tudi na: </span>
+                  {tudiNa.get(v.id)!.map((d, i) => (
+                    <span key={d.url}>
+                      {i > 0 && " · "}
+                      <a href={d.url} target="_blank" rel="noopener noreferrer" className="underline decoration-zinc-300 hover:text-accent">
+                        {d.vir}
+                        {d.cena !== null && v.cena_eur !== null && Math.round(d.cena) !== Math.round(Number(v.cena_eur))
+                          ? ` (${Math.round(d.cena).toLocaleString("sl-SI")} €)`
+                          : ""}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
               {v.opis && <p className="mt-2 line-clamp-3 text-xs text-zinc-500">{v.opis}</p>}
 
               {/* Velik, nespregledljiv gumb na izvirnik: slike in galerija so tam. */}
@@ -970,9 +1138,16 @@ export default async function NepremicninePage({
       )}
 
       <p className="mt-8 border-t border-zinc-200 pt-4 text-xs text-zinc-400">
-        Podatki so zbrani z nepremicnine.net ob upoštevanju njihovega robots.txt (6 s med zahtevki,
-        1× dnevno). Slike ostajajo pri viru; „Enot (možnost)&ldquo; je ocena iz opisa, ne potrjen
-        podatek. Vsak oglas preverite pri viru.
+        Oglasi so zbrani z več portalov, agencijskih strani in javnih objav, vsak ob upoštevanju njegovega
+        robots.txt in pogojev uporabe; seznam virov in njihov pravni status je v konzoli. Slike ostajajo pri
+        viru; „Enot (možnost)&ldquo; in „ocena iz ležišč&ldquo; sta oceni iz opisa, ne potrjen podatek. Vsak
+        oglas preverite pri viru.
+        {etnStanje && (
+          <>
+            {" "}Dejanske cene prodaj: Geodetska uprava Republike Slovenije, Evidenca trga nepremičnin, stanje{" "}
+            {etnStanje} (CC BY 4.0); prikazane so samo mediane naselij, brez posameznih poslov.
+          </>
+        )}
       </p>
     </div>
   );

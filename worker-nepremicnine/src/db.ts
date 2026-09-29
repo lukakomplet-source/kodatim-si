@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { opisHash } from "./parse.js";
+import { nastanitevIz, opisHash } from "./parse.js";
 
 /**
  * Zapisovanje v lokalno bazo — ista načela kot pri avtomobilih, ker so tam
@@ -100,6 +100,23 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
   if (error) throw new Error(`Branje obstoječih ni uspelo: ${error.message}`);
   const znani = new Map((obstojeci ?? []).map((o) => [o.vir_id as string, o]));
 
+  /**
+   * Nastanitveni objekt iz naslova in opisa — za VSE vire enako, zato tu in
+   * ne v posameznem adapterju (glej parse.ts, nastanitevIz). Sobe hotela so
+   * enote, sobe družinske hiše niso; trditev iz adapterja („ima 3
+   * stanovanja“) ima prednost pred zaznavo.
+   */
+  const poljaNastanitve = (o: NormaliziranOglas) => {
+    const n = nastanitevIz(`${o.naslov ?? ""} ${o.opis ?? ""}`, o.tip);
+    return {
+      nastanitev: n.vrsta,
+      st_lezisc: n.lezisc,
+      st_enot: o.stEnot ?? n.enot,
+      st_enot_ocena: o.stEnotOcena ?? n.enotOcena,
+      vec_enot: o.vecEnot || (n.enot ?? 0) >= 2,
+    };
+  };
+
   const vrstica = (o: NormaliziranOglas) => ({
     vir: o.vir,
     vir_id: o.virId,
@@ -117,9 +134,9 @@ export async function shraniOglase(db: Db, oglasi: NormaliziranOglas[]): Promise
     leto_izgradnje: o.letoIzgradnje,
     leto_adaptacije: o.letoAdaptacije,
     nadstropje: o.nadstropje,
-    vec_enot: o.vecEnot,
-    st_enot: o.stEnot,
-    st_enot_ocena: o.stEnotOcena,
+    // vec_enot, st_enot, st_enot_ocena, nastanitev, st_lezisc: trditev iz
+    // adapterja, dopolnjena z zaznavo nastanitve, kjer adapter ni našel ničesar.
+    ...poljaNastanitve(o),
     locene_kuhinje: o.loceneKuhinje,
     loceni_vhodi: o.looceniVhodi,
     za_obnovo: o.zaObnovo,

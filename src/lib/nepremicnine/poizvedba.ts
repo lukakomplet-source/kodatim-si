@@ -37,6 +37,13 @@ export type NepFiltri = {
    */
   turizem?: boolean;
   /**
+   * Samo nastanitveni objekti (hotel, penzion, gostišče, apartmajska hiša …),
+   * kakor jih zbiralnik zazna iz opisa v stolpcu `nastanitev`. Hotel v bazi
+   * ni svoja VRSTA — je poslovni prostor, hiša, počitniški objekt ali celo
+   * parcela z dovoljenjem — zato ta zastavica tipa ne postavi.
+   */
+  nastanitev?: boolean;
+  /**
    * Podvrsta iz oglasa (`nep_oglasi.podtip`). Pri zemljiščih je to edina
    * razlika, ki šteje: 8.846 oglasov je "zazidljiva", 2.716 "kmetijsko
    * zemljišče" — cena na m² se med njima razlikuje za velikostni red, zato
@@ -297,19 +304,69 @@ export function razlozi(vprasanje: string, osnova?: Razklad | null): Razklad {
    * mogoče razdeliti, a oglas tega ne pove), ampak jih upoštevamo v oceni.
    */
   if (
-    /booking|airbnb|apartmaj|turist|turiz|nočitv|nocitv|oddajanje na noč|kratkorочn|kratkoroč|počitnišk\w*\s+oddaj|atrakc|atraktivn|znamenitost|blizu\s+(?:jezera|morja|smučišč|term)/i.test(
-      t
-    )
+    // uj() in ne .test(t): besedilo je brez šumnikov, vzorec pa jih je imel,
+    // zato "smučišče" in "počitniška oddaja" doslej nista ujela nikoli.
+    uj(/booking|airbnb|apartmaj|turist|turiz|nočitv|oddajanje na noč|kratkoroč|počitnišk\w*\s+oddaj|atrakc|atraktivn|znamenitost|blizu\s+(?:jezera|morja|smučišč|term)/)
   ) {
     f.turizem = true;
     razumljeno.push("turistični potencial (bližina atrakcije + prenočitve v občini)");
   }
 
-  const enot = naj(/(?:vsaj|min\.?|najmanj)\s*(\d+)\s*(?:enot|stanovanj|apartma)/);
+  /**
+   * NASTANITVENI OBJEKT — "hoteli", "penzion", "apartmajska hiša".
+   *
+   * Uporabnikov stavek: "za te hotele pa samo nad 10 al pa 12 enot". Vrsta
+   * se tu namenoma POBRIŠE: "apartmajska hiša" je vzorec za hišo že ujel,
+   * a vir jo je lahko vpisal kot počitniški objekt ali poslovni prostor, in
+   * tip "hisa" bi jo izločil. Merilo je stolpec `nastanitev`.
+   * "stanovanje blizu hotela" ni iskanje hotela.
+   */
+  if (
+    uj(/\b(?:apart[\s-]?)?hotel|penzion|gostišč|hostel|\bmotel|apartmajsk\w*\s+(?:hiš|objekt|vil)|nastanitven\w*\s+objekt|turističn\w*\s+nastanit/) &&
+    !uj(/(?:blizu|bližini|nasproti|zraven|poleg|\bob|\bpri)\s+(?:\w+\s+)?(?:apart[\s-]?)?hotel/)
+  ) {
+    f.nastanitev = true;
+    if (f.tipi) {
+      delete f.tipi;
+      razumljeno = razumljeno.filter((r) => !r.startsWith("tip: "));
+    }
+    if (f.vecEnot) {
+      delete f.vecEnot;
+      razumljeno = razumljeno.filter((r) => r !== "več enot");
+    }
+    razumljeno.push("nastanitveni objekt (hotel, penzion, gostišče, apartmajska hiša)");
+    if (!f.turizem) {
+      f.turizem = true;
+      razumljeno.push("turistični potencial (bližina atrakcije + prenočitve v občini)");
+    }
+  }
+
+  /**
+   * NAJMANJ ENOT: "vsaj 3 enote", pa tudi "nad 10 al pa 12 enot", "10+ sob",
+   * "12 ali več apartmajev". Pri dveh številkah ("10 ali 12") velja manjša —
+   * raje oglas preveč kot hotel, ki ga ne vidiš. "nad 10" šteje kot "vsaj
+   * 10", ker ga ljudje tako mislijo.
+   *
+   * Sobe so enote SAMO pri nastanitvenem objektu: "stanovanje z vsaj 3
+   * sobami" je eno stanovanje in ne tri enote.
+   */
+  const ENOTA = String.raw`(enot|stanovanj|apartma|sob|nastanitv|namestitv)`;
+  const enot =
+    naj(
+      new RegExp(
+        String.raw`(?:vsaj|min\.?|najmanj|nad|več\s+kot|od)\s*(\d{1,3})\s*\+?\s*(?:(?:al|ali|oz\.?|do)\s*(?:pa\s+)?\d{1,3}\s*)?` + ENOTA
+      )
+    ) ?? naj(new RegExp(String.raw`(\d{1,3})\s*(?:\+|ali\s+več|al\s+več|in\s+več)\s*` + ENOTA));
   if (enot) {
-    f.enotMin = Number(enot[1]);
-    f.vecEnot = true;
-    razumljeno.push(`vsaj ${enot[1]} enot`);
+    const n = Number(enot[1]);
+    const soSobe = enot[2] === "sob";
+    if (n >= 2 && n < 1000 && (!soSobe || f.nastanitev)) {
+      f.enotMin = n;
+      // Pri hotelu vec_enot ni merilo: hotel, ki pove samo ležišča, ima enote
+      // le v oceni, zastavice pa ne — filter bi ga izločil.
+      if (!f.nastanitev) f.vecEnot = true;
+      razumljeno.push(`vsaj ${n} enot`);
+    }
   }
 
   // Ukaza "odstrani vse nad/pod X" imata obrnjen pomen glede na "do/pod X",

@@ -3,6 +3,21 @@ import { adapter as nepremicnineNet } from "./nepremicnine-net.js";
 import { adapter as bolha } from "./bolha.js";
 import { adapter as siol } from "./siol.js";
 import { adapter as salomon } from "./salomon.js";
+import { adapter as kvadrat } from "./kvadrat.js";
+// Viri iz pregleda 28.–29. 9. 2026 (103 kandidati, vsak "dovoljeno" sta
+// preverila dva neodvisna skeptika; glej docs/prosnje-za-dovoljenje-viri.md za
+// tiste, ki potrebujejo dovoljenje). Vsi se berejo BREZ brskalnika (preberiHttp).
+import { adapter as croatiaEstate } from "./croatia-estate.js";
+import { adapter as bazaRealEstate } from "./baza-real-estate.js";
+import { adapterC21, adapterVilaPortoroz, adapterMaklerBled } from "./platforma-100m2.js";
+import { adapter as kwSlovenia } from "./kw-slovenia.js";
+import { adapter as agentiNep } from "./agenti-nep.js";
+import { adapter as thinkslovenia } from "./thinkslovenia.js";
+import { adapter as sloveniaEstates } from "./slovenia-estates.js";
+import { adapter as acasa } from "./acasa.js";
+import { adapter as immozentral } from "./immozentral.js";
+import { adapter as govSi } from "./gov-si.js";
+import { adapter as mpgiHr } from "./mpgi-hr.js";
 
 /**
  * Register virov. Vrstni red = vrstni red dnevne obdelave (zaporedno, nikoli
@@ -20,7 +35,29 @@ import { adapter as salomon } from "./salomon.js";
  *    Platforme", stran pa je za Cloudflare bot-zaščito.
  * Pri obeh je edina čista pot dogovor z upravljavcem, ne boljši scraper.
  */
-export const VIRI: VirAdapter[] = [nepremicnineNet, bolha, siol, salomon];
+export const VIRI: VirAdapter[] = [
+  nepremicnineNet,
+  bolha,
+  siol,
+  salomon,
+  kvadrat,
+  // Javne prodaje in hoteli najprej: to so viri, kjer so deali in hoteli, ki
+  // jih drugje ni. Vsak ima majhen dnevni proračun, zato skupaj ne podaljšajo
+  // dneva bistveno.
+  govSi,
+  mpgiHr,
+  croatiaEstate,
+  thinkslovenia,
+  sloveniaEstates,
+  bazaRealEstate,
+  adapterC21,
+  adapterVilaPortoroz,
+  adapterMaklerBled,
+  kwSlovenia,
+  agentiNep,
+  acasa,
+  immozentral,
+];
 
 /**
  * Adapter po imenu. Prazno ime pomeni zapuščinski pregled izpred časa, ko je
