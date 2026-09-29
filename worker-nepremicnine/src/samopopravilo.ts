@@ -396,7 +396,21 @@ export async function zabelezBlokado(db: Db, vir: string, osnovnaUr: number, raz
  */
 export async function zabelezUspeh(db: Db, vir: string): Promise<void> {
   const prej = await preberiBlokado(db, vir);
-  if (prej.stopnja === 0 && prej.faktor === 1 && !prej.do) return;
+
+  // PAST, KI JE nepremicnine.net USTAVILA ZA 17 DNI (najdeno 21. 9. 2026).
+  //
+  // Zgodnji izhod je bil mišljen kot "ni česa popravljati". A `potrebujePreverbo()`
+  // zahteva preverbo (en sam zahtevek na krog), dokler je `cistih === 0` in je
+  // `zadnja` zapisana — tudi kadar je vse ostalo že okrevano (stopnja 0,
+  // faktor 1, brez hlajenja). V takem stanju se je ta funkcija takoj vrnila,
+  // `cistih` je ostal 0 in vir je bil za vedno v preverbi: 1 stran na krog,
+  // 0–2 oglasa, 53 zaporednih preverb, zadnji polni krog 4. 9.
+  //
+  // Zato izhod velja le, kadar ni NOBENE sledi blokade (`zadnja` je prazna)
+  // ali je čist krog že zabeležen. Sicer gremo naprej in `cistih` povečamo —
+  // to je edino, kar preverbo sprosti.
+  const povsemCisto = prej.stopnja === 0 && prej.faktor === 1 && !prej.do;
+  if (povsemCisto && (!prej.zadnja || prej.cistih > 0)) return;
 
   const cistih = prej.cistih + 1;
   const spusti = cistih >= 3 && prej.faktor > 1;

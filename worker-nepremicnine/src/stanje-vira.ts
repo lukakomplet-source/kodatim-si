@@ -576,6 +576,12 @@ export function zaznajAnomalijo(opis: {
   obicajnoNaStran: number | null;
 }): Anomalija {
   if (opis.strani === 0) return { jeAnomalija: false, opis: "" };
+  // Ena ali dve strani nista dokaz: 7. 9. je preverba po hlajenju z
+  // enim samim zahtevkom odprla stran 9 rezine, ki ima manj strani, dobila
+  // 0 kartic in vir je 2 uri nosil oznako "parser pokvarjen", ceprav je
+  // naslednja stran vrnila 25 kartic. Sele tri strani zapored brez kartic
+  // pomenijo, da se je stran spremenila.
+  if (opis.strani < 3) return { jeAnomalija: false, opis: "" };
   if (opis.obicajnoNaStran === null || opis.obicajnoNaStran <= 0) return { jeAnomalija: false, opis: "" };
   const naStran = opis.najdenih / opis.strani;
   if (naStran >= opis.obicajnoNaStran * 0.3) return { jeAnomalija: false, opis: "" };
