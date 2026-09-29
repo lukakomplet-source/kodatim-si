@@ -163,6 +163,7 @@ export type Graditelj = {
   gte(k: string, v: unknown): Graditelj;
   lt(k: string, v: unknown): Graditelj;
   lte(k: string, v: unknown): Graditelj;
+  filter(k: string, op: string, v: unknown): Graditelj;
   ilike(k: string, v: string): Graditelj;
   is(k: string, v: unknown): Graditelj;
   not(k: string, op: string, v: unknown): Graditelj;

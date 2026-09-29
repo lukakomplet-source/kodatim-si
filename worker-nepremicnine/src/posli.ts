@@ -7,10 +7,12 @@ import { povrsinaZaIzracun } from "../../src/lib/nepremicnine/verjetnost.js";
  * UI ga samo prebere iz nep_statistika (isti vzorec kot avtonet 'deal_feed':
  * ob renderju se ne računa nič, števke pa so za vse obiskovalce iste).
  *
- * Vsaka točka ima razlog, vsaka ocena vir: mediane €/m² prihajajo iz NAŠIH
+ * Vsaka točka ima razlog, vsaka ocena vir: primerjave €/m² prihajajo iz NAŠIH
  * aktivnih oglasov, ocena najemnine iz NAŠIH najemnih oglasov. Brez vzorca
  * ni številke.
  */
+
+export type Stanje = "novo" | "obnovljeno" | "za_obnovo";
 
 export type NepPosel = {
   id: string;
@@ -28,9 +30,16 @@ export type NepPosel = {
   leto: number | null;
   dniNaTrgu: number;
   padecPct: number | null;
+  /** €/m² primerjave: mediana primerljivih oglasov (ali regije, če jih ni). */
   medianaM2: number | null;
   medianaVzorec: number;
-  odstopanjePct: number | null; // koliko pod mediano €/m² (pozitivno = ceneje)
+  odstopanjePct: number | null; // koliko pod primerjavo €/m² (pozitivno = ceneje)
+  /** S čim je oglas primerjan, npr. "14 primerljivih v 6 km, podobna velikost". */
+  primerjava: string | null;
+  /** Razlog, zaradi katerega nizka cena NI dokaz posla (preveri pred klicem). */
+  opozorilo: string | null;
+  stanje: Stanje | null;
+  drzava: string | null;
   brutoDonosPct: number | null;
   /** Ocenjena mesečna najemnina objekta in kako je nastala (za prikaz). */
   najemMesecno: number | null;
@@ -46,11 +55,13 @@ export type NepPosel = {
 };
 
 type Vrstica = {
-  id: string; vir: string; url: string; naslov: string | null; tip: string | null; regija: string | null;
-  kraj: string | null; cena_eur: number | null; cena_prvotna_eur: number | null; cena_m2_eur: number | null;
+  id: string; vir: string; url: string; naslov: string | null; tip: string | null; podtip: string | null;
+  regija: string | null; drzava: string | null; kraj: string | null; lat: number | null; lng: number | null;
+  cena_eur: number | null; cena_prvotna_eur: number | null; cena_m2_eur: number | null;
   povrsina_m2: number | null; zemljisce_m2: number | null; st_enot: number | null; st_enot_ocena: number | null;
-  leto_izgradnje: number | null; vec_enot: boolean; za_obnovo: boolean; za_investicijo: boolean;
-  first_seen: string; data_quality: number | null; agencija: string | null; telefon: string | null;
+  leto_izgradnje: number | null; leto_adaptacije: number | null; vec_enot: boolean; za_obnovo: boolean;
+  za_investicijo: boolean; first_seen: string; datum_objave: string | null; data_quality: number | null;
+  agencija: string | null; telefon: string | null;
   /** Kanonična nepremičnina; isti objekt iz dveh oglasov ima isti id. */
   nepremicnina_id: string | null;
 };
@@ -62,9 +73,112 @@ function mediana(v: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/**
+ * BESEDILNI ZNAKI, ki spremenijo pomen cene. Iščemo jih v bazi (POSIX regex,
+ * `imatch`), ne v workerju: opisi vseh aktivnih oglasov so stotine MB.
+ * Velike črke šumnikov so naštete posebej, ker primerjava brez razlikovanja
+ * velikosti pri ne-ASCII znakih ni zanesljiva v vseh jezikovnih nastavitvah.
+ *
+ * Zakaj stanje. 29. 9. 2026 je bilo 92 od 200 "poslov" več kot 60 % pod
+ * mediano regije. Pregled je pokazal, da mediana ni bila napačna — obnovljena
+ * stanovanja v Trbovljah se res ponujajo po 2.500–3.000 €/m² —, ampak je bila
+ * enaka za obnovljeno in za neobnovljeno stanovanje. Stanovanje za obnovo po
+ * 700 €/m² ni 75 % pod trgom; je na trgu za obnovo.
+ */
+const VZORCI = {
+  zaObnovo:
+    "potreb[a-zčšž]* (je |celovite |temeljite |popolne |kompletne )?(obnov|prenov|adaptacij|sanacij)|za (obnovo|prenovo|adaptacijo|rušenje)|dotrajan|ruševin|potrebuje (obnovo|prenovo)|v izvirnem stanju|needs? (renovation|refurbishment)|to renovate|for renovation|za renovaciju|potrebn[a-z]* (adaptacij|renovacij)",
+  obnovljeno:
+    "(popolnoma|celovito|kompletno|v celoti|na novo|temeljito|nedavno|lepo|v letu 20[12][0-9]) (obnovljen|prenovljen|adaptiran|renoviran)|adaptirano l\\. 20(1[5-9]|2[0-9])|prenovljen[a-z]* (leta|l\\.) 20(1[5-9]|2[0-9])|newly renovated|fully renovated|potpuno renovira",
+  novo: "novogradnj|[nN]ovogradnj|newly built|new build|novoizgra[dđ]",
+  delez:
+    "solastni[šŠ]k[a-z]* dele|idealn[a-z]* dele|lastni[šŠ]k[a-z]* dele[žŽ] |[0-9]+ ?/ ?[0-9]+ (dele|solast|nepremi)|dele[žŽ] (do|v vi[šŠ]ini) [0-9]|suvlasni[čČ]k",
+  drazba:
+    "javn[a-z]* dra[žŽ]b|izklicn[a-z]* cen|javno zbiranje ponudb|ste[čČ]ajn|izvr[šŠ]b|DRA[žŽ]BA|Dra[žŽ]ba",
+};
+
+async function idjiPoVzorcu(db: Db, vzorec: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const stolpec of ["naslov", "opis"]) {
+    const vr = await preberiVse<{ id: string }>(db, "nep_oglasi", "id", (q) =>
+      q.eq("status", "aktiven").eq("posel", "prodaja").filter(stolpec, "imatch", vzorec)
+    );
+    for (const v of vr) ids.add(v.id);
+  }
+  return ids;
+}
+
+/**
+ * Primerjamo samo enako z enakim. Pri zemljiščih podtip ni podrobnost:
+ * zazidljivo zemljišče stane 50–150 €/m², kmetijsko 2–5 €/m². Zemljišče brez
+ * podtipa se ne primerja, ker bi bil vsak gozd "posel" proti mediani parcel.
+ */
+function vrstaZa(o: Vrstica): string | null {
+  if (!o.tip) return null;
+  if (o.tip === "posest") {
+    const p = (o.podtip ?? "").toLowerCase();
+    if (p.startsWith("zazidljiv")) return "posest:zazidljiva";
+    if (/kmetij|nezazidljiv|gozd/.test(p)) return "posest:kmetijska";
+    return null;
+  }
+  return o.tip;
+}
+
+/** Razmerje velikosti, v katerem je oglas še primerljiv. */
+function razponVelikosti(tip: string | null): [number, number] {
+  return tip === "posest" ? [0.4, 2.5] : [0.6, 1 / 0.6];
+}
+
+/**
+ * Velikostni pas — za regionalno rezervo, kadar primerljivih v bližini ni
+ * dovolj. Garsonjera ima višji €/m² kot 150 m² stanovanje; brez pasov je bila
+ * vsaka večja nepremičnina "pod mediano".
+ */
+function pas(tip: string | null, m2: number): string {
+  const meje: Record<string, number[]> = {
+    stanovanje: [40, 65, 95, 140],
+    hisa: [120, 200, 300],
+    posest: [500, 1200, 3000],
+    poslovni_prostor: [50, 150, 500],
+  };
+  const m = meje[tip ?? ""];
+  if (!m) return "";
+  const i = m.findIndex((x) => m2 < x);
+  return String(i === -1 ? m.length : i);
+}
+
+const STANJE_BESEDA: Record<Stanje, string> = { novo: "novogradnje", obnovljeno: "obnovljeni", za_obnovo: "za obnovo" };
+
+type Tocka = {
+  id: string;
+  lat: number;
+  lng: number;
+  m2: number;
+  povrsina: number;
+  stanje: Stanje | null;
+  /** Isti objekt na več portalih ne sme šteti večkrat. */
+  dvojnik: string;
+  nid: string | null;
+  agencija: string | null;
+};
+
+const CELICA = 0.05; // stopinje; ~5,5 km v smeri S-J
+const celica = (lat: number, lng: number) => `${Math.floor(lat / CELICA)}|${Math.floor(lng / CELICA)}`;
+
+function km(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const r = Math.PI / 180;
+  const x = (bLng - aLng) * r * Math.cos(((aLat + bLat) / 2) * r);
+  const y = (bLat - aLat) * r;
+  return Math.sqrt(x * x + y * y) * 6371;
+}
+
+/** Zasebni prodajalci niso "agencija"; omejitev na agencijo zanje ne velja. */
+const jeAgencija = (a: string | null) => !!a && !/zasebn|fizi[čc]n|lastnik/i.test(a);
+
 export async function izracunajPosle(db: Db, log: (msg: string) => void): Promise<number> {
+  const tZacetek = Date.now();
   const polja =
-    "id, vir, url, naslov, tip, regija, kraj, cena_eur, cena_prvotna_eur, cena_m2_eur, povrsina_m2, zemljisce_m2, st_enot, st_enot_ocena, leto_izgradnje, vec_enot, za_obnovo, za_investicijo, first_seen, data_quality, agencija, telefon, nepremicnina_id";
+    "id, vir, url, naslov, tip, podtip, regija, drzava, kraj, lat, lng, cena_eur, cena_prvotna_eur, cena_m2_eur, povrsina_m2, zemljisce_m2, st_enot, st_enot_ocena, leto_izgradnje, leto_adaptacije, vec_enot, za_obnovo, za_investicijo, first_seen, datum_objave, data_quality, agencija, telefon, nepremicnina_id";
   const prodajni = await preberiVse<Vrstica>(db, "nep_oglasi", polja, (q) =>
     q.eq("status", "aktiven").eq("posel", "prodaja").gte("cena_eur", 10_000)
   );
@@ -72,23 +186,209 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     db, "nep_oglasi", "regija, cena_eur, povrsina_m2",
     (q) => q.eq("status", "aktiven").eq("posel", "oddaja").eq("tip", "stanovanje").gt("cena_eur", 100).lt("cena_eur", 10000)
   );
+  const tBranje = Date.now();
+  const [zaObnovoIds, obnovljenoIds, novoIds, delezIds, drazbaIds] = await Promise.all([
+    idjiPoVzorcu(db, VZORCI.zaObnovo),
+    idjiPoVzorcu(db, VZORCI.obnovljeno),
+    idjiPoVzorcu(db, VZORCI.novo),
+    idjiPoVzorcu(db, VZORCI.delez),
+    idjiPoVzorcu(db, VZORCI.drazba),
+  ]);
 
-  // Mediane €/m² po (tip|regija) z rezervo na (tip) — iz lastnih oglasov.
-  const skupine = new Map<string, number[]>();
+  /**
+   * PRAVI ČAS NA TRGU. Ponovna objava (ponovne-objave.ts) prenese prvotno
+   * ceno, ne pa prvega dne: oglas, ki se po 120 dneh vrne pod novo številko,
+   * bi bil sicer "star 2 dni". Veriga A → B → C se razreši do A.
+   */
+  const ponovne = await preberiVse<{ oglas_id: string; staro: { oglas_id?: string } | null }>(
+    db, "nep_spremembe", "oglas_id, staro", (q) => q.eq("tip", "ponovna_objava")
+  );
+  const prejsnji = new Map<string, string>();
+  for (const p of ponovne) if (p.staro?.oglas_id) prejsnji.set(p.oglas_id, p.staro.oglas_id);
+  const izginuli = await preberiVse<{ id: string; first_seen: string; datum_objave: string | null }>(
+    db, "nep_oglasi", "id, first_seen, datum_objave", (q) => q.eq("status", "izginil")
+  );
+  const prviDan = new Map<string, number>();
+  const zacetek = (fs: string, dob: string | null) =>
+    Math.min(new Date(fs).getTime(), dob ? new Date(dob).getTime() : Infinity);
+  for (const z of izginuli) prviDan.set(z.id, zacetek(z.first_seen, z.datum_objave));
+  for (const o of prodajni) prviDan.set(o.id, zacetek(o.first_seen, o.datum_objave));
+  const prvicNaTrgu = (id: string): { t: number; ponovno: boolean } => {
+    let t = prviDan.get(id) ?? Date.now();
+    let cur = id;
+    let ponovno = false;
+    for (let korak = 0; korak < 10 && prejsnji.has(cur); korak++) {
+      cur = prejsnji.get(cur)!;
+      const p = prviDan.get(cur);
+      if (p !== undefined && p < t) t = p;
+      ponovno = true;
+    }
+    return { t, ponovno };
+  };
+
+  /**
+   * Tri razreda stanja, ne dva: stanovanje iz 1975, obnovljeno 2013, ni
+   * primerljivo z novogradnjo po 4.000 €/m² — v Medvodah je bilo proti njim
+   * "58 % pod trgom". Novo = zgrajeno 2015 ali pozneje ali novogradnja v
+   * besedilu; obnovljeno = obnova 2012 ali pozneje ali v besedilu.
+   */
+  const stanjeZa = (o: Vrstica): Stanje | null => {
+    const zaO = o.za_obnovo || zaObnovoIds.has(o.id);
+    if ((o.leto_izgradnje ?? 0) >= 2015 || (novoIds.has(o.id) && !zaO)) return "novo";
+    const obn = obnovljenoIds.has(o.id) || (o.leto_adaptacije ?? 0) >= 2012 || (o.leto_izgradnje ?? 0) >= 2008;
+    if (zaO && !obn) return "za_obnovo";
+    if (obn && !zaO) return "obnovljeno";
+    return null;
+  };
+
+  /**
+   * INDEKS PRIMERLJIVIH: (država|vrsta) → celica mreže → oglasi.
+   *
+   * Regija je pregroba enota: v "ljubljana-mesto" je 5.385 €/m² mediana, ki
+   * velja za Center, ne za Fužine; "zasavska" meša Zagorje s hribovskimi
+   * zaselki. Primerjava z oglasi v nekaj kilometrih iste vrste in podobne
+   * velikosti je tista, ki jo naredi kupec sam.
+   */
+  const indeks = new Map<string, Map<string, Tocka[]>>();
+  const regVzorci = new Map<string, number[]>();
+  const dodajReg = (k: string, v: number) => {
+    const arr = regVzorci.get(k) ?? [];
+    arr.push(v);
+    regVzorci.set(k, arr);
+  };
+  const regVideni = new Set<string>();
   for (const o of prodajni) {
-    if (o.cena_m2_eur === null) continue;
-    // Oglas z nemogočo površino ima tudi nemogoč €/m² — v mediano ne sme.
-    if (povrsinaZaIzracun(o.tip, o.povrsina_m2) === null) continue;
+    if (o.cena_m2_eur === null || !o.drzava) continue;
+    if (delezIds.has(o.id) || drazbaIds.has(o.id)) continue;
+    // Oglas z nemogočo površino ima tudi nemogoč €/m² — v primerjavo ne sme.
+    const povrsina = povrsinaZaIzracun(o.tip, o.povrsina_m2);
+    const vrsta = vrstaZa(o);
+    if (povrsina === null || vrsta === null) continue;
     const m2 = Number(o.cena_m2_eur);
     if (!Number.isFinite(m2) || m2 <= 0) continue;
-    for (const k of [`${o.tip}|${o.regija}`, `${o.tip}|`]) {
-      const arr = skupine.get(k) ?? [];
-      arr.push(m2);
-      skupine.set(k, arr);
+    const dvojnik = `${o.cena_eur}|${povrsina}`;
+    const stanje = stanjeZa(o);
+    // Regionalna rezerva: isti objekt na dveh portalih šteje enkrat.
+    if (o.regija && !regVideni.has(`${o.regija}|${dvojnik}`)) {
+      regVideni.add(`${o.regija}|${dvojnik}`);
+      dodajReg(`${o.drzava}|${vrsta}|${o.regija}|${pas(o.tip, povrsina)}`, m2);
+      dodajReg(`${o.drzava}|${vrsta}|${o.regija}`, m2);
     }
+    if (o.lat === null || o.lng === null) continue;
+    const kljuc = `${o.drzava}|${vrsta}`;
+    const mreza = indeks.get(kljuc) ?? new Map<string, Tocka[]>();
+    indeks.set(kljuc, mreza);
+    const c = celica(o.lat, o.lng);
+    const arr = mreza.get(c) ?? [];
+    arr.push({ id: o.id, lat: o.lat, lng: o.lng, m2, povrsina, stanje, dvojnik, nid: o.nepremicnina_id, agencija: o.agencija });
+    mreza.set(c, arr);
   }
-  const medianeM2 = new Map<string, { m2: number; vzorec: number }>();
-  for (const [k, arr] of skupine) if (arr.length >= 8) medianeM2.set(k, { m2: mediana(arr)!, vzorec: arr.length });
+  const regMediane = new Map<string, { m2: number; vzorec: number }>();
+  for (const [k, arr] of regVzorci) if (arr.length >= 10) regMediane.set(k, { m2: mediana(arr)!, vzorec: arr.length });
+
+  /**
+   * Kandidati do 20 km, UREJENI PO RAZDALJI: podobna velikost, brez dvojnikov
+   * in največ 3 na agencijo — oboje v vrstnem redu razdalje, da bližnji
+   * izpodrinejo daljne. Manjši krogi so predpone istega seznama.
+   */
+  const NAJVEC_KM = 20;
+  const blizu = (o: Vrstica, povrsina: number, mreza: Map<string, Tocka[]>): { t: Tocka; d: number }[] => {
+    const lat = o.lat!;
+    const lng = o.lng!;
+    const [lo, hi] = razponVelikosti(o.tip);
+    const dLat = NAJVEC_KM / 111;
+    const dLng = NAJVEC_KM / (111 * Math.cos((lat * Math.PI) / 180));
+    const kand: { t: Tocka; d: number }[] = [];
+    for (let i = Math.floor((lat - dLat) / CELICA); i <= Math.floor((lat + dLat) / CELICA); i++) {
+      for (let j = Math.floor((lng - dLng) / CELICA); j <= Math.floor((lng + dLng) / CELICA); j++) {
+        for (const t of mreza.get(`${i}|${j}`) ?? []) {
+          if (t.id === o.id || (o.nepremicnina_id && t.nid === o.nepremicnina_id)) continue;
+          const razm = t.povrsina / povrsina;
+          if (razm < lo || razm > hi) continue;
+          const d = km(lat, lng, t.lat, t.lng);
+          if (d <= NAJVEC_KM) kand.push({ t, d });
+        }
+      }
+    }
+    kand.sort((a, b) => a.d - b.d);
+    const out: { t: Tocka; d: number }[] = [];
+    const videni = new Set<string>([`${o.cena_eur}|${povrsina}`]);
+    const naAgencijo = new Map<string, number>();
+    for (const k of kand) {
+      if (videni.has(k.t.dvojnik)) continue;
+      // En projekt ene agencije (20 stanovanj v novem bloku) ni 20 mnenj trga.
+      if (jeAgencija(k.t.agencija)) {
+        const n = naAgencijo.get(k.t.agencija!) ?? 0;
+        if (n >= 3) continue;
+        naAgencijo.set(k.t.agencija!, n + 1);
+      }
+      videni.add(k.t.dvojnik);
+      out.push(k);
+    }
+    return out;
+  };
+
+  /**
+   * Večji krog pomeni bolj mešano okolico (vas proti mestu 15 km stran), zato
+   * manj zaupanja v isto odstopanje.
+   */
+  const RADIJI: [number, number][] = [[3, 1], [6, 0.9], [12, 0.75], [20, 0.6]];
+
+  type Primerjava = { m2: number; vzorec: number; opis: string; isteStanje: boolean; regionalna: boolean; utez: number };
+  const primerjaj = (o: Vrstica, povrsina: number, stanje: Stanje | null): Primerjava | null => {
+    const vrsta = vrstaZa(o);
+    if (!vrsta || !o.drzava) return null;
+    const mreza = indeks.get(`${o.drzava}|${vrsta}`);
+    if (mreza && o.lat !== null && o.lng !== null) {
+      const vsi = blizu(o, povrsina, mreza);
+      /**
+       * ENAKO Z ENAKIM. Oglas neznanega stanja primerjamo z oglasi, ki NISO
+       * potrjeno obnovljeni ali novi: v Velenju in Šoštanju so novogradnje
+       * po 3.500 €/m² in vsako starejše stanovanje v 6 km je bilo proti njim
+       * "58 % pod trgom".
+       */
+      const istiRazred = (t: Tocka) =>
+        stanje === null ? t.stanje !== "obnovljeno" && t.stanje !== "novo" : t.stanje === stanje;
+      const opisRazreda = stanje === null ? "brez obnovljenih in novogradenj" : STANJE_BESEDA[stanje];
+      const najmanj = stanje === null ? 8 : 6;
+      for (const [r, utez] of RADIJI) {
+        const iste = vsi.filter((k) => k.d <= r && istiRazred(k.t));
+        if (iste.length >= najmanj)
+          return {
+            m2: mediana(iste.map((k) => k.t.m2))!,
+            vzorec: iste.length,
+            opis: `${iste.length} primerljivih v ${r} km (podobna velikost, ${opisRazreda})`,
+            isteStanje: true,
+            regionalna: false,
+            utez,
+          };
+      }
+      for (const [r, utez] of RADIJI) {
+        const mes = vsi.filter((k) => k.d <= r);
+        if (mes.length >= 8)
+          return {
+            m2: mediana(mes.map((k) => k.t.m2))!,
+            vzorec: mes.length,
+            opis: `${mes.length} primerljivih v ${r} km (podobna velikost, stanje mešano)`,
+            isteStanje: false,
+            regionalna: false,
+            utez,
+          };
+      }
+    }
+    if (!o.regija) return null;
+    const pasK = `${o.drzava}|${vrsta}|${o.regija}|${pas(o.tip, povrsina)}`;
+    const reg = regMediane.get(pasK) ?? regMediane.get(`${o.drzava}|${vrsta}|${o.regija}`);
+    if (!reg) return null;
+    return {
+      m2: reg.m2,
+      vzorec: reg.vzorec,
+      opis: `mediana regije ${o.regija}${regMediane.has(pasK) ? " (isti velikostni pas)" : ""}, n=${reg.vzorec} — primerljivih v bližini ni dovolj`,
+      isteStanje: false,
+      regionalna: true,
+      utez: 0.5,
+    };
+  };
 
   /**
    * Najemnine po VELIKOSTNEM RAZREDU, ne čez vse: garsonjera se odda za ~15
@@ -159,8 +459,10 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     return null;
   };
 
+  const tIzracun = Date.now();
   const zdaj = Date.now();
   const posli: NepPosel[] = [];
+  const stevci = { bliznji: 0, regionalni: 0, brez: 0, sumljivih: 0, delezev: 0, drazb: 0 };
   for (const o of prodajni) {
     const cena = Number(o.cena_eur);
     // Nemogoča površina pri viru (npr. "Bivalna površina: 239000 m2" pri
@@ -170,19 +472,59 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     const cenaM2 = povrsina === null || o.cena_m2_eur === null ? null : Number(o.cena_m2_eur);
     let tocke = 0;
     const razlogi: string[] = [];
+    let opozorilo: string | null = null;
+    const stanje = stanjeZa(o);
+    const delez = delezIds.has(o.id);
+    const drazba = drazbaIds.has(o.id);
 
-    const med = medianeM2.get(`${o.tip}|${o.regija}`) ?? medianeM2.get(`${o.tip}|`) ?? null;
+    const prim = povrsina !== null && cenaM2 !== null ? primerjaj(o, povrsina, stanje) : null;
+    if (prim) stevci[prim.regionalna ? "regionalni" : "bliznji"]++;
+    else stevci.brez++;
     let odstopanjePct: number | null = null;
-    if (med && cenaM2 !== null) {
-      odstopanjePct = Math.round(((med.m2 - cenaM2) / med.m2) * 1000) / 10;
-      if (odstopanjePct > 0) {
-        const d = Math.round(Math.min(30, odstopanjePct * 0.75));
+    if (prim && cenaM2 !== null) {
+      odstopanjePct = Math.round(((prim.m2 - cenaM2) / prim.m2) * 1000) / 10;
+      if (delez) {
+        stevci.delezev++;
+        opozorilo = "Prodaja solastniškega deleža — cena ne velja za celo nepremičnino.";
+      } else if (odstopanjePct >= 60) {
+        // Cena pod 40 % primerljivih je v naši bazi skoraj vedno napaka
+        // (cena na m² vpisana kot cena, površina v napačni enoti, ruševina,
+        // del objekta) — ne posel. Oglas ostane viden, točk za ceno ne dobi.
+        stevci.sumljivih++;
+        opozorilo = `Cena je ${odstopanjePct} % pod primerljivimi — to je pogosteje napaka v oglasu (cena, površina, delež, ruševina) kot posel. Preveri pred klicem.`;
+      } else if (odstopanjePct > 0) {
+        /**
+         * Točke rastejo do 40 % pod primerljivimi in nad 45 % spet padajo.
+         * Pregled 29. 9. 2026: med oglasi 45–60 % pod primerljivimi so bili
+         * večinoma napačno geokodirani soimenjaki ("Ledine" pri Idriji proti
+         * ljubljanskim Ledinam), površine s kletjo in podstrešjem ter
+         * neobnovljena stanovanja brez oznake stanja. Pravi posli so redko
+         * več kot 40 % pod trgom; tam jih mora podpreti še kaj drugega.
+         */
+        const prevec = odstopanjePct > 45 ? (odstopanjePct - 45) * 1.5 : 0;
+        let d = Math.max(0, Math.min(30, odstopanjePct * 0.75) - prevec) * prim.utez;
+        if (odstopanjePct > 45)
+          opozorilo = `Cena je ${odstopanjePct} % pod primerljivimi — tako velika razlika je pogosteje napaka (lokacija, površina, stanje) kot posel. Preveri pred klicem.`;
+        let pripis = "";
+        if (stanje === "za_obnovo" && !prim.isteStanje) {
+          // Za obnovo je PRIČAKOVANO cenejši od mešanih primerljivih.
+          d = 0;
+          pripis = " — a oglas je za obnovo, primerljivi pa ne, zato to ni popust";
+        } else if (stanje === null && !prim.isteStanje) {
+          d *= 0.6;
+          pripis = " — stanje ni znano, med primerljivimi so tudi obnovljeni";
+        }
+        d = Math.round(d);
         tocke += d;
-        razlogi.push(`${odstopanjePct} % pod mediano €/m² (n=${med.vzorec}) +${d}`);
+        razlogi.push(`${odstopanjePct} % pod ${prim.opis}${pripis}${d > 0 ? ` +${d}` : ""}`);
       }
     }
+    if (drazba) {
+      stevci.drazb++;
+      razlogi.push("dražba ali zbiranje ponudb — cena je izklicna, končna je lahko višja");
+    }
 
-    const najem = oceniNajemnino(o, povrsina);
+    const najem = delez ? null : oceniNajemnino(o, povrsina);
     let brutoDonosPct: number | null = null;
     if (najem) {
       brutoDonosPct = Math.round(((najem.mesecno * 12) / cena) * 1000) / 10;
@@ -193,10 +535,13 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       }
     }
 
-    if (o.st_enot !== null && o.st_enot >= 2) {
+    // Oglas stanovanja je ena enota; "2 enoti" pri njem je skoraj vedno
+    // dvojna objava hiše kot stanovanja, ne dvostanovanjski objekt.
+    const najmanjEnot = o.tip === "stanovanje" ? 3 : 2;
+    if (o.st_enot !== null && o.st_enot >= najmanjEnot) {
       tocke += 15;
       razlogi.push(`${o.st_enot} enot potrjeno +15`);
-    } else if (o.st_enot_ocena !== null && o.st_enot_ocena >= 2) {
+    } else if (o.st_enot_ocena !== null && o.st_enot_ocena >= najmanjEnot) {
       tocke += 10;
       razlogi.push(`~${o.st_enot_ocena} enot (ocena iz opisa) +10`);
     } else if (o.tip === "hisa" && povrsina !== null && povrsina >= 300) {
@@ -214,10 +559,15 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       }
     }
 
-    const dniNaTrgu = Math.floor((zdaj - new Date(o.first_seen).getTime()) / 86_400_000);
-    if (dniNaTrgu >= 90) {
+    const { t: prvic, ponovno } = prvicNaTrgu(o.id);
+    const dniNaTrgu = Math.max(0, Math.floor((zdaj - prvic) / 86_400_000));
+    const ponovnoBesedilo = ponovno ? " (vključno s prejšnjimi objavami)" : "";
+    if (dniNaTrgu >= 180) {
+      tocke += 8;
+      razlogi.push(`${dniNaTrgu} dni na trgu${ponovnoBesedilo} — prodajalec je verjetno pripravljen popustiti +8`);
+    } else if (dniNaTrgu >= 90) {
       tocke += 5;
-      razlogi.push(`${dniNaTrgu} dni na trgu +5`);
+      razlogi.push(`${dniNaTrgu} dni na trgu${ponovnoBesedilo} +5`);
     }
     if (o.za_obnovo || o.za_investicijo) {
       tocke += 5;
@@ -234,7 +584,11 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       cena, cenaM2, povrsina, zemljisce: o.zemljisce_m2 === null ? null : Number(o.zemljisce_m2),
       stEnot: o.st_enot, stEnotOcena: o.st_enot_ocena, leto: o.leto_izgradnje,
       dniNaTrgu, padecPct,
-      medianaM2: med?.m2 ? Math.round(med.m2) : null, medianaVzorec: med?.vzorec ?? 0, odstopanjePct,
+      medianaM2: prim ? Math.round(prim.m2) : null, medianaVzorec: prim?.vzorec ?? 0, odstopanjePct,
+      primerjava: prim?.opis ?? null,
+      opozorilo,
+      stanje,
+      drzava: o.drzava,
       brutoDonosPct,
       najemMesecno: najem ? Math.round(najem.mesecno) : null,
       najemOpis: najem?.opis ?? null,
@@ -244,6 +598,13 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
       tocke: Math.min(100, tocke), razlogi,
     });
   }
+  log(
+    `posli čas: branje ${Math.round((tBranje - tZacetek) / 1000)} s, besedila in ponovne objave ${Math.round((tIzracun - tBranje) / 1000)} s, izračun ${Math.round((Date.now() - tIzracun) / 1000)} s`
+  );
+  log(
+    `posli primerjave: ${stevci.bliznji} z bližnjimi, ${stevci.regionalni} z regijo, ${stevci.brez} brez; ` +
+      `${stevci.sumljivih} sumljivo nizkih, ${stevci.delezev} deležev, ${stevci.drazb} dražb`
+  );
 
   posli.sort((a, b) => b.tocke - a.tocke || a.cena - b.cena);
 
@@ -278,6 +639,9 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
      */
     const kljuci = [
       `v|${p.vir}|${p.cena}|${p.povrsina ?? "?"}|${(p.kraj ?? "").toLowerCase().trim()}`,
+      // Isti objekt na dveh portalih ali z drugače zapisanim krajem ("Kočevje"
+      // in "Kočevje, Ob Mahovniški cesti 5"): ista cena in površina do decimalke.
+      ...(p.povrsina !== null ? [`c|${p.drzava}|${p.tip}|${p.cena}|${p.povrsina}`] : []),
       ...(p.nepremicninaId ? [`k|${p.nepremicninaId}`] : []),
     ];
     if (kljuci.some((k) => videni.has(k))) return false;

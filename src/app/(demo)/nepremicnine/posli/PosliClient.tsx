@@ -24,6 +24,12 @@ export type NepPosel = {
   medianaM2: number | null;
   medianaVzorec: number;
   odstopanjePct: number | null;
+  /** S čim je oglas primerjan (primerljivi v bližini ali regija). */
+  primerjava?: string | null;
+  /** Zakaj nizka cena ni nujno posel — prikaže se kot opozorilo. */
+  opozorilo?: string | null;
+  stanje?: "novo" | "obnovljeno" | "za_obnovo" | null;
+  drzava?: string | null;
   brutoDonosPct: number | null;
   najemMesecno: number | null;
   najemOpis: string | null;
@@ -190,7 +196,7 @@ export function PosliClient({
                 <div className="flex justify-between"><dt className="text-zinc-400">Cena/m²</dt><dd className="font-medium">{eur(p.cenaM2)}</dd></div>
               )}
               {p.odstopanjePct !== null && (
-                <div className="flex justify-between"><dt className="text-zinc-400">Proti mediani</dt><dd className={`font-medium ${p.odstopanjePct > 0 ? "text-emerald-600" : "text-zinc-600"}`}>{p.odstopanjePct > 0 ? "−" : "+"}{Math.abs(p.odstopanjePct)} %</dd></div>
+                <div className="flex justify-between" title={p.primerjava ?? ""}><dt className="text-zinc-400">{p.primerjava && !p.primerjava.startsWith("mediana regije") ? "Proti primerljivim" : "Proti mediani"}</dt><dd className={`font-medium ${p.odstopanjePct > 0 ? "text-emerald-600" : "text-zinc-600"}`}>{p.odstopanjePct > 0 ? "−" : "+"}{Math.abs(p.odstopanjePct)} %</dd></div>
               )}
               {p.brutoDonosPct !== null && (
                 <div className="flex justify-between" title={p.najemOpis ? `Najemnina ~${p.najemMesecno} €/mes — ${p.najemOpis} (n=${p.najemVzorec})` : ""}>
@@ -206,6 +212,20 @@ export function PosliClient({
               )}
               <div className="flex justify-between"><dt className="text-zinc-400">Na trgu</dt><dd className="font-medium">{p.dniNaTrgu} dni</dd></div>
             </dl>
+            {p.primerjava && (
+              <p className="mt-1.5 text-[11px] text-zinc-400">
+                Primerjava: {p.primerjava}
+                {p.medianaM2 !== null && ` · ${eur(p.medianaM2)}/m²`}
+                {p.stanje === "za_obnovo" && " · oglas je za obnovo"}
+                {p.stanje === "obnovljeno" && " · obnovljeno"}
+                {p.stanje === "novo" && " · novogradnja"}
+              </p>
+            )}
+            {p.opozorilo && (
+              <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800">
+                ⚠ {p.opozorilo}
+              </p>
+            )}
 
             <details className="mt-2 text-xs text-zinc-500">
               <summary className="cursor-pointer font-medium text-zinc-600">Zakaj {p.tocke} točk?</summary>
