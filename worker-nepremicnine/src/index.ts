@@ -1378,6 +1378,14 @@ async function main(): Promise<void> {
   /** Ključ termina, ki je bil že sprožen ("2026-08-20T04") — brez podvajanja. */
   let zadnjiTermin: string | null = null;
   let cakalnica: string[] = [];
+  /**
+   * Knjigovodstvo (geokoder, povezovanje, posli, iskanja) enkrat na KROG, ne
+   * po vsakem viru. Posli po 29. 9. 2026 primerjajo z bližnjimi in iščejo
+   * stanje v besedilu vse baze (~100 s) — krog ob 20:00 jih je izračunal
+   * dvajsetkrat, tudi za vire, ki so bili zaradi proračuna preskočeni.
+   * Najdlje eno uro zamika, da dolg krog ne pusti feeda starega.
+   */
+  let zadnjeKnjigovodstvo = Date.now();
 
   while (!stopping) {
     utrip();
@@ -1480,7 +1488,10 @@ async function main(): Promise<void> {
         log("warn", "zahteva preklicana - vir v hlajenju", { vir: virNaloge.vir, do: doKdaj });
       } else {
         await pregled(db, naloga.id as string, virNaloge, urnik.detajlovNaKrog);
-        await knjigovodstvo(db);
+        if (cakalnica.length === 0 || Date.now() - zadnjeKnjigovodstvo > 60 * 60_000) {
+          await knjigovodstvo(db);
+          zadnjeKnjigovodstvo = Date.now();
+        }
       }
     }
     await sleep(POLL_MS);
