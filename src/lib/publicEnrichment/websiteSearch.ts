@@ -91,7 +91,9 @@ export function pageBelongsToCompany(
   pageText: string,
   host: string,
   tokens: string[],
-  vatDigits: string
+  vatDigits: string,
+  /** Kraj iz registra — uporabi se samo pri natančnem ujemanju domene. */
+  kraj?: string | null
 ): string | null {
   if (vatDigits && pageText.replace(/\D/g, "").includes(vatDigits)) {
     return `davčna številka ${vatDigits} je navedena na strani`;
@@ -101,11 +103,23 @@ export function pageBelongsToCompany(
 
   const haystack = normalize(pageText);
   const hostCompact = host.replace(/[^a-z0-9]/g, "");
+  const osnovaDomene = host.replace(/\.si$/, "").replace(/^www\./, "");
 
   if (tokens.length >= 2 && tokens.every((t) => haystack.includes(t))) {
     return "stran navaja celotno ime podjetja";
   }
 
+  /**
+   * Zakaj tu NI pravila „domena je natanko ime podjetja“.
+   *
+   * 22. 9. 2026 sem ga dodal, ker je meritev pokazala izgubljene zadetke tipa
+   * PUTAR d.o.o. → putar.si (peterka crk ne prestane meje sestih). Kot varovalo
+   * sem zahteval, da stran omeni kraj iz registra. Na vzorcu 60 podjetij je
+   * pravilo naslo natanko enega: PIVKA d.d. → pivka.si — kar je stran OBCINE
+   * Pivka. Varovalo je bilo krozno: podjetje se imenuje po kraju, zato kraj o
+   * lastnistvu ne pove nicesar. Nic pravilnega, ena napacna e-posta; napacno
+   * pripisan kontakt pa je hujsi od manjkajocega.
+   */
   const distinctive = tokens.find((t) => t.length >= 6);
   if (distinctive) {
     if (hostCompact.includes(distinctive)) return `domena vsebuje "${distinctive}"`;

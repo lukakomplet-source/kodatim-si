@@ -47,6 +47,13 @@ export type VhodSpleta = {
   kratkiNaziv?: string | null;
   kraj?: string | null;
   davcna?: string | null;
+  /**
+   * Zunanji iskalnik (npr. Firecrawl), ki se uporabi NAMESTO DuckDuckGo, kadar
+   * ugibanje domene ne obrodi. Vrne gostitelja, ki je že prestal dokaz
+   * lastništva, ali null. DDG od 17. 9. 2026 vrača CAPTCHO, zato brez tega
+   * iskanja sploh ni.
+   */
+  iskalnik?: (vhod: VhodSpleta, preizkuseni: string[]) => Promise<{ host: string; opomba: string } | null>;
 };
 
 export type IzidSpleta = {
@@ -386,7 +393,24 @@ export async function kontaktiSSpleta(vhod: VhodSpleta): Promise<IzidSpleta> {
   // vrstica dobi pošteno stanje „brez_iskanja“. Stikalo v okolju iskalnik
   // izklopi povsem, dokler ni zamenjan z API-jem.
   let iskanoZIskalnikom = false;
+  if (!stran && Date.now() < rok && vhod.iskalnik) {
+    stevec.n += 1;
+    const najdeno = await vhod.iskalnik(vhod, preizkuseni);
+    iskanoZIskalnikom = true;
+    if (najdeno) {
+      const s = await naslovnaStran(najdeno.host, stevec);
+      if (s) {
+        stran = s;
+        kako = najdeno.opomba;
+      } else {
+        zapiski.push(`${najdeno.host} najdena z iskanjem, a naslovna stran se ni odzvala`);
+      }
+    } else {
+      zapiski.push("iskalnik ni našel strani, ki bi prestala dokaz lastništva");
+    }
+  }
   const iskalnikDovoljen =
+    !vhod.iskalnik &&
     process.env.REGISTER_SPLET_BREZ_ISKALNIKA !== "1" && searchEngineAvailable() && msUntilNextSlot("google") < 5_000;
   if (!stran && Date.now() < rok && iskalnikDovoljen) {
     stevec.n += 1;
