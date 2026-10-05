@@ -30,10 +30,12 @@ export default async function NepVecenotnePage() {
   const izidi = (podatki?.izidi ?? []).filter((r) => r.capCena >= 8 || r.donosVse >= 6);
 
   // Fotografija po referenci in sproti, kot pri poslih: v predizračunu bi se postarala.
-  const slike = new Map<string, string | null>();
+  // Lokacija za zemljevid pri virih, ki fotografij ne dovolijo (c21, KW …).
+  const slike = new Map<string, { slika: string | null; lat: number | null; lng: number | null }>();
   if (izidi.length > 0) {
-    const { data: vrstice } = await db.from("nep_oglasi").select("id, slika_url").in("id", izidi.map((r) => r.id));
-    for (const v of (vrstice ?? []) as { id: string; slika_url: string | null }[]) slike.set(v.id, v.slika_url);
+    const { data: vrstice } = await db.from("nep_oglasi").select("id, slika_url, lat, lng").in("id", izidi.map((r) => r.id));
+    for (const v of (vrstice ?? []) as { id: string; slika_url: string | null; lat: number | null; lng: number | null }[])
+      slike.set(v.id, { slika: v.slika_url, lat: v.lat, lng: v.lng });
   }
 
   return (

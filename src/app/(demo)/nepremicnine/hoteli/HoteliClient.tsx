@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { ZemljevidSlicica } from "../ZemljevidSlicica";
 
 export type HotelKartica = {
   id: string;
@@ -24,6 +25,10 @@ export type HotelKartica = {
   lezisc: number | null;
   cenaNaEnoto: number | null;
   slika: string | null;
+  /** Fotografija je z drugega vira, kjer je ISTI objekt (ista cena, površina, kraj). */
+  slikaIsti: { vir: string; url: string } | null;
+  lat: number | null;
+  lng: number | null;
   dniNaTrgu: number;
   zadnjicVidenDni: number;
   tudiNa: string[];
@@ -220,9 +225,16 @@ export function HoteliClient({ hoteli }: { hoteli: HotelKartica[] }) {
                   decoding="async"
                   className="h-full w-full object-cover transition duration-300 hover:scale-[1.03]"
                 />
+              ) : h.lat !== null && h.lng !== null ? (
+                <ZemljevidSlicica lat={h.lat} lng={h.lng} />
               ) : (
                 <span className="flex h-full w-full items-center justify-center px-6 text-center text-xs text-zinc-400">
-                  Vir fotografije ne da — odpri oglas
+                  Fotografije so na izvirnem oglasu
+                </span>
+              )}
+              {!h.slika && (
+                <span className="absolute bottom-2 left-2 rounded-full bg-zinc-900/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                  Fotografije so na izvirnem oglasu — tapni
                 </span>
               )}
               {h.drzava && (
@@ -288,6 +300,15 @@ export function HoteliClient({ hoteli }: { hoteli: HotelKartica[] }) {
                   <p className="font-medium text-amber-700">Zadnjič viden pred {h.zadnjicVidenDni} dnevi — preveri, ali je še naprodaj.</p>
                 )}
                 {h.tudiNa.length > 0 && <p>Isti objekt tudi na: {[...new Set(h.tudiNa)].join(", ")}</p>}
+                {h.slikaIsti && (
+                  <p>
+                    Fotografija:{" "}
+                    <a href={h.slikaIsti.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-accent">
+                      {h.slikaIsti.vir}
+                    </a>{" "}
+                    (isti objekt, ista cena in površina)
+                  </p>
+                )}
               </div>
 
               <div className="mt-auto flex gap-2 pt-3">

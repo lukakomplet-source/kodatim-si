@@ -3,6 +3,7 @@ import { Hotel } from "lucide-react";
 import { createAvtonetClient } from "@/lib/avtonet/db";
 import { preberiDostop, prijavaZa } from "@/lib/avtonet/dostop";
 import { odstraniDvojnike } from "@/lib/nepremicnine/dvojniki";
+import { razdaljaKm } from "@/lib/nepremicnine/kraji";
 import { oceniTurizem, type Atrakcija, type TurizemObcina } from "@/lib/nepremicnine/turizem";
 import { NepNav } from "../NepNav";
 import { HoteliClient, type HotelKartica } from "./HoteliClient";
@@ -140,6 +141,42 @@ export default async function NepHoteliPage() {
     unikatne.push(v);
   }
 
+  /**
+   * FOTOGRAFIJA ISTEGA OBJEKTA Z VIRA, KI JO DOVOLI.
+   *
+   * Sedem virov je bilo odobrenih s pogojem, da njihovih fotografij ne kažemo,
+   * niti po referenci (glej glave adapterjev). Mnogi hoteli z njih pa so na
+   * nepremicnine.net, siolu ali bolhi objavljeni tudi kot navadna hiša ali
+   * poslovni prostor — zato jih iskalnik dvojnikov med "hoteli" ne najde.
+   * Fotografijo vzamemo samo ob TOČNEM ujemanju: ista cena, površina ±1 %
+   * (vsaj ±2 m²) in do 3 km. Podobna hiša v istem kraju ni dovolj — napačna
+   * fotografija je slabša od nobene.
+   */
+  const brezSlike = unikatne.filter((v) => !v.slika_url && v.cena_eur !== null && v.povrsina_m2 !== null && v.lat !== null);
+  const sposojene = new Map<string, { slika: string; vir: string; url: string }>();
+  if (brezSlike.length > 0) {
+    const { data: kandidati } = await db
+      .from("nep_oglasi")
+      .select("vir, url, cena_eur, povrsina_m2, lat, lng, slika_url")
+      .eq("status", "aktiven")
+      .eq("posel", "prodaja")
+      .not("slika_url", "is", null)
+      .in("cena_eur", [...new Set(brezSlike.map((v) => Number(v.cena_eur)))]);
+    for (const v of brezSlike) {
+      const m2 = Number(v.povrsina_m2);
+      const zadetek = ((kandidati ?? []) as { vir: string; url: string; cena_eur: number; povrsina_m2: number | null; lat: number | null; lng: number | null; slika_url: string }[]).find(
+        (k) =>
+          Number(k.cena_eur) === Number(v.cena_eur) &&
+          k.povrsina_m2 !== null &&
+          Math.abs(Number(k.povrsina_m2) - m2) <= Math.max(2, m2 * 0.01) &&
+          k.lat !== null &&
+          k.lng !== null &&
+          razdaljaKm(v.lat!, v.lng!, k.lat, k.lng) < 3
+      );
+      if (zadetek) sposojene.set(v.id, { slika: zadetek.slika_url, vir: zadetek.vir, url: zadetek.url });
+    }
+  }
+
   // Turizem: SURS prenočitve po občinah in atrakcije (Slovenija).
   const [aRes, oRes] = await Promise.all([
     db.from("nep_atrakcije").select("ime, tip, lat, lng, moc").eq("vkljuceno", true).limit(500),
@@ -183,6 +220,7 @@ export default async function NepHoteliPage() {
       }
     }
     const prvotna = v.cena_prvotna_eur === null ? null : Number(v.cena_prvotna_eur);
+    const sposojena = v.slika_url ? undefined : sposojene.get(v.id);
     return {
       id: v.id,
       url: v.url,
@@ -200,7 +238,10 @@ export default async function NepHoteliPage() {
       enotVir: v.st_enot !== null ? "potrjeno" : enot !== null ? (v.st_lezisc !== null ? "iz ležišč" : "ocena") : null,
       lezisc: v.st_lezisc,
       cenaNaEnoto: cena !== null && enot !== null && enot > 0 ? Math.round(cena / enot) : null,
-      slika: v.slika_url,
+      slika: v.slika_url ?? sposojena?.slika ?? null,
+      slikaIsti: sposojena ? { vir: sposojena.vir, url: sposojena.url } : null,
+      lat: v.lat,
+      lng: v.lng,
       dniNaTrgu: Math.max(0, Math.floor((zdaj - new Date(v.first_seen).getTime()) / 86_400_000)),
       zadnjicVidenDni: Math.max(0, Math.floor((zdaj - new Date(v.last_seen).getTime()) / 86_400_000)),
       tudiNa: [...(tudiNa.get(v.id) ?? []).map((d) => d.vir), ...(dodatno.get(v.id) ?? [])],

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { ZemljevidSlicica } from "../ZemljevidSlicica";
 
 /** Zrcalo Vecenotna iz worker-nepremicnine/src/vecenotne.ts — polja so pogodba. */
 export type Vecenotna = {
@@ -60,8 +61,8 @@ export function VecenotneClient({
   slike,
 }: {
   izidi: Vecenotna[];
-  /** id oglasa -> naslov fotografije pri viru (ali null). */
-  slike: Record<string, string | null>;
+  /** id oglasa -> fotografija pri viru (ali null) in lokacija za zemljevid. */
+  slike: Record<string, { slika: string | null; lat: number | null; lng: number | null }>;
 }) {
   const [samo8, setSamo8] = useState(true);
   const [razvrsti, setRazvrsti] = useState("predelava");
@@ -126,18 +127,25 @@ export function VecenotneClient({
               className="relative block aspect-[4/3] w-full overflow-hidden bg-zinc-100"
               title="Odpri oglas pri viru"
             >
-              {slike[x.id] ? (
+              {slike[x.id]?.slika ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={slike[x.id]!}
+                  src={slike[x.id]!.slika!}
                   alt={x.naslov ?? "Fotografija hiše"}
                   loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover transition duration-300 hover:scale-[1.03]"
                 />
+              ) : slike[x.id]?.lat != null && slike[x.id]?.lng != null ? (
+                <ZemljevidSlicica lat={slike[x.id]!.lat!} lng={slike[x.id]!.lng!} />
               ) : (
                 <span className="flex h-full w-full items-center justify-center px-6 text-center text-xs text-zinc-400">
-                  Vir fotografije ne da — odpri oglas
+                  Fotografije so na izvirnem oglasu
+                </span>
+              )}
+              {!slike[x.id]?.slika && (
+                <span className="absolute bottom-2 left-2 rounded-full bg-zinc-900/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                  Fotografije so na izvirnem oglasu — tapni
                 </span>
               )}
               <span className="absolute left-2 top-2 rounded-full bg-zinc-900/75 px-2 py-0.5 text-[11px] font-bold text-white backdrop-blur">
