@@ -7,8 +7,9 @@ import Link from "next/link";
 export function NepNav({ aktiven, jeAdmin }: { aktiven: string; jeAdmin?: boolean }) {
   const zavihki = [
     { pot: "/nepremicnine", oznaka: "Iskalnik" },
-    { pot: "/nepremicnine/posli", oznaka: "Posli" },
     { pot: "/nepremicnine/vecenotne", oznaka: "Večenotne" },
+    { pot: "/nepremicnine/hoteli", oznaka: "Hoteli" },
+    { pot: "/nepremicnine/posli", oznaka: "Posli" },
     { pot: "/nepremicnine/kalkulator", oznaka: "Kalkulator" },
     ...(jeAdmin ? [{ pot: "/nepremicnine/pregled", oznaka: "Konzola" }] : []),
   ];
