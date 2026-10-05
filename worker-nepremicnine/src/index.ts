@@ -1398,8 +1398,12 @@ async function main(): Promise<void> {
    * stanje v besedilu vse baze (~100 s) — krog ob 20:00 jih je izračunal
    * dvajsetkrat, tudi za vire, ki so bili zaradi proračuna preskočeni.
    * Najdlje eno uro zamika, da dolg krog ne pusti feeda starega.
+   *
+   * Ura teče od PRVEGA pregleda po zadnjem knjigovodstvu, ne od zagona: prvi
+   * krog po ponovnem zagonu (5. 10. 2026) je štel tudi dve uri mirovanja in
+   * knjigovodstvo sprožil že po prvem viru.
    */
-  let zadnjeKnjigovodstvo = Date.now();
+  let dolgovanoOd: number | null = null;
 
   while (!stopping) {
     utrip();
@@ -1502,9 +1506,10 @@ async function main(): Promise<void> {
         log("warn", "zahteva preklicana - vir v hlajenju", { vir: virNaloge.vir, do: doKdaj });
       } else {
         await pregled(db, naloga.id as string, virNaloge, urnik.detajlovNaKrog);
-        if (cakalnica.length === 0 || Date.now() - zadnjeKnjigovodstvo > 60 * 60_000) {
+        dolgovanoOd ??= Date.now();
+        if (cakalnica.length === 0 || Date.now() - dolgovanoOd > 60 * 60_000) {
           await knjigovodstvo(db);
-          zadnjeKnjigovodstvo = Date.now();
+          dolgovanoOd = null;
         }
       }
     }
