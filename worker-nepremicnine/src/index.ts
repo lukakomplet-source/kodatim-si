@@ -7,7 +7,8 @@ import { VIRI, najdiVir } from "./viri/index.js";
 import type { VirAdapter, Rezina } from "./viri/vmesnik.js";
 import { zaznajPonovneObjave } from "./ponovne-objave.js";
 import { geokodirajOglase, naloziKraje, poveziNepremicnine } from "./nepremicnine.js";
-import { izracunajPosle } from "./posli.js";
+import { izracunajPosle, preberiBesedilneZnake, type BesedilniZnaki } from "./posli.js";
+import { izracunajVecenotne } from "./vecenotne.js";
 import { preveriIskanja } from "./iskanja.js";
 import { zajemiDetajle } from "./detajli.js";
 import { preveriIzziv, razbremeniKontekst } from "./izziv.js";
@@ -1130,10 +1131,23 @@ async function knjigovodstvo(db: Db): Promise<void> {
   } catch (e) {
     log("warn", "ponovne objave padle", { napaka: e instanceof Error ? e.message : String(e) });
   }
+  // Besedilni znaki (stanje, delež, dražba) so pregled cele tabele — enkrat
+  // za oba izračuna. Če padejo, si jih vsak izračun prebere sam.
+  let znaki: BesedilniZnaki | undefined;
   try {
-    await izracunajPosle(db, l);
+    znaki = await preberiBesedilneZnake(db);
+  } catch (e) {
+    log("warn", "besedilni znaki padli", { napaka: e instanceof Error ? e.message : String(e) });
+  }
+  try {
+    await izracunajPosle(db, l, znaki);
   } catch (e) {
     log("warn", "posli padli", { napaka: e instanceof Error ? e.message : String(e) });
+  }
+  try {
+    await izracunajVecenotne(db, l, znaki);
+  } catch (e) {
+    log("warn", "vecenotne padle", { napaka: e instanceof Error ? e.message : String(e) });
   }
   try {
     await preveriIskanja(db, l);

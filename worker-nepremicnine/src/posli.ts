@@ -108,6 +108,48 @@ async function idjiPoVzorcu(db: Db, vzorec: string): Promise<Set<string>> {
   return ids;
 }
 
+/** Idji aktivnih prodajnih oglasov, pri katerih naslov ali opis izda znak. */
+export type BesedilniZnaki = {
+  zaObnovo: Set<string>;
+  obnovljeno: Set<string>;
+  novo: Set<string>;
+  delez: Set<string>;
+  drazba: Set<string>;
+};
+
+/**
+ * Vseh pet znakov naenkrat. Vsak je pregled cele tabele (~6 s na stolpec),
+ * zato jih knjigovodstvo prebere ENKRAT in jih da poslom in večenotnim.
+ */
+export async function preberiBesedilneZnake(db: Db): Promise<BesedilniZnaki> {
+  const [zaObnovo, obnovljeno, novo, delez, drazba] = await Promise.all([
+    idjiPoVzorcu(db, VZORCI.zaObnovo),
+    idjiPoVzorcu(db, VZORCI.obnovljeno),
+    idjiPoVzorcu(db, VZORCI.novo),
+    idjiPoVzorcu(db, VZORCI.delez),
+    idjiPoVzorcu(db, VZORCI.drazba),
+  ]);
+  return { zaObnovo, obnovljeno, novo, delez, drazba };
+}
+
+/**
+ * Tri razreda stanja, ne dva: stanovanje iz 1975, obnovljeno 2013, ni
+ * primerljivo z novogradnjo po 4.000 €/m² — v Medvodah je bilo proti njim
+ * "58 % pod trgom". Novo = zgrajeno 2015 ali pozneje ali novogradnja v
+ * besedilu; obnovljeno = obnova 2012 ali pozneje ali v besedilu.
+ */
+export function razredStanja(
+  o: { id: string; za_obnovo: boolean; leto_izgradnje: number | null; leto_adaptacije: number | null },
+  z: BesedilniZnaki
+): Stanje | null {
+  const zaO = o.za_obnovo || z.zaObnovo.has(o.id);
+  if ((o.leto_izgradnje ?? 0) >= 2015 || (z.novo.has(o.id) && !zaO)) return "novo";
+  const obn = z.obnovljeno.has(o.id) || (o.leto_adaptacije ?? 0) >= 2012 || (o.leto_izgradnje ?? 0) >= 2008;
+  if (zaO && !obn) return "za_obnovo";
+  if (obn && !zaO) return "obnovljeno";
+  return null;
+}
+
 /**
  * Primerjamo samo enako z enakim. Pri zemljiščih podtip ni podrobnost:
  * zazidljivo zemljišče stane 50–150 €/m², kmetijsko 2–5 €/m². Zemljišče brez
@@ -175,7 +217,7 @@ function km(aLat: number, aLng: number, bLat: number, bLng: number): number {
 /** Zasebni prodajalci niso "agencija"; omejitev na agencijo zanje ne velja. */
 const jeAgencija = (a: string | null) => !!a && !/zasebn|fizi[čc]n|lastnik/i.test(a);
 
-export async function izracunajPosle(db: Db, log: (msg: string) => void): Promise<number> {
+export async function izracunajPosle(db: Db, log: (msg: string) => void, znaki?: BesedilniZnaki): Promise<number> {
   const tZacetek = Date.now();
   const polja =
     "id, vir, url, naslov, tip, podtip, regija, drzava, kraj, lat, lng, cena_eur, cena_prvotna_eur, cena_m2_eur, povrsina_m2, zemljisce_m2, st_enot, st_enot_ocena, leto_izgradnje, leto_adaptacije, vec_enot, za_obnovo, za_investicijo, first_seen, datum_objave, data_quality, agencija, telefon, nepremicnina_id";
@@ -187,13 +229,7 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     (q) => q.eq("status", "aktiven").eq("posel", "oddaja").eq("tip", "stanovanje").gt("cena_eur", 100).lt("cena_eur", 10000)
   );
   const tBranje = Date.now();
-  const [zaObnovoIds, obnovljenoIds, novoIds, delezIds, drazbaIds] = await Promise.all([
-    idjiPoVzorcu(db, VZORCI.zaObnovo),
-    idjiPoVzorcu(db, VZORCI.obnovljeno),
-    idjiPoVzorcu(db, VZORCI.novo),
-    idjiPoVzorcu(db, VZORCI.delez),
-    idjiPoVzorcu(db, VZORCI.drazba),
-  ]);
+  const z = znaki ?? (await preberiBesedilneZnake(db));
 
   /**
    * PRAVI ČAS NA TRGU. Ponovna objava (ponovne-objave.ts) prenese prvotno
@@ -226,20 +262,7 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     return { t, ponovno };
   };
 
-  /**
-   * Tri razreda stanja, ne dva: stanovanje iz 1975, obnovljeno 2013, ni
-   * primerljivo z novogradnjo po 4.000 €/m² — v Medvodah je bilo proti njim
-   * "58 % pod trgom". Novo = zgrajeno 2015 ali pozneje ali novogradnja v
-   * besedilu; obnovljeno = obnova 2012 ali pozneje ali v besedilu.
-   */
-  const stanjeZa = (o: Vrstica): Stanje | null => {
-    const zaO = o.za_obnovo || zaObnovoIds.has(o.id);
-    if ((o.leto_izgradnje ?? 0) >= 2015 || (novoIds.has(o.id) && !zaO)) return "novo";
-    const obn = obnovljenoIds.has(o.id) || (o.leto_adaptacije ?? 0) >= 2012 || (o.leto_izgradnje ?? 0) >= 2008;
-    if (zaO && !obn) return "za_obnovo";
-    if (obn && !zaO) return "obnovljeno";
-    return null;
-  };
+  const stanjeZa = (o: Vrstica): Stanje | null => razredStanja(o, z);
 
   /**
    * INDEKS PRIMERLJIVIH: (država|vrsta) → celica mreže → oglasi.
@@ -259,7 +282,7 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
   const regVideni = new Set<string>();
   for (const o of prodajni) {
     if (o.cena_m2_eur === null || !o.drzava) continue;
-    if (delezIds.has(o.id) || drazbaIds.has(o.id)) continue;
+    if (z.delez.has(o.id) || z.drazba.has(o.id)) continue;
     // Oglas z nemogočo površino ima tudi nemogoč €/m² — v primerjavo ne sme.
     const povrsina = povrsinaZaIzracun(o.tip, o.povrsina_m2);
     const vrsta = vrstaZa(o);
@@ -474,8 +497,8 @@ export async function izracunajPosle(db: Db, log: (msg: string) => void): Promis
     const razlogi: string[] = [];
     let opozorilo: string | null = null;
     const stanje = stanjeZa(o);
-    const delez = delezIds.has(o.id);
-    const drazba = drazbaIds.has(o.id);
+    const delez = z.delez.has(o.id);
+    const drazba = z.drazba.has(o.id);
 
     const prim = povrsina !== null && cenaM2 !== null ? primerjaj(o, povrsina, stanje) : null;
     if (prim) stevci[prim.regionalna ? "regionalni" : "bliznji"]++;

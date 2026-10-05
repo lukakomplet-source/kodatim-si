@@ -14,6 +14,7 @@
     "uvoz:etn": "tsx src/uvoz-etn.ts",
     "popravi:regije": "tsx src/popravi-regije.ts",
     "posli": "tsx src/zazeni-posle.ts",
+    "vecenotne": "tsx src/zazeni-vecenotne.ts",
     "uvoz:hr-nastanitve": "tsx src/uvoz-hr-nastanitve.ts",
     "ponovne:objave": "tsx src/zazeni-ponovne-objave.ts",
     "test:ponovne-objave": "tsx src/test-ponovne-objave.ts",
