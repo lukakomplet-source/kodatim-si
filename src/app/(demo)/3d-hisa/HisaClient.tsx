@@ -139,6 +139,28 @@ export default function HisaClient() {
   };
 
   /**
+   * Promo slike: pet kadrov v 3840×2160 — tri enote, ločeni vhodi, prerez
+   * etaž. Kadri so vnaprej določeni (engine/promo.ts), da so oznake vedno na
+   * pravem mestu. Med izvozom motor preklopi prerez in etaže; po njem je vse
+   * spet „cela hiša“, zato tudi gumbi tu pokažejo to stanje.
+   */
+  const promo = async () => {
+    if (!motorRef.current || renderStanje) return;
+    try {
+      await motorRef.current.promo((i, skupaj, ime, odstotek) => {
+        setRenderStanje(`Promo ${i}/${skupaj} (${ime}): ${odstotek} %`);
+      });
+      setEtaza("vse");
+      setPrerezVklopljen(false);
+      setRenderStanje("Promo slike shranjene ✓ (5 × PNG, 3840×2160)");
+      setTimeout(() => setRenderStanje(null), 10000);
+    } catch {
+      setRenderStanje("Promo slike niso uspele — poglej konzolo.");
+      setTimeout(() => setRenderStanje(null), 6000);
+    }
+  };
+
+  /**
    * Fotoreal: trenutni pogled se izriše štiristokrat in povpreči. Traja nekaj
    * sekund in ves čas teče na tukajšnji grafični kartici — zato je gumb
    * namenoma ločen od "Render", ki pripravi kadre za nadaljnjo obdelavo.
@@ -328,6 +350,15 @@ export default function HisaClient() {
       {/* lokalni AI render: izvoz kadrov (beauty + depth + normal) */}
       {pripravljen && nacin === "ogled" && (
         <div className="absolute left-4 bottom-4 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={promo}
+            disabled={renderStanje !== null}
+            className="rounded-full bg-emerald-500/90 px-4 py-2 text-xs font-semibold text-zinc-950 backdrop-blur transition hover:bg-emerald-400 disabled:opacity-60"
+            title="Pet kadrov v 4K z oznakami: tri enote, ločeni vhodi, prerez etaž."
+          >
+            📣 Promo slike — 3 enote, ločeni vhodi
+          </button>
           <button
             type="button"
             onClick={fotoreal}

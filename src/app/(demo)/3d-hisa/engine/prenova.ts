@@ -92,6 +92,17 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       sk.rotation.y = Math.PI / 2;
     }
     const okvirM = tipId === "O2" ? mat.lesGladek : mat.okvir;
+    /**
+     * Lokalna os x skupine je pri stenah vzdolž x zasukana (rotation.y = π/2),
+     * zato „ven“ v lokalnih koordinatah tam pomeni nasprotni predznak. Prej so
+     * bile zato police na severni in južni fasadi obrnjene V NOTRANJOST.
+     */
+    const zun = os === "z" ? ven : -ven;
+    // Izhodišče skupine je 6 cm pred sredino zidu (klicatelj); zunanje lice je
+    // pri +0,10. Okvir sedi v ravnini toplotne izolacije, zato ostane zunaj
+    // ~10 cm globoka špaleta — brez nje so bila okna nalepljena na fasado.
+    const FX = zun * -0.04;
+    const FD = 0.08;
     const el = (m: THREE.Material, sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
       const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m);
       b.position.set(x, y, z);
@@ -100,53 +111,72 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
       sk.add(b);
       return b;
     };
-    // podboj/okvir
-    el(okvirM, 0.34, 0.07, w + 0.1, 0, h / 2 + 0.03, 0);
-    el(okvirM, 0.34, 0.07, w + 0.1, 0, -h / 2 - 0.03, 0);
-    el(okvirM, 0.34, h + 0.12, 0.07, 0, 0, w / 2 + 0.03);
-    el(okvirM, 0.34, h + 0.12, 0.07, 0, 0, -w / 2 - 0.03);
+    // slepi okvir (PVC, bel; 7 cm)
+    el(okvirM, FD, 0.07, w, FX, h / 2 - 0.035, 0);
+    el(okvirM, FD, 0.07, w, FX, -h / 2 + 0.035, 0);
+    el(okvirM, FD, h, 0.07, FX, 0, w / 2 - 0.035);
+    el(okvirM, FD, h, 0.07, FX, 0, -w / 2 + 0.035);
+    /** Krilo s profilom (5,5 cm) in steklom; vrne steklo. */
+    const krilo = (zs: number, kw: number, kh: number, ys = 0) => {
+      const p = 0.055;
+      el(okvirM, FD * 0.8, p, kw, FX + zun * 0.01, ys + kh / 2 - p / 2, zs);
+      el(okvirM, FD * 0.8, p, kw, FX + zun * 0.01, ys - kh / 2 + p / 2, zs);
+      el(okvirM, FD * 0.8, kh, p, FX + zun * 0.01, ys, zs + kw / 2 - p / 2);
+      el(okvirM, FD * 0.8, kh, p, FX + zun * 0.01, ys, zs - kw / 2 + p / 2);
+      const st = el(mat.steklo, 0.024, kh - 2 * p, kw - 2 * p, FX, ys, zs);
+      stekla.push(st);
+      return st;
+    };
     if (t.vrsta === "vrata") {
       // vhodna vrata: krilo (priprto), pri širših tipih fiksna zasteklitev ob krilu
       const kriloW = Math.min(w, 1.0) * (w > 1.2 ? 0.45 : 0.92);
-      const krilo = new THREE.Group();
-      const plosca = new THREE.Mesh(new THREE.BoxGeometry(0.06, h - 0.06, kriloW), mat.vrata);
+      const kr = new THREE.Group();
+      const plosca = new THREE.Mesh(new THREE.BoxGeometry(0.06, h - 0.08, kriloW), mat.vrata);
       plosca.position.z = -kriloW / 2;
       plosca.castShadow = false;
-      krilo.add(plosca);
+      kr.add(plosca);
+      // ozka zasteklitev v krilu in kljuka z rozeto
+      const ozko = new THREE.Mesh(new THREE.BoxGeometry(0.065, h * 0.55, 0.14), mat.steklo);
+      ozko.position.set(0, 0.05, -kriloW + 0.22);
+      kr.add(ozko);
+      stekla.push(ozko);
       const kljuka = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.16), mat.jekloAntracit);
-      kljuka.position.set(ven * 0.06, -0.02, -kriloW + 0.12);
-      krilo.add(kljuka);
-      krilo.position.set(0, 0, w / 2 - 0.02);
-      krilo.rotation.y = ven * 0.35;
-      sk.add(krilo);
+      kljuka.position.set(zun * 0.06, -0.02, -kriloW + 0.12);
+      kr.add(kljuka);
+      kr.position.set(FX, 0, w / 2 - 0.07);
+      kr.rotation.y = zun * 0.35;
+      sk.add(kr);
       if (w > 1.2) {
-        const st = el(mat.steklo, 0.03, h - 0.1, w - kriloW - 0.1, 0, 0, -kriloW / 2 + 0.01);
-        stekla.push(st);
-        el(okvirM, 0.28, h - 0.08, 0.06, 0, 0, w / 2 - kriloW - 0.03);
+        krilo(-kriloW / 2 + 0.01 - 0.0, w - kriloW - 0.14, h - 0.14);
+        el(okvirM, FD, h - 0.08, 0.07, FX, 0, w / 2 - kriloW - 0.07);
       }
     } else if (t.vrsta === "balkonska") {
       // balkonska vrata: stekleno krilo + morebitno fiksno okno ob njem
       const kriloW = Math.min(0.9, w * 0.45);
-      const st1 = el(mat.steklo, 0.03, h - 0.1, kriloW - 0.06, 0, 0, w / 2 - kriloW / 2);
-      stekla.push(st1);
-      el(okvirM, 0.28, h - 0.06, 0.05, 0, 0, w / 2 - kriloW + 0.02);
+      krilo(w / 2 - 0.07 - kriloW / 2, kriloW, h - 0.14);
       const kljuka = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.03), mat.jekloAntracit);
-      kljuka.position.set(ven * 0.15, 0, w / 2 - kriloW + 0.09);
+      kljuka.position.set(FX + zun * 0.06, 0, w / 2 - 0.07 - kriloW + 0.08);
       sk.add(kljuka);
       if (w - kriloW > 0.3) {
-        const st2 = el(mat.steklo, 0.03, h - 0.1, w - kriloW - 0.1, 0, 0, -kriloW / 2 + 0.0);
-        stekla.push(st2);
+        const ost = w - 0.14 - kriloW;
+        krilo(-w / 2 + 0.07 + ost / 2, ost, h - 0.14);
       }
     } else {
-      const st = el(mat.steklo, 0.03, h - 0.08, w - 0.1, 0, 0, 0);
-      stekla.push(st);
-      for (let k = 1; k < t.krila; k++) {
-        el(okvirM, 0.3, h - 0.08, 0.05, 0, 0, -w / 2 + (w / t.krila) * k);
-      }
+      // okno: krila enake širine, vsako s svojim profilom (prej ena šipa z
+      // belimi letvami čez — od daleč je bilo videti kot rešetka)
+      const notrW = w - 0.14;
+      const kw = notrW / t.krila;
+      for (let k = 0; k < t.krila; k++) krilo(-notrW / 2 + kw * (k + 0.5), kw, h - 0.14);
     }
-    // zunanja ALU polica pri oknih s parapetom
+    // zunanja ALU polica (PZI): sega 4 cm čez lice fasade, s stranskima zaključkoma
     if (t.vrsta === "okno" || t.vrsta === "fiksno") {
-      el(mat.jekloAntracit, 0.14, 0.03, w + 0.14, ven * 0.22, -h / 2 - 0.08, 0);
+      el(mat.jekloAntracit, 0.15, 0.025, w + 0.04, zun * 0.065, -h / 2 - 0.012, 0);
+      el(mat.jekloAntracit, 0.15, 0.05, 0.012, zun * 0.065, -h / 2, w / 2 + 0.014);
+      el(mat.jekloAntracit, 0.15, 0.05, 0.012, zun * 0.065, -h / 2, -w / 2 - 0.014);
+    }
+    // kaseta zunanjega screen senčila (PZI: svetla, npr. Sonal White Pearl)
+    if (t.vrsta !== "vrata" && w >= 0.9) {
+      el(mat.kasetaSencila, 0.1, 0.13, w, zun * 0.05, h / 2 - 0.065, 0);
     }
     g.add(sk);
   };
@@ -295,11 +325,11 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
   // zahod: pas frčade (O6) ostane odprt
   posevniStrop(-1, notrZs, NACRT.frcada.sredinaZ - NACRT.frcada.sirina / 2);
   posevniStrop(-1, NACRT.frcada.sredinaZ + NACRT.frcada.sirina / 2, notrZe);
-  // vzhod: odprta pasova vhodne frčade (ZV4 + O4) in obeh strešnih oken
+  // vzhod: odprta pasova strešnega okna kopalnice in dviga strehe nad stopniščem
+  // (pod dvigom je svoj mavčni strop — glej STREHA)
   posevniStrop(1, notrZs, -4.15);
-  posevniStrop(1, -3.25, -2.35);
-  posevniStrop(1, 0.65, 1.15);
-  posevniStrop(1, 2.05, notrZe);
+  posevniStrop(1, -3.25, -polS + NACRT.stopnisce.odSevernegaRoba);
+  posevniStrop(1, -polS + NACRT.stopnisce.odSevernegaRoba + NACRT.stopnisce.dolzinaSJ, notrZe);
   boks(mat.mavcna, 3.4, 0.06, NACRT.sirinaSJ - 2 * DEB, 0, NACRT.slemeY - 0.98, 0, false);
 
   // ===================== PREDELNE STENE =====================
@@ -553,108 +583,250 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     boks(mat.pohistvoLes, 0.12, 0.16, 1.6, 0, yZg - 0.1, -0.6, false); // razbremenilna glava
   }
 
-  // ===================== STREHA (Prefalz) + FRČADA =====================
+  // ===================== STREHA (Prefalz) + FRČADI =====================
+  /**
+   * Po prerezu A-A (list 4), tlorisu ostrešja (list 5) in detajlih D1/D2 (list 9).
+   *
+   * Prej je bila zahodna frčada škatla, vdrta 0,65 m za fasado, vzhodna stran
+   * pa trije ločeni kosi (izrez strešine, mini streha, streha stolpa). Prerez
+   * A-A pokaže drugače: OBE frčadi sta enokapnici od slemena navzven —
+   * zahodna s čelom v ravnini fasade do kote +8,85 (0,50 pod slemenom), vzhodna
+   * („dvig strehe — frčada + streha stopnišča“) zvezno čez ves stolp stopnišča.
+   */
   const kapY = NACRT.podstrehaTla + NACRT.kolencna;
-  const kapZunY = kapY - Math.tan(NAKLON) * NACRT.previsKap;
   const strehaD = NACRT.sirinaSJ + 2 * NACRT.previsCelo;
-  // zahodna strešina cela; vzhodna z izrezom nad vhodom podstrehe (ZV4b),
-  // ker bi strešina sicer rezala vrh vrat (kolenčna 1,16 < vrata 2,10)
-  const strehina = (smer: 1 | -1, z0: number, z1: number, xDo = polG + NACRT.previsKap) => {
-    const yPriXDo = NACRT.slemeY - Math.tan(NAKLON) * xDo;
-    const dolz = Math.hypot(xDo, NACRT.slemeY - yPriXDo) + 0.1;
-    const plosk = boks(mat.prefalz, dolz, 0.1, z1 - z0, (smer * xDo) / 2, (NACRT.slemeY + yPriXDo) / 2 + 0.05, (z0 + z1) / 2);
-    plosk.rotation.z = -smer * NAKLON;
+  const zS0 = -strehaD / 2;
+  const zS1 = strehaD / 2;
+  const xKap = polG + NACRT.previsKap;
+  const DEB_STREHE = 0.1;
+  const DEB_LICA = 0.2; // bočna stena frčade (D1: fasada + 10 + OSB + 15 cm)
+  const obrobaM = mat.jekloAntracit;
+  const zlebM = mat.jekloAntracit.clone();
+  zlebM.side = THREE.DoubleSide;
+
+  /** Ravnina strehe: spodnji rob gre od (x=0, yVrh) navzven pod kotom `kot`. */
+  type Ravnina = { smer: 1 | -1; kot: number; yVrh: number };
+  const yNa = (r: Ravnina, x: number) => r.yVrh - Math.tan(r.kot) * Math.abs(x);
+  const poNagibu = (r: Ravnina, m: THREE.Material, z0: number, z1: number, xOd: number, xDo: number, debelina: number, odmik: number, senca = true) => {
+    const dolz = (xDo - xOd) / Math.cos(r.kot);
+    const xs = (r.smer * (xOd + xDo)) / 2;
+    const ys = (yNa(r, xOd) + yNa(r, xDo)) / 2;
+    const nx = Math.sin(r.kot) * r.smer;
+    const ny = Math.cos(r.kot);
+    const p = boks(m, dolz, debelina, z1 - z0, xs + nx * odmik, ys + ny * odmik, (z0 + z1) / 2, senca);
+    p.rotation.z = -r.smer * r.kot;
+    return p;
   };
-  strehina(-1, -strehaD / 2, strehaD / 2);
-  // vzhodna frčada po tlorisu list 7: zajame vhodna vrata ZV4 (100/210) IN okno
-  // O4 118/118 s parapetom 100 — oboje je višje od kolenčne stene 1,16
-  const vhodZ0 = -2.35;
-  const vhodZ1 = 0.65;
-  strehina(1, -strehaD / 2, vhodZ0);
-  strehina(1, vhodZ1, strehaD / 2);
-  strehina(1, vhodZ0, vhodZ1, 2.55); // nad frčado ostane le zgornji del strešine
-  boks(mat.prefalz, 0.4, 0.12, strehaD, 0, NACRT.slemeY + 0.1, 0);
-
-  // čelna stena vzhodne frčade nad kolenčno, z odprtinama za vrh vrat in okna
-  {
-    const celoPri = polG - DEB / 2;
-    stena(mat.fasadaNova, "z", celoPri, vhodZ0, vhodZ1, kapY, 7.78, DEB, [
-      { sredina: -1.57, w: 1.0, y0: kapY, y1: NACRT.podstrehaTla + 2.1 },
-      { sredina: -0.12, w: 1.18, y0: kapY, y1: NACRT.podstrehaTla + 2.18 },
-    ]);
-    for (const zz of [vhodZ0, vhodZ1]) {
-      const licko = new THREE.Shape();
-      licko.moveTo(2.55, NACRT.slemeY - Math.tan(NAKLON) * 2.55);
-      licko.lineTo(polG + 0.1, NACRT.slemeY - Math.tan(NAKLON) * (polG + 0.1));
-      licko.lineTo(polG + 0.1, 7.78);
-      licko.lineTo(2.55, 7.78);
-      licko.closePath();
-      const lg = new THREE.ExtrudeGeometry(licko, { depth: 0.1, bevelEnabled: false });
-      const lm = new THREE.Mesh(lg, mat.fasadaNova);
-      lm.position.set(0, 0, zz - 0.05);
-      lm.castShadow = true;
-      lm.receiveShadow = true;
-      g.add(lm);
+  /**
+   * Strešna ploskev s stoječimi zgibi. Zgibi so geometrija in ne risba na
+   * teksturi: tekstura se raztegne po vsaki škatli drugače in je zgibe kazala
+   * VZPOREDNO s kapjo — streha je bila videti kot deske. Pri Prefalzu tečejo
+   * od slemena do kapi, razmak ~0,50 m.
+   */
+  const ploskev = (r: Ravnina, z0: number, z1: number, xOd: number, xDo: number) => {
+    poNagibu(r, mat.prefalz, z0, z1, xOd, xDo, DEB_STREHE, DEB_STREHE / 2);
+    for (let z = Math.ceil((z0 + 0.12) / 0.5) * 0.5; z < z1 - 0.12; z += 0.5) {
+      const dolz = (xDo - xOd) / Math.cos(r.kot);
+      const zg = boks(mat.prefalz, dolz, 0.035, 0.022, 0, 0, z, false);
+      zg.position.set(
+        (r.smer * (xOd + xDo)) / 2 + Math.sin(r.kot) * r.smer * (DEB_STREHE + 0.017),
+        (yNa(r, xOd) + yNa(r, xDo)) / 2 + Math.cos(r.kot) * (DEB_STREHE + 0.017),
+        z
+      );
+      zg.rotation.z = -r.smer * r.kot;
     }
-    const mini = boks(mat.prefalz, polG + 0.45 - 2.5, 0.08, vhodZ1 - vhodZ0 + 0.25, (2.5 + polG + 0.45) / 2, 7.83, (vhodZ0 + vhodZ1) / 2);
-    mini.rotation.z = 0.03;
-  }
+  };
+  /** Kapna obroba — čelo 0,19 m (D2), poravnano z vrhom kritine. */
+  const kapnaObroba = (r: Ravnina, z0: number, z1: number, xDo: number) => {
+    boks(obrobaM, 0.03, 0.19, z1 - z0, r.smer * (xDo + 0.015), yNa(r, xDo) + 0.015, (z0 + z1) / 2, false);
+  };
+  /** Čelna obroba ob zatrepu (vzdolž nagiba). */
+  const celnaObroba = (r: Ravnina, z: number, xOd: number, xDo: number) => {
+    poNagibu(r, obrobaM, z - 0.015, z + 0.015, xOd, xDo, 0.16, 0.04, false);
+  };
+  /** Cev med dvema točkama (odtoki, kolena). */
+  const cev = (a: THREE.Vector3, b: THREE.Vector3, r = 0.045) => {
+    const d = new THREE.Vector3().subVectors(b, a);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d.length(), 12), obrobaM);
+    m.position.copy(a).addScaledVector(d, 0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    m.castShadow = true;
+    g.add(m);
+  };
+  /** Polkrožni žleb (D2) z zavihanim robom in čelnima zaključkoma. */
+  const zleb = (r: Ravnina, xDo: number, z0: number, z1: number) => {
+    const R = 0.075;
+    const x = r.smer * (xDo + R - 0.01);
+    const y = yNa(r, xDo) - 0.03;
+    const ziva = new THREE.Mesh(new THREE.CylinderGeometry(R, R, z1 - z0, 18, 1, true, -Math.PI / 2, Math.PI), zlebM);
+    ziva.rotation.x = Math.PI / 2;
+    ziva.position.set(x, y, (z0 + z1) / 2);
+    ziva.castShadow = true;
+    g.add(ziva);
+    const rob = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, z1 - z0, 6), zlebM);
+    rob.rotation.x = Math.PI / 2;
+    rob.position.set(x + r.smer * R, y, (z0 + z1) / 2);
+    g.add(rob);
+    for (const zz of [z0, z1]) {
+      const cep = new THREE.Mesh(new THREE.CircleGeometry(R, 12, Math.PI, Math.PI), zlebM);
+      cep.position.set(x, y, zz);
+      g.add(cep);
+    }
+    return { x, y };
+  };
+  /** Odtočna cev: iz žleba, s kolenom do fasade, ob fasadi do tal; objemke na ~2 m. */
+  const odtok = (zl: { x: number; y: number }, z: number, xStena: number, yDo = 0.12) => {
+    const a = new THREE.Vector3(zl.x, zl.y - 0.04, z);
+    const b = new THREE.Vector3(zl.x, zl.y - 0.2, z);
+    const c = new THREE.Vector3(xStena, zl.y - 0.55, z);
+    const d = new THREE.Vector3(xStena, yDo, z);
+    cev(a, b);
+    cev(b, c);
+    cev(c, d);
+    for (let y = yDo + 0.6; y < c.y - 0.3; y += 2.0) {
+      boks(obrobaM, 0.03, 0.04, 0.12, xStena + Math.sign(xStena) * -0.06, y, z, false);
+    }
+    // čevelj na dnu
+    cev(new THREE.Vector3(xStena, yDo + 0.12, z), new THREE.Vector3(xStena + Math.sign(xStena) * 0.12, yDo, z), 0.045);
+  };
+  /** Snegobrani: dve vodoravni palici na nosilcih nad kapjo. */
+  const snegobran = (r: Ravnina, z0: number, z1: number, x: number) => {
+    const y = yNa(r, x) + DEB_STREHE;
+    for (const dv of [0.06, 0.13]) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, z1 - z0, 6), obrobaM);
+      m.rotation.x = Math.PI / 2;
+      m.position.set(r.smer * x, y + dv, (z0 + z1) / 2);
+      g.add(m);
+    }
+    for (let z = z0 + 0.25; z < z1; z += 0.9) boks(obrobaM, 0.03, 0.16, 0.02, r.smer * x, y + 0.08, z, false);
+  };
 
-  // strešni okni v vzhodni strešini (PZI: „strešno okno“ v kopalnici; + soba)
-  const stresnoOkno = (zc: number) => {
+  const glavnaZ: Ravnina = { smer: -1, kot: NAKLON, yVrh: NACRT.slemeY };
+  const glavnaV: Ravnina = { smer: 1, kot: NAKLON, yVrh: NACRT.slemeY };
+
+  // --- zahodna frčada (enokapnica, čelo v ravnini fasade) ---
+  const F = NACRT.frcada;
+  const zF0 = F.sredinaZ - F.sirina / 2;
+  const zF1 = F.sredinaZ + F.sirina / 2;
+  const ravF: Ravnina = { smer: -1, kot: Math.atan((NACRT.slemeY - F.vrh) / polG), yVrh: NACRT.slemeY };
+  const xKapF = polG + F.previs;
+  const zFs0 = zF0 - DEB_LICA - 0.08;
+  const zFs1 = zF1 + DEB_LICA + 0.08;
+
+  // --- vzhodni dvig strehe (frčada + streha stopnišča, zvezno) ---
+  const S0 = NACRT.stopnisce;
+  const zD0 = -polS + S0.odSevernegaRoba;
+  const zD1 = zD0 + S0.dolzinaSJ;
+  const ravD: Ravnina = { smer: 1, kot: (NACRT.dvigVzhod.naklonStopinj * Math.PI) / 180, yVrh: NACRT.slemeY };
+  const xKapD = polG + S0.globinaVZ + NACRT.dvigVzhod.previs;
+  const zDs0 = zD0 - 0.25;
+  const zDs1 = zD1 + 0.25;
+
+  // glavna zahodna strešina: cela, v pasu frčade pa le kapni previs, ki ostane
+  // kot nadstrešek pod oknom O6 (prerez A-A: „zapiranje vidnega ostrešja“)
+  ploskev(glavnaZ, zS0, zF0, 0, xKap);
+  ploskev(glavnaZ, zF1, zS1, 0, xKap);
+  ploskev(glavnaZ, zF0, zF1, polG - 0.02, xKap);
+  // glavna vzhodna strešina: brez pasu stopnišča — tam je dvig strehe
+  ploskev(glavnaV, zS0, zD0, 0, xKap);
+  ploskev(glavnaV, zD1, zS1, 0, xKap);
+  // slemenska obroba
+  boks(obrobaM, 0.34, 0.1, strehaD + 0.02, 0, NACRT.slemeY + 0.16, 0);
+
+  // obrobe in žlebovi glavne strehe
+  kapnaObroba(glavnaZ, zS0, zS1, xKap);
+  kapnaObroba(glavnaV, zS0, zD0, xKap);
+  kapnaObroba(glavnaV, zD1, zS1, xKap);
+  for (const r of [glavnaZ, glavnaV]) {
+    celnaObroba(r, zS0, 0, xKap);
+    celnaObroba(r, zS1, 0, xKap);
+  }
+  const zlebZ = zleb(glavnaZ, xKap, zS0, zS1);
+  const zlebV1 = zleb(glavnaV, xKap, zS0, zD0);
+  const zlebV2 = zleb(glavnaV, xKap, zD1, zS1);
+  for (const zz of [-polS + 0.25, polS - 0.25]) odtok(zlebZ, zz, -(polG + 0.07));
+  odtok(zlebV1, -polS + 0.25, polG + 0.07);
+  odtok(zlebV2, polS - 0.25, polG + 0.07);
+  snegobran(glavnaZ, zS0 + 0.1, zF0 - 0.05, polG - 0.35);
+  snegobran(glavnaZ, zF1 + 0.05, zS1 - 0.1, polG - 0.35);
+  snegobran(glavnaV, zS0 + 0.1, zD0 - 0.05, polG - 0.35);
+  snegobran(glavnaV, zD1 + 0.05, zS1 - 0.1, polG - 0.35);
+
+  // ZAHODNA FRČADA — čelna stena z oknom O6 (okno samo vstavi zanka fasad: O6 je
+  // v ODPRTINAH s parapetom 1,16, torej spodnji rob točno na kolenčni steni)
+  stena(mat.fasadaNova, "z", -polG + DEB / 2, zF0, zF1, kapY, F.vrh + 0.05, DEB, [
+    { sredina: F.sredinaZ, w: OKNA_TIPI.O6.w, y0: kapY, y1: kapY + OKNA_TIPI.O6.h },
+  ]);
+  /** Bočna stena (lice) frčade: trikotnik med strešino in enokapnico (D1). */
+  const lice = (smer: 1 | -1, rav: Ravnina, zOd: number, xDo: number) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, NACRT.slemeY);
+    sh.lineTo(smer * xDo, yNa(glavnaZ, xDo));
+    sh.lineTo(smer * xDo, yNa(rav, xDo));
+    sh.closePath();
+    const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: DEB_LICA, bevelEnabled: false }), mat.fasadaNova);
+    m.position.z = zOd;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    g.add(m);
+  };
+  lice(-1, ravF, zF0 - DEB_LICA, polG);
+  lice(-1, ravF, zF1, polG);
+  ploskev(ravF, zFs0, zFs1, 0, xKapF);
+  kapnaObroba(ravF, zFs0, zFs1, xKapF);
+  celnaObroba(ravF, zFs0, 0.6, xKapF);
+  celnaObroba(ravF, zFs1, 0.6, xKapF);
+  // podšivek previsa (D2: 0,30 m) — bel, kot omet
+  boks(mat.okvir, F.previs, 0.03, zFs1 - zFs0, -(polG + F.previs / 2), yNa(ravF, xKapF) - 0.07, (zFs0 + zFs1) / 2, false);
+  const zlebF = zleb(ravF, xKapF, zFs0, zFs1);
+  // odtok frčade na glavni žleb (ob južnem robu frčade)
+  cev(new THREE.Vector3(zlebF.x, zlebF.y - 0.04, zFs1 - 0.12), new THREE.Vector3(zlebF.x, zlebZ.y + 0.45, zFs1 - 0.12));
+  cev(new THREE.Vector3(zlebF.x, zlebZ.y + 0.45, zFs1 - 0.12), new THREE.Vector3(zlebZ.x, zlebZ.y + 0.02, zFs1 - 0.12));
+  // mavčni strop pod enokapnico (od znotraj se sicer vidi pločevina)
+  poNagibu(ravF, mat.mavcna, zF0, zF1, 0.2, polG - DEB, 0.05, -0.32, false);
+
+  // VZHODNI DVIG STREHE — čelna stena nad kolenčno z vrhovoma vrat ZV4 in okna O4
+  stena(mat.fasadaNova, "z", polG - DEB / 2, zD0, zD1, kapY, yNa(ravD, polG) + 0.05, DEB, [
+    { sredina: -1.57, w: OKNA_TIPI.ZV4.w, y0: kapY, y1: NACRT.podstrehaTla + OKNA_TIPI.ZV4.h },
+    { sredina: -0.12, w: OKNA_TIPI.O4.w, y0: kapY, y1: NACRT.podstrehaTla + 1.0 + OKNA_TIPI.O4.h },
+  ]);
+  lice(1, ravD, zD0 - DEB_LICA, polG);
+  lice(1, ravD, zD1, polG);
+  ploskev(ravD, zDs0, zDs1, 0, xKapD);
+  kapnaObroba(ravD, zDs0, zDs1, xKapD);
+  celnaObroba(ravD, zDs0, 0.6, xKapD);
+  celnaObroba(ravD, zDs1, 0.6, xKapD);
+  const zlebD = zleb(ravD, xKapD, zDs0, zDs1);
+  odtok(zlebD, zDs1 - 0.15, polG + S0.globinaVZ + 0.12);
+  poNagibu(ravD, mat.mavcna, zD0, zD1, 0.2, polG - DEB, 0.05, -0.32, false);
+  /** Spodnji rob dviga strehe nad točko x (za stolp stopnišča). */
+  const yPodDvigom = (x: number) => yNa(ravD, x) - 0.02;
+
+  // strešno okno v vzhodni strešini — kopalnica podstrehe (PZI: „strešno okno“).
+  // Drugo strešno okno (soba, z = 1,6) je odpadlo: po tlorisu ostrešja je ta
+  // del pod dvigom strehe, soba dobi svetlobo skozi O4 v čelu dviga.
+  {
     const xc = 2.35;
-    const yc = NACRT.slemeY - Math.tan(NAKLON) * xc + 0.09;
     const so = new THREE.Group();
-    so.position.set(xc, yc, zc);
+    so.position.set(xc, NACRT.slemeY - Math.tan(NAKLON) * xc + 0.12, -3.7);
     so.rotation.z = -NAKLON;
-    const okvirSO = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.07, 0.82), mat.jekloAntracit);
+    const okvirSO = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.82), mat.jekloAntracit);
     okvirSO.receiveShadow = true;
     so.add(okvirSO);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.075, 0.68), mat.steklo);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.085, 0.68), mat.steklo);
     st.position.y = 0.01;
     so.add(st);
     stekla.push(st);
     g.add(so);
-  };
-  stresnoOkno(1.6); // soba (južno od vzhodne frčade)
-  stresnoOkno(-3.7); // kopalnica (PZI: „strešno okno“)
-  // žleb + cevi (zahod)
-  const zleb = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, strehaD, 10), mat.jekloAntracit);
-  zleb.rotation.x = Math.PI / 2;
-  zleb.position.set(-(polG + NACRT.previsKap) - 0.04, kapZunY - 0.02, 0);
-  g.add(zleb);
-  for (const zz of [-polS + 0.3, polS - 0.3]) {
-    const cev = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, kapZunY - 0.3, 8), mat.jekloAntracit);
-    cev.position.set(-polG - 0.12, (kapZunY - 0.3) / 2, zz);
-    g.add(cev);
   }
-  // dimnik (kurilnica SV) — ~0,8 m nad strešino na svojem mestu
+
+  // dimnik (kurilnica SV) — ~0,8 m nad strešino, ometan, s kapo iz pločevine
   {
     const strehaPriX = NACRT.slemeY - Math.tan(NAKLON) * 3.4;
     boks(mat.fasadaNova, 0.5, strehaPriX + 0.8 - (strehaPriX - 0.4), 0.5, 3.4, strehaPriX + 0.2, -3.9);
-    boks(mat.jekloAntracit, 0.6, 0.1, 0.6, 3.4, strehaPriX + 0.85, -3.9, false);
-  }
-
-  // FRČADA na zahodni strešini (O6, širina ~4,2 po fasadi)
-  {
-    const F = NACRT.frcada;
-    const z1 = F.sredinaZ - F.sirina / 2;
-    const z2 = F.sredinaZ + F.sirina / 2;
-    const yTal = NACRT.podstrehaTla;
-    const celoVrh = yTal + F.parapet + F.oknoH + 0.22;
-    for (const zz of [z1, z2]) {
-      boks(mat.fasadaNova, -F.celoX + F.strehaDo, 2.0, 0.1, (F.celoX + F.strehaDo) / 2, celoVrh - 1.0, zz, true);
-    }
-    stena(mat.fasadaNova, "z", F.celoX, z1, z2, yTal + 0.0, celoVrh, 0.2, [
-      { sredina: F.sredinaZ, w: F.oknoW, y0: yTal + F.parapet, y1: yTal + F.parapet + F.oknoH },
-    ]);
-    dodajOkno("z", F.celoX - 0.08, F.sredinaZ, yTal + F.parapet, "O6", -1);
-    const dolz = -F.celoX + F.strehaDo + 0.5;
-    const str = boks(mat.prefalz, dolz, 0.09, F.sirina + 0.3, (F.celoX + F.strehaDo) / 2 - 0.1, celoVrh + 0.22, F.sredinaZ);
-    str.rotation.z = 0.16;
-    // mavčni strop frčade (od znotraj se sicer vidi spodnja stran pločevine)
-    const strNotr = boks(mat.mavcna, dolz - 0.3, 0.05, F.sirina - 0.2, (F.celoX + F.strehaDo) / 2 - 0.1, celoVrh + 0.12, F.sredinaZ, false);
-    strNotr.rotation.z = 0.16;
+    boks(obrobaM, 0.62, 0.05, 0.62, 3.4, strehaPriX + 0.83, -3.9, false);
+    boks(obrobaM, 0.14, 0.12, 0.14, 3.4, strehaPriX + 0.92, -3.9, false);
+    boks(obrobaM, 0.5, 0.03, 0.5, 3.4, strehaPriX + 1.0, -3.9, false);
   }
 
   // ===================== BALKONI =====================
@@ -688,9 +860,10 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     const x2 = polG + S.globinaVZ;
     const xNotr = x1 + S.podestSirina;
 
-    // vrh stolpa (B): dvignjen nad vrh vrat podstrehe (podstrehaTla + 2,10 = 7,56),
-    // da strehica stolpa ne seka vratne odprtine ZV4 — PZI kota 7,20 je do venca
-    const vrhStolpa = S.visinaStolpa + 0.5;
+    // vrh stolpa: pod dvigom strehe, ki teče od slemena čez ves stolp (tloris
+    // ostrešja: „dvig strehe — frčada + streha stopnišča“). Prej je imel stolp
+    // svojo ravno streho na +7,7 m, ločeno od hiše.
+    const vrhStolpa = (x: number) => yPodDvigom(x) - 0.06;
 
     // stebri HOP 100/100/3 po PZI rastru (cinkani, prašno barvani). PZI izrecno
     // pravi, da so pozicije profilov informativne in jih je treba uskladiti z
@@ -705,20 +878,24 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
         if (sx < xNotr && Math.abs(sz - vrataOs) < vrataPol) {
           z = sz < vrataOs ? vrataOs - vrataPol : vrataOs + vrataPol;
         }
-        trdno(mat.jekloAntracit, sx - 0.05, 0, z - 0.05, sx + 0.05, vrhStolpa, z + 0.05);
+        trdno(mat.jekloAntracit, sx - 0.05, 0, z - 0.05, sx + 0.05, vrhStolpa(sx), z + 0.05);
       }
     }
-    // prečke na vrhu (okvir strehe)
-    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, vrhStolpa - 0.05, z1 + 0.07);
-    boks(mat.jekloAntracit, x2 - x1, 0.1, 0.1, (x1 + x2) / 2, vrhStolpa - 0.05, z2 - 0.07);
+    // prečke na vrhu (okvir strehe) — v naklonu dviga
+    poNagibu(ravD, mat.jekloAntracit, z1 + 0.02, z1 + 0.12, x1, x2, 0.1, -0.08, false);
+    poNagibu(ravD, mat.jekloAntracit, z2 - 0.12, z2 - 0.02, x1, x2, 0.1, -0.08, false);
 
     // LAMELNA OBLEKA s presledki — vidna konstrukcija skozi (pogledi A/B/C)
-    const lamelnaStena = (os: "x" | "z", pri: number, od: number, doo: number, y0: number, y1: number) => {
+    const lamelnaStena = (os: "x" | "z", pri: number, od: number, doo: number, y0: number, vrh: (a: number) => number) => {
       const korak = 0.17;
       const sirL = 0.09;
+      let y1 = y0;
       for (let a = od + korak / 2; a < doo; a += korak) {
-        if (os === "z") boks(mat.pohistvoLes, 0.05, y1 - y0, sirL, pri, (y0 + y1) / 2, a, false);
-        else boks(mat.pohistvoLes, sirL, y1 - y0, 0.05, a, (y0 + y1) / 2, pri, false);
+        // vrh vsake lamele sledi naklonu strehe nad njo
+        const ya = vrh(os === "x" ? a : pri);
+        y1 = Math.max(y1, ya);
+        if (os === "z") boks(mat.pohistvoLes, 0.05, ya - y0, sirL, pri, (y0 + ya) / 2, a, false);
+        else boks(mat.pohistvoLes, sirL, ya - y0, 0.05, a, (y0 + ya) / 2, pri, false);
       }
       // kolizija: tanek pas (skozi lamele se ne hodi)
       if (os === "z") kolizije.push(new THREE.Box3(new THREE.Vector3(pri - 0.04, y0, od), new THREE.Vector3(pri + 0.04, y1, doo)));
@@ -728,10 +905,6 @@ export function zgradiPrenovo(mat: Materiali): Prenova {
     // severna: ob fasadi ostane odprtina za VSTOP v stolp (s severnega tlakovca)
     lamelnaStena("x", z1 + 0.03, x1 + 1.0, x2 - 0.1, 0.25, vrhStolpa);
     lamelnaStena("x", z2 - 0.03, x1 + 0.1, x2 - 0.1, 0.25, vrhStolpa); // južna
-
-    // streha stolpa (rahlo nagnjena pločevina, nad vrhom vrat podstrehe)
-    const strehica = boks(mat.prefalz, S.globinaVZ + 0.5, 0.08, S.dolzinaSJ + 0.4, (x1 + x2) / 2 + 0.05, vrhStolpa + 0.12, (z1 + z2) / 2);
-    strehica.rotation.z = -0.06;
 
     // ograja iz ravne pločevine 40/4: stebrički + vrhnji pas
     const ograjica = (ax: number, az: number, bx: number, bz: number, ya: number, yb: number) => {

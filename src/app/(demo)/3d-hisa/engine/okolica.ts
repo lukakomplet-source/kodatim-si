@@ -26,6 +26,8 @@ export type Okolica = {
   lampe: THREE.PointLight[];
   blokMeshi: THREE.Mesh[];
   nebo: THREE.Mesh;
+  /** Drevesa (za promo prerez, kjer zakrivajo hišo). */
+  drevesa: THREE.Object3D[];
 };
 
 // Meje parcele v svetovnih koordinatah (hiša centrirana na 0,0; X+ vzhod, Z+ jug)
@@ -54,6 +56,7 @@ export function zgradiOkolico(mat: Materiali): Okolica {
   const tla: THREE.Box3[] = [];
   const lampe: THREE.PointLight[] = [];
   const blokMeshi: THREE.Mesh[] = [];
+  const drevesa: THREE.Object3D[] = [];
 
   // ---------- tla ----------
   const trava = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat.trava);
@@ -151,27 +154,84 @@ export function zgradiOkolico(mat: Materiali): Okolica {
   // ---------- drevesa in grmi po situaciji ----------
   // (pozicije s situacije: veliko drevo SV, niz ob vzhodni meji, JV skupina,
   //  posamezna S sredine vrta in ob cesti)
+  /**
+   * Drevo: deblo z vejami in krošnja iz nepravilnih skupkov listja.
+   *
+   * Prej je bilo pet ploskovno senčenih krogel na palici — od blizu „low-poly“
+   * igra, kar je bilo prvo, kar je uporabnik opazil. Skupki so ikozaedri z
+   * nagubano površino (vsako oglišče premaknjeno), gladko senčeni in z
+   * listnato teksturo; krošnja jih ima 10–24, gostejše v sredini. Naključje je
+   * vezano na lego drevesa, zato je vsako drevo ob vsakem nalaganju enako.
+   */
+  const nakljucje = (seme: number) => () => {
+    seme = (seme + 0x6d2b79f5) | 0;
+    let t = Math.imul(seme ^ (seme >>> 15), 1 | seme);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const OBLIKE_SKUPKOV = Array.from({ length: 6 }, (_, k) => {
+    const geo = new THREE.IcosahedronGeometry(1, 3);
+    const rnd = nakljucje(97 + k * 31);
+    const smeri = Array.from({ length: 5 }, () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize());
+    const faze = smeri.map(() => rnd() * 6.28);
+    const poz = geo.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < poz.count; i++) {
+      v.fromBufferAttribute(poz, i);
+      let n = 0;
+      smeri.forEach((s, j) => (n += Math.sin(v.dot(s) * (3 + j * 1.7) + faze[j]) / (j + 1)));
+      v.multiplyScalar(1 + 0.16 * n + (rnd() - 0.5) * 0.05);
+      poz.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  });
   const drevo = (x: number, z: number, h: number, r: number, y0 = 0) => {
     const d = new THREE.Group();
-    const deblo = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, h * 0.5, 7), mat.deblo);
-    deblo.position.y = h * 0.25;
+    const rnd = nakljucje(Math.round(x * 1000) * 7919 + Math.round(z * 1000));
+    const visDebla = h * 0.45;
+    const deblo = new THREE.Mesh(new THREE.CylinderGeometry(0.09 + r * 0.025, 0.16 + r * 0.035, visDebla, 10), mat.lubje);
+    deblo.position.y = visDebla / 2;
+    deblo.rotation.z = (rnd() - 0.5) * 0.08;
     deblo.castShadow = true;
     d.add(deblo);
-    for (const [ox, oy, oz, or2] of [
-      [0, h * 0.62, 0, r],
-      [r * 0.5, h * 0.52, r * 0.3, r * 0.7],
-      [-r * 0.45, h * 0.55, -r * 0.25, r * 0.65],
-      [0.1, h * 0.74, -r * 0.35, r * 0.55],
-      [-r * 0.2, h * 0.45, r * 0.45, r * 0.5],
-    ] as const) {
-      const li = new THREE.Mesh(new THREE.SphereGeometry(or2, 10, 8), mat.listje);
-      li.position.set(ox, oy, oz);
-      li.scale.y = 0.8;
-      li.castShadow = true;
-      d.add(li);
+    // glavne veje: iz vrha debla navzven in navzgor, v krošnjo
+    const vej = 4 + Math.floor(rnd() * 3);
+    for (let k = 0; k < vej; k++) {
+      const kot = (k / vej) * Math.PI * 2 + rnd() * 0.6;
+      const dolz = r * (0.55 + rnd() * 0.35);
+      const veja = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.07, dolz, 6), mat.lubje);
+      const nagib = 0.6 + rnd() * 0.4;
+      veja.position.set(Math.cos(kot) * Math.sin(nagib) * dolz * 0.5, visDebla * 0.92 + Math.cos(nagib) * dolz * 0.5, Math.sin(kot) * Math.sin(nagib) * dolz * 0.5);
+      veja.rotation.set(0, -kot, 0);
+      veja.rotateZ(-nagib);
+      veja.castShadow = true;
+      d.add(veja);
+    }
+    // krošnja
+    const sredY = h * 0.64;
+    const polY = h * 0.3;
+    const skupkov = Math.round(10 + r * 5);
+    for (let k = 0; k < skupkov; k++) {
+      const u = rnd() * Math.PI * 2;
+      const c = rnd() * 2 - 1;
+      const dist = 0.35 + Math.sqrt(rnd()) * 0.6;
+      const s = Math.sqrt(1 - c * c);
+      const px = Math.cos(u) * s * r * dist;
+      const pz = Math.sin(u) * s * r * dist;
+      const py = sredY + c * polY * dist;
+      const vel = r * (0.32 + rnd() * 0.22) * (1.15 - dist * 0.45);
+      const m = new THREE.Mesh(OBLIKE_SKUPKOV[k % OBLIKE_SKUPKOV.length], mat.krosnje[Math.floor(rnd() * mat.krosnje.length)]);
+      m.position.set(px, py, pz);
+      m.scale.set(vel, vel * (0.8 + rnd() * 0.2), vel);
+      m.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      d.add(m);
     }
     d.position.set(x, y0, z);
     g.add(d);
+    drevesa.push(d);
     kolizije.push(new THREE.Box3(new THREE.Vector3(x - 0.25, y0, z - 0.25), new THREE.Vector3(x + 0.25, y0 + 3, z + 0.25)));
   };
   drevo(6.9, -7.5, 8.5, 2.5); // veliko drevo v SV vogalu
@@ -386,5 +446,5 @@ export function zgradiOkolico(mat: Materiali): Okolica {
   );
   g.add(nebo);
 
-  return { skupina: g, kolizije, tla, lampe, blokMeshi, nebo };
+  return { skupina: g, kolizije, tla, lampe, blokMeshi, nebo, drevesa };
 }

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { PROMO_KADRI, narisiOznake, volumniEnot } from "./promo";
 import { ustvariMateriale } from "./materials";
 import { zgradiHiso } from "./hisa";
 import { zgradiPrenovo } from "./prenova";
@@ -45,6 +46,8 @@ export type Motor = {
   obLockChange: (cb: (zaklenjen: boolean) => void) => void;
   /** Izvozi kadre za lokalni AI render (beauty + globina + normale za vsak kader). */
   izvoziKadre: (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => Promise<void>;
+  /** Promo slike (3 enote, ločeni vhodi) v 3840×2160 z vžganimi oznakami. */
+  promo: (obKadru?: (opravljeno: number, skupaj: number, ime: string, odstotek: number) => void, vzorcev?: number) => Promise<void>;
   unici: () => void;
 };
 
@@ -335,6 +338,105 @@ export async function ustvariMotor(
       kakovost.ponastavi(); // druga svetloba = druga slika, stari vzorci ne veljajo
     },
     izvoziKadre,
+    promo: async (obKadru, vzorcev = 320) => {
+      /**
+       * Vsak kader: kamera in (po potrebi) prerez, izostritev v 3840×2160,
+       * nato oznake na 2D platno. Točke oznak projicira ISTA kamera z istim
+       * razmerjem stranic kot izvoz — sicer bi puščice zgrešile vrata.
+       */
+      izrisPavziran = true;
+      const W = 3840;
+      const H = 2160;
+      const stara = { pos: kamera.position.clone(), fov: kamera.fov, aspect: kamera.aspect, cilj: orbit.target.clone() };
+      const ravnina = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+      try {
+        let i = 0;
+        for (const k of PROMO_KADRI) {
+          i++;
+          rezanje.nastaviEtazo("vse");
+          rezanje.nastaviPrerez(k.prerez ?? { vklopljen: false, os: "z", polozaj: 0, obrnjen: false });
+          let volumni: THREE.Group | null = null;
+          if (k.volumni && k.prerez) {
+            ravnina.normal.set(k.prerez.os === "x" ? -1 : 0, 0, k.prerez.os === "z" ? -1 : 0);
+            ravnina.constant = k.prerez.polozaj;
+            volumni = volumniEnot(ravnina);
+            scena.add(volumni);
+          }
+          const staroSonce = svetloba.sonce.position.clone();
+          if (k.sonce) svetloba.sonce.position.set(...k.sonce);
+          const skrita = k.brezDreves ? okolica.drevesa.filter((d) => d.position.length() < 18) : [];
+          for (const d of skrita) d.visible = false;
+          kamera.fov = k.fov;
+          kamera.aspect = W / H;
+          kamera.position.set(...k.cam);
+          kamera.lookAt(...k.look);
+          kamera.updateProjectionMatrix();
+          kamera.updateMatrixWorld();
+          const blob = await kakovost.zajemi(vzorcev, (n, skupaj) => obKadru?.(i, PROMO_KADRI.length, k.ime, Math.round((n / skupaj) * 100)), 1, { w: W, h: H });
+          svetloba.sonce.position.copy(staroSonce);
+          for (const d of skrita) d.visible = true;
+          if (volumni) {
+            scena.remove(volumni);
+            volumni.traverse((o) => {
+              if (o instanceof THREE.Mesh) {
+                o.geometry.dispose();
+                (o.material as THREE.Material).dispose();
+              }
+            });
+          }
+          if (!blob) continue;
+          const slika = await createImageBitmap(blob);
+          const platno = document.createElement("canvas");
+          platno.width = slika.width;
+          platno.height = slika.height;
+          const c2 = platno.getContext("2d");
+          if (!c2) continue;
+          c2.drawImage(slika, 0, 0);
+          kamera.aspect = slika.width / slika.height;
+          kamera.updateProjectionMatrix();
+          const v = new THREE.Vector3();
+          const zarek = new THREE.Raycaster();
+          narisiOznake(c2, slika.width, slika.height, k, (o) => {
+            const tocka = new THREE.Vector3(...o.tocka);
+            if (!o.skozi) {
+              // Je točka res vidna? Žarek od kamere do točke ne sme prej zadeti česa drugega.
+              const smer = tocka.clone().sub(kamera.position);
+              const razdalja = smer.length();
+              zarek.set(kamera.position, smer.normalize());
+              zarek.far = razdalja - 0.3;
+              const zadetek = zarek
+                .intersectObjects([prenova.skupina, okolica.skupina], true)
+                .find((z) => z.object.visible && z.object !== okolica.nebo);
+              if (zadetek) return null;
+            }
+            v.copy(tocka).project(kamera);
+            if (v.z > 1 || v.z < -1) return null;
+            return { x: ((v.x + 1) / 2) * slika.width, y: ((1 - v.y) / 2) * slika.height };
+          });
+          const izhod = await new Promise<Blob | null>((r) => platno.toBlob(r, "image/png"));
+          if (izhod) {
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(izhod);
+            a.download = `promo_${k.ime}.png`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+          }
+          await new Promise((r) => setTimeout(r, 400)); // da brskalnik požre prenos
+        }
+      } finally {
+        rezanje.nastaviPrerez({ vklopljen: false, os: "z", polozaj: 0, obrnjen: false });
+        rezanje.nastaviEtazo("vse");
+        kamera.fov = stara.fov;
+        kamera.aspect = stara.aspect;
+        kamera.position.copy(stara.pos);
+        orbit.target.copy(stara.cilj);
+        kamera.updateProjectionMatrix();
+        orbit.update();
+        izrisPavziran = false;
+        nastaviVelikost();
+        kakovost.ponastavi();
+      }
+    },
     fotoreal: async (vzorcev = 400, obNapredku) => {
       izrisPavziran = true;
       let blob: Blob | null = null;

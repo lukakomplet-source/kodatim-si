@@ -39,14 +39,23 @@ export const NACRT = {
     stebriOdmiki: [0.075, 1.195, 3.86, 4.975], // sredine stebrov od severnega roba stolpa
   },
   // frčada na ZAHODNI strešini (A: O6 134/300; širina po fasadi ~4,2)
+  // Prerez A-A (list 4): enokapnica od slemena, ČELO V RAVNINI FASADE do kote
+  // +8,85 (0,50 pod slemenom); okno O6 stoji na kolenčni steni (1,16 + 1,34).
   frcada: {
     sredinaZ: -0.2, // B: nad dnevnim prostorom podstrehe
     sirina: 4.2, // A (fasada zahod): okno 3,00 + špaleti
     oknoW: 3.0,
     oknoH: 1.34,
-    parapet: 0.9, // B
-    celoX: -4.0, // B: čelo ~0.65 m pred ravnino fasade
-    strehaDo: -1.1, // B: enokapnica frčade se priključi na strešino
+    parapet: 1.16, // A (prerez A-A): spodnji rob okna = vrh kolenčne stene
+    vrh: 8.85, // A (prerez A-A): kota venca čela frčade
+    previs: 0.3, // A (detajl D2)
+    celo: 0.19, // A (detajl D2)
+  },
+  // „DVIG STREHE — FRČADA + STREHA STOPNIŠČA“ (tloris ostrešja, list 5): ena
+  // enokapnica od slemena čez ves stolp stopnišča, širina = stolp (5,05).
+  dvigVzhod: {
+    naklonStopinj: 7, // B: prerez A-A kaže ~10°, fasada vzhod ~5° — vmes
+    previs: 0.3, // B: kot D2 pri zahodni frčadi
   },
 } as const;
 
@@ -192,7 +201,7 @@ export const ODPRTINE: readonly Odprtina[] = [
   { id: "O5b", tip: "O5V", stran: "W", etaza: "nadstropje", sredina: -2.3, parapet: 0.0 }, // na balkon (S del)
   { id: "O4c", tip: "O4", stran: "W", etaza: "nadstropje", sredina: -0.9, parapet: 0.9 },
   { id: "O3a", tip: "O3", stran: "W", etaza: "nadstropje", sredina: 2.4, parapet: 0.9 }, // široko okno (J del)
-  { id: "O6", tip: "O6", stran: "W", etaza: "podstreha", sredina: NACRT.frcada.sredinaZ, parapet: 0.9 }, // frčada
+  { id: "O6", tip: "O6", stran: "W", etaza: "podstreha", sredina: NACRT.frcada.sredinaZ, parapet: NACRT.frcada.parapet }, // frčada
   // SEVER — zatrep: vhoda ZV1 (stanovanje) in ZV2 (kurilnica)
   { id: "ZV1", tip: "ZV1", stran: "N", etaza: "pritlicje", sredina: 0.3, parapet: 0.0 },
   { id: "ZV2", tip: "ZV2", stran: "N", etaza: "pritlicje", sredina: 3.6, parapet: 0.0 },

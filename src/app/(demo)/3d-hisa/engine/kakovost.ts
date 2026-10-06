@@ -47,7 +47,9 @@ export type Kakovost = {
     vzorcev: number,
     obNapredku?: (n: number, skupaj: number) => void,
     /** Kolikokrat večja stranica od zaslonske (1 = kot na zaslonu, 2 = štirikrat več pikslov). */
-    faktor?: number
+    faktor?: number,
+    /** Stalna velikost izvoza (npr. 3840×2160 za promo slike). */
+    fiksno?: { w: number; h: number }
   ) => Promise<Blob | null>;
   unici: () => void;
 };
@@ -257,7 +259,13 @@ export function ustvariKakovost(ctx: {
    * Vmes se preda nadzor brskalniku (requestAnimationFrame), sicer bi se stran
    * med izračunom zamrznila in bi bilo videti kot okvara.
    */
-  const zajemi = async (koliko: number, obNapredku?: (n: number, skupaj: number) => void, faktor = 2) => {
+  const zajemi = async (
+    koliko: number,
+    obNapredku?: (n: number, skupaj: number) => void,
+    faktor = 2,
+    /** Stalna velikost izvoza (promo slike 16:9) namesto razmerja okna. */
+    fiksno?: { w: number; h: number }
+  ) => {
     /**
      * IZVOZ JE VEČJI OD ZASLONA.
      *
@@ -271,11 +279,13 @@ export function ustvariKakovost(ctx: {
      * kartica nasloviti (`maxTextureSize`), in izvoz bi tiho vrnil črno sliko.
      */
     const el = renderer.domElement;
-    const sirina = el.clientWidth || velikost.x;
-    const visina = el.clientHeight || velikost.y;
-    const staroRazmerjePikslov = renderer.getPixelRatio();
+    const zaslonW = el.clientWidth || velikost.x;
+    const zaslonH = el.clientHeight || velikost.y;
     const strop = Math.min(3840, renderer.capabilities.maxTextureSize);
-    const zeljeno = Math.max(1, Math.min(faktor, strop / Math.max(1, sirina)));
+    const sirina = fiksno ? Math.min(fiksno.w, strop) : zaslonW;
+    const visina = fiksno ? Math.round((fiksno.h * sirina) / fiksno.w) : zaslonH;
+    const staroRazmerjePikslov = renderer.getPixelRatio();
+    const zeljeno = fiksno ? 1 : Math.max(1, Math.min(faktor, strop / Math.max(1, sirina)));
 
     renderer.setPixelRatio(zeljeno);
     renderer.setSize(sirina, visina, false);
@@ -313,8 +323,8 @@ export function ustvariKakovost(ctx: {
     // Vrni zaslon v prvotno gostoto; brez tega bi stran po enem izvozu do
     // konca seje risala v 4K in bi bila videti pokvarjeno počasna.
     renderer.setPixelRatio(staroRazmerjePikslov);
-    renderer.setSize(sirina, visina, false);
-    nastaviVelikost(sirina, visina);
+    renderer.setSize(zaslonW, zaslonH, false);
+    nastaviVelikost(zaslonW, zaslonH);
     return blob;
   };
 

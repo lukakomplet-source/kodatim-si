@@ -252,19 +252,45 @@ export function ustvariMateriale() {
   strehaT.repeat.set(2, 7);
 
   // --- teksture PO PRENOVI (materiali iz PZI) ---
-  const prefalzT = tekstura(256, 256, (ctx, w, h) => {
-    // Prefa-Prefalz: stoječi zgib, antracit
-    ctx.fillStyle = "#3d4145";
-    ctx.fillRect(0, 0, w, h);
-    for (let x = 0; x < w; x += 43) {
-      ctx.fillStyle = "rgba(255,255,255,0.10)";
-      ctx.fillRect(x, 0, 2, h);
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(x + 3, 0, 2, h);
+  /**
+   * Listje: tisoče drobnih listov v treh tonih, da krošnja ni enobarvna kepa.
+   * Relief iz iste slike da vsakemu listu drobno senco — od daleč se krošnja
+   * zato bere kot gostota listov, ne kot ploskev.
+   */
+  const listjeT = (osnova: string, svetla: string, temna: string) =>
+    tekstura(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = osnova;
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 2600; i++) {
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        ctx.fillStyle = Math.random() < 0.45 ? temna : Math.random() < 0.6 ? osnova : svetla;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 2 + Math.random() * 3, 1 + Math.random() * 1.6, Math.random() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  const lubjeT = tekstura(128, 256, (ctx, w, h) => {
+    sum(ctx, w, h, "#5a4836", 0.08, 900);
+    for (let i = 0; i < 70; i++) {
+      ctx.fillStyle = `rgba(30,22,15,${0.25 + Math.random() * 0.3})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 10 + Math.random() * 40);
     }
-    for (let i = 0; i < 500; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.04})`;
-      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 6);
+  });
+
+  const prefalzT = tekstura(256, 256, (ctx, w, h) => {
+    // Prefa-Prefalz, antracit. Zgibi so v prenova.ts geometrija (od slemena do
+    // kapi); tu je samo kovina: rahle vzdolžne proge valjanja in drobne
+    // neenakomernosti, ki odsev razbijejo, da ploskev ni videti kot plastika.
+    ctx.fillStyle = "#3b3f43";
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.035})`;
+      ctx.fillRect(0, Math.random() * h, w, 1);
+    }
+    for (let i = 0; i < 400; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 8 + Math.random() * 20, 1);
     }
   });
   prefalzT.repeat.set(3, 3);
@@ -381,6 +407,17 @@ export function ustvariMateriale() {
     zivaMeja: nastani({ map: mejaT, roughness: 1 }),
     listje: nastani({ color: "#3e5a2a", roughness: 1, flatShading: true }),
     deblo: nastani({ color: "#5b4632", roughness: 1 }),
+    lubje: nastani({ map: lubjeT, roughness: 1, normalMap: reliefIz(lubjeT, 3.0), normalScale: RELIEF(1.2) }),
+    krosnje: [
+      ["#4a6b2e", "#6d8f3d", "#2c4419"],
+      ["#3f5f2a", "#5f8236", "#253a16"],
+      ["#56743a", "#7a9a48", "#334d22"],
+    ].map(([o, s, t]) => {
+      const tx = listjeT(o, s, t);
+      tx.repeat.set(2, 2);
+      const rel = reliefIz(tx, 3.5);
+      return nastani({ map: tx, roughness: 0.97, normalMap: rel, normalScale: RELIEF(0.8) });
+    }),
     opekaStreha: nastani({ map: opekaStrehaT, roughness: 0.9, normalMap: reliefIz(opekaStrehaT, 3.0), normalScale: RELIEF(0.9) }),
     rumenaFasada: nastani({ color: "#e9d98f", roughness: 0.95 }),
     belaFasada: nastani({ map: ometT.clone(), roughness: 0.95 }),
@@ -399,6 +436,8 @@ export function ustvariMateriale() {
     granitogres: nastani({ map: granitogresT, roughness: 0.35, metalness: 0.05 }),
     lamele: nastani({ map: lameleT, roughness: 0.8 }),
     jekloAntracit: nastani({ color: "#33363a", roughness: 0.45, metalness: 0.7 }),
+    // kaseta zunanjega screen senčila (PZI: svetla, npr. Sonal White Pearl)
+    kasetaSencila: nastani({ color: "#d6d3cc", roughness: 0.65, metalness: 0.1 }),
     rebrasta: nastani({ map: rebrastaT, roughness: 0.4, metalness: 0.75 }),
     mavcna: nastani({ color: "#f6f4f0", roughness: 0.95 }),
     pohistvoLes: nastani({ color: "#b98f5f", roughness: 0.75 }),
