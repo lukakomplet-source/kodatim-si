@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { PROMO_KADRI, narisiOznake, volumniEnot } from "./promo";
+import { PROMO_KADRI, narisiOznake, volumniEnot, type Oznaka } from "./promo";
+import { stanjeVidea, narisiKartico } from "./video";
 import { ustvariMateriale } from "./materials";
 import { zgradiHiso } from "./hisa";
 import { zgradiPrenovo } from "./prenova";
@@ -48,6 +49,12 @@ export type Motor = {
   izvoziKadre: (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => Promise<void>;
   /** Promo slike (3 enote, ločeni vhodi) v 3840×2160 z vžganimi oznakami. */
   promo: (obKadru?: (opravljeno: number, skupaj: number, ime: string, odstotek: number) => void, vzorcev?: number) => Promise<void>;
+  /**
+   * Ena sličica promo videa (engine/video.ts) v času `t` sekund. Video se
+   * izriše offline sličico za sličico (scripts/video-hisa.mjs) — po prvem
+   * klicu zaslonska zanka miruje do ponovnega nalaganja strani.
+   */
+  videoSlicica: (t: number, w?: number, h?: number, vzorcev?: number) => Promise<Blob | null>;
   unici: () => void;
 };
 
@@ -266,6 +273,10 @@ export async function ustvariMotor(
   javi(100, "Pripravljeno");
   zanka();
 
+  // Promo video: ravnina in volumni enot se ustvarijo ob prvi sličici.
+  const videoRavnina = new THREE.Plane(new THREE.Vector3(0, 0, -1), 99);
+  let videoVolumni: THREE.Group | null = null;
+
   // Izvoz kadrov za lokalni AI render: za vsak kader beauty + globina + normale.
   // Vse teče lokalno v brskalniku (toBlob + prenos), brez strežnika.
   const izvoziKadre = async (obKadru?: (opravljeno: number, skupaj: number, ime: string) => void) => {
@@ -436,6 +447,75 @@ export async function ustvariMotor(
         nastaviVelikost();
         kakovost.ponastavi();
       }
+    },
+    videoSlicica: async (t, W = 1920, H = 1080, vzorcev = 12) => {
+      izrisPavziran = true;
+      const st = stanjeVidea(t);
+      rezanje.nastaviEtazo("vse");
+      // Prerez kot v kadru 04: os z, ohranjeno vse z ≤ položaj.
+      rezanje.nastaviPrerez(
+        st.prerez === null ? { vklopljen: false, os: "z", polozaj: 0, obrnjen: false } : { vklopljen: true, os: "z", polozaj: st.prerez, obrnjen: false }
+      );
+      if (!videoVolumni) {
+        videoVolumni = volumniEnot(videoRavnina);
+        scena.add(videoVolumni);
+      }
+      videoRavnina.normal.set(0, 0, -1);
+      videoRavnina.constant = st.prerez ?? 99;
+      videoVolumni.children.forEach((m, i) => {
+        const mat = (m as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.38 * st.volumni[i];
+        m.visible = st.volumni[i] > 0.01;
+      });
+      svetloba.sonce.position.set(...st.sonce);
+      for (const d of okolica.drevesa) if (d.position.length() < 18) d.visible = !st.brezDreves;
+      kamera.fov = st.fov;
+      kamera.aspect = W / H;
+      kamera.position.set(...st.cam);
+      kamera.lookAt(...st.look);
+      kamera.updateProjectionMatrix();
+      kamera.updateMatrixWorld();
+      const blob = await kakovost.zajemi(vzorcev, undefined, 1, { w: W, h: H });
+      if (!blob) return null;
+      const slika = await createImageBitmap(blob);
+      const platno = document.createElement("canvas");
+      platno.width = slika.width;
+      platno.height = slika.height;
+      const c2 = platno.getContext("2d");
+      if (!c2) return null;
+      c2.drawImage(slika, 0, 0);
+      kamera.aspect = slika.width / slika.height;
+      kamera.updateProjectionMatrix();
+      if (st.kader) {
+        const v = new THREE.Vector3();
+        const zarek = new THREE.Raycaster();
+        narisiOznake(
+          c2,
+          slika.width,
+          slika.height,
+          st.kader,
+          (o: Oznaka) => {
+            const tocka = new THREE.Vector3(...o.tocka);
+            if (!o.skozi) {
+              const smer = tocka.clone().sub(kamera.position);
+              const razdalja = smer.length();
+              zarek.set(kamera.position, smer.normalize());
+              zarek.far = razdalja - 0.3;
+              const zadetek = zarek
+                .intersectObjects([prenova.skupina, okolica.skupina], true)
+                .find((z) => z.object.visible && z.object !== okolica.nebo);
+              if (zadetek) return null;
+            }
+            v.copy(tocka).project(kamera);
+            if (v.z > 1 || v.z < -1) return null;
+            return { x: ((v.x + 1) / 2) * slika.width, y: ((1 - v.y) / 2) * slika.height };
+          },
+          { alfa: (o) => (o.enota ? st.oznakeEnot[o.enota - 1] : st.oznake), pas: st.pas }
+        );
+      }
+      narisiKartico(c2, slika.width, slika.height, "uvod", st.uvod);
+      narisiKartico(c2, slika.width, slika.height, "zakljucek", st.zakljucek);
+      return await new Promise<Blob | null>((r) => platno.toBlob(r, "image/jpeg", 0.93));
     },
     fotoreal: async (vzorcev = 400, obNapredku) => {
       izrisPavziran = true;

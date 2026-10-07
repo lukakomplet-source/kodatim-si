@@ -227,15 +227,21 @@ export function narisiOznake(
   W: number,
   H: number,
   kader: PromoKader,
-  projiciraj: (o: Oznaka) => { x: number; y: number } | null
+  projiciraj: (o: Oznaka) => { x: number; y: number } | null,
+  /** Za video: prosojnost posamezne oznake in spodnjega pasu (0 = ne riši). */
+  moznosti: { alfa?: (o: Oznaka) => number; pas?: number } = {}
 ) {
   const s = W / 1920; // merilo pisave in debelin
   ctx.textBaseline = "alphabetic";
   const pisava = (velikost: number, debelina = 600) => `${debelina} ${Math.round(velikost * s)}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 
   for (const o of kader.oznake) {
+    const alfa = moznosti.alfa?.(o) ?? 1;
+    if (alfa <= 0.01) continue;
     const p = projiciraj(o);
     if (!p) continue;
+    ctx.save();
+    ctx.globalAlpha = alfa;
     const enota = ENOTE.find((e) => e.st === o.enota);
     const barva = enota?.barva ?? "#2b2f36";
     const bx = p.x + o.odmik[0] * W;
@@ -318,7 +324,13 @@ export function narisiOznake(
       ctx.font = pisava(18, 500);
       ctx.fillText(o.podnapis, tx, oy + 60 * s);
     }
+    ctx.restore();
   }
+
+  const pasAlfa = moznosti.pas ?? 1;
+  if (pasAlfa <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = pasAlfa;
 
   // pas z naslovom spodaj
   const pasH = 104 * s;
@@ -351,4 +363,5 @@ export function narisiOznake(
     ctx.fill();
     lx -= 30 * s;
   }
+  ctx.restore();
 }

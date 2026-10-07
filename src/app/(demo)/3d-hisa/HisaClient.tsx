@@ -85,6 +85,23 @@ export default function HisaClient() {
       }
       motor.obLockChange(setZaklenjen);
       motorRef.current = motor;
+      if (p.get("video") === "1") {
+        // Zajem promo videa (scripts/video-hisa.mjs): sličica kot base64 JPEG.
+        const m = motor;
+        const { VIDEO_DOLZINA, VIDEO_FPS } = await import("./engine/video");
+        (window as unknown as { __hisaVideo: unknown }).__hisaVideo = {
+          dolzina: VIDEO_DOLZINA,
+          fps: VIDEO_FPS,
+          slicica: async (t: number, w?: number, h?: number, vzorcev?: number) => {
+            const b = await m.videoSlicica(t, w, h, vzorcev);
+            if (!b) return null;
+            const buf = new Uint8Array(await b.arrayBuffer());
+            let bin = "";
+            for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+            return btoa(bin);
+          },
+        };
+      }
       const m = motor.mejePrereza();
       setMeje(m);
       // Drsnik naj začne na sredini hiše — tam je prerez najbolj poveden.
