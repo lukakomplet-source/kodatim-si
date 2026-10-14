@@ -388,7 +388,7 @@ function Kategorije({ odpri }: { odpri: (id: KategorijaId | "vse") => void }) {
           Vsi izdelki <ArrowRight className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {KATEGORIJE.map((k, i) => {
           const st = IZDELKI.filter((x) => x.kategorija === k.id).length;
           return (
@@ -679,6 +679,9 @@ function Katalog({
     return kategorija === "vse" ? IZDELKI : IZDELKI.filter((i) => i.kategorija === kategorija);
   }, [iskanje, kategorija]);
   const kat = KATEGORIJE.find((k) => k.id === kategorija);
+  const [vse, setVse] = useState(false);
+  const skrajsano = !vse && !iskanje.trim() && kategorija === "vse" && prikazani.length > 12;
+  const vidni = skrajsano ? prikazani.slice(0, 12) : prikazani;
 
   return (
     <section id="katalog" className="scroll-mt-12 border-t border-[#e9ecf2] bg-white">
@@ -725,7 +728,7 @@ function Katalog({
           </p>
         )}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          {prikazani.map((i) => (
+          {vidni.map((i) => (
             <button
               key={i.id}
               onClick={() => odpri(i)}
@@ -754,6 +757,11 @@ function Katalog({
             </button>
           ))}
         </div>
+        {skrajsano && (
+          <button onClick={() => setVse(true)} className={`mx-auto mt-8 flex items-center gap-2 rounded-lg ${OBROBA} bg-white px-6 py-3 text-sm font-semibold hover:border-[#1546d8]`}>
+            Pokaži vseh {prikazani.length} izdelkov <ArrowRight className="h-4 w-4" />
+          </button>
+        )}
         <p className="mt-6 text-xs text-[#9aa1ad]">
           Cene so informativne, v € brez DDV, po ceniku na kamenaric.si. Za aktualne cene nas prosimo preverite po e-pošti.
         </p>
