@@ -189,16 +189,16 @@ function Glava({ paket, stevilo, odpriKosarico }: { paket: Paket; stevilo: numbe
           <ZnakK className="h-9 w-9" />
           <span className="text-xl font-extrabold tracking-tight sm:text-2xl">KAMENARIČ</span>
         </a>
-        <nav className="hidden flex-1 items-center gap-6 text-sm font-medium text-[#1f2a44] xl:flex">
-          {KATEGORIJE.map((k) => (
-            <a key={k.id} href="#ponudba" className="whitespace-nowrap hover:text-[#1546d8]">
-              {k.ime}
+        <nav className="hidden flex-1 items-center gap-5 text-sm font-medium text-[#1f2a44] xl:flex">
+          {["Poslovna darila", "Oblačila", "Vrečke", "Embalaža", "Pisarna", "Koledarji"].map((ime) => (
+            <a key={ime} href="#ponudba" className="whitespace-nowrap hover:text-[#1546d8]">
+              {ime}
             </a>
           ))}
           <a href="#tisk" className="whitespace-nowrap hover:text-[#1546d8]">Tisk in dodelava</a>
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <label className="hidden items-center gap-2 rounded-lg bg-[#f1f3f7] px-3 py-2.5 text-sm text-[#6b7280] lg:flex">
+          <label className="hidden items-center gap-2 rounded-lg bg-[#f1f3f7] px-3 py-2.5 text-sm text-[#6b7280] 2xl:flex">
             <Search className="h-4 w-4" />
             <input placeholder="Išči izdelke …" className="w-36 bg-transparent outline-none placeholder:text-[#9aa1ad]" />
           </label>
@@ -219,7 +219,7 @@ function Glava({ paket, stevilo, odpriKosarico }: { paket: Paket; stevilo: numbe
           )}
           <a
             href={paket === 1 ? "#povprasevanje" : "#trgovina"}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold ${MODRA}`}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-semibold ${MODRA}`}
           >
             <span className="hidden sm:inline">{paket === 1 ? "Pošlji povpraševanje" : "Naroči na spletu"}</span>
             <ArrowRight className="h-4 w-4" />
@@ -280,8 +280,7 @@ function Uvod({ paket }: { paket: Paket }) {
         <div className="relative grid h-[340px] grid-cols-6 grid-rows-6 gap-3 sm:h-[460px]">
           <Foto ime="uvod-vrecke" className="col-span-3 row-span-6" />
           <Foto ime="uvod-majice" className="col-span-3 row-span-3" />
-          <Foto ime="uvod-skatle" className="col-span-2 row-span-3" />
-          <Foto ime="uvod-darilo" className="col-span-1 row-span-3" />
+          <Foto ime="uvod-skatle" className="col-span-3 row-span-3" />
           <div className="absolute -bottom-4 left-4 hidden items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-lg shadow-black/10 sm:flex">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef3ff]">
               <Star className="h-5 w-5 fill-[#1546d8] text-[#1546d8]" />
