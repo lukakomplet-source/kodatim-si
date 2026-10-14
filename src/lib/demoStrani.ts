@@ -147,6 +147,14 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
       "Vodenje voznega parka: stanje in zgodovina statusov vozil, kilometri in servis, dokumenti (vinjeta, tehnični, zavarovanje), poškodbe. Urejanje je za PIN-om. Teče na poti kodatim.si, podatki zaenkrat v brskalniku (localStorage), ne v bazi.",
   },
   {
+    slug: "kamenaric",
+    naziv: "Kamenarič — embalaža in tisk (3 paketi)",
+    stranka: "Kamenarič d.o.o.",
+    vrsta: "spletna_stran",
+    opis:
+      "Predlog nove strani s preklopnikom 1/2/3: osnovna stran s povpraševanjem, spletna trgovina s konfiguratorjem tiska in premium B2B portal (AI ponudbe, ponovi naročilo, 3D predogled). Naročila so demo in se ne pošiljajo; cene so primeri.",
+  },
+  {
     slug: "urvis",
     naziv: "URVIS Razlakiranje Kovin — predogled",
     stranka: "URVIS",
