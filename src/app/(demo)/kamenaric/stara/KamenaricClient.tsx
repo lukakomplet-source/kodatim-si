@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import Ilustracija from "./Ilustracija";
 import Skatla3D from "./Skatla3D";
+import VerzijaStikalo from "../VerzijaStikalo";
 import {
   IZDELKI,
   KATEGORIJE,
@@ -140,9 +141,10 @@ function DemoVrstica({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) =
   return (
     <div className="sticky top-0 z-50 bg-[#0b1530] text-white">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-          Predogled · KodaTim.si <span className="hidden sm:inline">— izberite različico</span>
-        </p>
+        <div className="flex items-center gap-3">
+          <VerzijaStikalo verzija="stara" paket={paket} />
+          <p className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70 lg:block">Predogled · KodaTim.si</p>
+        </div>
         <div className="flex items-center gap-1">
           {PAKETI.map((p) => (
             <button

@@ -148,11 +148,11 @@ export const VGRAJENE_DEMO_STRANI: readonly VgrajenaDemoStran[] = [
   },
   {
     slug: "kamenaric",
-    naziv: "Kamenarič — embalaža in tisk (3 paketi)",
+    naziv: "Kamenarič — promo izdelki in poslovna darila (nova + stara verzija, 3 paketi)",
     stranka: "Kamenarič d.o.o.",
     vrsta: "spletna_stran",
     opis:
-      "Predlog nove strani s preklopnikom 1/2/3: osnovna stran s povpraševanjem, spletna trgovina s konfiguratorjem tiska in premium B2B portal (AI ponudbe, ponovi naročilo, 3D predogled). Naročila so demo in se ne pošiljajo; cene so primeri.",
+      "Nova verzija z njihovimi izdelki, fotografijami in cenami (voda po količinah, rokovniki 2027, pogoji: minimum 100 €, brez poštnine nad 250 €); stara splošna verzija na ?verzija=stara. Vsaka ima pakete 1/2/3: katalog s povpraševanjem, trgovina s košarico, B2B portal z AI. Naročila so demo in se ne pošiljajo.",
   },
   {
     slug: "urvis",
