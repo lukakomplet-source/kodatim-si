@@ -21,13 +21,16 @@ export const PAKETI: { st: Paket; ime: string; kratko: string }[] = [
   { st: 3, ime: "Premium", kratko: "B2B portal + AI" },
 ];
 
+/** Slike so z Unsplash (glej public/demo/kamenaric/VIRI.txt) — dokler stranka ne pošlje svojih. */
+export const SLIKE = "/demo/kamenaric";
+
 export const KATEGORIJE = [
-  { id: "vrecke", ime: "Vrečke", opis: "Papirnate, PE in nakupovalne vrečke s potiskom vašega logotipa.", stevilka: "01" },
-  { id: "skatle", ime: "Škatle", opis: "Kartonske škatle, darilne škatle in embalaža za izdelke po meri.", stevilka: "02" },
-  { id: "trakovi", ime: "Darilni trakovi", opis: "Potiskani trakovi za zavijanje — promocija na vsakem darilu.", stevilka: "03" },
-  { id: "koledarji", ime: "Koledarji in voščilnice", opis: "Stenski, namizni in žepni koledarji ter novoletne voščilnice.", stevilka: "04" },
-  { id: "darila", ime: "Poslovna darila", opis: "Pisala, pisarniški material, prosti čas — z vašim podpisom.", stevilka: "05" },
-  { id: "oblacila", ime: "Polo majice in delovna oblačila", opis: "Tekstil s tiskom ali vezenjem za ekipo in dogodke.", stevilka: "06" },
+  { id: "darila", ime: "Poslovna darila", opis: "Kakovostna darila za vaše poslovne partnerje", slika: "kat-darila" },
+  { id: "oblacila", ime: "Promocijska oblačila", opis: "Majice, polo majice in delovna oblačila", slika: "kat-oblacila" },
+  { id: "vrecke", ime: "Vrečke", opis: "Papirnate, PE in nakupovalne vrečke s potiskom", slika: "kat-vrecke" },
+  { id: "skatle", ime: "Embalaža in trakovi", opis: "Škatle, darilna embalaža in potiskani trakovi", slika: "kat-skatle" },
+  { id: "pisarna", ime: "Pisarna in pisala", opis: "Pisala, beležke in pisarniški pripomočki", slika: "kat-pisarna" },
+  { id: "koledarji", ime: "Koledarji in tisk", opis: "Stenski, namizni koledarji in voščilnice", slika: "kat-koledarji" },
 ] as const;
 
 export const POSTOPKI = [
@@ -48,19 +51,20 @@ export type Izdelek = {
   opis: string;
   barva: string; // za ilustracijo
   oblika: "vrecka" | "skatla" | "trak" | "koledar" | "pisalo" | "majica";
+  slika: string; // datoteka v SLIKE, brez .jpg
 };
 
 export const IZDELKI: Izdelek[] = [
-  { id: "papir-vrecka", ime: "Papirnata vrečka kraft", kategorija: "vrecke", cena: 0.42, min: 100, opis: "32 × 12 × 41 cm, vrvični ročaj", barva: "#c69c6d", oblika: "vrecka" },
-  { id: "pe-vrecka", ime: "PE vrečka z izsekanim ročajem", kategorija: "vrecke", cena: 0.09, min: 500, opis: "40 × 50 cm, 50 µm", barva: "#e8e8e8", oblika: "vrecka" },
-  { id: "nakupovalna", ime: "Nakupovalna torba iz netkane tkanine", kategorija: "vrecke", cena: 0.85, min: 100, opis: "38 × 42 cm, dolgi ročaji", barva: "#1f2937", oblika: "vrecka" },
-  { id: "skatla-znacke", ime: "Škatla za značke", kategorija: "skatle", cena: 0.38, min: 50, opis: "Kartonska, z vložkom", barva: "#f5f5f4", oblika: "skatla" },
-  { id: "darilna-skatla", ime: "Darilna škatla s pokrovom", kategorija: "skatle", cena: 1.9, min: 50, opis: "20 × 20 × 8 cm, mat laminat", barva: "#111827", oblika: "skatla" },
-  { id: "posiljka", ime: "Poštna škatla", kategorija: "skatle", cena: 0.65, min: 100, opis: "31 × 22 × 10 cm, valovita lepenka", barva: "#b8875a", oblika: "skatla" },
-  { id: "trak", ime: "Potiskan darilni trak", kategorija: "trakovi", cena: 0.12, min: 200, opis: "na tekoči meter, 25 mm", barva: "#dc2626", oblika: "trak" },
-  { id: "koledar", ime: "Stenski koledar 12 listov", kategorija: "koledarji", cena: 3.4, min: 50, opis: "A3, spirala, vaša fotografija na vsakem mesecu", barva: "#fafaf9", oblika: "koledar" },
-  { id: "pisalo", ime: "Kovinsko pisalo", kategorija: "darila", cena: 0.95, min: 100, opis: "modro črnilo, tampotisk ali gravura", barva: "#334155", oblika: "pisalo" },
-  { id: "polo", ime: "Polo majica", kategorija: "oblacila", cena: 6.9, min: 20, opis: "pique bombaž, S–3XL", barva: "#0f172a", oblika: "majica" },
+  { id: "papir-vrecka", ime: "Papirnata vrečka kraft", kategorija: "vrecke", cena: 0.42, min: 100, opis: "32 × 12 × 41 cm, vrvični ročaj", barva: "#c69c6d", oblika: "vrecka", slika: "papir-vrecka" },
+  { id: "pe-vrecka", ime: "PE vrečka z izsekanim ročajem", kategorija: "vrecke", cena: 0.09, min: 500, opis: "40 × 50 cm, 50 µm", barva: "#e8e8e8", oblika: "vrecka", slika: "pe-vrecka" },
+  { id: "nakupovalna", ime: "Nakupovalna torba iz netkane tkanine", kategorija: "vrecke", cena: 0.85, min: 100, opis: "38 × 42 cm, dolgi ročaji", barva: "#1f2937", oblika: "vrecka", slika: "nakupovalna" },
+  { id: "skatla-znacke", ime: "Škatla za značke", kategorija: "skatle", cena: 0.38, min: 50, opis: "Kartonska, z vložkom", barva: "#f5f5f4", oblika: "skatla", slika: "skatla-znacke" },
+  { id: "darilna-skatla", ime: "Darilna škatla s pokrovom", kategorija: "skatle", cena: 1.9, min: 50, opis: "20 × 20 × 8 cm, mat laminat", barva: "#111827", oblika: "skatla", slika: "darilna-skatla" },
+  { id: "posiljka", ime: "Poštna škatla", kategorija: "skatle", cena: 0.65, min: 100, opis: "31 × 22 × 10 cm, valovita lepenka", barva: "#b8875a", oblika: "skatla", slika: "posiljka" },
+  { id: "trak", ime: "Potiskan darilni trak", kategorija: "skatle", cena: 0.12, min: 200, opis: "na tekoči meter, 25 mm", barva: "#dc2626", oblika: "trak", slika: "trak" },
+  { id: "koledar", ime: "Stenski koledar 12 listov", kategorija: "koledarji", cena: 3.4, min: 50, opis: "A3, spirala, vaša fotografija na vsakem mesecu", barva: "#fafaf9", oblika: "koledar", slika: "koledar" },
+  { id: "pisalo", ime: "Kovinsko pisalo", kategorija: "pisarna", cena: 0.95, min: 100, opis: "modro črnilo, tampotisk ali gravura", barva: "#334155", oblika: "pisalo", slika: "pisalo" },
+  { id: "polo", ime: "Polo majica", kategorija: "oblacila", cena: 6.9, min: 20, opis: "pique bombaž, S–3XL", barva: "#0f172a", oblika: "majica", slika: "polo" },
 ];
 
 export const TISKI = [

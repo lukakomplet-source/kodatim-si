@@ -1,20 +1,26 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowRight,
-  ArrowUpRight,
   Bot,
+  Box,
   Check,
-  ChevronRight,
+  FileText,
+  Lightbulb,
   Package,
   Phone,
   RotateCcw,
+  Search,
   Send,
+  Settings2,
   ShoppingBag,
   Sparkles,
+  Star,
+  Tag,
   Truck,
   Upload,
+  Users,
   X,
 } from "lucide-react";
 import Ilustracija from "./Ilustracija";
@@ -25,6 +31,7 @@ import {
   KONTAKT,
   PAKETI,
   POSTOPKI,
+  SLIKE,
   TISKI,
   VSEBINA_PAKETOV,
   eur,
@@ -35,7 +42,11 @@ import {
 
 type Postavka = { id: string; izdelek: Izdelek; kolicina: number; tiskId: string; logo: string | null };
 
-const KRAFT = "#c69c6d";
+const slika = (ime: string) => `${SLIKE}/${ime}.jpg`;
+
+/* Barve po predlogi: svetla podlaga, temno modra besedila, živo modri poudarki. */
+const MODRA = "bg-[#1546d8] hover:bg-[#0f38b4] text-white";
+const OBROBA = "border border-[#e3e6ee]";
 
 export default function KamenaricClient({ zacetniPaket }: { zacetniPaket: Paket }) {
   const [paket, setPaketState] = useState<Paket>(zacetniPaket);
@@ -44,6 +55,7 @@ export default function KamenaricClient({ zacetniPaket }: { zacetniPaket: Paket 
   const [kosaricaOdprta, setKosaricaOdprta] = useState(false);
   const [konfigurator, setKonfigurator] = useState<Izdelek | null>(null);
   const [potrdilo, setPotrdilo] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>("vse");
 
   function setPaket(p: Paket) {
     setPaketState(p);
@@ -58,38 +70,38 @@ export default function KamenaricClient({ zacetniPaket }: { zacetniPaket: Paket 
     setKosaricaOdprta(true);
   }
 
+  function odpriKategorijo(id: string) {
+    if (paket === 1) {
+      document.getElementById("povprasevanje")?.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+    setFilter(id);
+    document.getElementById("trgovina")?.scrollIntoView({ behavior: "smooth" });
+  }
+
   const skupaj = kosarica.reduce((s, p) => s + izracun(p.izdelek, p.kolicina, p.tiskId).skupaj, 0);
 
   return (
-    <div className="min-h-screen bg-[#0b0b0b] text-[#f3efe8] antialiased selection:bg-[#ff5a1f] selection:text-black">
+    <div className="min-h-screen bg-[#f6f7f9] text-[#0b1530] antialiased selection:bg-[#1546d8] selection:text-white">
       <style>{`
-        @keyframes km-trak { from { transform: translateX(0) } to { transform: translateX(-50%) } }
         @keyframes km-vrti { from { transform: rotateY(0deg) } to { transform: rotateY(360deg) } }
-        .km-trak { animation: km-trak 28s linear infinite }
         .km-vrtenje { animation: km-vrti 18s linear infinite }
-        @media (prefers-reduced-motion: reduce) { .km-trak, .km-vrtenje { animation: none } }
+        @media (prefers-reduced-motion: reduce) { .km-vrtenje { animation: none } }
       `}</style>
 
       <DemoVrstica paket={paket} setPaket={setPaket} />
-
       <Glava paket={paket} stevilo={kosarica.length} odpriKosarico={() => setKosaricaOdprta(true)} />
-
-      <Hero paket={paket} logo={logo} />
-
-      <Trak />
-
-      <Kategorije />
-
+      <Uvod paket={paket} />
+      <Kategorije odpri={odpriKategorijo} />
+      <Proces />
       <Postopki />
+      <Stranke />
 
       {paket === 1 && <Povprasevanje logo={logo} setLogo={setLogo} />}
-
-      {paket >= 2 && <Trgovina odpri={setKonfigurator} />}
-
+      {paket >= 2 && <Trgovina odpri={setKonfigurator} filter={filter} setFilter={setFilter} />}
       {paket === 3 && <Portal logo={logo} setLogo={setLogo} dodaj={dodaj} />}
 
       <KajDobite paket={paket} setPaket={setPaket} />
-
       <Noga />
 
       {konfigurator && (
@@ -104,7 +116,6 @@ export default function KamenaricClient({ zacetniPaket }: { zacetniPaket: Paket 
           }}
         />
       )}
-
       {kosaricaOdprta && (
         <Kosarica
           postavke={kosarica}
@@ -118,35 +129,33 @@ export default function KamenaricClient({ zacetniPaket }: { zacetniPaket: Paket 
           }}
         />
       )}
-
       {potrdilo && <Potrdilo st={potrdilo} zapri={() => setPotrdilo(null)} />}
     </div>
   );
 }
 
-/* ───────────────────────── demo vrstica ───────────────────────── */
+/* ───────────────────────── demo vrstica in glava ───────────────────────── */
 
 function DemoVrstica({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) => void }) {
   return (
-    <div className="sticky top-0 z-50 border-b border-white/10 bg-[#ff5a1f] text-black">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2">
-        <p className="text-[11px] font-black uppercase tracking-[0.2em]">
+    <div className="sticky top-0 z-50 bg-[#0b1530] text-white">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
           Predogled · KodaTim.si <span className="hidden sm:inline">— izberite različico</span>
         </p>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           {PAKETI.map((p) => (
             <button
               key={p.st}
               onClick={() => setPaket(p.st)}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-black uppercase tracking-wide transition ${
-                paket === p.st ? "bg-black text-[#ff5a1f]" : "bg-black/10 hover:bg-black/20"
+              className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                paket === p.st ? "bg-[#1546d8] text-white" : "text-white/70 hover:bg-white/10"
               }`}
             >
-              <span className="text-base leading-none">{p.st}</span>
-              <span className="hidden sm:inline">{p.ime}</span>
+              {p.st} <span className="hidden sm:inline">· {p.ime}</span>
             </button>
           ))}
-          <a href="#kaj-dobite" className="ml-1 hidden items-center px-3 text-xs font-bold underline underline-offset-4 md:flex">
+          <a href="#kaj-dobite" className="ml-1 hidden px-2 text-xs font-semibold text-white/80 underline underline-offset-4 md:block">
             Kaj dobim?
           </a>
         </div>
@@ -155,47 +164,65 @@ function DemoVrstica({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) =
   );
 }
 
-/* ───────────────────────── glava ───────────────────────── */
+function ZnakK({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 40" className={className} aria-hidden>
+      <polygon points="4,4 14,4 14,36 4,36" fill="#0b1530" />
+      <polygon points="14,20 28,4 38,4 22,22" fill="#1546d8" />
+      <polygon points="18,18 26,16 38,36 27,36" fill="#0b1530" />
+    </svg>
+  );
+}
 
 function Glava({ paket, stevilo, odpriKosarico }: { paket: Paket; stevilo: number; odpriKosarico: () => void }) {
   return (
-    <header className="border-b border-white/10">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-5">
-        <a href="#" className="group flex items-baseline gap-2">
-          <span className="text-2xl font-black uppercase tracking-tighter sm:text-3xl">Kamenarič</span>
-          <span className="h-2.5 w-2.5 bg-[#ff5a1f]" />
-        </a>
-        <nav className="hidden items-center gap-7 text-sm font-semibold uppercase tracking-wide text-white/70 lg:flex">
-          <a href="#izdelki" className="hover:text-white">Izdelki</a>
-          <a href="#tisk" className="hover:text-white">Tisk</a>
-          {paket >= 2 && <a href="#trgovina" className="hover:text-white">Trgovina</a>}
-          {paket === 3 && <a href="#portal" className="hover:text-white">Portal za podjetja</a>}
-          <a href={paket === 1 ? "#povprasevanje" : "#trgovina"} className="hover:text-white">
-            {paket === 1 ? "Povpraševanje" : "Naroči"}
+    <header className="bg-white">
+      <div className="border-b border-[#eef0f4] bg-[#f6f7f9]">
+        <div className="mx-auto flex max-w-7xl items-center justify-end gap-6 px-4 py-1.5 text-xs text-[#4b5563]">
+          <a href={KONTAKT.telefonHref} className="flex items-center gap-1.5 hover:text-[#1546d8]">
+            <Phone className="h-3.5 w-3.5 text-[#1546d8]" /> +386 (0)41 336 547
           </a>
-        </nav>
-        <div className="flex items-center gap-2">
-          {paket === 3 && (
-            <a href="#portal" className="hidden border border-white/20 px-3 py-2 text-xs font-bold uppercase tracking-wide hover:border-white sm:block">
-              Prijava podjetja
+        </div>
+      </div>
+      <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3.5">
+        <a href="#" className="flex shrink-0 items-center gap-2">
+          <ZnakK className="h-9 w-9" />
+          <span className="text-xl font-extrabold tracking-tight sm:text-2xl">KAMENARIČ</span>
+        </a>
+        <nav className="hidden flex-1 items-center gap-6 text-sm font-medium text-[#1f2a44] xl:flex">
+          {KATEGORIJE.map((k) => (
+            <a key={k.id} href="#ponudba" className="whitespace-nowrap hover:text-[#1546d8]">
+              {k.ime}
             </a>
-          )}
+          ))}
+          <a href="#tisk" className="whitespace-nowrap hover:text-[#1546d8]">Tisk in dodelava</a>
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <label className="hidden items-center gap-2 rounded-lg bg-[#f1f3f7] px-3 py-2.5 text-sm text-[#6b7280] lg:flex">
+            <Search className="h-4 w-4" />
+            <input placeholder="Išči izdelke …" className="w-36 bg-transparent outline-none placeholder:text-[#9aa1ad]" />
+          </label>
           {paket >= 2 && (
-            <button onClick={odpriKosarico} className="relative border border-white/20 p-2.5 hover:border-white" aria-label="Košarica">
+            <button onClick={odpriKosarico} className={`relative rounded-lg ${OBROBA} bg-white p-2.5 hover:border-[#1546d8]`} aria-label="Košarica">
               <ShoppingBag className="h-5 w-5" />
               {stevilo > 0 && (
-                <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center bg-[#ff5a1f] px-1 text-[11px] font-black text-black">
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#1546d8] px-1 text-[11px] font-bold text-white">
                   {stevilo}
                 </span>
               )}
             </button>
           )}
+          {paket === 3 && (
+            <a href="#portal" className={`hidden rounded-lg ${OBROBA} bg-white px-4 py-2.5 text-sm font-semibold hover:border-[#1546d8] md:block`}>
+              Prijava za podjetja
+            </a>
+          )}
           <a
-            href={KONTAKT.telefonHref}
-            className="flex items-center gap-2 bg-[#f3efe8] px-4 py-2.5 text-sm font-black text-black hover:bg-white"
+            href={paket === 1 ? "#povprasevanje" : "#trgovina"}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold ${MODRA}`}
           >
-            <Phone className="h-4 w-4" />
-            <span className="hidden sm:inline">{KONTAKT.telefon}</span>
+            <span className="hidden sm:inline">{paket === 1 ? "Pošlji povpraševanje" : "Naroči na spletu"}</span>
+            <ArrowRight className="h-4 w-4" />
           </a>
         </div>
       </div>
@@ -203,144 +230,149 @@ function Glava({ paket, stevilo, odpriKosarico }: { paket: Paket; stevilo: numbe
   );
 }
 
-/* ───────────────────────── hero ───────────────────────── */
+/* ───────────────────────── uvod ───────────────────────── */
 
-function Hero({ paket, logo }: { paket: Paket; logo: string | null }) {
+const PREDNOSTI = [
+  { ikona: Tag, a: "Personalizacija", b: "z vašim logotipom" },
+  { ikona: Box, a: "Široka izbira", b: "izdelkov" },
+  { ikona: Users, a: "Osebni pristop", b: "in svetovanje" },
+];
+
+function Uvod({ paket }: { paket: Paket }) {
   return (
-    <section className="relative overflow-hidden">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
-          backgroundSize: "56px 56px",
-        }}
-      />
-      <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 pb-16 pt-14 lg:grid-cols-[1.25fr_1fr] lg:pb-24 lg:pt-20">
+    <section className="overflow-hidden bg-gradient-to-b from-white to-[#f6f7f9]">
+      <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 pb-14 pt-10 lg:grid-cols-[1fr_1.1fr] lg:pb-20 lg:pt-14">
         <div>
-          <p className="mb-6 inline-flex items-center gap-2 border border-white/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-white/60">
-            <span className="h-1.5 w-1.5 bg-[#ff5a1f]" /> Embalaža · Tisk · Poslovna darila
-          </p>
-          <h1 className="text-[clamp(3rem,9vw,8rem)] font-black uppercase leading-[0.85] tracking-tighter">
-            Embalaža,
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#1546d8]">Promocijski izdelki in poslovna darila</p>
+          <h1 className="mt-5 text-[clamp(2.4rem,5.2vw,4.4rem)] font-extrabold leading-[1.02] tracking-tight">
+            Promocijski izdelki,
             <br />
-            ki <span className="text-[#ff5a1f]">prodaja</span>.
+            ki <span className="text-[#1546d8]">pustijo vtis.</span>
           </h1>
-          <p className="mt-8 max-w-xl text-lg leading-relaxed text-white/70">
-            Vrečke, škatle, trakovi, koledarji in darila z vašim logotipom. Od ideje do tiska — tampotisk,
-            globoki, slepi in reliefni tisk pod eno streho.
+          <p className="mt-5 max-w-lg text-lg text-[#374151]">
+            Izdelki po meri vašega podjetja — <span className="text-[#6b7280]">z vašim logotipom, idejo in zgodbo.</span>
           </p>
-          <div className="mt-10 flex flex-wrap gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a href="#ponudba" className={`flex items-center gap-2 rounded-lg px-6 py-3.5 text-sm font-semibold ${MODRA}`}>
+              Razišči ponudbo <ArrowRight className="h-4 w-4" />
+            </a>
             <a
               href={paket === 1 ? "#povprasevanje" : "#trgovina"}
-              className="group flex items-center gap-3 bg-[#ff5a1f] px-7 py-4 text-sm font-black uppercase tracking-wide text-black hover:bg-[#ff7a45]"
+              className={`flex items-center gap-2 rounded-lg ${OBROBA} bg-white px-6 py-3.5 text-sm font-semibold hover:border-[#1546d8]`}
             >
-              {paket === 1 ? "Pošlji povpraševanje" : "Sestavi naročilo"}
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-            </a>
-            <a
-              href="#izdelki"
-              className="flex items-center gap-3 border border-white/25 px-7 py-4 text-sm font-black uppercase tracking-wide hover:border-white"
-            >
-              Poglej izdelke
+              <FileText className="h-4 w-4" /> {paket === 1 ? "Pošlji povpraševanje" : "Izračunaj ceno"}
             </a>
           </div>
-          <dl className="mt-14 grid max-w-lg grid-cols-3 gap-6 border-t border-white/10 pt-6">
-            {[
-              ["6", "postopkov tiska"],
-              ["50+", "kosov že od"],
-              [paket === 1 ? "24 h" : "24/7", paket === 1 ? "odgovor na povpraševanje" : "naročanje na spletu"],
-            ].map(([a, b]) => (
-              <div key={b}>
-                <dt className="text-3xl font-black">{a}</dt>
-                <dd className="mt-1 text-xs uppercase tracking-wide text-white/50">{b}</dd>
+          <div className="mt-10 grid max-w-xl grid-cols-1 gap-5 sm:grid-cols-3 sm:divide-x sm:divide-[#e3e6ee]">
+            {PREDNOSTI.map(({ ikona: I, a, b }) => (
+              <div key={a} className="flex items-center gap-3 sm:pl-5 sm:first:pl-0">
+                <I className="h-7 w-7 shrink-0 text-[#1546d8]" strokeWidth={1.6} />
+                <p className="text-sm leading-tight text-[#374151]">
+                  {a}
+                  <br />
+                  {b}
+                </p>
               </div>
             ))}
-          </dl>
+          </div>
         </div>
-        <div className="flex flex-col items-center">
-          <Skatla3D logo={logo} barva={KRAFT} velikost={230} />
-          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/40">Zavrti me ↻</p>
-        </div>
-      </div>
-    </section>
-  );
-}
 
-function Trak() {
-  const besede = ["Vrečke z logotipom", "Kartonske škatle", "Tampotisk", "Reliefni tisk", "Darilni trakovi", "Koledarji", "Poslovna darila", "QR embalaža"];
-  const vrsta = [...besede, ...besede];
-  return (
-    <div className="overflow-hidden border-y border-white/10 bg-[#f3efe8] py-4 text-black">
-      <div className="km-trak flex w-max gap-10 whitespace-nowrap">
-        {vrsta.map((b, i) => (
-          <span key={i} className="flex items-center gap-10 text-2xl font-black uppercase tracking-tight">
-            {b} <span className="h-3 w-3 bg-[#ff5a1f]" />
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ───────────────────────── kategorije in tisk ───────────────────────── */
-
-function Naslov({ oznaka, children, id }: { oznaka: string; children: React.ReactNode; id?: string }) {
-  return (
-    <div id={id} className="mb-12 flex scroll-mt-20 flex-wrap items-end justify-between gap-4">
-      <h2 className="text-[clamp(2.2rem,5vw,4.5rem)] font-black uppercase leading-[0.9] tracking-tighter">{children}</h2>
-      <span className="text-xs font-bold uppercase tracking-[0.25em] text-white/40">{oznaka}</span>
-    </div>
-  );
-}
-
-function Kategorije() {
-  const slika: Record<string, Izdelek> = Object.fromEntries(KATEGORIJE.map((k) => [k.id, IZDELKI.find((i) => i.kategorija === k.id)!]));
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-24">
-      <Naslov oznaka="Ponudba" id="izdelki">
-        Kaj
-        <br />
-        potiskamo
-      </Naslov>
-      <div className="grid gap-px bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
-        {KATEGORIJE.map((k) => (
-          <article key={k.id} className="group relative flex min-h-[320px] flex-col justify-between overflow-hidden bg-[#0b0b0b] p-7 transition hover:bg-[#c69c6d] hover:text-black">
-            <div className="flex items-start justify-between">
-              <span className="text-sm font-black text-[#ff5a1f] group-hover:text-black">{k.stevilka}</span>
-              <ArrowUpRight className="h-5 w-5 opacity-40 transition group-hover:rotate-45 group-hover:opacity-100" />
+        <div className="relative grid h-[340px] grid-cols-6 grid-rows-6 gap-3 sm:h-[460px]">
+          <Foto ime="uvod-vrecke" className="col-span-3 row-span-6" />
+          <Foto ime="uvod-majice" className="col-span-3 row-span-3" />
+          <Foto ime="uvod-skatle" className="col-span-2 row-span-3" />
+          <Foto ime="uvod-darilo" className="col-span-1 row-span-3" />
+          <div className="absolute -bottom-4 left-4 hidden items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-lg shadow-black/10 sm:flex">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef3ff]">
+              <Star className="h-5 w-5 fill-[#1546d8] text-[#1546d8]" />
             </div>
-            <Ilustracija oblika={slika[k.id].oblika} barva={slika[k.id].barva} className="mx-auto h-32 w-32 transition group-hover:scale-110" />
             <div>
-              <h3 className="text-2xl font-black uppercase tracking-tight">{k.ime}</h3>
-              <p className="mt-2 text-sm leading-relaxed opacity-70">{k.opis}</p>
+              <p className="text-sm font-bold">Tisk z vašim logotipom</p>
+              <p className="text-xs text-[#6b7280]">že od 50 kosov</p>
             </div>
-          </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Foto({ ime, className = "", alt = "" }: { ime: string; className?: string; alt?: string }) {
+  return (
+    <div className={`overflow-hidden rounded-2xl bg-[#e9ecf2] ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={slika(ime)} alt={alt} className="h-full w-full object-cover transition duration-500 hover:scale-105" loading="lazy" />
+    </div>
+  );
+}
+
+/* ───────────────────────── ponudba, proces, tisk ───────────────────────── */
+
+function Kategorije({ odpri }: { odpri: (id: string) => void }) {
+  return (
+    <section id="ponudba" className="scroll-mt-12 mx-auto max-w-7xl px-4 py-16">
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-5">
+        <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Raziščite našo ponudbo</h2>
+        <p className="max-w-xl text-[15px] text-[#4b5563]">
+          Embalaža, promocijski izdelki in poslovna darila, ki jih prilagodimo vašim željam. Poiščite navdih v naših glavnih kategorijah.
+        </p>
+        <button onClick={() => odpri("vse")} className={`flex items-center gap-2 rounded-lg ${OBROBA} bg-white px-4 py-2.5 text-sm font-semibold hover:border-[#1546d8]`}>
+          Vsi izdelki <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {KATEGORIJE.map((k) => (
+          <button
+            key={k.id}
+            onClick={() => odpri(k.id)}
+            className={`group overflow-hidden rounded-xl ${OBROBA} bg-white text-left transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5`}
+          >
+            <div className="aspect-[4/3] overflow-hidden bg-[#eef0f4]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={slika(k.slika)} alt={k.ime} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" />
+            </div>
+            <div className="flex items-start justify-between gap-2 p-4">
+              <div>
+                <h3 className="font-bold leading-tight">{k.ime}</h3>
+                <p className="mt-1 text-xs leading-snug text-[#6b7280]">{k.opis}</p>
+              </div>
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${OBROBA} group-hover:border-[#1546d8] group-hover:bg-[#1546d8] group-hover:text-white`}>
+                <ArrowRight className="h-4 w-4" />
+              </span>
+            </div>
+          </button>
         ))}
       </div>
     </section>
   );
 }
 
-function Postopki() {
+const KORAKI = [
+  { ikona: Lightbulb, a: "1. Ideja", b: "Skupaj poiščemo najboljšo rešitev" },
+  { ikona: Settings2, a: "2. Oblikovanje", b: "Pripravimo predlog z vašim logotipom" },
+  { ikona: Box, a: "3. Izdelava", b: "Kakovostna produkcija in personalizacija" },
+  { ikona: Truck, a: "4. Dostava", b: "Hitra in zanesljiva dobava" },
+];
+
+function Proces() {
   return (
-    <section id="tisk" className="scroll-mt-20 bg-[#f3efe8] text-black">
-      <div className="mx-auto max-w-7xl px-4 py-24">
-        <div className="mb-12 flex flex-wrap items-end justify-between gap-4">
-          <h2 className="text-[clamp(2.2rem,5vw,4.5rem)] font-black uppercase leading-[0.9] tracking-tighter">
-            Šest načinov,
-            <br />
-            <span className="text-[#ff5a1f]">en</span> podpis.
-          </h2>
-          <p className="max-w-sm text-sm leading-relaxed text-black/60">
-            Vsak material ima svoj tisk. Svetujemo, kateri bo na vaši embalaži izgledal najboljše — in koliko bo stal.
+    <section className="border-y border-[#e9ecf2] bg-white">
+      <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-12 lg:grid-cols-[0.9fr_1.6fr]">
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Od ideje do končnega izdelka</h2>
+          <p className="mt-2 text-[15px] text-[#4b5563]">
+            Poskrbimo za celoten proces – od izbire izdelka, oblikovanja in personalizacije do hitre in zanesljive dobave.
           </p>
         </div>
-        <div className="grid gap-px bg-black/15 md:grid-cols-2 lg:grid-cols-3">
-          {POSTOPKI.map((p, i) => (
-            <div key={p.ime} className="bg-[#f3efe8] p-7">
-              <span className="font-mono text-xs text-black/40">/{String(i + 1).padStart(2, "0")}</span>
-              <h3 className="mt-4 text-xl font-black uppercase">{p.ime}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-black/65">{p.opis}</p>
+        <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+          {KORAKI.map(({ ikona: I, a, b }, i) => (
+            <div key={a} className="relative flex items-start gap-3">
+              <I className="h-9 w-9 shrink-0 text-[#1546d8]" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-bold">{a}</p>
+                <p className="text-xs leading-snug text-[#6b7280]">{b}</p>
+              </div>
+              {i < 3 && <ArrowRight className="absolute -right-4 top-2 hidden h-4 w-4 text-[#9aa1ad] md:block" />}
             </div>
           ))}
         </div>
@@ -349,9 +381,85 @@ function Postopki() {
   );
 }
 
+function Postopki() {
+  return (
+    <section id="tisk" className="scroll-mt-12 mx-auto max-w-7xl px-4 py-16">
+      <div className="mb-8 max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#1546d8]">Tisk in dodelava</p>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Šest načinov, en podpis.</h2>
+        <p className="mt-2 text-[15px] text-[#4b5563]">Vsak material ima svoj tisk. Svetujemo, kateri bo na vašem izdelku izgledal najboljše — in koliko bo stal.</p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {POSTOPKI.map((p, i) => (
+          <div key={p.ime} className={`rounded-xl ${OBROBA} bg-white p-6`}>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#eef3ff] text-sm font-bold text-[#1546d8]">{i + 1}</span>
+            <h3 className="mt-4 font-bold">{p.ime}</h3>
+            <p className="mt-1 text-sm leading-relaxed text-[#6b7280]">{p.opis}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* Mnenja NISO resnična — v demu so označena kot primer, dokler stranka ne
+   da svojih (npr. z Googla). Izmišljena mnenja kot prava bi bila zavajanje. */
+const MNENJA = [
+  { ime: "Pekarna (primer)", vloga: "Papirnate vrečke s tiskom", besedilo: "Vrečke z našim logotipom so bile narejene v dogovorjenem roku, tisk je oster in barve točno take, kot smo jih želeli." },
+  { ime: "Gradbeno podjetje (primer)", vloga: "Polo majice in delovna oblačila", besedilo: "Za celo ekipo smo naročili majice z vezenim logotipom. Svetovali so nam pri izbiri materiala, kar se je izkazalo za odlično." },
+  { ime: "Turistična agencija (primer)", vloga: "Koledarji in poslovna darila", besedilo: "Novoletna darila za partnerje vsako leto naročamo tu. Pokličeš, poveš idejo, in za ostalo poskrbijo sami." },
+];
+
+function Zvezdice({ velikost = "h-4 w-4" }: { velikost?: string }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star key={i} className={`${velikost} fill-[#facc15] text-[#facc15]`} />
+      ))}
+    </div>
+  );
+}
+
+function Stranke() {
+  return (
+    <section className="bg-[#0b1530] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-16">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#8fb0ff]">Zadovoljne stranke</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Zaupajo nam podjetja iz vse Slovenije</h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <Zvezdice velikost="h-5 w-5" />
+            <span className="text-sm text-white/70">ocena z Googla — vstavimo vašo pravo</span>
+          </div>
+        </div>
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {MNENJA.map((m) => (
+            <figure key={m.ime} className="flex flex-col rounded-xl bg-white/[0.06] p-6 ring-1 ring-white/10">
+              <Zvezdice />
+              <blockquote className="mt-4 flex-1 text-[15px] leading-relaxed text-white/85">“{m.besedilo}”</blockquote>
+              <figcaption className="mt-5 flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1546d8] text-sm font-bold">{m.ime[0]}</span>
+                <span>
+                  <span className="block text-sm font-bold">{m.ime}</span>
+                  <span className="block text-xs text-white/55">{m.vloga}</span>
+                </span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+        <p className="mt-6 text-xs text-white/45">
+          Mnenja so v predogledu primer. Na pravi strani prikažemo vaša resnična mnenja strank (npr. z Googla ali Facebooka).
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* ───────────────────────── paket 1: povpraševanje ───────────────────────── */
 
-function NalaganjeLoga({ logo, setLogo, svetlo = false }: { logo: string | null; setLogo: (l: string | null) => void; svetlo?: boolean }) {
+function NalaganjeLoga({ logo, setLogo }: { logo: string | null; setLogo: (l: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   return (
     <div className="flex items-center gap-3">
@@ -368,20 +476,14 @@ function NalaganjeLoga({ logo, setLogo, svetlo = false }: { logo: string | null;
           r.readAsDataURL(f);
         }}
       />
-      <button
-        type="button"
-        onClick={() => ref.current?.click()}
-        className={`flex items-center gap-2 border px-4 py-3 text-sm font-bold ${
-          svetlo ? "border-black/20 hover:border-black" : "border-white/20 hover:border-white"
-        }`}
-      >
+      <button type="button" onClick={() => ref.current?.click()} className={`flex items-center gap-2 rounded-lg ${OBROBA} bg-white px-4 py-2.5 text-sm font-semibold hover:border-[#1546d8]`}>
         <Upload className="h-4 w-4" /> {logo ? "Zamenjaj logotip" : "Naloži logotip"}
       </button>
       {logo && (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logo} alt="Logotip" className="h-10 w-10 bg-white object-contain p-1" />
-          <button type="button" onClick={() => setLogo(null)} className="text-xs underline opacity-60">
+          <img src={logo} alt="Logotip" className={`h-10 w-10 rounded ${OBROBA} bg-white object-contain p-1`} />
+          <button type="button" onClick={() => setLogo(null)} className="text-xs text-[#6b7280] underline">
             odstrani
           </button>
         </>
@@ -390,37 +492,51 @@ function NalaganjeLoga({ logo, setLogo, svetlo = false }: { logo: string | null;
   );
 }
 
+const VNOS = "w-full rounded-lg border border-[#d9dde6] bg-white px-4 py-3 text-sm outline-none focus:border-[#1546d8] focus:ring-2 focus:ring-[#1546d8]/15";
+
+function Polje({ oznaka, tip = "text" }: { oznaka: string; tip?: string }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-semibold text-[#4b5563]">{oznaka}</span>
+      <input type={tip} className={VNOS} />
+    </label>
+  );
+}
+
 function Povprasevanje({ logo, setLogo }: { logo: string | null; setLogo: (l: string | null) => void }) {
   const [poslano, setPoslano] = useState(false);
   return (
-    <section id="povprasevanje" className="scroll-mt-20 mx-auto max-w-7xl px-4 py-24">
-      <div className="grid gap-12 lg:grid-cols-2">
+    <section id="povprasevanje" className="scroll-mt-12 mx-auto max-w-7xl px-4 py-16">
+      <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
         <div>
-          <Naslov oznaka="Povpraševanje">
-            Pošljite
-            <br />
-            logotip.
-          </Naslov>
-          <p className="max-w-md text-white/70">
-            Povejte, kaj potrebujete in v kakšni količini. Ponudbo z vizualizacijo dobite v 24 urah — ali pa nas
-            preprosto pokličite.
-          </p>
-          <a href={KONTAKT.telefonHref} className="mt-8 inline-flex items-center gap-3 text-4xl font-black tracking-tight hover:text-[#ff5a1f]">
-            <Phone className="h-8 w-8" /> {KONTAKT.telefon}
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#1546d8]">Povpraševanje</p>
+          <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Pošljite nam idejo in logotip</h2>
+          <p className="mt-3 max-w-md text-[#4b5563]">Povejte, kaj potrebujete in v kakšni količini. Pripravimo ponudbo z vizualizacijo — ali pa nas preprosto pokličite.</p>
+          <a href={KONTAKT.telefonHref} className="mt-6 inline-flex items-center gap-3 text-3xl font-extrabold tracking-tight hover:text-[#1546d8]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eef3ff]">
+              <Phone className="h-6 w-6 text-[#1546d8]" />
+            </span>
+            {KONTAKT.telefon}
           </a>
+          <div className="mt-8 hidden grid-cols-2 gap-3 sm:grid">
+            <Foto ime="kat-skatle" className="aspect-square" />
+            <Foto ime="kat-vrecke" className="aspect-square" />
+          </div>
         </div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             setPoslano(true);
           }}
-          className="space-y-4 border border-white/10 bg-white/[0.03] p-6 sm:p-8"
+          className={`space-y-4 rounded-2xl ${OBROBA} bg-white p-6 shadow-sm sm:p-8`}
         >
           {poslano ? (
             <div className="py-16 text-center">
-              <Check className="mx-auto h-12 w-12 text-[#ff5a1f]" />
-              <p className="mt-4 text-2xl font-black uppercase">Hvala!</p>
-              <p className="mt-2 text-sm text-white/60">Demo — povpraševanje ni bilo nikamor poslano.</p>
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#eef3ff]">
+                <Check className="h-7 w-7 text-[#1546d8]" />
+              </span>
+              <p className="mt-4 text-2xl font-extrabold">Hvala za povpraševanje!</p>
+              <p className="mt-2 text-sm text-[#6b7280]">Predogled — povpraševanje ni bilo nikamor poslano.</p>
             </div>
           ) : (
             <>
@@ -430,21 +546,23 @@ function Povprasevanje({ logo, setLogo }: { logo: string | null; setLogo: (l: st
                 <Polje oznaka="E-pošta" tip="email" />
                 <Polje oznaka="Telefon" />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-[#4b5563]">Kaj potrebujete</span>
+                  <select className={VNOS}>
+                    {KATEGORIJE.map((k) => (
+                      <option key={k.id}>{k.ime}</option>
+                    ))}
+                  </select>
+                </label>
+                <Polje oznaka="Količina (pribl.)" tip="number" />
+              </div>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-white/50">Kaj potrebujete</span>
-                <select className="w-full border border-white/15 bg-[#0b0b0b] px-4 py-3 text-sm outline-none focus:border-[#ff5a1f]">
-                  {KATEGORIJE.map((k) => (
-                    <option key={k.id}>{k.ime}</option>
-                  ))}
-                </select>
-              </label>
-              <Polje oznaka="Količina (pribl.)" tip="number" />
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-white/50">Opis</span>
-                <textarea rows={3} className="w-full border border-white/15 bg-transparent px-4 py-3 text-sm outline-none focus:border-[#ff5a1f]" />
+                <span className="mb-1.5 block text-xs font-semibold text-[#4b5563]">Opis</span>
+                <textarea rows={3} className={VNOS} />
               </label>
               <NalaganjeLoga logo={logo} setLogo={setLogo} />
-              <button className="flex w-full items-center justify-center gap-2 bg-[#ff5a1f] py-4 text-sm font-black uppercase tracking-wide text-black hover:bg-[#ff7a45]">
+              <button className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 text-sm font-semibold ${MODRA}`}>
                 Pošlji povpraševanje <Send className="h-4 w-4" />
               </button>
             </>
@@ -455,65 +573,59 @@ function Povprasevanje({ logo, setLogo }: { logo: string | null; setLogo: (l: st
   );
 }
 
-function Polje({ oznaka, tip = "text" }: { oznaka: string; tip?: string }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-white/50">{oznaka}</span>
-      <input type={tip} className="w-full border border-white/15 bg-transparent px-4 py-3 text-sm outline-none focus:border-[#ff5a1f]" />
-    </label>
-  );
-}
-
 /* ───────────────────────── paket 2: trgovina ───────────────────────── */
 
-function Trgovina({ odpri }: { odpri: (i: Izdelek) => void }) {
-  const [filter, setFilter] = useState<string>("vse");
+function Trgovina({ odpri, filter, setFilter }: { odpri: (i: Izdelek) => void; filter: string; setFilter: (f: string) => void }) {
   const prikazani = filter === "vse" ? IZDELKI : IZDELKI.filter((i) => i.kategorija === filter);
   return (
-    <section id="trgovina" className="scroll-mt-20 mx-auto max-w-7xl px-4 py-24">
-      <Naslov oznaka="Spletna trgovina">
-        Izračunaj.
-        <br />
-        <span className="text-[#ff5a1f]">Naroči.</span>
-      </Naslov>
-      <div className="mb-8 flex flex-wrap gap-2">
-        {[{ id: "vse", ime: "Vse" }, ...KATEGORIJE].map((k) => (
-          <button
-            key={k.id}
-            onClick={() => setFilter(k.id)}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-wide ${
-              filter === k.id ? "bg-[#f3efe8] text-black" : "border border-white/15 text-white/70 hover:border-white"
-            }`}
-          >
-            {k.ime}
-          </button>
-        ))}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {prikazani.map((i) => (
-          <article key={i.id} className="group flex flex-col border border-white/10 bg-white/[0.02] transition hover:border-[#ff5a1f]">
-            <div className="flex aspect-[4/3] items-center justify-center bg-[#151515] sm:aspect-square">
-              <Ilustracija oblika={i.oblika} barva={i.barva} className="h-3/4 w-3/4 transition group-hover:scale-105" />
-            </div>
-            <div className="flex flex-1 flex-col p-5">
-              <h3 className="font-black uppercase leading-tight">{i.ime}</h3>
-              <p className="mt-1 text-xs text-white/50">{i.opis}</p>
-              <div className="mt-auto flex items-end justify-between pt-5">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-white/40">že od / kos</p>
-                  <p className="text-2xl font-black">{eur(i.cena)}</p>
-                  <p className="text-[10px] text-white/40">min. {i.min} kos · cena je primer</p>
-                </div>
-                <button
-                  onClick={() => odpri(i)}
-                  className="flex items-center gap-1 bg-[#ff5a1f] px-3 py-2 text-xs font-black uppercase text-black hover:bg-[#ff7a45]"
-                >
-                  Sestavi <ChevronRight className="h-3.5 w-3.5" />
-                </button>
+    <section id="trgovina" className="scroll-mt-12 border-t border-[#e9ecf2] bg-white">
+      <div className="mx-auto max-w-7xl px-4 py-16">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#1546d8]">Spletna trgovina</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Izračunajte ceno in naročite</h2>
+          </div>
+          <p className="text-sm text-[#6b7280]">Cene so informativni primer.</p>
+        </div>
+        <div className="mb-8 flex flex-wrap gap-2">
+          {[{ id: "vse", ime: "Vse" }, ...KATEGORIJE].map((k) => (
+            <button
+              key={k.id}
+              onClick={() => setFilter(k.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium ${
+                filter === k.id ? "bg-[#0b1530] text-white" : "bg-[#f1f3f7] text-[#374151] hover:bg-[#e6e9f0]"
+              }`}
+            >
+              {k.ime}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {prikazani.map((i) => (
+            <article key={i.id} className={`group flex flex-col overflow-hidden rounded-xl ${OBROBA} bg-white transition hover:shadow-lg hover:shadow-black/5`}>
+              <div className="aspect-square overflow-hidden bg-[#eef0f4]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={slika(i.slika)} alt={i.ime} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" />
               </div>
-            </div>
-          </article>
-        ))}
+              <div className="flex flex-1 flex-col p-4">
+                <h3 className="text-sm font-bold leading-snug sm:text-base">{i.ime}</h3>
+                <p className="mt-1 text-xs text-[#6b7280]">{i.opis}</p>
+                <div className="mt-auto flex flex-wrap items-end justify-between gap-2 pt-4">
+                  <div>
+                    <p className="text-[11px] text-[#6b7280]">že od</p>
+                    <p className="text-xl font-extrabold">
+                      {eur(i.cena)} <span className="text-xs font-medium text-[#6b7280]">/ kos</span>
+                    </p>
+                    <p className="text-[11px] text-[#9aa1ad]">min. {i.min} kos</p>
+                  </div>
+                  <button onClick={() => odpri(i)} className={`rounded-lg px-3.5 py-2 text-xs font-semibold ${MODRA}`}>
+                    Sestavi
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -534,34 +646,46 @@ function Konfigurator({
 }) {
   const [kolicina, setKolicina] = useState(Math.max(izdelek.min, 500));
   const [tiskId, setTiskId] = useState<string>("1b");
+  const [pogled, setPogled] = useState<"foto" | "tisk">("foto");
   const c = izracun(izdelek, kolicina, tiskId);
   const prikaziLogo = tiskId !== "brez" ? logo : null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center sm:p-4" onClick={zapri}>
-      <div
-        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto border border-white/15 bg-[#111] text-[#f3efe8]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">Konfigurator</p>
-          <button onClick={zapri} aria-label="Zapri">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0b1530]/60 backdrop-blur-sm sm:items-center sm:p-4" onClick={zapri}>
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#eef0f4] px-6 py-4">
+          <p className="text-sm font-semibold text-[#6b7280]">Sestavite naročilo</p>
+          <button onClick={zapri} aria-label="Zapri" className="rounded-lg p-1 hover:bg-[#f1f3f7]">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="grid gap-0 md:grid-cols-2">
-          <div className="flex items-center justify-center bg-[#c69c6d]/10 p-8">
-            <Ilustracija oblika={izdelek.oblika} barva={izdelek.barva} logo={prikaziLogo} className="h-72 w-72" />
+        <div className="grid md:grid-cols-2">
+          <div className="bg-[#f6f7f9] p-6">
+            <div className="mb-3 flex gap-1 rounded-lg bg-white p-1 text-xs font-semibold">
+              {(["foto", "tisk"] as const).map((v) => (
+                <button key={v} onClick={() => setPogled(v)} className={`flex-1 rounded-md py-1.5 ${pogled === v ? "bg-[#0b1530] text-white" : "text-[#6b7280]"}`}>
+                  {v === "foto" ? "Fotografija" : "Predogled tiska"}
+                </button>
+              ))}
+            </div>
+            <div className="flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-white">
+              {pogled === "foto" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={slika(izdelek.slika)} alt={izdelek.ime} className="h-full w-full object-cover" />
+              ) : (
+                <Ilustracija oblika={izdelek.oblika} barva={izdelek.barva} logo={prikaziLogo} className="h-4/5 w-4/5" />
+              )}
+            </div>
           </div>
-          <div className="space-y-6 p-6">
+          <div className="space-y-5 p-6">
             <div>
-              <h3 className="text-2xl font-black uppercase leading-tight">{izdelek.ime}</h3>
-              <p className="text-sm text-white/50">{izdelek.opis}</p>
+              <h3 className="text-2xl font-extrabold leading-tight">{izdelek.ime}</h3>
+              <p className="text-sm text-[#6b7280]">{izdelek.opis}</p>
             </div>
             <div>
-              <div className="mb-2 flex justify-between text-xs font-bold uppercase tracking-wide text-white/50">
-                <span>Količina</span>
-                <span className="text-[#f3efe8]">{kolicina.toLocaleString("sl-SI")} kos</span>
+              <div className="mb-2 flex justify-between text-sm font-semibold">
+                <span className="text-[#4b5563]">Količina</span>
+                <span>{kolicina.toLocaleString("sl-SI")} kos</span>
               </div>
               <input
                 type="range"
@@ -570,25 +694,28 @@ function Konfigurator({
                 step={izdelek.min >= 100 ? 50 : 10}
                 value={kolicina}
                 onChange={(e) => setKolicina(Number(e.target.value))}
-                className="w-full accent-[#ff5a1f]"
+                className="w-full accent-[#1546d8]"
               />
               <div className="mt-2 flex gap-2">
                 {[izdelek.min, 500, 1000, 5000].filter((v, i, a) => a.indexOf(v) === i && v >= izdelek.min).map((v) => (
-                  <button key={v} onClick={() => setKolicina(v)} className="border border-white/15 px-2.5 py-1 text-xs hover:border-white">
+                  <button key={v} onClick={() => setKolicina(v)} className="rounded-md bg-[#f1f3f7] px-2.5 py-1 text-xs font-medium hover:bg-[#e6e9f0]">
                     {v.toLocaleString("sl-SI")}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-white/50">Tisk</p>
+              <p className="mb-2 text-sm font-semibold text-[#4b5563]">Tisk</p>
               <div className="grid grid-cols-2 gap-2">
                 {TISKI.map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setTiskId(t.id)}
-                    className={`px-3 py-2.5 text-left text-xs font-bold ${
-                      tiskId === t.id ? "bg-[#f3efe8] text-black" : "border border-white/15 hover:border-white"
+                    onClick={() => {
+                      setTiskId(t.id);
+                      if (t.id !== "brez") setPogled("tisk");
+                    }}
+                    className={`rounded-lg px-3 py-2.5 text-left text-xs font-semibold ${
+                      tiskId === t.id ? "bg-[#1546d8] text-white" : `${OBROBA} hover:border-[#1546d8]`
                     }`}
                   >
                     {t.ime}
@@ -596,20 +723,28 @@ function Konfigurator({
                 ))}
               </div>
             </div>
-            {tiskId !== "brez" && <NalaganjeLoga logo={logo} setLogo={setLogo} />}
-            <div className="space-y-1.5 border-t border-white/10 pt-5 text-sm">
+            {tiskId !== "brez" && (
+              <NalaganjeLoga
+                logo={logo}
+                setLogo={(l) => {
+                  setLogo(l);
+                  setPogled("tisk");
+                }}
+              />
+            )}
+            <div className="space-y-1.5 rounded-xl bg-[#f6f7f9] p-4 text-sm">
               <Vrstica a="Cena na kos" b={eur(c.naKos)} />
               {c.popust > 0 && <Vrstica a="Količinski popust" b={`−${Math.round(c.popust * 100)} %`} poudari />}
               {c.priprava > 0 && <Vrstica a="Priprava tiska (enkratno)" b={eur(c.priprava)} />}
-              <div className="flex items-end justify-between pt-3">
-                <span className="text-xs font-bold uppercase tracking-wide text-white/50">Skupaj brez DDV</span>
-                <span className="text-4xl font-black">{eur(c.skupaj)}</span>
+              <div className="flex items-end justify-between border-t border-[#e3e6ee] pt-3">
+                <span className="text-xs font-semibold text-[#6b7280]">Skupaj brez DDV</span>
+                <span className="text-3xl font-extrabold">{eur(c.skupaj)}</span>
               </div>
-              <p className="text-[11px] text-white/35">Demo — cene so informativni primer, ne ponudba.</p>
+              <p className="text-[11px] text-[#9aa1ad]">Predogled — cene so informativni primer, ne ponudba.</p>
             </div>
             <button
               onClick={() => dodaj({ izdelek, kolicina, tiskId, logo: prikaziLogo })}
-              className="flex w-full items-center justify-center gap-2 bg-[#ff5a1f] py-4 text-sm font-black uppercase tracking-wide text-black hover:bg-[#ff7a45]"
+              className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 text-sm font-semibold ${MODRA}`}
             >
               <ShoppingBag className="h-4 w-4" /> Dodaj v košarico
             </button>
@@ -623,8 +758,8 @@ function Konfigurator({
 function Vrstica({ a, b, poudari }: { a: string; b: string; poudari?: boolean }) {
   return (
     <div className="flex justify-between">
-      <span className="text-white/60">{a}</span>
-      <span className={poudari ? "font-bold text-[#ff5a1f]" : "font-semibold"}>{b}</span>
+      <span className="text-[#6b7280]">{a}</span>
+      <span className={poudari ? "font-bold text-[#1546d8]" : "font-semibold"}>{b}</span>
     </div>
   );
 }
@@ -643,50 +778,50 @@ function Kosarica({
   oddaj: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/70 backdrop-blur-sm" onClick={zapri}>
-      <aside className="flex h-full w-full max-w-md flex-col border-l border-white/15 bg-[#111]" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
-          <h3 className="text-xl font-black uppercase">Košarica</h3>
-          <button onClick={zapri} aria-label="Zapri">
+    <div className="fixed inset-0 z-[60] flex justify-end bg-[#0b1530]/50 backdrop-blur-sm" onClick={zapri}>
+      <aside className="flex h-full w-full max-w-md flex-col bg-white" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#eef0f4] px-6 py-5">
+          <h3 className="text-xl font-extrabold">Košarica</h3>
+          <button onClick={zapri} aria-label="Zapri" className="rounded-lg p-1 hover:bg-[#f1f3f7]">
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-6">
-          {postavke.length === 0 && <p className="py-10 text-center text-sm text-white/50">Košarica je prazna.</p>}
+          {postavke.length === 0 && <p className="py-10 text-center text-sm text-[#6b7280]">Košarica je prazna.</p>}
           {postavke.map((p) => {
             const c = izracun(p.izdelek, p.kolicina, p.tiskId);
             return (
-              <div key={p.id} className="flex gap-3 border border-white/10 p-3">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center bg-[#1a1a1a]">
-                  <Ilustracija oblika={p.izdelek.oblika} barva={p.izdelek.barva} logo={p.logo} className="h-14 w-14" />
-                </div>
+              <div key={p.id} className={`flex gap-3 rounded-xl ${OBROBA} p-3`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={slika(p.izdelek.slika)} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{p.izdelek.ime}</p>
-                  <p className="text-xs text-white/50">
+                  <p className="text-xs text-[#6b7280]">
                     {p.kolicina.toLocaleString("sl-SI")} kos · {TISKI.find((t) => t.id === p.tiskId)?.ime}
+                    {p.logo ? " · z logotipom" : ""}
                   </p>
-                  <p className="mt-1 text-sm font-black">{eur(c.skupaj)}</p>
+                  <p className="mt-1 text-sm font-extrabold">{eur(c.skupaj)}</p>
                 </div>
-                <button onClick={() => odstrani(p.id)} className="self-start text-white/40 hover:text-white" aria-label="Odstrani">
+                <button onClick={() => odstrani(p.id)} className="self-start text-[#9aa1ad] hover:text-[#0b1530]" aria-label="Odstrani">
                   <X className="h-4 w-4" />
                 </button>
               </div>
             );
           })}
         </div>
-        <div className="space-y-3 border-t border-white/10 p-6">
+        <div className="space-y-3 border-t border-[#eef0f4] p-6">
           <div className="flex items-end justify-between">
-            <span className="text-xs font-bold uppercase tracking-wide text-white/50">Skupaj brez DDV</span>
-            <span className="text-3xl font-black">{eur(skupaj)}</span>
+            <span className="text-sm font-semibold text-[#6b7280]">Skupaj brez DDV</span>
+            <span className="text-3xl font-extrabold">{eur(skupaj)}</span>
           </div>
           <button
             disabled={postavke.length === 0}
             onClick={oddaj}
-            className="flex w-full items-center justify-center gap-2 bg-[#ff5a1f] py-4 text-sm font-black uppercase tracking-wide text-black hover:bg-[#ff7a45] disabled:opacity-40"
+            className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 text-sm font-semibold disabled:opacity-40 ${MODRA}`}
           >
             Oddaj naročilo <ArrowRight className="h-4 w-4" />
           </button>
-          <p className="text-center text-[11px] text-white/35">Demo — naročilo se ne pošlje nikamor.</p>
+          <p className="text-center text-[11px] text-[#9aa1ad]">Predogled — naročilo se ne pošlje nikamor.</p>
         </div>
       </aside>
     </div>
@@ -695,16 +830,17 @@ function Kosarica({
 
 function Potrdilo({ st, zapri }: { st: string; zapri: () => void }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4" onClick={zapri}>
-      <div className="w-full max-w-md bg-[#f3efe8] p-8 text-black" onClick={(e) => e.stopPropagation()}>
-        <Check className="h-12 w-12 text-[#ff5a1f]" />
-        <h3 className="mt-4 text-3xl font-black uppercase leading-none">Naročilo prejeto</h3>
-        <p className="mt-3 text-sm text-black/70">
-          Številka naročila <b>{st}</b>. V pravi trgovini bi zdaj stranka dobila e-mail s potrdilom in predračunom,
-          Kamenarič pa naročilo z logotipom v prilogi.
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0b1530]/60 p-4" onClick={zapri}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-8" onClick={(e) => e.stopPropagation()}>
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#eef3ff]">
+          <Check className="h-7 w-7 text-[#1546d8]" />
+        </span>
+        <h3 className="mt-4 text-2xl font-extrabold">Naročilo prejeto</h3>
+        <p className="mt-2 text-sm text-[#4b5563]">
+          Številka naročila <b>{st}</b>. V pravi trgovini bi stranka zdaj dobila e-mail s potrdilom in predračunom, Kamenarič pa naročilo z logotipom v prilogi.
         </p>
-        <p className="mt-4 bg-black/5 p-3 text-xs text-black/60">To je predogled — naročilo ni bilo poslano.</p>
-        <button onClick={zapri} className="mt-6 w-full bg-black py-3 text-sm font-black uppercase text-white">
+        <p className="mt-4 rounded-lg bg-[#f6f7f9] p-3 text-xs text-[#6b7280]">To je predogled — naročilo ni bilo poslano.</p>
+        <button onClick={zapri} className={`mt-6 w-full rounded-lg py-3 text-sm font-semibold ${MODRA}`}>
           V redu
         </button>
       </div>
@@ -722,82 +858,73 @@ const PRETEKLA = [
 
 type Sporocilo = { od: "ai" | "jaz"; besedilo: string; predlog?: Omit<Postavka, "id"> };
 
-function Portal({
-  logo,
-  setLogo,
-  dodaj,
-}: {
-  logo: string | null;
-  setLogo: (l: string | null) => void;
-  dodaj: (p: Omit<Postavka, "id">) => void;
-}) {
+function Kartica({ ikona: I, naslov, children }: { ikona: typeof Bot; naslov: string; children: React.ReactNode }) {
   return (
-    <section id="portal" className="scroll-mt-20 border-t border-white/10 bg-[#101010]">
-      <div className="mx-auto max-w-7xl px-4 py-24">
-        <Naslov oznaka="Portal za podjetja">
-          Vaš račun.
-          <br />
-          <span className="text-[#ff5a1f]">Vaše cene.</span>
-        </Naslov>
+    <div className={`rounded-2xl ${OBROBA} bg-white p-6`}>
+      <p className="mb-4 flex items-center gap-2 text-sm font-bold">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef3ff]">
+          <I className="h-4 w-4 text-[#1546d8]" />
+        </span>
+        {naslov}
+      </p>
+      {children}
+    </div>
+  );
+}
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border border-white/10 bg-black/40 p-5">
+function Portal({ logo, setLogo, dodaj }: { logo: string | null; setLogo: (l: string | null) => void; dodaj: (p: Omit<Postavka, "id">) => void }) {
+  return (
+    <section id="portal" className="scroll-mt-12 bg-[#eef3ff]">
+      <div className="mx-auto max-w-7xl px-4 py-16">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#1546d8]">Portal za podjetja</p>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Vaš račun. Vaše cene. Vaša naročila.</h2>
+
+        <div className={`mb-6 mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl ${OBROBA} bg-white p-5`}>
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center bg-[#c69c6d] text-lg font-black text-black">PN</div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#0b1530] text-lg font-bold text-white">PN</div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-white/40">Prijavljeni kot (primer)</p>
-              <p className="font-black uppercase">Pekarna Novak d.o.o.</p>
+              <p className="text-xs text-[#6b7280]">Prijavljeni kot (primer)</p>
+              <p className="font-bold">Pekarna Novak d.o.o.</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
-            <span className="bg-[#ff5a1f] px-3 py-1.5 text-black">Vaš popust −12 %</span>
-            <span className="border border-white/20 px-3 py-1.5">Plačilo na 30 dni</span>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-[#1546d8] px-3 py-1.5 text-white">Vaš popust −12 %</span>
+            <span className="rounded-full bg-[#f1f3f7] px-3 py-1.5">Plačilo na 30 dni</span>
           </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <AiPomocnik dodaj={dodaj} logo={logo} />
-
-          <div className="border border-white/10 p-6">
-            <p className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-              <Package className="h-4 w-4" /> 3D predogled z vašim logotipom
-            </p>
+          <Kartica ikona={Package} naslov="3D predogled z vašim logotipom">
             <div className="flex flex-col items-center gap-4">
-              <Skatla3D logo={logo} barva="#111827" velikost={190} samaSeVrti={false} svetelNapis />
+              <Skatla3D logo={logo} barva="#c69c6d" velikost={190} samaSeVrti={false} />
               <NalaganjeLoga logo={logo} setLogo={setLogo} />
-              <p className="text-center text-xs text-white/40">Naložite logotip in zavrtite škatlo — tako bo videti, še preden jo naročite.</p>
+              <p className="text-center text-xs text-[#6b7280]">Naložite logotip in zavrtite škatlo — tako bo videti, še preden jo naročite.</p>
             </div>
-          </div>
-
-          <div className="border border-white/10 p-6">
-            <p className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-              <RotateCcw className="h-4 w-4" /> Pretekla naročila
-            </p>
-            <div className="divide-y divide-white/10">
-              {PRETEKLA.map((n) => (
-                <div key={n.st} className="flex items-center justify-between gap-3 py-3">
-                  <div>
-                    <p className="text-sm font-bold">{n.opis}</p>
-                    <p className="text-xs text-white/45">
-                      {n.st} · {n.datum} · {n.kolicina} kos
-                    </p>
+          </Kartica>
+          <Kartica ikona={RotateCcw} naslov="Pretekla naročila">
+            <div className="divide-y divide-[#eef0f4]">
+              {PRETEKLA.map((n) => {
+                const iz = IZDELKI.find((i) => i.id === n.izdelek)!;
+                return (
+                  <div key={n.st} className="flex items-center gap-3 py-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={slika(iz.slika)} alt="" className="h-12 w-12 rounded-lg object-cover" />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold">{n.opis}</p>
+                      <p className="text-xs text-[#6b7280]">
+                        {n.st} · {n.datum} · {n.kolicina} kos
+                      </p>
+                    </div>
+                    <button onClick={() => dodaj({ izdelek: iz, kolicina: n.kolicina, tiskId: n.tisk, logo })} className={`rounded-lg px-3 py-2 text-xs font-semibold ${MODRA}`}>
+                      Ponovi
+                    </button>
                   </div>
-                  <button
-                    onClick={() =>
-                      dodaj({ izdelek: IZDELKI.find((i) => i.id === n.izdelek)!, kolicina: n.kolicina, tiskId: n.tisk, logo })
-                    }
-                    className="shrink-0 bg-[#f3efe8] px-3 py-2 text-xs font-black uppercase text-black hover:bg-white"
-                  >
-                    Ponovi
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
-
-          <div className="border border-white/10 p-6">
-            <p className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-              <Truck className="h-4 w-4" /> Sledenje · KM-2026-0131
-            </p>
+          </Kartica>
+          <Kartica ikona={Truck} naslov="Sledenje · KM-2026-0131">
             <ol className="space-y-4">
               {[
                 ["Naročilo potrjeno", "2. 10.", true],
@@ -806,21 +933,19 @@ function Portal({
                 ["Odprema", "predvidoma 9. 10.", false],
               ].map(([a, b, ok]) => (
                 <li key={a as string} className="flex items-center gap-4">
-                  <span className={`flex h-7 w-7 items-center justify-center ${ok ? "bg-[#ff5a1f] text-black" : "border border-white/20"}`}>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full ${ok ? "bg-[#1546d8] text-white" : "border-2 border-[#d9dde6]"}`}>
                     {ok ? <Check className="h-4 w-4" /> : null}
                   </span>
-                  <span className={`flex-1 text-sm font-bold ${ok ? "" : "text-white/40"}`}>{a}</span>
-                  <span className="text-xs text-white/40">{b}</span>
+                  <span className={`flex-1 text-sm font-semibold ${ok ? "" : "text-[#9aa1ad]"}`}>{a}</span>
+                  <span className="text-xs text-[#6b7280]">{b}</span>
                 </li>
               ))}
             </ol>
-            <div className="mt-6 border border-[#c69c6d]/40 bg-[#c69c6d]/10 p-4 text-sm">
-              <p className="font-black uppercase text-[#c69c6d]">Opomnik pred sezono</p>
-              <p className="mt-1 text-white/70">
-                Lani ste 4. 11. naročili 300 koledarjev. Želite letos enake — z novo fotografijo?
-              </p>
+            <div className="mt-6 rounded-xl bg-[#fff7e6] p-4 text-sm ring-1 ring-[#fde3a7]">
+              <p className="font-bold text-[#a16207]">Opomnik pred sezono</p>
+              <p className="mt-1 text-[#4b5563]">Lani ste 4. 11. naročili 300 koledarjev. Želite letos enake — z novo fotografijo?</p>
             </div>
-          </div>
+          </Kartica>
         </div>
       </div>
     </section>
@@ -856,12 +981,13 @@ function razumi(vnos: string, logo: string | null): Sporocilo {
   };
 }
 
+const PREDLOGI = ["500 vrečk z logotipom do petka", "200 darilnih škatel z reliefnim tiskom", "300 koledarjev s fotografijami"];
+
 function AiPomocnik({ dodaj, logo }: { dodaj: (p: Omit<Postavka, "id">) => void; logo: string | null }) {
   const [sporocila, setSporocila] = useState<Sporocilo[]>([
     { od: "ai", besedilo: "Pozdravljeni! Napišite, kaj potrebujete, in sestavim ponudbo v nekaj sekundah." },
   ]);
   const [vnos, setVnos] = useState("");
-  const predlogi = useMemo(() => ["500 vrečk z logotipom do petka", "200 darilnih škatel z reliefnim tiskom", "300 koledarjev s fotografijami"], []);
 
   function poslji(besedilo: string) {
     if (!besedilo.trim()) return;
@@ -870,19 +996,13 @@ function AiPomocnik({ dodaj, logo }: { dodaj: (p: Omit<Postavka, "id">) => void;
   }
 
   return (
-    <div className="flex flex-col border border-white/10 p-6 lg:row-span-1">
-      <p className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-        <Bot className="h-4 w-4" /> AI pomočnik za ponudbe
-      </p>
-      <div className="flex max-h-80 min-h-56 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+    <Kartica ikona={Bot} naslov="AI pomočnik za ponudbe">
+      <div className="flex max-h-80 min-h-56 flex-col gap-3 overflow-y-auto pr-1">
         {sporocila.map((s, i) => (
-          <div key={i} className={`max-w-[88%] px-4 py-3 text-sm ${s.od === "jaz" ? "self-end bg-[#f3efe8] text-black" : "self-start bg-white/[0.06]"}`}>
+          <div key={i} className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm ${s.od === "jaz" ? "self-end bg-[#1546d8] text-white" : "self-start bg-[#f1f3f7]"}`}>
             {s.besedilo}
             {s.predlog && (
-              <button
-                onClick={() => dodaj(s.predlog!)}
-                className="mt-3 flex items-center gap-1.5 bg-[#ff5a1f] px-3 py-1.5 text-xs font-black uppercase text-black"
-              >
+              <button onClick={() => dodaj(s.predlog!)} className="mt-3 flex items-center gap-1.5 rounded-lg bg-[#0b1530] px-3 py-1.5 text-xs font-semibold text-white">
                 <ShoppingBag className="h-3.5 w-3.5" /> V košarico
               </button>
             )}
@@ -890,8 +1010,8 @@ function AiPomocnik({ dodaj, logo }: { dodaj: (p: Omit<Postavka, "id">) => void;
         ))}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {predlogi.map((p) => (
-          <button key={p} onClick={() => poslji(p)} className="flex items-center gap-1 border border-white/15 px-2.5 py-1 text-[11px] text-white/70 hover:border-white">
+        {PREDLOGI.map((p) => (
+          <button key={p} onClick={() => poslji(p)} className="flex items-center gap-1 rounded-full bg-[#eef3ff] px-3 py-1 text-[11px] font-medium text-[#1546d8] hover:bg-[#dfe8ff]">
             <Sparkles className="h-3 w-3" /> {p}
           </button>
         ))}
@@ -901,51 +1021,48 @@ function AiPomocnik({ dodaj, logo }: { dodaj: (p: Omit<Postavka, "id">) => void;
           e.preventDefault();
           poslji(vnos);
         }}
-        className="mt-3 flex"
+        className="mt-3 flex gap-2"
       >
-        <input
-          value={vnos}
-          onChange={(e) => setVnos(e.target.value)}
-          placeholder="npr. 1000 PE vrečk, 2 barvi, do 15. 11."
-          className="flex-1 border border-white/15 bg-transparent px-4 py-3 text-sm outline-none focus:border-[#ff5a1f]"
-        />
-        <button className="bg-[#ff5a1f] px-4 text-black" aria-label="Pošlji">
+        <input value={vnos} onChange={(e) => setVnos(e.target.value)} placeholder="npr. 1000 PE vrečk, 2 barvi, do 15. 11." className={VNOS} />
+        <button className={`rounded-lg px-4 ${MODRA}`} aria-label="Pošlji">
           <Send className="h-4 w-4" />
         </button>
       </form>
-    </div>
+    </Kartica>
   );
 }
 
-/* ───────────────────────── kaj dobite ───────────────────────── */
+/* ───────────────────────── kaj dobite, noga ───────────────────────── */
 
 function KajDobite({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) => void }) {
   const v = VSEBINA_PAKETOV[paket];
   const naslednji = paket < 3 ? ((paket + 1) as Paket) : null;
   return (
-    <section id="kaj-dobite" className="scroll-mt-14 bg-[#ff5a1f] text-black">
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-20 lg:grid-cols-[1fr_1.2fr]">
+    <section id="kaj-dobite" className="scroll-mt-10 bg-[#1546d8] text-white">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 lg:grid-cols-[1fr_1.15fr]">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.25em]">Za Kamenarič d.o.o. · pripravil KodaTim</p>
-          <h2 className="mt-4 text-[clamp(2rem,4.5vw,3.8rem)] font-black uppercase leading-[0.9] tracking-tighter">{v.naslov}</h2>
-          <p className="mt-6 max-w-md text-lg font-semibold leading-snug">{v.zakaj}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/70">Za Kamenarič d.o.o. · pripravil KodaTim</p>
+          <h2 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">{v.naslov}</h2>
+          <p className="mt-5 max-w-md text-lg text-white/85">{v.zakaj}</p>
           <div className="mt-8 flex flex-wrap gap-2">
             {PAKETI.map((p) => (
               <button
                 key={p.st}
                 onClick={() => setPaket(p.st)}
-                className={`px-4 py-2.5 text-xs font-black uppercase ${paket === p.st ? "bg-black text-[#ff5a1f]" : "border-2 border-black hover:bg-black/10"}`}
+                className={`rounded-lg px-4 py-2.5 text-sm font-semibold ${paket === p.st ? "bg-white text-[#1546d8]" : "bg-white/10 hover:bg-white/20"}`}
               >
                 {p.st} · {p.ime}
               </button>
             ))}
           </div>
         </div>
-        <div className="bg-black p-8 text-[#f3efe8]">
+        <div className="rounded-2xl bg-white p-8 text-[#0b1530]">
           <ul className="space-y-4">
             {v.tocke.map((t) => (
               <li key={t} className="flex gap-3">
-                <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#ff5a1f]" />
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#eef3ff]">
+                  <Check className="h-3.5 w-3.5 text-[#1546d8]" />
+                </span>
                 <span className="leading-snug">{t}</span>
               </li>
             ))}
@@ -953,15 +1070,15 @@ function KajDobite({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) => 
           {naslednji && (
             <button
               onClick={() => setPaket(naslednji)}
-              className="mt-8 flex w-full items-center justify-between border border-white/20 px-5 py-4 text-left hover:border-[#ff5a1f]"
+              className={`mt-8 flex w-full items-center justify-between rounded-xl ${OBROBA} px-5 py-4 text-left hover:border-[#1546d8]`}
             >
               <span>
-                <span className="block text-xs uppercase tracking-wide text-white/50">Še korak dlje</span>
-                <span className="font-black uppercase">
+                <span className="block text-xs text-[#6b7280]">Še korak dlje</span>
+                <span className="font-bold">
                   Poglej paket {naslednji} — {PAKETI[naslednji - 1].kratko}
                 </span>
               </span>
-              <ArrowRight className="h-5 w-5 text-[#ff5a1f]" />
+              <ArrowRight className="h-5 w-5 text-[#1546d8]" />
             </button>
           )}
         </div>
@@ -972,17 +1089,22 @@ function KajDobite({ paket, setPaket }: { paket: Paket; setPaket: (p: Paket) => 
 
 function Noga() {
   return (
-    <footer className="border-t border-white/10">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-6 px-4 py-12">
-        <div>
-          <p className="text-4xl font-black uppercase tracking-tighter sm:text-6xl">Kamenarič</p>
-          <p className="mt-2 text-sm text-white/50">{KONTAKT.podjetje} · embalaža, tisk, poslovna darila</p>
+    <footer className="bg-[#0b1530] text-white">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-6 px-4 py-10">
+        <div className="flex items-center gap-3">
+          <span className="rounded-lg bg-white p-1.5">
+            <ZnakK className="h-8 w-8" />
+          </span>
+          <div>
+            <p className="text-lg font-extrabold">KAMENARIČ</p>
+            <p className="text-xs text-white/60">{KONTAKT.podjetje} · embalaža, tisk, poslovna darila</p>
+          </div>
         </div>
         <div className="text-right">
-          <a href={KONTAKT.telefonHref} className="text-2xl font-black hover:text-[#ff5a1f]">
-            {KONTAKT.telefon}
+          <a href={KONTAKT.telefonHref} className="flex items-center gap-2 text-xl font-bold hover:text-[#8fb0ff]">
+            <Phone className="h-5 w-5" /> {KONTAKT.telefon}
           </a>
-          <p className="mt-2 text-xs text-white/35">Predogled nove strani · izdelal KodaTim.si</p>
+          <p className="mt-1 text-xs text-white/40">Predogled nove strani · izdelal KodaTim.si</p>
         </div>
       </div>
     </footer>
