@@ -9,9 +9,9 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
  * je zato pisal ven vsako vrstico, ki jo je prebral — plačljivo, počasnejše in
  * odvisno od tujega sistema za podatke, ki so v celoti naši.
  *
- * Prijava OSTANE v Supabaseju in se je ta odjemalec ne dotakne. To je namerna
- * ločnica: podatki so lokalni, identiteta pa v storitvi, ki jo vzdržuje nekdo
- * drug — če se zalomi tu, ne moreš niti do admina, da bi popravil.
+ * Od 14. 10. 2026 je lokalna tudi prijava (GoTrue v avtonet-db): Supabase
+ * oblak je zaklenil projekt zaradi presežene kvote prenosa in nihče ni mogel
+ * več v admin. NEXT_PUBLIC_SUPABASE_URL zato kaže na isto lokalno bazo.
  *
  * Če lokalna baza ni nastavljena, pade nazaj na Supabase, tako da stran deluje
  * tudi na razvojnem računalniku brez Dockerja.
