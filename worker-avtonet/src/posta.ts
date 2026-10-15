@@ -64,6 +64,50 @@ async function zapisi(db: Db, s: Stanje): Promise<void> {
 export type Izid = "poslano" | "kvota" | "ze_danes" | "ni_nastavljeno" | "napaka";
 
 /**
+ * Addresses whose mail goes to the team's Telegram group instead
+ * (TELEGRAM_OBVESTILA_EMAILS, "naslov=Ime,..."; same list as Kompletko's app).
+ */
+function jeVEkipi(naslov: string): boolean {
+  if (!process.env.TELEGRAM_OBVESTILA_TOKEN || !process.env.TELEGRAM_OBVESTILA_CHAT_ID) return false;
+  const ekipa = (process.env.TELEGRAM_OBVESTILA_EMAILS ?? "")
+    .split(",")
+    .map((d) => d.split("=")[0]!.trim().toLowerCase())
+    .filter(Boolean);
+  return ekipa.includes(naslov.trim().toLowerCase());
+}
+
+function besediloIzHtml(html: string): string {
+  return html
+    .replace(/<(style|head)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|tr|h[1-6]|li|table)\b[^>]*>/gi, "\n")
+    .replace(/<\/t[dh]>/gi, " · ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&bdquo;|&ldquo;/g, '"')
+    .split("\n")
+    .map((v) => v.replace(/[ \t]+/g, " ").replace(/^(· )+|( ·)+$/g, "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function vTelegram(naslov: string, html: string): Promise<boolean> {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const text = `<b>${esc(naslov)}</b>\n\n${esc(besediloIzHtml(html))}`.slice(0, 3900);
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_OBVESTILA_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: process.env.TELEGRAM_OBVESTILA_CHAT_ID, text, parse_mode: "HTML", disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Sends one email if today's budget allows it.
  *
  * @param vrsta  A stable name for the kind of mail ("dnevno", "spremljanja").
@@ -101,14 +145,23 @@ export async function posljiEnkratNaDan(
   try {
     let uspelo = 0;
     for (const sporocilo of veljavna) {
+      // Luka wants these on Telegram, not in his inbox; SBN (Nik, Benjamin)
+      // keep their mail. If Telegram fails, he gets the mail after all.
+      const ekipa = sporocilo.to.filter(jeVEkipi);
+      let ostali = sporocilo.to.filter((t) => !jeVEkipi(t));
+      if (ekipa.length > 0) {
+        if (await vTelegram(sporocilo.subject, sporocilo.html)) uspelo += 1;
+        else ostali = sporocilo.to;
+      }
+      if (ostali.length === 0) continue;
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from, ...sporocilo }),
+        body: JSON.stringify({ from, ...sporocilo, to: ostali }),
         signal: AbortSignal.timeout(30_000),
       });
       if (res.ok) uspelo += 1;
-      else log("warn", "posiljanje ni uspelo", { vrsta, status: res.status, za: sporocilo.to });
+      else log("warn", "posiljanje ni uspelo", { vrsta, status: res.status, za: ostali });
     }
     if (uspelo === 0) return "napaka";
     // Counted only on success, so a failed send does not eat the day's budget.
