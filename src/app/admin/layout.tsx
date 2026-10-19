@@ -16,6 +16,7 @@ import {
   Mail,
   Activity,
   Factory,
+  Workflow,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -59,6 +60,12 @@ const NAV_ITEMS: {
     href: "/admin/promocije",
     label: "Promocije",
     icon: <Target className={ICON_CLASS} />,
+    permission: "promotion.view",
+  },
+  {
+    href: "/admin/prodajna-ekipa",
+    label: "Prodajna ekipa",
+    icon: <Workflow className={ICON_CLASS} />,
     permission: "promotion.view",
   },
   {
