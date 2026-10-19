@@ -1,4 +1,7 @@
-import { ExternalLink, Mail, Send, Users2, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, Mail, Send, Users2, ShieldCheck, Workflow } from "lucide-react";
+import { requireAdmin } from "@/lib/require-admin";
+import { preberiEkipo } from "@/lib/prodajna-ekipa";
 
 /**
  * "E-pošta" — the entry point in the KodaTim admin to the email system.
@@ -16,8 +19,20 @@ import { ExternalLink, Mail, Send, Users2, ShieldCheck } from "lucide-react";
 const LISTMONK_URL = process.env.NEXT_PUBLIC_LISTMONK_URL || "https://listmonk.kodatim.si";
 
 export const metadata = { title: "E-pošta — KodaTim admin" };
+export const dynamic = "force-dynamic";
 
-export default function EPostaPage() {
+export default async function EPostaPage() {
+  // Prodajna ekipa (hladna pošta podjetjem) je samo za administratorja.
+  let ekipa: Awaited<ReturnType<typeof preberiEkipo>> | null = null;
+  try {
+    await requireAdmin();
+    ekipa = await preberiEkipo();
+  } catch {
+    ekipa = null;
+  }
+  const p = ekipa?.povzetek ?? null;
+  const cakajo = p?.delavci.find((d) => d.kljuc === "odobritev")?.glavna.vrednost ?? 0;
+
   return (
     <div className="mx-auto max-w-3xl">
       <header className="mb-6">
@@ -26,12 +41,54 @@ export default function EPostaPage() {
           E-pošta
         </h1>
         <p className="mt-1 text-sm text-zinc-600">
-          Tu urejaš in pošiljaš e-pošto (obvestila, info, promocije) iz domene{" "}
-          <strong>kodatim.si</strong>. Urejevalnik predlog, seznamov in kampanj je Listmonk —
-          odpre se na tvoji domeni.
+          Dve vrsti pošte: <strong>prodajna ekipa</strong> piše podjetjem, ki jih je našla (hladna
+          pošta, vsako sporočilo odobriš ti), <strong>novice</strong> v Listmonku pa gredo samo
+          prejemnikom, ki so se prijavili.
         </p>
       </header>
 
+      {p ? (
+        <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+            <Workflow className="h-5 w-5 text-indigo-600" />
+            Prodajna ekipa — pošta podjetjem
+          </h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Čaka na tvojo odobritev</p>
+              <p className="text-2xl font-semibold text-zinc-900">{cakajo}</p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Poslano danes</p>
+              <p className="text-2xl font-semibold text-zinc-900">
+                {p.posiljanje.danes} / {p.posiljanje.na_dan}
+              </p>
+            </div>
+            <div className="rounded-xl bg-zinc-50 p-3">
+              <p className="text-xs text-zinc-500">Pošiljanje</p>
+              <p className="text-sm font-semibold text-zinc-900">
+                {p.posiljanje.vklopljeno ? "vklopljeno" : `izklopljeno — ${p.posiljanje.razlog}`}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/admin/prodajna-ekipa/odobritev"
+              className="inline-flex items-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Odobri osnutke
+            </Link>
+            <Link
+              href="/admin/prodajna-ekipa/posiljatelj"
+              className="inline-flex items-center rounded-xl px-4 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-300"
+            >
+              Poslana sporočila
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      <h2 className="mb-2 text-base font-semibold text-zinc-900">Novice (Listmonk)</h2>
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-zinc-700">
           Klikni za odprtje urejevalnika e-pošte. Prijava z računom, ki si ga nastavil ob prvem

@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { LEAD_STATUS_LABELS, type LeadStatus } from "@/lib/lead-intelligence/types";
 import { requirePagePermission } from "@/lib/permissions/require-permission";
 import AccessDenied from "@/components/AccessDenied";
+import { sinhronizirajLeade } from "@/lib/prodajna-ekipa";
 import InsightsPanel from "./InsightsPanel";
 
 type DashboardStats = {
@@ -33,6 +34,9 @@ type DashboardStats = {
 export default async function LeadIntelligencePage() {
   const { allowed } = await requirePagePermission("lead_intelligence.view");
   if (!allowed) return <AccessDenied />;
+
+  // Kontakti prodajne ekipe (oznaka »Harvey«) — največ enkrat na 10 minut.
+  await sinhronizirajLeade().catch(() => null);
 
   const supabase = createAdminClient();
   const { data, error } = await supabase.rpc("intel_leads_dashboard_stats");
@@ -59,11 +63,12 @@ export default async function LeadIntelligencePage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold text-zinc-900">
-            Lead Intelligence
+            Baza leadov
           </h1>
           <p className="mt-2 text-base text-zinc-500">
-            Baza potencialnih poslovnih strank — uvoz, AI obogatitev, iskanje
-            in CRM na enem mestu. Vidno samo administratorju.
+            Vsi potencialni kupci na enem mestu — uvoz, AI obogatitev, iskanje
+            in CRM. Kontakti, ki jih najde prodajna ekipa, imajo oznako
+            »Harvey«. Vidno samo administratorju.
           </p>
         </div>
         <div className="flex gap-3">

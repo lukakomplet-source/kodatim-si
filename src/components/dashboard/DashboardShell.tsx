@@ -1,16 +1,70 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
+  /**
+   * Naslov skupine v meniju (npr. »1 · Najdi stranke«). Prikaže se nad prvo
+   * postavko skupine; meni brez skupin izgleda kot prej.
+   */
+  skupina?: string;
 };
+
+/** Seznam povezav z naslovi skupin — isti v stranskem in v mobilnem meniju. */
+function NavSeznam({
+  navItems,
+  pathname,
+  onIzbira,
+}: {
+  navItems: NavItem[];
+  pathname: string;
+  onIzbira?: () => void;
+}) {
+  // Pick the single longest (most specific) matching href as active — a
+  // plain prefix check would keep e.g. "/admin" lit up on every nested
+  // route, since "/admin/" prefixes all of them.
+  const activeHref = navItems
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
+  return (
+    <>
+      {navItems.map((item, i) => {
+        const active = item.href === activeHref;
+        const novaSkupina = item.skupina && item.skupina !== navItems[i - 1]?.skupina;
+        return (
+          <div key={item.href}>
+            {novaSkupina ? (
+              <p className="mb-1 mt-5 px-3.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                {item.skupina}
+              </p>
+            ) : null}
+            <Link
+              href={item.href}
+              onClick={onIzbira}
+              className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[15px] font-medium transition ${
+                active
+                  ? "bg-accent/10 text-accent"
+                  : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+              }`}
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 export default function DashboardShell({
   title,
@@ -25,6 +79,8 @@ export default function DashboardShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Mobilni meni; zapre se ob kliku na povezavo (NavSeznam → onIzbira).
+  const [meniOdprt, setMeniOdprt] = useState(false);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -48,37 +104,8 @@ export default function DashboardShell({
           {title}
         </p>
 
-        <nav className="mt-8 flex flex-1 flex-col gap-1.5">
-          {(() => {
-            // Pick the single longest (most specific) matching href as
-            // active — a plain prefix check would keep e.g. "/admin"
-            // lit up on every nested route, since "/admin/" prefixes
-            // all of them.
-            const activeHref = navItems
-              .map((item) => item.href)
-              .filter(
-                (href) => pathname === href || pathname.startsWith(`${href}/`)
-              )
-              .sort((a, b) => b.length - a.length)[0];
-
-            return navItems.map((item) => {
-              const active = item.href === activeHref;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-medium transition ${
-                    active
-                      ? "bg-accent/10 text-accent"
-                      : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
-                  }`}
-                >
-                  {item.icon}
-                  {item.label}
-                </Link>
-              );
-            });
-          })()}
+        <nav className="mt-6 flex flex-1 flex-col gap-1">
+          <NavSeznam navItems={navItems} pathname={pathname} />
         </nav>
 
         <div className="mt-auto border-t border-zinc-200 pt-5">
@@ -108,12 +135,49 @@ export default function DashboardShell({
           </span>
           <button
             type="button"
-            onClick={handleLogout}
-            className="text-sm font-medium text-zinc-600"
+            onClick={() => setMeniOdprt(true)}
+            aria-expanded={meniOdprt}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-zinc-700 ring-1 ring-zinc-200"
           >
-            Odjava
+            <Menu className="h-4 w-4" />
+            Meni
           </button>
         </header>
+
+        {/* Mobilni meni: isti seznam po korakih kot ob strani. */}
+        {meniOdprt ? (
+          <div className="fixed inset-0 z-50 flex flex-col bg-white sm:hidden">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+              <span className="text-base font-semibold text-zinc-900">{title}</span>
+              <button
+                type="button"
+                onClick={() => setMeniOdprt(false)}
+                className="flex items-center gap-1.5 text-sm font-medium text-zinc-700"
+              >
+                <X className="h-4 w-4" />
+                Zapri
+              </button>
+            </div>
+            <nav className="flex-1 overflow-y-auto px-4 pb-6">
+              <NavSeznam
+                navItems={navItems}
+                pathname={pathname}
+                onIzbira={() => setMeniOdprt(false)}
+              />
+            </nav>
+            <div className="border-t border-zinc-200 px-6 py-4">
+              <p className="truncate text-sm text-zinc-500">{userEmail}</p>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mt-2 flex items-center gap-2 text-sm font-medium text-zinc-700"
+              >
+                <LogOut className="h-4 w-4" />
+                Odjava
+              </button>
+            </div>
+          </div>
+        ) : null}
         <main className="px-6 py-10 sm:px-12 sm:py-14">{children}</main>
       </div>
     </div>

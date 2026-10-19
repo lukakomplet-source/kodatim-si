@@ -425,6 +425,130 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
   return rezultat;
 }
 
+type KontaktEkipe = {
+  email: string;
+  podjetje: string;
+  davcna: string;
+  maticna: string;
+  spletna_stran: string;
+  kraj: string;
+  dejavnost: string;
+  stanje: "najden" | "osnutek" | "poslano" | "odgovoril" | "zanimanje" | "odjava";
+  najden: string | null;
+};
+
+export const STANJE_KONTAKTA: Record<KontaktEkipe["stanje"], string> = {
+  najden: "najden",
+  osnutek: "osnutek čaka na odobritev",
+  poslano: "sporočilo poslano",
+  odgovoril: "odgovoril",
+  zanimanje: "zanimanje",
+  odjava: "odjava",
+};
+
+const SINHRONIZACIJA_NAJVEC_NA_MIN = 10;
+let zadnjaSinhronizacija = 0;
+
+/**
+ * Kontakte, ki jih je našla ekipa, prenese v Bazo leadov (intel_leads) z
+ * oznako »Harvey« in stanjem v custom_fields.harvey — tako so vsi leadi na
+ * enem mestu. Brez podvajanja (e-pošta, nato davčna) in brez prepisovanja:
+ * obstoječemu leadu doda le oznako in stanje. Največ enkrat na 10 minut, ker
+ * jo kličejo strani, ki se same osvežujejo. Obogatitve ne sproži.
+ */
+export async function sinhronizirajLeade(): Promise<{ novih: number; posodobljenih: number } | null> {
+  if (Date.now() - zadnjaSinhronizacija < SINHRONIZACIJA_NAJVEC_NA_MIN * 60_000) return null;
+  zadnjaSinhronizacija = Date.now();
+
+  let kontakti: KontaktEkipe[];
+  try {
+    kontakti = await izHarveyja<KontaktEkipe[]>("/api/ekipa-kontakti");
+  } catch {
+    return null;
+  }
+  if (kontakti.length === 0) return { novih: 0, posodobljenih: 0 };
+
+  type Obstojeci = { id: string; email: string | null; vat_id: string | null; tags: string[] | null; custom_fields: Record<string, unknown> | null };
+  const admin = createAdminClient();
+  const poPosti = new Map<string, Obstojeci>();
+  const poDavcni = new Map<string, Obstojeci>();
+  const emaili = kontakti.map((k) => k.email.toLowerCase());
+  const davcne = kontakti.map((k) => k.davcna).filter(Boolean);
+  for (let i = 0; i < emaili.length; i += 500) {
+    const { data } = await admin
+      .from("intel_leads")
+      .select("id, email, vat_id, tags, custom_fields")
+      .in("email", emaili.slice(i, i + 500));
+    for (const r of (data ?? []) as Obstojeci[]) if (r.email) poPosti.set(r.email.toLowerCase(), r);
+  }
+  for (let i = 0; i < davcne.length; i += 500) {
+    const { data } = await admin
+      .from("intel_leads")
+      .select("id, email, vat_id, tags, custom_fields")
+      .in("vat_id", davcne.slice(i, i + 500));
+    for (const r of (data ?? []) as Obstojeci[]) if (r.vat_id) poDavcni.set(stevke(r.vat_id), r);
+  }
+
+  const novi: Record<string, unknown>[] = [];
+  let posodobljenih = 0;
+  for (const k of kontakti) {
+    const harvey = { stanje: k.stanje, oznaka: STANJE_KONTAKTA[k.stanje], najden: k.najden };
+    const obstojeci = poPosti.get(k.email.toLowerCase()) ?? (k.davcna ? poDavcni.get(stevke(k.davcna)) : undefined);
+    if (obstojeci) {
+      const cf = obstojeci.custom_fields ?? {};
+      const prejsnje = (cf.harvey as { stanje?: string } | undefined)?.stanje;
+      const tags = obstojeci.tags ?? [];
+      if (prejsnje === k.stanje && tags.includes("Harvey")) continue;
+      const { error } = await admin
+        .from("intel_leads")
+        .update({
+          custom_fields: { ...cf, harvey },
+          tags: tags.includes("Harvey") ? tags : [...tags, "Harvey"],
+        })
+        .eq("id", obstojeci.id);
+      if (!error) posodobljenih += 1;
+      continue;
+    }
+    novi.push({
+      company_name: k.podjetje || k.email,
+      email: k.email,
+      website: k.spletna_stran || null,
+      vat_id: k.davcna || null,
+      address_city: k.kraj || null,
+      address_country: "Slovenija",
+      industry: k.dejavnost || null,
+      tags: ["Harvey"],
+      lead_status: k.stanje === "odjava" ? "not_interested"
+        : k.stanje === "najden" || k.stanje === "osnutek" ? "new" : "contacted",
+      notes: "Našla prodajna ekipa (Harvey): objavljen naslov podjetja.",
+      custom_fields: { harvey },
+    });
+  }
+  let vstavljenih = 0;
+  for (let i = 0; i < novi.length; i += 200) {
+    const { error, data } = await admin.from("intel_leads").insert(novi.slice(i, i + 200)).select("id");
+    if (!error) vstavljenih += data?.length ?? 0;
+  }
+  return { novih: vstavljenih, posodobljenih };
+}
+
+/** Kar danes čaka na Luka: osnutki, klici in novi leadi iz klepeta. */
+export async function preberiDanes(): Promise<{ klicev: number; leadovIzKlepeta: number }> {
+  const admin = createAdminClient();
+  const danasnji = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Ljubljana" }).format(new Date());
+  const teden = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const [{ count: klicev }, { count: leadov }] = await Promise.all([
+    admin
+      .from("promo_tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "todo")
+      .eq("type", "call")
+      .lte("due_date", danasnji),
+    admin.from("leads").select("*", { count: "exact", head: true }).gte("created_at", teden),
+  ]);
+  return { klicev: klicev ?? 0, leadovIzKlepeta: leadov ?? 0 };
+}
+
 export type Lijak = {
   kampanjaId: string | null;
   faze: { kljuc: PipelineStage; oznaka: string; stevilo: number }[];

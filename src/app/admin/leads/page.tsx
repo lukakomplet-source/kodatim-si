@@ -10,7 +10,7 @@ export default async function AdminLeadsPage() {
   return (
     <div>
       <h1 className="text-3xl font-semibold text-zinc-900">
-        Leadi iz chata
+        Leadi iz klepeta
       </h1>
       <p className="mt-2 text-base text-zinc-500">
         Kontakti, ki so jih obiskovalci pustili v AI klepetu.
