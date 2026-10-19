@@ -7,18 +7,22 @@ import { odlociOsnutekAkcija } from "./actions";
 /**
  * Osnutki, ki čakajo na odobritev, s celim besedilom in gumboma. Odločen
  * osnutek takoj izgine s seznama; ob napaki ostane in pokaže zakaj.
+ * Besedilo lahko Luka pred odobritvijo uredi — doda svojo človeško opombo.
  */
 export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
   const [odloceni, setOdloceni] = useState<Record<string, "odobreno" | "zavrnjeno">>({});
   const [napake, setNapake] = useState<Record<string, string>>({});
+  const [urejeno, setUrejeno] = useState<Record<string, string>>({});
   const [cakam, zacni] = useTransition();
   const [odprt, setOdprt] = useState<string | null>(postavke[0]?.id ?? null);
 
   const ostali = postavke.filter((p) => p.id && !odloceni[p.id]);
 
-  function odloci(id: string, odobri: boolean) {
+  function odloci(id: string, odobri: boolean, izvirnik?: string) {
+    const novo = urejeno[id];
+    const besedilo = odobri && novo !== undefined && novo !== izvirnik ? novo : undefined;
     zacni(async () => {
-      const r = await odlociOsnutekAkcija(id, odobri);
+      const r = await odlociOsnutekAkcija(id, odobri, besedilo);
       if (r.ok) {
         setOdloceni((o) => ({ ...o, [id]: odobri ? "odobreno" : "zavrnjeno" }));
         setNapake((n) => {
@@ -68,15 +72,80 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
             </button>
             {jeOdprt ? (
               <div className="border-t border-zinc-100 px-4 py-3">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-zinc-800">
-                  {p.besedilo}
-                </pre>
+                {urejeno[id] !== undefined ? (
+                  <textarea
+                    value={urejeno[id]}
+                    onChange={(e) => setUrejeno((u) => ({ ...u, [id]: e.target.value }))}
+                    rows={18}
+                    className="w-full rounded-lg border border-zinc-300 p-3 font-sans text-sm leading-relaxed text-zinc-800 focus:border-zinc-500 focus:outline-none"
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-zinc-800">
+                    {p.besedilo}
+                  </pre>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUrejeno((u) => {
+                      const kopija = { ...u };
+                      if (kopija[id] === undefined) kopija[id] = p.besedilo ?? "";
+                      else delete kopija[id];
+                      return kopija;
+                    })
+                  }
+                  className="mt-2 text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-800 hover:underline"
+                >
+                  {urejeno[id] !== undefined ? "Prekliči urejanje" : "Uredi besedilo (dodaj svojo opombo)"}
+                </button>
+                {p.oznake && p.oznake.length > 0 ? (
+                  <p className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-xs leading-relaxed text-violet-900 ring-1 ring-violet-200">
+                    {p.oznake.join(" · ")}
+                  </p>
+                ) : null}
+                {p.predlog ? (
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                    <span className="self-center text-xs text-zinc-500">Priloženo in povezano:</span>
+                    <a
+                      href={`/predlog/${p.predlog}?interno`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-zinc-100 px-3 py-1.5 font-medium text-zinc-800 hover:bg-zinc-200"
+                    >
+                      Odpri predlog
+                    </a>
+                    <a
+                      href={`/predlog/${p.predlog}/priloga/ponudba.pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-zinc-100 px-3 py-1.5 font-medium text-zinc-800 hover:bg-zinc-200"
+                    >
+                      Odpri PDF
+                    </a>
+                    <a
+                      href={`/predlog/${p.predlog}/priloga/predogled-racunalnik.jpg`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-zinc-100 px-3 py-1.5 font-medium text-zinc-800 hover:bg-zinc-200"
+                    >
+                      Slika: računalnik
+                    </a>
+                    <a
+                      href={`/predlog/${p.predlog}/priloga/predogled-telefon.jpg`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-zinc-100 px-3 py-1.5 font-medium text-zinc-800 hover:bg-zinc-200"
+                    >
+                      Slika: telefon
+                    </a>
+                  </div>
+                ) : null}
                 {napake[id] ? <p className="mt-2 text-sm text-red-700">{napake[id]}</p> : null}
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     disabled={cakam}
-                    onClick={() => odloci(id, true)}
+                    onClick={() => odloci(id, true, p.besedilo)}
                     className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                   >
                     Odobri

@@ -84,6 +84,8 @@ export type Postavka = {
   stanje?: string;
   besedilo?: string;
   oznake?: string[];
+  /** Koda predloga strani pri ponudbi (korak 1), da se pregleda cel paket. */
+  predlog?: string;
 };
 
 export type Podrobnosti = {
@@ -260,8 +262,17 @@ export async function preberiDelavca(vloga: KljucDelavca): Promise<Podrobnosti |
 }
 
 /** Odobritev ali zavrnitev osnutka v Harveyjevem outboxu. */
-export async function odlociOsnutek(id: string, odobri: boolean): Promise<boolean> {
+export async function odlociOsnutek(id: string, odobri: boolean, besedilo?: string): Promise<boolean> {
   try {
+    // Lukove besede (človeška opomba, popravek) gredo v osnutek pred odobritvijo.
+    if (odobri && besedilo !== undefined) {
+      const urejeno = await izHarveyja<{ success: boolean }>(`/api/outbox/${encodeURIComponent(id)}/uredi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: besedilo }),
+      });
+      if (!urejeno.success) return false;
+    }
     const r = await izHarveyja<{ success: boolean }>(
       `/api/outbox/${encodeURIComponent(id)}/${odobri ? "approve" : "reject"}`,
       { method: "POST" },
@@ -283,6 +294,10 @@ type VnosPredaje = {
   dejavnost: string;
   odgovor: string;
   cas: string | null;
+  /** »zanimanje« = odgovorili so; »ogled« = po ponudbi so odprli predlog, odgovora še ni. */
+  razlog?: "zanimanje" | "ogled";
+  predlog?: string;
+  ogledov?: number;
 };
 
 export type PredajaRezultat = {
@@ -303,8 +318,11 @@ function danes(): string {
 /**
  * Odgovore z zanimanjem preda v Promocije: lead (brez podvajanja po e-pošti
  * ali davčni), cilj v kampanji »Harvey · KodaTim« v fazi »Odgovorili« in
- * nalogo »Pokliči …« za danes. Že predanih ne dotakne več. `suho` samo
- * izpiše, kaj bi naredil.
+ * nalogo »Pokliči …« za danes. Podjetja, ki so po ponudbi odprla predlog,
+ * odgovorila pa še niso, gredo v fazo »Email poslan« s klicem — tako kot
+ * Luka pokliče po poslani ponudbi. Če tako podjetje pozneje odgovori z
+ * zanimanjem, se premakne naprej. Drugače predanih ne dotakne več. `suho`
+ * samo izpiše, kaj bi naredil.
  */
 export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise<PredajaRezultat> {
   const rezultat: PredajaRezultat = { predanih: 0, novihLeadov: 0, nalog: 0, napaka: null, nacrt: [] };
@@ -330,7 +348,8 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
         .from("promo_campaigns")
         .insert({
           name: KAMPANJA,
-          description: "Podjetja, ki so na Harveyjevo sporočilo odgovorila z zanimanjem.",
+          description:
+            "Podjetja, ki so na ponudbo prodajne ekipe odgovorila z zanimanjem ali po njej odprla predlog.",
           lead_source: "Harvey",
           tags: ["Harvey"],
           priority: "high",
@@ -344,6 +363,8 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
   }
 
   for (const v of vnosi) {
+    const ogled = v.razlog === "ogled";
+    const povezava = v.predlog ? `https://kodatim.si/predlog/${v.predlog}?interno` : "";
     // Lead: najprej po e-pošti, nato po davčni.
     let leadId: string | null = null;
     const poPosti = await admin.from("intel_leads").select("id").eq("email", v.email).limit(1);
@@ -372,7 +393,10 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
             industry: v.dejavnost || null,
             tags: ["Harvey"],
             lead_status: "contacted",
-            notes: `Harvey: odgovor z zanimanjem\n${v.odgovor}`.slice(0, 2000),
+            notes: (ogled
+              ? `Harvey: po ponudbi so odprli predlog (${v.ogledov ?? 1}×)\n${povezava}`
+              : `Harvey: odgovor z zanimanjem\n${v.odgovor}`
+            ).slice(0, 2000),
           })
           .select("id")
           .single();
@@ -388,22 +412,58 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
 
     const { data: cilj } = await admin
       .from("promo_campaign_targets")
-      .select("id")
+      .select("id, pipeline_stage")
       .eq("campaign_id", kampanja.id)
       .eq("lead_id", leadId)
       .maybeSingle();
-    if (cilj) continue; // že predan
+    if (cilj) {
+      // Odprli so predlog, zdaj pa še odgovorili z zanimanjem: korak naprej.
+      if (!ogled && cilj.pipeline_stage === "email_sent") {
+        rezultat.nacrt.push(`v Promocijah: ${v.podjetje} → Odgovorili + naloga »Pokliči«`);
+        if (opcije.suho) continue;
+        const { error } = await admin
+          .from("promo_campaign_targets")
+          .update({
+            pipeline_stage: "replied",
+            call_status: "interested",
+            call_notes: `Odgovor na Harveyjevo sporočilo:\n${v.odgovor}`.slice(0, 2000),
+          })
+          .eq("id", cilj.id);
+        if (error) {
+          rezultat.napaka = `${v.podjetje} ni bilo mogoče premakniti v »Odgovorili«.`;
+          continue;
+        }
+        rezultat.predanih += 1;
+        const { error: napakaNaloge } = await admin.from("promo_tasks").insert({
+          campaign_id: kampanja.id,
+          target_id: cilj.id,
+          title: `Pokliči ${v.podjetje} — odgovorili so z zanimanjem`,
+          type: "call",
+          due_date: danes(),
+          priority: "high",
+        });
+        if (!napakaNaloge) rezultat.nalog += 1;
+      }
+      continue; // drugače že predan
+    }
 
-    rezultat.nacrt.push(`v Promocije: ${v.podjetje} (Odgovorili) + naloga »Pokliči«`);
+    rezultat.nacrt.push(
+      ogled
+        ? `v Promocije: ${v.podjetje} (Email poslan, odprli predlog) + naloga »Pokliči«`
+        : `v Promocije: ${v.podjetje} (Odgovorili) + naloga »Pokliči«`,
+    );
     if (opcije.suho) continue;
     const { data: nov, error } = await admin
       .from("promo_campaign_targets")
       .insert({
         campaign_id: kampanja.id,
         lead_id: leadId,
-        pipeline_stage: "replied",
-        call_status: "interested",
-        call_notes: `Odgovor na Harveyjevo sporočilo:\n${v.odgovor}`.slice(0, 2000),
+        pipeline_stage: ogled ? "email_sent" : "replied",
+        call_status: ogled ? "offer_sent" : "interested",
+        call_notes: (ogled
+          ? `Po ponudbi so odprli predlog (${v.ogledov ?? 1}×), odgovora še ni. Predlog: ${povezava}`
+          : `Odgovor na Harveyjevo sporočilo:\n${v.odgovor}`
+        ).slice(0, 2000),
       })
       .select("id")
       .single();
@@ -415,7 +475,9 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
     const { error: napakaNaloge } = await admin.from("promo_tasks").insert({
       campaign_id: kampanja.id,
       target_id: nov.id,
-      title: `Pokliči ${v.podjetje} — odgovorili so z zanimanjem`,
+      title: ogled
+        ? `Pokliči ${v.podjetje} — odprli so predlog`
+        : `Pokliči ${v.podjetje} — odgovorili so z zanimanjem`,
       type: "call",
       due_date: danes(),
       priority: "high",
