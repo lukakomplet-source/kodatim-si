@@ -18,11 +18,12 @@ export function Tekst({ t }: { t: string }) {
 export function Eposta({ naslov }: { naslov: string }) {
   const [ime, domena] = naslov.split("@");
   if (!domena) return <>{naslov}</>;
+  // En sam element: v vrstici s flex razmikom bi se deli naslova sicer razmaknili.
   return (
-    <>
+    <span>
       {ime}
       <span>@</span>
       {domena}
-    </>
+    </span>
   );
 }

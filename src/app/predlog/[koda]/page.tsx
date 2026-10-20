@@ -7,6 +7,7 @@ import { preberiPredlog } from "@/lib/predlogi";
 import { Cene } from "./Cene";
 import { DemoStran } from "./DemoStran";
 import { Eposta } from "./Eposta";
+import { pisavaZa } from "./pisave";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
 import { PredogledStrani } from "./PredogledStrani";
@@ -63,7 +64,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
     return (
       <>
         {!("interno" in iskanje) && <Ogled koda={p.koda} />}
-        <DemoStran p={p} zacetniPaket={paket} />
+        <DemoStran p={p} zacetniPaket={paket} pisava={pisavaZa(p.dejavnost)} />
       </>
     );
   }
