@@ -86,7 +86,24 @@ export type Postavka = {
   oznake?: string[];
   /** Koda predloga strani pri ponudbi (korak 1), da se pregleda cel paket. */
   predlog?: string;
+  /** Ugotovitve raziskave, na katerih stoji predlog, z virom. */
+  dokazi?: { besedilo: string; vir: string }[];
 };
+
+/** Razlogi zavrnitve osnutka (isti ključi kot v Harveyju, predlogi.RAZLOGI_ZAVRNITVE). */
+export const RAZLOGI_ZAVRNITVE = {
+  premalo_raziskave: "Premalo raziskave",
+  genericno: "Preveč generično",
+  napacna_ponudba: "Napačna ponudba",
+  nizka_vrednost: "Prenizka vrednost",
+  neustrezna_trditev: "Neustrezna trditev",
+  slaba_panoga: "Slaba panoga",
+  napacen_kontakt: "Napačen kontakt",
+} as const;
+
+export type RazlogZavrnitve = keyof typeof RAZLOGI_ZAVRNITVE;
+
+export type Zavrnitev = { razlog?: RazlogZavrnitve; opomba?: string; znova?: boolean };
 
 export type Podrobnosti = {
   kljuc: KljucDelavca;
@@ -262,7 +279,12 @@ export async function preberiDelavca(vloga: KljucDelavca): Promise<Podrobnosti |
 }
 
 /** Odobritev ali zavrnitev osnutka v Harveyjevem outboxu. */
-export async function odlociOsnutek(id: string, odobri: boolean, besedilo?: string): Promise<boolean> {
+export async function odlociOsnutek(
+  id: string,
+  odobri: boolean,
+  besedilo?: string,
+  zavrnitev?: Zavrnitev,
+): Promise<boolean> {
   try {
     // Lukove besede (človeška opomba, popravek) gredo v osnutek pred odobritvijo.
     if (odobri && besedilo !== undefined) {
@@ -275,7 +297,9 @@ export async function odlociOsnutek(id: string, odobri: boolean, besedilo?: stri
     }
     const r = await izHarveyja<{ success: boolean }>(
       `/api/outbox/${encodeURIComponent(id)}/${odobri ? "approve" : "reject"}`,
-      { method: "POST" },
+      odobri || !zavrnitev
+        ? { method: "POST" }
+        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(zavrnitev) },
     );
     return Boolean(r.success);
   } catch {
