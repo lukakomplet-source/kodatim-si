@@ -17,6 +17,7 @@ import {
   Activity,
   Factory,
   Workflow,
+  Lightbulb,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
@@ -43,6 +44,13 @@ const NAV_ITEMS: {
     label: "Pregled",
     icon: <LayoutDashboard className={ICON_CLASS} />,
     permission: "dashboard.view",
+  },
+  {
+    skupina: "1 · Najdi stranke",
+    href: "/admin/priloznosti",
+    label: "Priložnosti",
+    icon: <Lightbulb className={ICON_CLASS} />,
+    permission: "promotion.view",
   },
   {
     skupina: "1 · Najdi stranke",
