@@ -6,6 +6,7 @@ import { ArrowDown, Check, Download, Mail, Phone, Smartphone, Sparkles } from "l
 import { preberiPredlog } from "@/lib/predlogi";
 import { Cene } from "./Cene";
 import { DemoStran } from "./DemoStran";
+import { Eposta } from "./Eposta";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
 import { PredogledStrani } from "./PredogledStrani";
@@ -265,7 +266,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
                 href={`mailto:${EPOSTA}?subject=${encodeURIComponent(`Predlog za ${p.kratko_ime}`)}`}
                 className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
               >
-                <Mail className="h-4 w-4" /> {EPOSTA}
+                <Mail className="h-4 w-4" /> <Eposta naslov={EPOSTA} />
               </a>
             </div>
             <p className="mt-6 text-sm text-zinc-500">Luka Komplet · KodaTim · digitalne rešitve za podjetja</p>

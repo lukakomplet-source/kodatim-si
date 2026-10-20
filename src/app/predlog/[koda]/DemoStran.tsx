@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { DemoVsebina, Funkcija, Predlog } from "@/lib/predlogi";
+import { Eposta, Tekst } from "./Eposta";
 import { PredogledFunkcije } from "./PredogledFunkcije";
 
 /**
@@ -247,7 +248,7 @@ function Glava({ p, d, paket }: { p: Predlog; d: DemoVsebina; paket: Paket }) {
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-x-6 gap-y-1 px-4 py-1.5 text-xs text-[#4b5563]">
             {k.email && (
               <span className="flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5 text-[var(--b)]" /> {k.email}
+                <Mail className="h-3.5 w-3.5 text-[var(--b)]" /> <Eposta naslov={k.email} />
               </span>
             )}
             {k.telefon && (
@@ -291,7 +292,7 @@ function Uvod({ p, d, paket, slike }: { p: Predlog; d: DemoVsebina; paket: Paket
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--b)]">{d.nadnaslov}</p>
           )}
           <h1 className="mt-5 text-[clamp(2.1rem,4.6vw,3.9rem)] font-extrabold leading-[1.05] tracking-tight">{d.naslov}</h1>
-          {d.podnaslov && <p className="mt-5 max-w-lg text-lg text-[#374151]">{d.podnaslov}</p>}
+          {d.podnaslov && <p className="mt-5 max-w-lg text-lg text-[#374151]"><Tekst t={d.podnaslov} /></p>}
           <div className="mt-8 flex flex-wrap gap-3">
             <a
               href={paket === 3 ? "#funkcija" : "#kontakt"}
@@ -408,7 +409,7 @@ function Opis({ x }: { x: DemoVsebina["ponudba"][number] }) {
   return (
     <div className="p-5">
       <h3 className="text-lg font-bold">{x.ime}</h3>
-      {x.opis && <p className="mt-1.5 text-sm leading-relaxed text-[#4b5563]">{x.opis}</p>}
+      {x.opis && <p className="mt-1.5 text-sm leading-relaxed text-[#4b5563]"><Tekst t={x.opis} /></p>}
       <a href="#kontakt" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--b)]">
         Povprašajte <ArrowRight className="h-4 w-4" />
       </a>
@@ -431,7 +432,7 @@ function Prednosti({ d }: { d: DemoVsebina }) {
                 <Star className="h-5 w-5 text-[var(--b)]" />
               </span>
               <p className="mt-4 font-bold">{x.naslov}</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-[#4b5563]">{x.opis}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#4b5563]"><Tekst t={x.opis} /></p>
             </Pojav>
           ))}
         </div>
@@ -465,7 +466,7 @@ function Vidnost({ p, d }: { p: Predlog; d: DemoVsebina }) {
             <div className="mt-8 rounded-2xl border border-[#e3e6ee] bg-white p-5 shadow-sm">
               <p className="text-xs text-[#4d5156]">{p.domena}</p>
               <p className="mt-1 text-lg leading-snug text-[#1a0dab]">{d.google.naslov}</p>
-              <p className="mt-1 text-sm leading-relaxed text-[#4d5156]">{d.google.opis}</p>
+              <p className="mt-1 text-sm leading-relaxed text-[#4d5156]"><Tekst t={d.google.opis} /></p>
               <p className="mt-3 text-[11px] text-[#9aa1ad]">Tako bi bil videti vaš zadetek na Googlu.</p>
             </div>
           )}
@@ -484,7 +485,7 @@ function Vidnost({ p, d }: { p: Predlog; d: DemoVsebina }) {
                     {v.v}
                     <ChevronDown className={`h-4 w-4 shrink-0 transition ${odprto === i ? "rotate-180" : ""}`} />
                   </button>
-                  {odprto === i && <p className="px-5 pb-4 text-sm leading-relaxed text-[#4b5563]">{v.o}</p>}
+                  {odprto === i && <p className="px-5 pb-4 text-sm leading-relaxed text-[#4b5563]"><Tekst t={v.o} /></p>}
                 </div>
               ))}
             </div>
@@ -506,7 +507,7 @@ function Aplikacija({ p, d }: { p: Predlog; d: DemoVsebina }) {
           <Naslov nad={`Paket 3 · ${KRATKO[p.funkcija]?.paket ?? "Aplikacija"}`} svetlo>
             {d.aplikacija.naslov || p.funkcija_opis}
           </Naslov>
-          {d.aplikacija.opis && <p className="mt-4 max-w-md text-lg text-white/80">{d.aplikacija.opis}</p>}
+          {d.aplikacija.opis && <p className="mt-4 max-w-md text-lg text-white/80"><Tekst t={d.aplikacija.opis} /></p>}
           {p.funkcija_opis && (
             <p className="mt-6 flex max-w-md gap-3 rounded-xl bg-white/5 p-4 text-sm leading-relaxed text-white/80">
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[color-mix(in_srgb,var(--b)_60%,white)]" />
@@ -571,7 +572,7 @@ function Koraki({ d }: { d: DemoVsebina }) {
           <li key={k}>
             <Pojav zamik={i * 0.1} className="h-full rounded-2xl border border-[#e3e6ee] bg-white p-6">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--b)] text-sm font-bold text-white">{i + 1}</span>
-              <p className="mt-4 font-semibold leading-snug">{k}</p>
+              <p className="mt-4 font-semibold leading-snug"><Tekst t={k} /></p>
             </Pojav>
           </li>
         ))}
@@ -587,7 +588,7 @@ function ONas({ p, d, slika }: { p: Predlog; d: DemoVsebina; slika?: string }) {
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 lg:grid-cols-2">
         <Pojav>
           <Naslov nad="O nas">{p.kratko_ime}</Naslov>
-          <p className="mt-5 text-lg leading-relaxed text-[#374151]">{d.o_nas}</p>
+          <p className="mt-5 text-lg leading-relaxed text-[#374151]"><Tekst t={d.o_nas} /></p>
         </Pojav>
         {slika && (
           <Pojav zamik={0.1} className="overflow-hidden rounded-2xl">
@@ -621,7 +622,7 @@ function ZaLastnika({ p }: { p: Predlog }) {
                   <Ikona className="h-5 w-5 text-white" />
                 </span>
                 <p className="mt-4 font-bold">{z.naslov}</p>
-                <p className="mt-2 text-sm leading-relaxed text-white/75">{z.besedilo}</p>
+                <p className="mt-2 text-sm leading-relaxed text-white/75"><Tekst t={z.besedilo} /></p>
               </Pojav>
             );
           })}
@@ -649,7 +650,7 @@ function Kontakt({ p, d }: { p: Predlog; d: DemoVsebina }) {
             )}
             {k.email && (
               <li className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-[var(--b)]" /> {k.email}
+                <Mail className="h-5 w-5 text-[var(--b)]" /> <Eposta naslov={k.email} />
               </li>
             )}
             {(k.naslov || p.kraj) && (
@@ -710,7 +711,7 @@ function KajDobite({ p, d, paket, setPaket }: { p: Predlog; d: DemoVsebina; pake
           <h2 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
             Paket {paket} — {cena?.ime ?? imePaketa(p, paket)}
           </h2>
-          {d.paketi_zakaj[kljuc] && <p className="mt-5 max-w-md text-lg text-white/85">{d.paketi_zakaj[kljuc]}</p>}
+          {d.paketi_zakaj[kljuc] && <p className="mt-5 max-w-md text-lg text-white/85"><Tekst t={d.paketi_zakaj[kljuc]} /></p>}
           <div className="mt-8 flex flex-wrap gap-2">
             {([1, 2, 3] as Paket[]).map((st) => (
               <button
@@ -746,7 +747,7 @@ function KajDobite({ p, d, paket, setPaket }: { p: Predlog; d: DemoVsebina; pake
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--b)_12%,white)]">
                   <Check className="h-3.5 w-3.5 text-[var(--b)]" />
                 </span>
-                <span className="leading-snug">{t}</span>
+                <span className="leading-snug"><Tekst t={t} /></span>
               </li>
             ))}
           </ul>
@@ -770,7 +771,7 @@ function KajDobite({ p, d, paket, setPaket }: { p: Predlog; d: DemoVsebina; pake
               href={`mailto:luka@kodatim.si?subject=${encodeURIComponent(`Predogled za ${p.kratko_ime}`)}`}
               className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#e3e6ee] px-5 py-3 text-sm font-semibold hover:border-[var(--b)]"
             >
-              <Mail className="h-4 w-4" /> luka@kodatim.si
+              <Mail className="h-4 w-4" /> <Eposta naslov="luka@kodatim.si" />
             </a>
           </div>
           {p.garancija_pogoji && <p className="mt-4 text-[11px] leading-relaxed text-[#9aa1ad]">{p.garancija_pogoji}</p>}
@@ -792,7 +793,11 @@ function Noga({ p, d }: { p: Predlog; d: DemoVsebina }) {
         <div className="space-y-2 text-sm text-white/80">
           <p className="font-bold text-white">Kontakt</p>
           {k.telefon && <p>{k.telefon}</p>}
-          {k.email && <p>{k.email}</p>}
+          {k.email && (
+            <p>
+              <Eposta naslov={k.email} />
+            </p>
+          )}
           {(k.naslov || p.kraj) && <p>{k.naslov || p.kraj}</p>}
         </div>
         <div className="space-y-2 text-xs text-white/40">
