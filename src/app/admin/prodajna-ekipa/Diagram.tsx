@@ -23,7 +23,7 @@ import {
   type Povzetek,
   type Lijak,
 } from "@/lib/prodajna-ekipa";
-import { ODLOCITEV, STANJE, kdaj, stevilo, uraLokalno } from "./oblika";
+import { ODLOCITEV, kdaj, stanjeZaPrikaz, stevilo, uraLokalno } from "./oblika";
 
 /**
  * Ekipa na eni sliki: vodja zgoraj, plasti od iskanja do prodaje, analitik
@@ -113,7 +113,7 @@ function Kartica({
   children?: ReactNode;
 }) {
   const vloga = VLOGE[delavec.kljuc];
-  const stanje = STANJE[delavec.stanje] ?? STANJE.caka;
+  const stanje = stanjeZaPrikaz(delavec.kljuc, delavec.stanje);
   const dela = delavec.stanje === "dela";
   return (
     <Link

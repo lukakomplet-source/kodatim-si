@@ -12,6 +12,17 @@ export const STANJE: Record<StanjeDelavca, { oznaka: string; pika: string; besed
   prosto: { oznaka: "nič ne čaka", pika: "bg-zinc-500", besedilo: "text-zinc-400" },
 };
 
+/** Delavci, ki delajo samo, ko je pošiljanje vklopljeno (Lukov »začni«). */
+const OB_POSILJANJU = new Set(["kontrolor", "preverjevalec", "posiljatelj"]);
+
+/** Stanje delavca za prikaz: ugasnjeni delavci pošiljanja čakajo na Luka, niso pokvarjeni. */
+export function stanjeZaPrikaz(kljuc: string, stanje: StanjeDelavca) {
+  if (stanje === "izklopljen" && OB_POSILJANJU.has(kljuc)) {
+    return { ...STANJE.izklopljen, oznaka: "čaka na tvoj »začni«" };
+  }
+  return STANJE[stanje] ?? STANJE.caka;
+}
+
 export const ODLOCITEV: Record<string, string> = {
   handle_replies: "bere odgovore",
   send_campaign: "pošilja",

@@ -11,7 +11,7 @@ import {
 } from "@/lib/prodajna-ekipa";
 import { Osvezevanje } from "../../nadzor/Osvezevanje";
 import { OdobritevSeznam } from "../OdobritevSeznam";
-import { OZNAKE_STEVILK, STANJE, kdaj, stevilo, vrednostStevilke } from "../oblika";
+import { OZNAKE_STEVILK, kdaj, stanjeZaPrikaz, stevilo, vrednostStevilke } from "../oblika";
 
 /**
  * En delavec od blizu: kaj je njegova naloga, po katerih pravilih dela,
@@ -34,7 +34,7 @@ export default async function DelavecPage({ params }: { params: Promise<{ vloga:
     vloga === "prodaja" ? preberiLijak().catch(() => null) : Promise.resolve(null),
   ]);
   const delavec = povzetek?.delavci.find((d) => d.kljuc === vloga);
-  const stanje = delavec ? STANJE[delavec.stanje] ?? STANJE.caka : null;
+  const stanje = delavec ? stanjeZaPrikaz(delavec.kljuc, delavec.stanje) : null;
   const zdaj = povzetek?.ustvarjeno ?? new Date().toISOString();
 
   return (
