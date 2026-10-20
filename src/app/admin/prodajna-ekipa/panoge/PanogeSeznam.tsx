@@ -84,15 +84,19 @@ function Profil({ p }: { p: ProfilPanoge }) {
 
       <details className="mt-3 text-xs text-zinc-500">
         <summary className="cursor-pointer">
-          Kaj je agent iskal in prebral ({p.iskanj} iskanj, {p.viri.length} virov)
+          Kaj je agent iskal in prebral ({p.profil.iskanja?.length ?? p.iskanj} iskanj, {p.viri.length} virov)
         </summary>
+        {p.profil.iskanja?.length ? (
+          <p className="mt-2">Iskanja: {p.profil.iskanja.map((q) => `»${q}«`).join(", ")}</p>
+        ) : null}
         <ul className="mt-2 space-y-0.5">
           {p.viri.map((v) => (
             <li key={v.id}>
               <a href={v.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
                 {v.naslov || v.url}
               </a>
-              {v.tuj ? " (tuj)" : ""} — iskanje »{v.iskanje}«
+              {v.tuj ? " (tuj)" : ""}
+              {v.uporabljen === false ? " — citat ni bil najden, vir ni uporabljen" : ""}
             </li>
           ))}
         </ul>

@@ -133,7 +133,7 @@ export type ProfilPanoge = {
   naziv: string;
   stanje: StanjePanoge;
   profil: { dan: string; bolecine: BolecinaPanoge[]; iskanja?: string[] };
-  viri: { id: string; url: string; naslov: string; tuj: boolean; iskanje: string }[];
+  viri: { id: string; url: string; naslov: string; tuj: boolean; iskanje: string; uporabljen?: boolean }[];
   popravek: string;
   iskanj: number;
   ustvarjeno: string;
