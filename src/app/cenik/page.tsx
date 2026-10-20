@@ -11,7 +11,7 @@ import Reveal from "@/components/Reveal";
 export const metadata: Metadata = {
   title: "Cenik in kako delamo — KodaTim.si",
   description:
-    "Cenik izdelave spletnih strani, web aplikacij in poslovnih orodij. Preverite, kako poteka razvoj in zakaj naročniki plačajo šele, ko rešitev deluje.",
+    "Cenik spletnih strani za mala podjetja (od 390 € + DDV), mesečnina in garancija 50 % ter aplikacije po meri z dvema mesecema brezplačnega razvoja.",
 };
 
 export default function CenikPage() {

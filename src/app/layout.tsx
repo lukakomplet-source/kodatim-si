@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "KodaTim.si — Vaš projekt. Naša ekipa. Vaš dobiček.",
   description:
-    "KodaTim.si je AI razvojna agencija, ki vaše ideje spremeni v delujoče digitalne rešitve. 2 meseca brezplačnega razvoja, plačilo šele ko deluje.",
+    "KodaTim.si: spletne strani za mala podjetja od 390 € + DDV z garancijo in aplikacije po meri, ki jih plačate šele, ko delujejo.",
 };
 
 const organizationJsonLd = {

@@ -80,9 +80,9 @@ export default function Referral() {
                 Primer izračuna
               </p>
               <p className="mt-2 text-sm leading-relaxed text-zinc-700">
-                Priporočite podjetje, ki izbere paket{" "}
-                <span className="font-semibold">Business</span> (2.800 € +
-                89 €/mesec). Ob podpisu prejmete{" "}
+                Priporočite podjetje, ki naroči{" "}
+                <span className="font-semibold">aplikacijo po meri</span>, na
+                primer za 2.800 € + DDV in 89 €/mesec. Ob podpisu prejmete{" "}
                 <span className="font-semibold">≈ 560 €</span> (20 % od prve
                 fakture), nato pa delež mesečne naročnine, dokler stranka
                 ostaja pri nas.

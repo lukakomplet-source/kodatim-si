@@ -51,7 +51,7 @@ export default function Hero() {
 
           <p className="mt-5 flex items-center gap-1.5 text-sm text-zinc-400">
             <ShieldCheck className="h-4 w-4 text-accent" />
-            Plačate šele, ko rešitev deluje — brez tveganja.
+            Spletne strani od 390 € + DDV · aplikacije plačate šele, ko delujejo.
           </p>
         </motion.div>
       </div>

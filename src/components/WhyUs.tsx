@@ -4,18 +4,22 @@ import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import Reveal, { RevealGroup, RevealItem } from "./Reveal";
 
+// Two promises for two products (Luka, 20. 10. 2026, option A): the site with
+// a shop or bookings has the 50 % guarantee of the offer, a custom app keeps
+// the two free months of development.
 const GUARANTEES = [
   {
-    title: "2 meseca brezplačnega razvoja",
-    description: "Rešitev zgradimo in preizkusimo, preden karkoli plačate.",
+    title: "Spletna stran z garancijo",
+    description:
+      "Če stran s trgovino ali naročanjem v 6 mesecih ne prinese povpraševanj, vam vrnemo 50 % začetnega plačila.",
+  },
+  {
+    title: "Aplikacije: 2 meseca brezplačnega razvoja",
+    description: "Aplikacijo po meri zgradimo in preizkusimo, preden karkoli plačate.",
   },
   {
     title: "Neomejeno število popravkov med razvojem",
     description: "Prilagajamo, dokler rešitev ni takšna, kot jo potrebujete.",
-  },
-  {
-    title: "Plačate le, če ste zadovoljni",
-    description: "Če rezultat ne izpolni dogovora, vas ne stane nič.",
   },
   {
     title: "Dolgoročna podpora",
@@ -42,8 +46,9 @@ export default function WhyUs() {
             </h2>
             <p className="mt-5 text-lg leading-relaxed text-zinc-500">
               Vemo, da je zaupati novi razvojni ekipi tvegano. Zato smo
-              pogoje sodelovanja obrnili v vašo korist — plačate šele, ko
-              vidite, da rešitev dejansko deluje.
+              pogoje sodelovanja obrnili v vašo korist: stran s trgovino ali
+              naročanjem ima garancijo za povpraševanja, aplikacijo po meri pa
+              plačate šele, ko vidite, da deluje.
             </p>
           </Reveal>
 

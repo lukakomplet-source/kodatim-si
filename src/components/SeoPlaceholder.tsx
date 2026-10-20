@@ -12,19 +12,29 @@ const FAQ = [
       "Odvisno od obsega. Enostavnejša predstavitvena stran je običajno gotova v 2-4 tednih, poslovna aplikacija z administracijo pa v 6-10 tednih. Točno časovnico dobite po prvem pogovoru o projektu.",
   },
   {
-    question: "Kaj pomeni '2 meseca brezplačnega razvoja'?",
+    question: "Zakaj so na ceniku cene »od«?",
     answer:
-      "Rešitev zgradimo in temeljito testiramo, vi pa jo v tem času preizkusite v praksi. Plačate šele, ko je rešitev dejansko dokončana in deluje po dogovoru.",
+      "Ker je vsak projekt malo drugačen. Cene na ceniku so izhodiščne, točno ceno pa potrdimo skupaj glede na zahtevnost, preden karkoli začnemo — brez presenečenj.",
+  },
+  {
+    question: "Kakšno garancijo dobim pri spletni strani?",
+    answer:
+      "Pri strani s trgovino ali naročanjem in pri AI nadgradnji: če stran v 6 mesecih po objavi ne prinese nobenega povpraševanja, vam vrnemo 50 % začetnega plačila. Cilj in merjenje povpraševanj (obrazec, klic ali e-pošta s strani) določimo skupaj pred začetkom, dogovorjene vsebine pa morajo biti objavljene.",
+  },
+  {
+    question: "Kaj pomeni »2 meseca brezplačnega razvoja«?",
+    answer:
+      "Velja za aplikacije po meri. Aplikacijo zgradimo in temeljito testiramo, vi pa jo v tem času preizkusite v praksi. Plačate šele, ko je dokončana in deluje po dogovoru.",
   },
   {
     question: "Ali lahko kasneje nadgradim svojo rešitev?",
     answer:
-      "Da. Vsi paketi vključujejo redne mesečne izboljšave, dodaten razvoj pa je vedno na voljo po dogovoru, ko se potrebe podjetja spremenijo.",
+      "Da. Stran lahko kasneje nadgradite, na primer s spletnim naročanjem ali AI nadgradnjo, dodaten razvoj pa je vedno na voljo po dogovoru, ko se potrebe podjetja spremenijo.",
   },
   {
     question: "Ali skrbite tudi za gostovanje in vzdrževanje po zagonu?",
     answer:
-      "Da. Gostovanje, varnostne kopije, SSL in redno vzdrževanje so del mesečnega paketa, ne ločeno doplačilo — podrobnosti so v ceniku.",
+      "Da. Pri spletni strani mesečnina 20–25 € + DDV vključuje strežnik, vzdrževanje, mesečno poročilo o obiskanosti in kratek mesečni klic. Pri aplikacijah po meri je vzdrževanje od 89 €/mesec + DDV, odvisno od obsega.",
   },
 ];
 

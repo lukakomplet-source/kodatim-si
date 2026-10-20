@@ -154,7 +154,7 @@ export default function PartnerPreview() {
               </span>
               <div>
                 <p className="text-sm font-semibold text-zinc-900">
-                  Primer: ena priporočena stranka na paketu Business
+                  Primer: ena priporočena stranka z aplikacijo po meri
                 </p>
                 <p className="text-xs text-zinc-500">
                   Prikaz rasti mesečne provizije, ko stranka ostaja pri nas
