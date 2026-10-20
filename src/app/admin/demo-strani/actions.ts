@@ -7,7 +7,8 @@ import { DEMO_STATUSI, DEMO_VRSTE, slugError, toSlug, type DemoStatus, type Demo
 
 /** CRUD for the catalogue of client demo sites parked on kodatim.si/<slug>. */
 
-export type DemoResult = { error?: string; success?: boolean };
+/** `id` is the saved row's, so the screen can file a new page into a folder. */
+export type DemoResult = { error?: string; success?: boolean; id?: string };
 
 function parseVrsta(value: FormDataEntryValue | null): DemoVrsta {
   const v = String(value ?? "spletna_stran");
@@ -52,9 +53,9 @@ export async function saveDemoStran(_prev: DemoResult, formData: FormData): Prom
   };
 
   const admin = createAdminClient();
-  const { error } = id
-    ? await admin.from("demo_strani").update(row).eq("id", id)
-    : await admin.from("demo_strani").insert({ ...row, created_by: user.id });
+  const { data: saved, error } = id
+    ? await admin.from("demo_strani").update(row).eq("id", id).select("id").single()
+    : await admin.from("demo_strani").insert({ ...row, created_by: user.id }).select("id").single();
 
   if (error) {
     // The unique index is the only thing standing between two demos and one
@@ -64,7 +65,7 @@ export async function saveDemoStran(_prev: DemoResult, formData: FormData): Prom
   }
 
   revalidatePath("/admin/demo-strani");
-  return { success: true };
+  return { success: true, id: (saved as { id: string } | null)?.id };
 }
 
 export async function updateDemoStatus(id: string, status: string): Promise<DemoResult> {

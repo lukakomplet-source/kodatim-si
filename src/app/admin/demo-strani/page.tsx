@@ -1,8 +1,7 @@
 import { requireAdmin } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { VGRAJENE_DEMO_STRANI, type DemoStran } from "@/lib/demoStrani";
-import DemoStraniClient from "./DemoStraniClient";
-import VgrajeneStrani from "./VgrajeneStrani";
+import DemoPregled from "./DemoPregled";
 
 export const metadata = { title: "Spletne strani in aplikacije" };
 
@@ -28,24 +27,26 @@ export default async function DemoStraniPage() {
         Tu jih imate zbrane, odprete predogled in kopirate povezavo za stranko.
       </p>
 
-      {/* Above the database list, and outside the migration check: these are
+      {/* The built-in list stays outside the migration check: these are
           routes in the repository, so they are reachable whether or not the
           table exists. That is the point — an app with no way to click to it
           might as well not be deployed. */}
-      <VgrajeneStrani items={VGRAJENE_DEMO_STRANI} />
-
-      {migrationMissing ? (
-        <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
-          Tabela <code>demo_strani</code> še ne obstaja. V Supabase SQL Editorju poženite{" "}
-          <code>supabase/migration_demo_strani.sql</code>, nato osvežite to stran.
-        </p>
-      ) : error ? (
-        <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
-          Seznama ni bilo mogoče prebrati: {error.message}
-        </p>
-      ) : (
-        <DemoStraniClient items={(data ?? []) as unknown as DemoStran[]} />
-      )}
+      <DemoPregled
+        vgrajene={VGRAJENE_DEMO_STRANI}
+        items={error ? null : ((data ?? []) as unknown as DemoStran[])}
+        napakaBaze={
+          migrationMissing ? (
+            <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+              Tabela <code>demo_strani</code> še ne obstaja. V Supabase SQL Editorju poženite{" "}
+              <code>supabase/migration_demo_strani.sql</code>, nato osvežite to stran.
+            </p>
+          ) : error ? (
+            <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
+              Seznama ni bilo mogoče prebrati: {error.message}
+            </p>
+          ) : null
+        }
+      />
     </div>
   );
 }

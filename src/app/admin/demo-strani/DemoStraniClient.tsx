@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ExternalLink, Globe, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, Globe, Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import {
   DEMO_STATUSI,
   DEMO_STATUS_LABELS,
@@ -13,7 +13,10 @@ import {
   type DemoStatus,
   type DemoStran,
 } from "@/lib/demoStrani";
+import { BREZ, VSE, kljucBaze, mapaOd } from "@/lib/demoMape";
 import { deleteDemoStran, saveDemoStran, updateDemoStatus, type DemoResult } from "./actions";
+import type { MapeOrodja } from "./DemoPregled";
+import { Predogled, PremakniVMapo } from "./orodja";
 
 /**
  * The catalogue of client demos parked on our own domain.
@@ -28,7 +31,7 @@ const INPUT =
   "mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm font-normal normal-case tracking-normal focus:border-accent/50 focus:outline-none";
 const LABEL = "block text-xs font-medium uppercase tracking-wide text-zinc-500";
 
-export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
+export default function DemoStraniClient({ items, orodja }: { items: DemoStran[]; orodja: MapeOrodja }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [tab, setTab] = useState<DemoStatus | "vse">("vse");
@@ -37,6 +40,17 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [slugDraft, setSlugDraft] = useState("");
   const [state, formAction, saving] = useActionState<DemoResult, FormData>(saveDemoStran, {});
+  const [predogled, setPredogled] = useState<string | null>(null);
+  // The folder open when "Nova stran" was pressed: a new page is filed there.
+  const mapaZaNovo = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!state.success || !state.id || !mapaZaNovo.current) return;
+    orodja.premakni(kljucBaze(state.id), mapaZaNovo.current);
+    mapaZaNovo.current = null;
+    // Only when a save result arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   if (state.success && (showForm || editing)) {
     // The action revalidated the page; close the form and pick up fresh rows.
@@ -74,6 +88,7 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
   }
 
   function openEditor(item: DemoStran | null) {
+    mapaZaNovo.current = !item && orodja.izbrana !== VSE && orodja.izbrana !== BREZ ? orodja.izbrana : null;
     setEditing(item);
     setSlugDraft(item?.slug ?? "");
     setShowForm(true);
@@ -239,6 +254,9 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
       )}
 
       {visible.length === 0 ? (
+        // Inside a folder the screen already says when it is empty; an extra
+        // card about pages that were never added would only be noise.
+        orodja.izbrana !== VSE ? null : (
         <div className={CARD}>
           <p className="text-sm text-zinc-500">
             {items.length === 0
@@ -246,6 +264,7 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
               : "V tem statusu ni nobene strani."}
           </p>
         </div>
+        )
       ) : (
         <div className="space-y-2">
           {visible.map((item) => (
@@ -271,6 +290,12 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <PremakniVMapo
+                    mape={orodja.stanje.mape}
+                    trenutna={mapaOd(orodja.stanje, kljucBaze(item.id))?.id ?? null}
+                    disabled={!orodja.nalozeno}
+                    onIzberi={(id) => orodja.premakni(kljucBaze(item.id), id)}
+                  />
                   <select
                     value={item.status}
                     disabled={isPending}
@@ -302,6 +327,14 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setPredogled((p) => (p === item.id ? null : item.id))}
+                    className="flex items-center gap-1.5 rounded-full border border-accent/40 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/5"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Pripravi predogled
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => openEditor(item)}
                     title="Uredi"
                     className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
@@ -318,6 +351,15 @@ export default function DemoStraniClient({ items }: { items: DemoStran[] }) {
                   </button>
                 </div>
               </div>
+              {predogled === item.id && (
+                <Predogled
+                  naziv={item.naziv}
+                  povezava={publicUrl(item.slug)}
+                  status={item.status}
+                  onStatus={(status) => changeStatus(item, status)}
+                  onZapri={() => setPredogled(null)}
+                />
+              )}
             </div>
           ))}
         </div>
