@@ -5,9 +5,10 @@ import { notFound } from "next/navigation";
 import { ArrowDown, Check, Download, Mail, Phone, Smartphone, Sparkles } from "lucide-react";
 import { preberiPredlog } from "@/lib/predlogi";
 import { Cene } from "./Cene";
+import { AgentStran } from "./AgentStran";
 import { DemoStran } from "./DemoStran";
 import { Eposta } from "./Eposta";
-import { pisavaZa } from "./pisave";
+import { pisavaPoImenu, pisavaZa } from "./pisave";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
 import { PredogledStrani } from "./PredogledStrani";
@@ -37,7 +38,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { koda } = await params;
   const branje = await preberiPredlog(koda);
   const ime = branje.stanje === "ok" ? branje.predlog.kratko_ime : "";
-  const demo = branje.stanje === "ok" && Boolean(branje.predlog.demo);
+  const demo = branje.stanje === "ok" && Boolean(branje.predlog.demo || branje.predlog.stran);
   return {
     title: ime
       ? demo
@@ -56,6 +57,16 @@ export default async function PredlogPage({ params, searchParams }: Props) {
   if (branje.stanje === "nedosegljiv") return <Nedosegljiv />;
   const p = branje.predlog;
   const pripravljeno = datumPredloga(p.ustvarjeno);
+
+  // Predlog prodajnega agenta: njihova stran po agentovem načrtu, zgoraj »Za vas«.
+  if (p.stran && p.agent) {
+    return (
+      <>
+        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        <AgentStran p={p} pisava={pisavaPoImenu(p.stran.tema.pisava)} />
+      </>
+    );
+  }
 
   // Cela demo stran v treh paketih (kot Kamenarič); ?paket=1|2|3 izbere začetni paket.
   if (p.demo) {

@@ -89,6 +89,55 @@ export type Postavka = {
   predlog?: string;
   /** Ugotovitve raziskave, na katerih stoji predlog, z virom. */
   dokazi?: { besedilo: string; vir: string }[];
+  /** Kako je prodajni agent prišel do osnutka (panoga → bolečina → dokaz → rešitev). */
+  razmisljanje?: Razmisljanje | null;
+};
+
+export type Razmisljanje = {
+  panoga: string;
+  bolecina: string;
+  lastnikRece: string;
+  viriPanoge: { url: string; citat: string; tuj: boolean }[];
+  znakiPriNjih: { znak: string; url: string; odlomek: string }[];
+  manjkaPriNjih: string[];
+  izpuscene: { bolecina: string; zakaj: string }[];
+  neKazeSe: string[];
+  problemi: { problem: string; citat: string; dokaz: string }[];
+  razlog: string;
+  resitev: string;
+  povzetekResitve: string;
+  paket: string;
+  zakajPaket: string;
+  ocena: number | null;
+  kritik: string;
+};
+
+/** Profil panoge (Harvey, harvey/panoga.py): kaj lastnike v panogi muči, z viri. */
+export type BolecinaPanoge = {
+  id: string;
+  bolecina: string;
+  lastnik_rece: string;
+  viri: { url: string; naslov: string; citat: string; tuj: boolean }[];
+  znaki: string[];
+  manjka: string[];
+  resitev: string;
+  pripomocek: string;
+  paket: string;
+  vrednost: string;
+};
+
+export type StanjePanoge = "osnutek" | "potrjen" | "zavrnjen";
+
+export type ProfilPanoge = {
+  kljuc: string;
+  naziv: string;
+  stanje: StanjePanoge;
+  profil: { dan: string; bolecine: BolecinaPanoge[]; iskanja?: string[] };
+  viri: { id: string; url: string; naslov: string; tuj: boolean; iskanje: string }[];
+  popravek: string;
+  iskanj: number;
+  ustvarjeno: string;
+  potrjeno: string;
 };
 
 
@@ -262,6 +311,29 @@ export async function preberiDelavca(vloga: KljucDelavca): Promise<Podrobnosti |
     return await izHarveyja<Podrobnosti>(`/api/ekipa/${vloga}`);
   } catch {
     return null;
+  }
+}
+
+/** Profili panog za Lukov pregled (null, če Harvey ne teče). */
+export async function preberiPanoge(): Promise<ProfilPanoge[] | null> {
+  try {
+    return (await izHarveyja<{ panoge: ProfilPanoge[] }>("/api/panoge")).panoge;
+  } catch {
+    return null;
+  }
+}
+
+/** Luka potrdi ali zavrne profil panoge, po želji s popravkom. */
+export async function odlociPanogo(kljuc: string, stanje: StanjePanoge, popravek: string): Promise<boolean> {
+  try {
+    const r = await izHarveyja<{ success: boolean }>(`/api/panoge/${encodeURIComponent(kljuc)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stanje, popravek }),
+    });
+    return Boolean(r.success);
+  } catch {
+    return false;
   }
 }
 

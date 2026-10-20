@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Check } from "lucide-react";
-import { preberiPredlog, type Predlog } from "@/lib/predlogi";
+import { preberiPredlog, type DeloAgenta, type Predlog } from "@/lib/predlogi";
 import { Cene } from "../Cene";
 import { datumPredloga } from "../oblika";
 import { PredogledStrani } from "../PredogledStrani";
@@ -25,6 +25,7 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
   const povezava = `kodatim.si/predlog/${p.koda}`;
   const imaSliki = ["predogled-racunalnik.jpg", "predogled-telefon.jpg"].every((i) => p.priloge?.includes(i));
   const podjetje = p.podjetje.replace(/\.+$/, "");
+  const a = p.agent;
 
   return (
     <main className="flex-1 bg-white text-zinc-900 [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
@@ -40,11 +41,12 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
           </div>
         </div>
         <h1 className="mt-8 text-[27px] font-semibold leading-tight tracking-tight">
-          Predogled nove spletne strani in ponudba za {p.kratko_ime}
+          {a ? `${a.resitev.ime} za ${p.kratko_ime}` : `Predogled nove spletne strani in ponudba za ${p.kratko_ime}`}
         </h1>
         <p className="mt-3 text-[13px] leading-relaxed text-zinc-600">
-          Spoštovani, pogledali smo vašo spletno stran {p.domena} in pripravili predogled nove strani z vašimi
-          storitvami. Spodaj je, kaj smo opazili, kako bi stran izgledala, zakaj se vam splača in koliko stane.
+          {a
+            ? a.resitev.povzetek
+            : `Spoštovani, pogledali smo vašo spletno stran ${p.domena} in pripravili predogled nove strani z vašimi storitvami. Spodaj je, kaj smo opazili, kako bi stran izgledala, zakaj se vam splača in koliko stane.`}
         </p>
         <p className="mt-5 rounded-xl border border-accent/30 bg-accent/[0.05] px-4 py-3 text-[13px] text-zinc-700">
           Predogled v živo, kjer lahko preizkusite tudi gumbe:{" "}
@@ -53,7 +55,28 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
           </a>
         </p>
 
-        {(p.izboljsave.length > 0 || p.ima_posnetek) && (
+        {a && (
+          <div className="mt-9 grid grid-cols-2 gap-7">
+            <div>
+              <h2 className="text-lg font-semibold">Kaj smo opazili</h2>
+              <ol className="mt-3 space-y-3">
+                {a.diagnoza.problemi.slice(0, 3).map((x) => (
+                  <li key={x.problem} className="break-inside-avoid border-l-2 border-accent pl-3">
+                    <p className="text-[13px] font-medium">{x.problem}</p>
+                    {x.citat && <p className="mt-1 text-[11.5px] italic text-zinc-500">»{x.citat}«</p>}
+                    {x.posledica && <p className="mt-1 text-[12px] leading-relaxed text-zinc-600">{x.posledica}</p>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">Kaj dobite več kot zdaj</h2>
+              <Zakaj p={p} brezNaslova />
+            </div>
+          </div>
+        )}
+
+        {!a && (p.izboljsave.length > 0 || p.ima_posnetek) && (
           <>
             <h2 className="mt-9 text-lg font-semibold">Kaj smo opazili na vaši sedanji strani</h2>
             <div className="mt-4 flex items-start gap-7">
@@ -132,7 +155,7 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
                     {p.funkcija_opis}
                   </p>
                 )}
-                <Zakaj p={p} />
+                {a ? <PredPo a={a} /> : <Zakaj p={p} />}
               </div>
             </div>
           </>
@@ -199,11 +222,29 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
   );
 }
 
-function Zakaj({ p }: { p: Predlog }) {
+function PredPo({ a }: { a: DeloAgenta }) {
+  if (a.resitev.pred_po.length === 0) return null;
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 text-[12px] leading-relaxed">
+      <div className="grid grid-cols-2 bg-zinc-50 font-semibold text-zinc-500">
+        <p className="px-3 py-2">Zdaj</p>
+        <p className="px-3 py-2">Z novo rešitvijo</p>
+      </div>
+      {a.resitev.pred_po.map((x) => (
+        <div key={x.zdaj} className="grid grid-cols-2 border-t border-zinc-200">
+          <p className="px-3 py-2 text-zinc-500">{x.zdaj}</p>
+          <p className="px-3 py-2 text-zinc-800">{x.potem}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Zakaj({ p, brezNaslova = false }: { p: Predlog; brezNaslova?: boolean }) {
   if (!p.zakaj || p.zakaj.length === 0) return null;
   return (
     <div>
-      <h2 className="text-[15px] font-semibold">Zakaj se vam splača</h2>
+      {!brezNaslova && <h2 className="text-[15px] font-semibold">Zakaj se vam splača</h2>}
       <ul className="mt-2.5 space-y-2.5">
         {p.zakaj.map((z) => (
           <li key={z.naslov} className="flex gap-2.5 text-[12.5px] leading-relaxed text-zinc-700">

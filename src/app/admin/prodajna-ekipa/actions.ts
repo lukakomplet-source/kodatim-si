@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
-import { odlociOsnutek } from "@/lib/prodajna-ekipa";
+import { odlociOsnutek, odlociPanogo, type StanjePanoge } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 
 /**
@@ -38,5 +38,24 @@ export async function odlociOsnutekAkcija(
   const ok = await odlociOsnutek(id, odobri, besedilo, odobri ? undefined : zavrnitev);
   revalidatePath("/admin/prodajna-ekipa");
   revalidatePath("/admin/prodajna-ekipa/odobritev");
+  return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
+}
+
+/** Potrditev ali zavrnitev profila panoge; popravek Harvey upošteva bolj kot vire. */
+export async function odlociPanogoAkcija(
+  kljuc: string,
+  stanje: StanjePanoge,
+  popravek: string
+): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^\d\d\.\d\d$/.test(kljuc)) return { ok: false, napaka: "Neznana panoga." };
+  if (!["osnutek", "potrjen", "zavrnjen"].includes(stanje)) return { ok: false, napaka: "Neznano stanje." };
+  if (popravek.length > 2000) return { ok: false, napaka: "Popravek je predolg." };
+  const ok = await odlociPanogo(kljuc, stanje, popravek.trim());
+  revalidatePath("/admin/prodajna-ekipa/panoge");
   return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
 }

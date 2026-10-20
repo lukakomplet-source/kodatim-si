@@ -68,6 +68,61 @@ export type Raziskava = {
   dejstva: { id: string; besedilo: string; vir: string; vrsta: string; datum: string }[];
 };
 
+/**
+ * Načrt strani, ki ga napiše prodajni agent (Harvey, harvey/agent.py): kateri bloki,
+ * v kakšnem vrstnem redu, katera različica, pisava in podlaga. Bloki so preizkušeni
+ * (AgentStran), zato je vsaka stran drugačna, a nobena ne more biti zlomljena.
+ */
+export type StranAgenta = {
+  tema: { pisava: string; podlaga: "svetla" | "kamen" | "temna"; oblika: "ostra" | "mehka" };
+  glava: {
+    razlicica: "fotografija" | "razdeljena" | "tipografska" | "okvir";
+    nadnaslov: string;
+    naslov: string;
+    podnaslov: string;
+    poziv: string;
+    slike: string[];
+  };
+  bloki: BlokAgenta[];
+};
+
+export type BlokAgenta = {
+  tip: "ponudba" | "resitev" | "stevilke" | "prednosti" | "o_nas" | "galerija" | "koraki" | "vprasanja" | "poziv";
+  razlicica: string;
+  naslov: string;
+  uvod: string;
+  elementi?: Record<string, string>[];
+  slike?: string[];
+  slika?: string;
+  besedilo?: string;
+  gumb?: string;
+};
+
+/** Agentovo razmišljanje: diagnoza z dokazi, rešitev, izbrani paket, ocena kritika. */
+export type DeloAgenta = {
+  diagnoza: {
+    kaj_delajo: string;
+    kupci: string;
+    kako_kupujejo_danes: string;
+    problemi: { problem: string; dokaz: string; citat: string; posledica: string; gotovost: string }[];
+    odlocitev: string;
+    razlog: string;
+  };
+  resitev: {
+    ime: string;
+    povzetek: string;
+    kako_deluje: string[];
+    pred_po: { zdaj: string; potem: string }[];
+    kaj_dobijo: { naslov: string; opis: string }[];
+    pripomocek: Funkcija;
+    artikli: { ime: string; opis: string }[];
+    polja: PoljeKonfiguratorja[];
+    rezultat: string;
+  };
+  paket: { st: "1" | "2" | "3"; ime3: string; ai: boolean; oglasevanje: boolean; zakaj: string };
+  ocena?: { povprecje: number; povzetek: string };
+};
+
 /** Paket iz Lukovega cenika; cena je shranjena s predlogom, da ponudba ostane, kakršna je bila poslana. */
 export type Paket = { st: string; ime: string; cena: string; opis: string; priporocen: boolean };
 
@@ -101,6 +156,11 @@ export type Predlog = {
   /** Cela demo stran v treh paketih; brez nje je predlog stare oblike. */
   demo?: DemoVsebina;
   raziskava?: Raziskava;
+  /** Predlog prodajnega agenta: njihova stran po agentovem načrtu in njegovo delo. */
+  stran?: StranAgenta;
+  agent?: DeloAgenta;
+  vizual?: { logo: string; barva: string };
+  kontakt?: { telefon?: string; email?: string; naslov?: string };
 };
 
 /** Priloge prvega maila, kot jih hrani Harvey. */

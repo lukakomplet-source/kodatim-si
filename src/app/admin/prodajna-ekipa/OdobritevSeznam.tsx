@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import type { Postavka } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type RazlogZavrnitve, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 import { odlociOsnutekAkcija } from "./actions";
+import { RazmisljanjeKartica } from "./RazmisljanjeKartica";
 
 /**
  * Osnutki, ki čakajo na odobritev, s celim besedilom in gumboma. Odločen
@@ -107,6 +108,7 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
                 >
                   {urejeno[id] !== undefined ? "Prekliči urejanje" : "Uredi besedilo (dodaj svojo opombo)"}
                 </button>
+                {p.razmisljanje ? <RazmisljanjeKartica r={p.razmisljanje} /> : null}
                 {p.dokazi && p.dokazi.length > 0 ? (
                   <div className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 ring-1 ring-zinc-200">
                     <p className="text-xs font-medium text-zinc-600">Na čem stoji predlog</p>

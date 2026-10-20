@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { preberiPredlog } from "@/lib/predlogi";
+import { AgentStran } from "../AgentStran";
 import { DemoStran } from "../DemoStran";
-import { pisavaZa } from "../pisave";
+import { pisavaPoImenu, pisavaZa } from "../pisave";
 import { PredogledStrani } from "../PredogledStrani";
 
 /**
@@ -17,6 +18,9 @@ export default async function PredogledPage({ params }: { params: Promise<{ koda
   const { koda } = await params;
   const branje = await preberiPredlog(koda);
   if (branje.stanje !== "ok") notFound();
+  // Agentova stran brez dela za lastnika: z nje sta sliki za mail in PDF.
+  if (branje.predlog.stran && branje.predlog.agent)
+    return <AgentStran p={branje.predlog} zaSliko pisava={pisavaPoImenu(branje.predlog.stran.tema.pisava)} />;
   // Demo v paketu 3 brez vrstice s paketi: z njega so sliki za mail in PDF.
   if (branje.predlog.demo)
     return <DemoStran p={branje.predlog} zacetniPaket={3} zaSliko pisava={pisavaZa(branje.predlog.dejavnost)} />;

@@ -51,7 +51,11 @@ export default async function ProdajnaEkipaPage() {
       </div>
       <p className="mt-2 max-w-3xl text-base text-zinc-500">
         Harvey za KodaTim kot ekipa delavcev: od iskanja podjetij v registru do prodaje. Klik na
-        delavca pokaže, kaj dela in kaj je naredil nazadnje. Številke so Harveyjeve, v živo.
+        delavca pokaže, kaj dela in kaj je naredil nazadnje. Številke so Harveyjeve, v živo.{" "}
+        <Link href="/admin/prodajna-ekipa/panoge" className="text-zinc-900 underline underline-offset-2">
+          Panoge
+        </Link>{" "}
+        — kaj lastnike v posamezni panogi muči.
       </p>
 
       {napaka ? (
