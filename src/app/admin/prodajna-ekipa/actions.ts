@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
-import { RAZLOGI_ZAVRNITVE, odlociOsnutek, type Zavrnitev } from "@/lib/prodajna-ekipa";
+import { odlociOsnutek } from "@/lib/prodajna-ekipa";
+import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 
 /**
  * Odobritev ali zavrnitev Harveyjevega osnutka — tudi s telefona. Odobreno

@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PIPELINE_STAGE_LABELS, type PipelineStage } from "@/lib/promocije/types";
+import type { Zavrnitev } from "@/lib/razlogiZavrnitve";
 
 /**
  * Prodajna ekipa KodaTim: Harveyjev cevovod, prikazan kot ekipa delavcev.
@@ -90,20 +91,6 @@ export type Postavka = {
   dokazi?: { besedilo: string; vir: string }[];
 };
 
-/** Razlogi zavrnitve osnutka (isti ključi kot v Harveyju, predlogi.RAZLOGI_ZAVRNITVE). */
-export const RAZLOGI_ZAVRNITVE = {
-  premalo_raziskave: "Premalo raziskave",
-  genericno: "Preveč generično",
-  napacna_ponudba: "Napačna ponudba",
-  nizka_vrednost: "Prenizka vrednost",
-  neustrezna_trditev: "Neustrezna trditev",
-  slaba_panoga: "Slaba panoga",
-  napacen_kontakt: "Napačen kontakt",
-} as const;
-
-export type RazlogZavrnitve = keyof typeof RAZLOGI_ZAVRNITVE;
-
-export type Zavrnitev = { razlog?: RazlogZavrnitve; opomba?: string; znova?: boolean };
 
 export type Podrobnosti = {
   kljuc: KljucDelavca;

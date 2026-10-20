@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RAZLOGI_ZAVRNITVE, type Postavka, type RazlogZavrnitve, type Zavrnitev } from "@/lib/prodajna-ekipa";
+import type { Postavka } from "@/lib/prodajna-ekipa";
+import { RAZLOGI_ZAVRNITVE, type RazlogZavrnitve, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 import { odlociOsnutekAkcija } from "./actions";
 
 /**
