@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { preberiPredlog } from "@/lib/predlogi";
+import { DemoStran } from "../DemoStran";
 import { PredogledStrani } from "../PredogledStrani";
 
 /**
@@ -15,6 +16,8 @@ export default async function PredogledPage({ params }: { params: Promise<{ koda
   const { koda } = await params;
   const branje = await preberiPredlog(koda);
   if (branje.stanje !== "ok") notFound();
+  // Demo v paketu 3 brez vrstice s paketi: z njega so sliki za mail in PDF.
+  if (branje.predlog.demo) return <DemoStran p={branje.predlog} zacetniPaket={3} zaSliko />;
   return (
     <main className="flex-1 bg-white">
       <PredogledStrani p={branje.predlog} okvir={false} />

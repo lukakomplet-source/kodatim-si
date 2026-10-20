@@ -16,6 +16,7 @@ export const FUNKCIJA: Record<Funkcija, { meni: string; naslov: string }> = {
   narocilo: { meni: "Naročilo", naslov: "Naročilo oddano v minuti" },
   povprasevanje: { meni: "Povpraševanje", naslov: "Povpraševanje z vsemi podatki naenkrat" },
   ai_asistent: { meni: "Pomočnik", naslov: "Pomočnik, ki odgovarja namesto vas" },
+  portal: { meni: "Portal", naslov: "Stalne stranke naročajo same" },
 };
 
 /** Brez okvirja je to cela stran (za posnetke), zato vsebina dobi širino strani. */

@@ -39,7 +39,93 @@ export function PredogledFunkcije({
   if (funkcija === "rezervacija") return <Rezervacija poziv={poziv} storitve={storitve} />;
   if (funkcija === "narocilo") return <Narocilo poziv={poziv} storitve={storitve} />;
   if (funkcija === "ai_asistent") return <Pomocnik ime={ime} storitve={storitve} />;
+  if (funkcija === "portal") return <Portal ime={ime} storitve={storitve} />;
   return <Povprasevanje poziv={poziv} storitve={storitve} />;
+}
+
+/** B2B portal: stalna stranka se prijavi, naroči s količinami ali ponovi zadnje naročilo. */
+function Portal({ ime, storitve }: { ime: string; storitve: Storitev[] }) {
+  const [prijavljen, setPrijavljen] = useState(false);
+  const [kolicine, setKolicine] = useState<Record<string, number>>({});
+  const [oddano, setOddano] = useState(false);
+  const artikli = storitve.length > 0 ? storitve.slice(0, 6) : [{ ime: "Vaš izdelek", opis: "" }];
+
+  if (oddano) {
+    return (
+      <Potrjeno
+        naslov="Naročilo je oddano"
+        besedilo="Stalna stranka je naročila sama, po svojih cenah in tudi zvečer. Vi dobite urejeno naročilo z vsemi količinami, ona pa potrditev in rok dobave."
+        znova={() => {
+          setOddano(false);
+          setKolicine({});
+        }}
+      />
+    );
+  }
+  if (!prijavljen) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-zinc-600">Prijava za stalne stranke podjetja {ime}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Polje oznaka="Uporabnik" />
+          <Polje oznaka="Geslo" />
+        </div>
+        <Gumb onClick={() => setPrijavljen(true)}>Prijava (predogled)</Gumb>
+      </div>
+    );
+  }
+  const izbrano = Object.values(kolicine).some((k) => k > 0);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 px-4 py-3 text-sm">
+        <span>
+          Pozdravljeni, <span className="font-semibold">Primer d.o.o.</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setKolicine(Object.fromEntries(artikli.slice(0, 2).map((a) => [a.ime, 10])))}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:ring-zinc-400"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> Ponovi zadnje naročilo
+        </button>
+      </div>
+      <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
+        {artikli.map((a) => {
+          const k = kolicine[a.ime] ?? 0;
+          return (
+            <li key={a.ime} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-zinc-900">{a.ime}</p>
+                <p className="text-xs text-zinc-500">Vaša cena po dogovoru</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Manj"
+                  onClick={() => setKolicine((s) => ({ ...s, [a.ime]: Math.max(0, k - 5) }))}
+                  className="h-8 w-8 rounded-lg border border-zinc-200 text-zinc-700 hover:border-zinc-400"
+                >
+                  −
+                </button>
+                <span className="w-8 text-center text-sm tabular-nums">{k}</span>
+                <button
+                  type="button"
+                  aria-label="Več"
+                  onClick={() => setKolicine((s) => ({ ...s, [a.ime]: k + 5 }))}
+                  className="h-8 w-8 rounded-lg border border-zinc-200 text-zinc-700 hover:border-zinc-400"
+                >
+                  +
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <Gumb onemogoceno={!izbrano} onClick={() => setOddano(true)}>
+        {izbrano ? "Oddaj naročilo" : "Izberite količine"}
+      </Gumb>
+    </div>
+  );
 }
 
 function Rezervacija({ poziv, storitve }: { poziv: string; storitve: Storitev[] }) {
@@ -346,7 +432,7 @@ function Gumb({
       type="button"
       disabled={onemogoceno}
       onClick={onClick}
-      className="w-full rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
+      className="w-full rounded-xl bg-[var(--b,var(--color-accent))] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowDown, Check, Download, Mail, Phone, Smartphone, Sparkles } from "lucide-react";
 import { preberiPredlog } from "@/lib/predlogi";
 import { Cene } from "./Cene";
+import { DemoStran } from "./DemoStran";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
 import { PredogledStrani } from "./PredogledStrani";
@@ -34,8 +35,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { koda } = await params;
   const branje = await preberiPredlog(koda);
   const ime = branje.stanje === "ok" ? branje.predlog.kratko_ime : "";
+  const demo = branje.stanje === "ok" && Boolean(branje.predlog.demo);
   return {
-    title: ime ? `Predlog nove spletne strani za ${ime} — KodaTim` : "Predlog nove spletne strani — KodaTim",
+    title: ime
+      ? demo
+        ? `${ime} — predogled nove strani · KodaTim`
+        : `Predlog nove spletne strani za ${ime} — KodaTim`
+      : "Predlog nove spletne strani — KodaTim",
     description: "Kaj smo opazili na vaši spletni strani in kako bi lahko izgledala nova.",
     robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
   };
@@ -48,6 +54,18 @@ export default async function PredlogPage({ params, searchParams }: Props) {
   if (branje.stanje === "nedosegljiv") return <Nedosegljiv />;
   const p = branje.predlog;
   const pripravljeno = datumPredloga(p.ustvarjeno);
+
+  // Cela demo stran v treh paketih (kot Kamenarič); ?paket=1|2|3 izbere začetni paket.
+  if (p.demo) {
+    const izbran = Array.isArray(iskanje.paket) ? iskanje.paket[0] : iskanje.paket;
+    const paket = izbran === "2" ? 2 : izbran === "3" ? 3 : 1;
+    return (
+      <>
+        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        <DemoStran p={p} zacetniPaket={paket} />
+      </>
+    );
+  }
 
   return (
     <>

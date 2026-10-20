@@ -15,7 +15,43 @@ import { cache } from "react";
 const HARVEY = process.env.HARVEY_KODATIM_URL ?? "http://127.0.0.1:5555";
 const KODA = /^[A-Za-z0-9_-]{6,20}$/;
 
-export type Funkcija = "rezervacija" | "narocilo" | "povprasevanje" | "ai_asistent";
+export type Funkcija = "rezervacija" | "narocilo" | "povprasevanje" | "ai_asistent" | "portal";
+
+/**
+ * Demo nove strani v treh paketih (»kot pri Kamenariču«, Luka 20. 10. 2026):
+ * besedila iz njihovih javnih podatkov, slike pa se nalagajo z njihove strani
+ * (pri nas niso shranjene). Številke so samo tiste, ki dobesedno pišejo v
+ * raziskavi.
+ */
+export type DemoVsebina = {
+  nadnaslov: string;
+  naslov: string;
+  podnaslov: string;
+  poziv: string;
+  stevilke: { vrednost: string; oznaka: string }[];
+  ponudba_naslov: string;
+  ponudba: { ime: string; opis: string; slika: string }[];
+  prednosti: { naslov: string; opis: string }[];
+  o_nas: string;
+  koraki: string[];
+  vprasanja: { v: string; o: string }[];
+  google: { naslov: string; opis: string };
+  iskanja: string[];
+  aplikacija: { naslov: string; opis: string; artikli: { ime: string; opis: string }[] };
+  paketi: Record<"1" | "2" | "3", string[]>;
+  paketi_zakaj: Record<"1" | "2" | "3", string>;
+  logo: string;
+  barva: string;
+  slike: string[];
+  kontakt?: { telefon?: string; email?: string; naslov?: string };
+};
+
+/** Na čem stoji predlog: prebrane strani in ugotovitve z viri (za Lukov pregled). */
+export type Raziskava = {
+  prebrano: string;
+  strani: { url: string; vrsta: string }[];
+  dejstva: { id: string; besedilo: string; vir: string; vrsta: string; datum: string }[];
+};
 
 /** Paket iz Lukovega cenika; cena je shranjena s predlogom, da ponudba ostane, kakršna je bila poslana. */
 export type Paket = { st: string; ime: string; cena: string; opis: string; priporocen: boolean };
@@ -47,6 +83,9 @@ export type Predlog = {
   ima_posnetek: boolean;
   ustvarjeno: string;
   ogledov: number;
+  /** Cela demo stran v treh paketih; brez nje je predlog stare oblike. */
+  demo?: DemoVsebina;
+  raziskava?: Raziskava;
 };
 
 /** Priloge prvega maila, kot jih hrani Harvey. */
