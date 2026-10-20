@@ -37,13 +37,28 @@ export type DemoVsebina = {
   vprasanja: { v: string; o: string }[];
   google: { naslov: string; opis: string };
   iskanja: string[];
-  aplikacija: { naslov: string; opis: string; artikli: { ime: string; opis: string }[] };
+  aplikacija: {
+    naslov: string;
+    opis: string;
+    artikli: { ime: string; opis: string }[];
+    /** Polja njihove panoge (mere, material, logotip …) — konfigurator v paketu 3. */
+    polja?: PoljeKonfiguratorja[];
+    /** Kaj stranka dobi po oddaji. */
+    rezultat?: string;
+  };
   paketi: Record<"1" | "2" | "3", string[]>;
   paketi_zakaj: Record<"1" | "2" | "3", string>;
   logo: string;
   barva: string;
   slike: string[];
   kontakt?: { telefon?: string; email?: string; naslov?: string };
+};
+
+export type PoljeKonfiguratorja = {
+  ime: string;
+  vrsta: "stevilo" | "izbira" | "datoteka" | "besedilo";
+  enota?: string;
+  moznosti?: string[];
 };
 
 /** Na čem stoji predlog: prebrane strani in ugotovitve z viri (za Lukov pregled). */

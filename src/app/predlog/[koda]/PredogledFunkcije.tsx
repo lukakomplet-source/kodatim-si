@@ -1,16 +1,20 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Bot, Check, RotateCcw } from "lucide-react";
-import type { Funkcija } from "@/lib/predlogi";
+import { Bot, Check, RotateCcw, Upload } from "lucide-react";
+import type { Funkcija, PoljeKonfiguratorja } from "@/lib/predlogi";
 
 /**
  * Funkcija nove strani, ki jo lastnik lahko preizkusi: izbere storitev, dan in
  * uro, odda naročilo ali vpraša pomočnika. Nič se ne pošlje in nič se ne
  * shrani — polja za osebne podatke so samo za ogled, da nihče ne vpiše svojih.
+ * Polja njihove panoge (mere, material, logotip …) so prava, ker niso osebni
+ * podatki; naložena datoteka ostane na obiskovalčevem računalniku.
  */
 
 type Storitev = { ime: string; opis: string };
+type Vprasanje = { v: string; o: string };
+type Vrednosti = Record<string, string>;
 
 const DNEVI = ["Pon", "Tor", "Sre", "Čet", "Pet"] as const;
 type Dan = (typeof DNEVI)[number];
@@ -30,17 +34,116 @@ export function PredogledFunkcije({
   poziv,
   storitve,
   ime,
+  polja = [],
+  rezultat = "",
+  vprasanja = [],
 }: {
   funkcija: Funkcija;
   poziv: string;
   storitve: Storitev[];
   ime: string;
+  polja?: PoljeKonfiguratorja[];
+  rezultat?: string;
+  vprasanja?: Vprasanje[];
 }) {
   if (funkcija === "rezervacija") return <Rezervacija poziv={poziv} storitve={storitve} />;
-  if (funkcija === "narocilo") return <Narocilo poziv={poziv} storitve={storitve} />;
-  if (funkcija === "ai_asistent") return <Pomocnik ime={ime} storitve={storitve} />;
+  if (funkcija === "narocilo") return <Narocilo poziv={poziv} storitve={storitve} polja={polja} rezultat={rezultat} />;
+  if (funkcija === "ai_asistent") return <Pomocnik ime={ime} storitve={storitve} vprasanja={vprasanja} />;
   if (funkcija === "portal") return <Portal ime={ime} storitve={storitve} />;
-  return <Povprasevanje poziv={poziv} storitve={storitve} />;
+  return <Povprasevanje poziv={poziv} storitve={storitve} polja={polja} rezultat={rezultat} />;
+}
+
+/* ───────────── konfigurator: polja njihove panoge ───────────── */
+
+function povzetek(vrednosti: Vrednosti): string {
+  return Object.entries(vrednosti)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+}
+
+function Konfigurator({
+  polja,
+  vrednosti,
+  nastavi,
+}: {
+  polja: PoljeKonfiguratorja[];
+  vrednosti: Vrednosti;
+  nastavi: (ime: string, vrednost: string) => void;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {polja.map((p) => {
+        const v = vrednosti[p.ime] ?? "";
+        if (p.vrsta === "izbira" && p.moznosti && p.moznosti.length > 1) {
+          return (
+            <div key={p.ime} className="sm:col-span-2">
+              <p className="mb-2 text-xs font-medium text-zinc-500">{p.ime}</p>
+              <div className="flex flex-wrap gap-2">
+                {p.moznosti.map((m) => (
+                  <Izbira key={m} izbrano={v === m} onClick={() => nastavi(p.ime, m)}>
+                    {m}
+                  </Izbira>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        if (p.vrsta === "datoteka") {
+          return <Nalaganje key={p.ime} ime={p.ime} vrednost={v} nastavi={(x) => nastavi(p.ime, x)} />;
+        }
+        return (
+          <label key={p.ime} className="block">
+            <span className="text-xs font-medium text-zinc-500">
+              {p.ime}
+              {p.enota ? ` (${p.enota})` : ""}
+            </span>
+            <input
+              type={p.vrsta === "stevilo" ? "number" : "text"}
+              min={0}
+              value={v}
+              onChange={(e) => nastavi(p.ime, e.target.value)}
+              placeholder={p.vrsta === "stevilo" ? "npr. 120" : ""}
+              className="mt-1 block w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500"
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function Nalaganje({ ime, vrednost, nastavi }: { ime: string; vrednost: string; nastavi: (v: string) => void }) {
+  const [predogled, setPredogled] = useState<string | null>(null);
+  return (
+    <label className="block cursor-pointer rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center text-sm text-zinc-600 transition hover:border-zinc-500 sm:col-span-2">
+      <input
+        type="file"
+        accept="image/*,.pdf"
+        className="sr-only"
+        onChange={(e) => {
+          const datoteka = e.target.files?.[0];
+          if (!datoteka) return;
+          nastavi(datoteka.name);
+          if (datoteka.type.startsWith("image/")) {
+            const bralnik = new FileReader();
+            bralnik.onload = () => setPredogled(String(bralnik.result));
+            bralnik.readAsDataURL(datoteka);
+          } else {
+            setPredogled(null);
+          }
+        }}
+      />
+      {predogled ? (
+        // eslint-disable-next-line @next/next/no-img-element -- predogled naložene datoteke (data URL)
+        <img src={predogled} alt="" className="mx-auto h-20 w-auto object-contain" />
+      ) : (
+        <Upload className="mx-auto h-5 w-5 text-zinc-400" />
+      )}
+      <span className="mt-2 block font-medium text-zinc-800">{vrednost || ime}</span>
+      <span className="block text-xs text-zinc-400">Predogled — datoteka ostane na vašem računalniku.</span>
+    </label>
+  );
 }
 
 /** B2B portal: stalna stranka se prijavi, naroči s količinami ali ponovi zadnje naročilo. */
@@ -197,17 +300,31 @@ function Rezervacija({ poziv, storitve }: { poziv: string; storitve: Storitev[] 
   );
 }
 
-function Narocilo({ poziv, storitve }: { poziv: string; storitve: Storitev[] }) {
+function Narocilo({
+  poziv,
+  storitve,
+  polja = [],
+  rezultat = "",
+}: {
+  poziv: string;
+  storitve: Storitev[];
+  polja?: PoljeKonfiguratorja[];
+  rezultat?: string;
+}) {
   const [izbrane, setIzbrane] = useState<string[]>(storitve[0] ? [storitve[0].ime] : []);
   const [dan, setDan] = useState<Dan>("Sre");
+  const [vrednosti, setVrednosti] = useState<Vrednosti>({});
   const [potrjeno, setPotrjeno] = useState(false);
-  const zamik = storitve.length > 0 ? 1 : 0;
+  const zamik = (storitve.length > 0 ? 1 : 0) + (polja.length > 0 ? 1 : 0);
 
   if (potrjeno) {
+    const podrobnosti = povzetek(vrednosti);
     return (
       <Potrjeno
         naslov="Naročilo je oddano"
-        besedilo={`${izbrane.length ? `${izbrane.join(", ")}, ` : ""}${KDAJ[dan]}. Vse podatke dobite naenkrat v e-pošti, stranka pa potrditev — nič ni treba zapisovati po telefonu.`}
+        besedilo={`${izbrane.length ? `${izbrane.join(", ")}, ` : ""}${podrobnosti ? `${podrobnosti}, ` : ""}${KDAJ[dan]}. ${
+          rezultat || "Vse podatke dobite naenkrat v e-pošti, stranka pa potrditev — nič ni treba zapisovati po telefonu."
+        }`}
         znova={() => setPotrjeno(false)}
       />
     );
@@ -231,6 +348,11 @@ function Narocilo({ poziv, storitve }: { poziv: string; storitve: Storitev[] }) 
               </Izbira>
             ))}
           </div>
+        </Korak>
+      )}
+      {polja.length > 0 && (
+        <Korak stevilka={storitve.length > 0 ? 2 : 1} naslov="Podrobnosti">
+          <Konfigurator polja={polja} vrednosti={vrednosti} nastavi={(k, v) => setVrednosti((s) => ({ ...s, [k]: v }))} />
         </Korak>
       )}
       <Korak stevilka={1 + zamik} naslov="Kdaj vam ustreza?">
@@ -258,15 +380,29 @@ function Narocilo({ poziv, storitve }: { poziv: string; storitve: Storitev[] }) 
   );
 }
 
-function Povprasevanje({ poziv, storitve }: { poziv: string; storitve: Storitev[] }) {
+function Povprasevanje({
+  poziv,
+  storitve,
+  polja = [],
+  rezultat = "",
+}: {
+  poziv: string;
+  storitve: Storitev[];
+  polja?: PoljeKonfiguratorja[];
+  rezultat?: string;
+}) {
   const [storitev, setStoritev] = useState(storitve[0]?.ime ?? "");
+  const [vrednosti, setVrednosti] = useState<Vrednosti>({});
   const [potrjeno, setPotrjeno] = useState(false);
 
   if (potrjeno) {
+    const podrobnosti = [storitev, povzetek(vrednosti)].filter(Boolean).join(", ");
     return (
       <Potrjeno
         naslov="Povpraševanje je poslano"
-        besedilo={`Vi dobite sporočilo z vsemi podatki${storitev ? ` (${storitev})` : ""}, stranka pa potrdilo, da ste ga prejeli. Odgovorite, ko vam ustreza.`}
+        besedilo={`Vi dobite sporočilo z vsemi podatki${podrobnosti ? ` (${podrobnosti})` : ""}, stranka pa potrdilo. ${
+          rezultat || "Odgovorite, ko vam ustreza."
+        }`}
         znova={() => setPotrjeno(false)}
       />
     );
@@ -284,12 +420,17 @@ function Povprasevanje({ poziv, storitve }: { poziv: string; storitve: Storitev[
           </div>
         </Korak>
       )}
-      <Korak stevilka={storitve.length > 0 ? 2 : 1} naslov="Podatki stranke">
+      {polja.length > 0 && (
+        <Korak stevilka={storitve.length > 0 ? 2 : 1} naslov="Podrobnosti">
+          <Konfigurator polja={polja} vrednosti={vrednosti} nastavi={(k, v) => setVrednosti((s) => ({ ...s, [k]: v }))} />
+        </Korak>
+      )}
+      <Korak stevilka={(storitve.length > 0 ? 2 : 1) + (polja.length > 0 ? 1 : 0)} naslov="Podatki stranke">
         <div className="grid gap-3 sm:grid-cols-2">
           <Polje oznaka="Ime in priimek" />
           <Polje oznaka="E-pošta ali telefon" />
           <div className="sm:col-span-2">
-            <Polje oznaka="Sporočilo" vrstice={3} />
+            <Polje oznaka="Sporočilo" vrstice={polja.length > 0 ? 2 : 3} />
           </div>
         </div>
       </Korak>
@@ -300,12 +441,15 @@ function Povprasevanje({ poziv, storitve }: { poziv: string; storitve: Storitev[
 
 type Vrstica = { kdo: "stranka" | "pomocnik"; besedilo: string };
 
-function Pomocnik({ ime, storitve }: { ime: string; storitve: Storitev[] }) {
+function Pomocnik({ ime, storitve, vprasanja: pravaVprasanja = [] }: { ime: string; storitve: Storitev[]; vprasanja?: Vprasanje[] }) {
+  // Njihova resnična vprašanja (iz raziskave), sicer vprašanja o storitvah.
   const vprasanja = [
-    ...storitve.slice(0, 3).map((s) => ({
-      vprasanje: `Povejte mi več: ${s.ime}`,
-      odgovor: s.opis || `${s.ime} je ena naših storitev. Za podrobnosti pustite kontakt in vas pokličemo.`,
-    })),
+    ...(pravaVprasanja.length > 0
+      ? pravaVprasanja.slice(0, 4).map((x) => ({ vprasanje: x.v, odgovor: x.o }))
+      : storitve.slice(0, 3).map((s) => ({
+          vprasanje: `Povejte mi več: ${s.ime}`,
+          odgovor: s.opis || `${s.ime} je ena naših storitev. Za podrobnosti pustite kontakt in vas pokličemo.`,
+        }))),
     {
       vprasanje: "Kako se dogovorimo?",
       odgovor: "Pustite ime in telefon, pa vas pokličemo, ko vam ustreza.",

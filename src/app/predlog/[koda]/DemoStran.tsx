@@ -1,7 +1,8 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- slike se nalagajo z njihove strani (pri nas jih ni), optimizacija jih ne more brati */
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import {
   ArrowRight,
   Check,
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Zap,
 } from "lucide-react";
 import type { DemoVsebina, Funkcija, Predlog } from "@/lib/predlogi";
 import { PredogledFunkcije } from "./PredogledFunkcije";
@@ -53,6 +55,16 @@ export function DemoStran({ p, zacetniPaket, zaSliko = false }: { p: Predlog; za
   const barva = /^#[0-9a-f]{6}$/i.test(d.barva) ? d.barva : PRIVZETA_BARVA;
   const slog = { "--b": barva } as CSSProperties;
 
+  // Vsaka slika enkrat: prve tri fotografije v uvodu, nato pri izdelkih, ostale v »O nas« in
+  // galeriji. Tam samo fotografije (JPG, WebP): PNG so pogosto ikone ali logotipi njihovih strank.
+  const fotografije = d.slike.filter(jeFotografija);
+  const uvod = fotografije.slice(0, 3);
+  const vUvodu = new Set(uvod);
+  const vPonudbi = new Set(d.ponudba.map((x) => x.slika).filter(Boolean));
+  const proste = fotografije.filter((s) => !vUvodu.has(s) && !vPonudbi.has(s));
+  const slikaONas = proste[0];
+  const galerija = proste.slice(1, 7);
+
   function setPaket(novi: Paket) {
     setPaketStanje(novi);
     const url = new URL(window.location.href);
@@ -61,20 +73,75 @@ export function DemoStran({ p, zacetniPaket, zaSliko = false }: { p: Predlog; za
   }
 
   return (
-    <div style={slog} className="min-h-screen overflow-x-hidden bg-white text-[#0b1530] antialiased">
-      {!zaSliko && <DemoVrstica p={p} paket={paket} setPaket={setPaket} />}
-      <Glava p={p} d={d} paket={paket} />
-      <Uvod p={p} d={d} paket={paket} />
-      <Ponudba d={d} />
-      {paket === 3 && <Aplikacija p={p} d={d} />}
-      <Prednosti d={d} />
-      {paket >= 2 && <Vidnost p={p} d={d} />}
-      {paket < 3 && !zaSliko && <Namig p={p} paket={paket} setPaket={setPaket} />}
-      <Koraki d={d} />
-      <ONas p={p} d={d} />
-      <Kontakt p={p} d={d} />
-      {!zaSliko && <KajDobite p={p} d={d} paket={paket} setPaket={setPaket} />}
-      <Noga p={p} d={d} />
+    // Za slike v mailu brez animacij, da se nič ne ujame napol vidno.
+    <BrezAnimacij.Provider value={zaSliko}>
+      <div style={slog} className="min-h-screen overflow-x-hidden bg-white text-[#0b1530] antialiased">
+        {!zaSliko && <DemoVrstica p={p} paket={paket} setPaket={setPaket} />}
+        <Glava p={p} d={d} paket={paket} />
+        <Uvod p={p} d={d} paket={paket} slike={uvod} />
+        <Trak d={d} />
+        <Ponudba d={d} />
+        {paket === 3 && <Aplikacija p={p} d={d} />}
+        <Prednosti d={d} />
+        {paket >= 2 && <Vidnost p={p} d={d} />}
+        {paket < 3 && !zaSliko && <Namig p={p} paket={paket} setPaket={setPaket} />}
+        <Galerija slike={galerija} />
+        <Koraki d={d} />
+        <ONas p={p} d={d} slika={slikaONas} />
+        <Kontakt p={p} d={d} />
+        {!zaSliko && <ZaLastnika p={p} />}
+        {!zaSliko && <KajDobite p={p} d={d} paket={paket} setPaket={setPaket} />}
+        <Noga p={p} d={d} />
+      </div>
+    </BrezAnimacij.Provider>
+  );
+}
+
+function jeFotografija(url: string): boolean {
+  return /\.(jpe?g|webp)(\?|$)/i.test(url);
+}
+
+/* ───────────────────────── animacije ───────────────────────── */
+
+const BrezAnimacij = createContext(false);
+const MEHKO = [0.16, 1, 0.3, 1] as const;
+
+/** Razdelek se ob drsenju mehko prikaže; pri slikah za mail je takoj viden. */
+function Pojav({ children, className, zamik = 0 }: { children: ReactNode; className?: string; zamik?: number }) {
+  const brez = useContext(BrezAnimacij);
+  if (brez) return <div className={className}>{children}</div>;
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.6, delay: zamik, ease: MEHKO }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** Trak pod uvodom: njihovi izdelki in prednosti, ki se počasi premikajo. */
+function Trak({ d }: { d: DemoVsebina }) {
+  const brez = useContext(BrezAnimacij);
+  const besede = [...d.ponudba.map((x) => x.ime), ...d.prednosti.map((x) => x.naslov)];
+  if (besede.length < 3) return null;
+  return (
+    <div className="overflow-hidden bg-[var(--b)] py-3 text-white">
+      <motion.div
+        className="flex w-max gap-10 whitespace-nowrap text-sm font-semibold"
+        animate={brez ? undefined : { x: ["0%", "-50%"] }}
+        transition={{ duration: 32, ease: "linear", repeat: Infinity }}
+      >
+        {[...besede, ...besede].map((b, i) => (
+          <span key={i} className="flex items-center gap-10">
+            {b}
+            <Sparkles className="h-3.5 w-3.5 opacity-60" />
+          </span>
+        ))}
+      </motion.div>
     </div>
   );
 }
@@ -214,12 +281,12 @@ function Glava({ p, d, paket }: { p: Predlog; d: DemoVsebina; paket: Paket }) {
   );
 }
 
-function Uvod({ p, d, paket }: { p: Predlog; d: DemoVsebina; paket: Paket }) {
-  const [prva, druga, tretja] = d.slike;
+function Uvod({ p, d, paket, slike }: { p: Predlog; d: DemoVsebina; paket: Paket; slike: string[] }) {
+  const [prva, druga, tretja] = slike;
   return (
     <section className="overflow-hidden bg-gradient-to-b from-white to-[#f6f7f9]">
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 pb-14 pt-10 lg:grid-cols-[1fr_1.05fr] lg:pb-20 lg:pt-14">
-        <div className="min-w-0">
+        <Pojav className="min-w-0">
           {d.nadnaslov && (
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--b)]">{d.nadnaslov}</p>
           )}
@@ -249,13 +316,13 @@ function Uvod({ p, d, paket }: { p: Predlog; d: DemoVsebina; paket: Paket }) {
               ))}
             </dl>
           )}
-        </div>
+        </Pojav>
         {prva ? (
-          <div className="grid h-[320px] grid-cols-6 grid-rows-6 gap-3 sm:h-[460px]">
+          <Pojav zamik={0.12} className="grid h-[320px] grid-cols-6 grid-rows-6 gap-3 sm:h-[460px]">
             <Slika takoj src={prva} alt={p.kratko_ime} className={`h-full w-full rounded-2xl ${druga ? "col-span-6 row-span-4" : "col-span-6 row-span-6"}`} />
             {druga && <Slika takoj src={druga} alt="" className={`h-full w-full rounded-2xl ${tretja ? "col-span-3" : "col-span-6"} row-span-2`} />}
             {tretja && <Slika takoj src={tretja} alt="" className="col-span-3 row-span-2 h-full w-full rounded-2xl" />}
-          </div>
+          </Pojav>
         ) : (
           <div className="flex h-[320px] items-center justify-center rounded-3xl bg-gradient-to-br from-[var(--b)] to-[color-mix(in_srgb,var(--b)_55%,black)] p-10 text-center text-white sm:h-[420px]">
             <div>
@@ -285,42 +352,54 @@ function Ponudba({ d }: { d: DemoVsebina }) {
   // Slika gre k izdelku samo, če ji vemo pomen (ime datoteke, opis). Kadar jih za
   // večino izdelkov ne vemo, so kartice brez slik, njihove fotografije pa v galeriji —
   // nikoli slika pod napačnim izdelkom.
-  const vUvodu = new Set(d.slike.slice(0, 3));
-  const vPonudbi = new Set(d.ponudba.map((x) => x.slika).filter(Boolean));
-  const sSlikami = vPonudbi.size * 2 >= d.ponudba.length;
-  const galerija = sSlikami ? [] : d.slike.filter((s) => !vUvodu.has(s) && !vPonudbi.has(s)).slice(0, 4);
+  const sSlikami = d.ponudba.filter((x) => x.slika).length * 2 >= d.ponudba.length;
   return (
     <section id="ponudba" className="mx-auto max-w-7xl scroll-mt-14 px-4 py-16">
-      <Naslov nad="Ponudba">{d.ponudba_naslov}</Naslov>
+      <Pojav>
+        <Naslov nad="Ponudba">{d.ponudba_naslov}</Naslov>
+      </Pojav>
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {d.ponudba.map((x) =>
-          sSlikami ? (
-            <article key={x.ime} className="group overflow-hidden rounded-2xl border border-[#e3e6ee] bg-white transition hover:border-[var(--b)] hover:shadow-lg hover:shadow-black/5">
-              <Slika src={x.slika} alt={x.ime} className="aspect-[4/3] w-full transition duration-500 group-hover:scale-[1.03]" />
-              <Opis x={x} />
-            </article>
-          ) : (
-            <article key={x.ime} className="rounded-2xl border border-[#e3e6ee] bg-white transition hover:border-[var(--b)] hover:shadow-lg hover:shadow-black/5">
-              <div className="px-5 pt-5">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--b)_10%,white)] text-lg font-extrabold text-[var(--b)]">
-                  {x.ime.charAt(0)}
-                </span>
-              </div>
-              <Opis x={x} />
-            </article>
-          ),
-        )}
+        {d.ponudba.map((x, i) => (
+          <Pojav key={x.ime} zamik={i * 0.06} className="h-full">
+            {sSlikami ? (
+              <article className="group h-full overflow-hidden rounded-2xl border border-[#e3e6ee] bg-white transition hover:-translate-y-1 hover:border-[var(--b)] hover:shadow-xl hover:shadow-black/5">
+                <div className="overflow-hidden">
+                  <Slika src={x.slika} alt={x.ime} className="aspect-[4/3] w-full transition duration-700 group-hover:scale-105" />
+                </div>
+                <Opis x={x} />
+              </article>
+            ) : (
+              <article className="h-full rounded-2xl border border-[#e3e6ee] bg-white transition hover:-translate-y-1 hover:border-[var(--b)] hover:shadow-xl hover:shadow-black/5">
+                <div className="px-5 pt-5">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--b)_10%,white)] text-lg font-extrabold text-[var(--b)]">
+                    {x.ime.charAt(0)}
+                  </span>
+                </div>
+                <Opis x={x} />
+              </article>
+            )}
+          </Pojav>
+        ))}
       </div>
-      {galerija.length >= 2 && (
-        <div className="mt-10">
-          <p className="text-sm font-semibold text-[#1f2a44]">Iz naših del</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {galerija.map((s) => (
-              <Slika key={s} src={s} alt="" className="aspect-[4/3] w-full rounded-xl" />
-            ))}
-          </div>
-        </div>
-      )}
+    </section>
+  );
+}
+
+/** Njihove fotografije, ki jih nismo pokazali drugje — največ šest, prva večja. */
+function Galerija({ slike }: { slike: string[] }) {
+  if (slike.length < 3) return null;
+  return (
+    <section className="mx-auto max-w-7xl px-4 py-16">
+      <Pojav>
+        <Naslov nad="Galerija">Iz naših del</Naslov>
+      </Pojav>
+      <div className="mt-8 grid auto-rows-[160px] grid-cols-2 gap-3 sm:auto-rows-[200px] lg:grid-cols-4">
+        {slike.map((s, i) => (
+          <Pojav key={s} zamik={i * 0.05} className={`group overflow-hidden rounded-2xl ${i === 0 ? "col-span-2 row-span-2" : ""}`}>
+            <Slika src={s} alt="" className="h-full w-full transition duration-700 group-hover:scale-105" />
+          </Pojav>
+        ))}
+      </div>
     </section>
   );
 }
@@ -342,16 +421,18 @@ function Prednosti({ d }: { d: DemoVsebina }) {
   return (
     <section className="bg-[#f6f7f9]">
       <div className="mx-auto max-w-7xl px-4 py-16">
-        <Naslov nad="Zakaj mi">Zakaj k nam</Naslov>
+        <Pojav>
+          <Naslov nad="Zakaj mi">Zakaj k nam</Naslov>
+        </Pojav>
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          {d.prednosti.map((x) => (
-            <div key={x.naslov} className="rounded-2xl border border-[#e3e6ee] bg-white p-6">
+          {d.prednosti.map((x, i) => (
+            <Pojav key={x.naslov} zamik={i * 0.08} className="rounded-2xl border border-[#e3e6ee] bg-white p-6">
               <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--b)_10%,white)]">
                 <Star className="h-5 w-5 text-[var(--b)]" />
               </span>
               <p className="mt-4 font-bold">{x.naslov}</p>
               <p className="mt-1.5 text-sm leading-relaxed text-[#4b5563]">{x.opis}</p>
-            </div>
+            </Pojav>
           ))}
         </div>
       </div>
@@ -435,7 +516,15 @@ function Aplikacija({ p, d }: { p: Predlog; d: DemoVsebina }) {
         </div>
         <div className="rounded-2xl bg-white p-6 text-[#0b1530] shadow-2xl shadow-black/30 sm:p-8">
           <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-[#6b7280]">Preizkusite — tako vidi stranka</p>
-          <PredogledFunkcije funkcija={p.funkcija} poziv={d.poziv} storitve={artikli} ime={p.kratko_ime} />
+          <PredogledFunkcije
+            funkcija={p.funkcija}
+            poziv={d.poziv}
+            storitve={artikli}
+            ime={p.kratko_ime}
+            polja={d.aplikacija.polja}
+            rezultat={d.aplikacija.rezultat}
+            vprasanja={d.vprasanja}
+          />
         </div>
       </div>
     </section>
@@ -474,12 +563,16 @@ function Koraki({ d }: { d: DemoVsebina }) {
   if (d.koraki.length === 0) return null;
   return (
     <section className="mx-auto max-w-7xl px-4 py-16">
-      <Naslov nad="Kako poteka">Do nas v {d.koraki.length} korakih</Naslov>
+      <Pojav>
+        <Naslov nad="Kako poteka">Do nas v {d.koraki.length} korakih</Naslov>
+      </Pojav>
       <ol className="mt-8 grid gap-4 sm:grid-cols-3">
         {d.koraki.map((k, i) => (
-          <li key={k} className="rounded-2xl border border-[#e3e6ee] bg-white p-6">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--b)] text-sm font-bold text-white">{i + 1}</span>
-            <p className="mt-4 font-semibold leading-snug">{k}</p>
+          <li key={k}>
+            <Pojav zamik={i * 0.1} className="h-full rounded-2xl border border-[#e3e6ee] bg-white p-6">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--b)] text-sm font-bold text-white">{i + 1}</span>
+              <p className="mt-4 font-semibold leading-snug">{k}</p>
+            </Pojav>
           </li>
         ))}
       </ol>
@@ -487,17 +580,52 @@ function Koraki({ d }: { d: DemoVsebina }) {
   );
 }
 
-function ONas({ p, d }: { p: Predlog; d: DemoVsebina }) {
+function ONas({ p, d, slika }: { p: Predlog; d: DemoVsebina; slika?: string }) {
   if (!d.o_nas) return null;
-  const slika = d.slike[3] ?? d.slike[1];
   return (
     <section id="o-nas" className="scroll-mt-14 bg-[#f6f7f9]">
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 lg:grid-cols-2">
-        <div>
+        <Pojav>
           <Naslov nad="O nas">{p.kratko_ime}</Naslov>
           <p className="mt-5 text-lg leading-relaxed text-[#374151]">{d.o_nas}</p>
+        </Pojav>
+        {slika && (
+          <Pojav zamik={0.1} className="overflow-hidden rounded-2xl">
+            <Slika src={slika} alt={p.kratko_ime} className="aspect-[4/3] w-full" />
+          </Pojav>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Za lastnika (ne del njihove strani): kaj mu nova stran prinese, v Lukovem slogu. */
+function ZaLastnika({ p }: { p: Predlog }) {
+  if (!p.zakaj || p.zakaj.length === 0) return null;
+  const IKONE = [Search, Sparkles, Zap];
+  return (
+    <section className="bg-[#0b1530] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-16">
+        <Pojav>
+          <Naslov nad={`Za vas · predlog KodaTim za ${p.kratko_ime}`} svetlo>
+            Zakaj se vam nova stran splača
+          </Naslov>
+          {p.funkcija_opis && <p className="mt-4 max-w-2xl text-lg text-white/80">{p.funkcija_opis}</p>}
+        </Pojav>
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          {p.zakaj.map((z, i) => {
+            const Ikona = IKONE[i % IKONE.length];
+            return (
+              <Pojav key={z.naslov} zamik={i * 0.08} className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--b)]">
+                  <Ikona className="h-5 w-5 text-white" />
+                </span>
+                <p className="mt-4 font-bold">{z.naslov}</p>
+                <p className="mt-2 text-sm leading-relaxed text-white/75">{z.besedilo}</p>
+              </Pojav>
+            );
+          })}
         </div>
-        {slika && <Slika src={slika} alt={p.kratko_ime} className="aspect-[4/3] w-full rounded-2xl" />}
       </div>
     </section>
   );
