@@ -73,6 +73,36 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
           </div>
         ) : null}
 
+        {r.raziskavaResitve ? (
+          <div>
+            <dt className="text-zinc-500">
+              Kako to rešujejo drugi
+              {r.raziskavaResitve.ponovno
+                ? " · raziskava panoge, uporabljena znova"
+                : ` · ${r.raziskavaResitve.krogi} ${r.raziskavaResitve.krogi === 1 ? "krog" : r.raziskavaResitve.krogi === 2 ? "kroga" : "krogi"}, ${r.raziskavaResitve.branj} prebranih strani, ${r.raziskavaResitve.minut.toLocaleString("sl-SI")} min`}
+              {r.raziskavaResitve.izpadlo > 0 ? ` · ${r.raziskavaResitve.izpadlo} nepreverjenih izsekov izpadlo` : ""}
+            </dt>
+            {r.raziskavaResitve.pristopi.map((p, i) => (
+              <dd key={i}>
+                <span className="font-medium text-zinc-900">{p.pristop}</span>
+                {p.opis ? <span> — {p.opis}</span> : null}
+                {p.viri.map((v, j) => (
+                  <span key={j} className="block text-zinc-600">
+                    »{v.odlomek}« <Vir url={v.url} />
+                    {v.tuj ? <span className="ml-1 text-amber-700">(tuj vir)</span> : null}
+                  </span>
+                ))}
+              </dd>
+            ))}
+            {r.raziskavaResitve.priporocilo ? (
+              <dd className="text-zinc-900">Za njih: {r.raziskavaResitve.priporocilo}</dd>
+            ) : null}
+            {r.raziskavaResitve.nasvet ? (
+              <dd className="text-zinc-600">Brezplačen nasvet v mailu: {r.raziskavaResitve.nasvet}</dd>
+            ) : null}
+          </div>
+        ) : null}
+
         {r.izpuscene.length > 0 || r.neKazeSe.length > 0 ? (
           <div>
             <dt className="text-zinc-500">Česa ni ponudil</dt>

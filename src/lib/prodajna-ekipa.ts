@@ -110,6 +110,19 @@ export type Razmisljanje = {
   zakajPaket: string;
   ocena: number | null;
   kritik: string;
+  /** Kako problem rešujejo drugi (forumi, revije, OZS), s preverjenimi viri. */
+  raziskavaResitve?: RaziskavaResitve | null;
+};
+
+export type RaziskavaResitve = {
+  pristopi: { pristop: string; opis: string; viri: { url: string; odlomek: string; tuj: boolean }[] }[];
+  priporocilo: string;
+  nasvet: string;
+  krogi: number;
+  branj: number;
+  izpadlo: number;
+  minut: number;
+  ponovno: boolean;
 };
 
 /** Profil panoge (Harvey, harvey/panoga.py): kaj lastnike v panogi muči, z viri. */
