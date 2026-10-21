@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
-import { novaRaziskava, spremeniFazo, ustaviRaziskavo, veljavenId } from "@/lib/priloznosti";
+import { novaRaziskava, predlagajTeme, spremeniFazo, ustaviRaziskavo, veljavenId } from "@/lib/priloznosti";
 import { FAZE, FAZE_S_SIGNALOM, type Faza } from "@/lib/priloznostiFaze";
 
 type Rezultat = { ok: boolean; napaka?: string; id?: string };
@@ -52,4 +52,13 @@ export async function fazaAkcija(id: string, faza: Faza, opomba: string): Promis
   revalidatePath(`/admin/priloznosti/${id}`);
   revalidatePath("/admin/priloznosti");
   return r.ok ? { ok: true } : { ok: false, napaka: r.napaka ?? "Sprememba ni uspela." };
+}
+
+/** Agent sam predlaga 3–5 tem iz registra in preteklih raziskav; Harvey to naredi v ozadju (nekaj minut). */
+export async function predlagajTemeAkcija(): Promise<Rezultat> {
+  const napaka = await admin();
+  if (napaka) return { ok: false, napaka };
+  const r = await predlagajTeme();
+  revalidatePath("/admin/priloznosti");
+  return r.ok ? { ok: true } : { ok: false, napaka: r.napaka ?? "Harvey zahteve ni sprejel." };
 }

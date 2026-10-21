@@ -7,7 +7,8 @@ export type { Faza };
  * Raziskovalec priložnosti (Harvey, harvey/priloznosti.py, 127.0.0.1:5555):
  * raziskava je vprašanje s proračunom, ki teče v krogih. V vsakem krogu agent
  * z orodji išče in bere splet (koda zapiše vsak dejanski korak), koda preveri
- * vsak navedeni odlomek na strani, neodvisni ocenjevalec napade rezultat.
+ * vsak navedeni odlomek na strani, skeptik poskuša sklep ovreči. Kdaj je dovolj,
+ * odloči agent sam; koda samo varuje (proračun, preverjeni dokazi, zastoj).
  * Tu se samo bere in pošilja Lukove odločitve; nič se ne izmišljuje.
  */
 
@@ -35,6 +36,7 @@ export type PovzetekRaziskave = {
   ustvarjeno: string;
   posodobljeno: string;
   napaka: string;
+  zakaj_izid?: string;
 };
 
 export type Hipoteza = { id: string; trditev: string; stanje: string; za: string; proti: string; kaj_bi_jo_ovrglo: string };
@@ -82,9 +84,17 @@ export type Sinteza = {
     neznano: string[];
   };
   naslednji_korak?: string;
+  odlocitev?: "nadaljuj" | "dovolj";
+  zakaj?: string;
+  odgovori_skeptiku?: { ugovor: string; odgovor: string }[];
+  ugotovitve?: { naslov: string; besedilo: string }[];
 };
 
+export type Ugovor = { ugovor: string; zakaj: string; kaj_bi_razresilo: string; usodno: boolean; za_luko: boolean };
+
 export type Ocena = {
+  ugovori?: Ugovor[];
+  zaupanje?: number;
   ocene?: Record<string, number>;
   povprecje?: number;
   nepodprto?: string[];
@@ -98,7 +108,7 @@ export type Ocena = {
 export type Korak = {
   id: number;
   krog: number;
-  vrsta: "iskanje" | "branje" | "krog" | "ocenjevalec" | string;
+  vrsta: "iskanje" | "branje" | "register" | "krog" | "ocenjevalec" | string;
   vsebina: string;
   izid: string;
   podatki: Record<string, unknown>;
@@ -163,6 +173,22 @@ export type Raziskava = {
   posodobljeno: string;
   koraki: Korak[];
   dokazi: Dokaz[];
+  /** Delovni dnevnik, ki ga agent piše sam (njegov spomin med krogi). */
+  dnevnik?: string;
+};
+
+export type Tema = { vprasanje: string; zakaj: string; signal: string; register: string; poraba: string; viri: string[] };
+
+export type PredlogTem = {
+  id: number;
+  stanje: "caka" | "v_teku" | "koncano" | "napaka";
+  teme: Tema[];
+  koraki: { orodje: string; kaj: string }[];
+  napaka: string;
+  stroski_usd: number;
+  trajanje_s: number;
+  ustvarjeno: string;
+  posodobljeno: string;
 };
 
 async function izHarveyja<T>(pot: string, init?: RequestInit): Promise<T> {
@@ -222,4 +248,16 @@ export function ustaviRaziskavo(id: string) {
 
 export function spremeniFazo(id: string, faza: Faza, opomba: string) {
   return poslji(`/api/priloznosti/${id}/faza`, { faza, opomba });
+}
+
+export async function preberiTeme(): Promise<PredlogTem[] | null> {
+  try {
+    return (await izHarveyja<{ predlogi: PredlogTem[] }>("/api/priloznosti/teme")).predlogi;
+  } catch {
+    return null;
+  }
+}
+
+export function predlagajTeme() {
+  return poslji("/api/priloznosti/teme");
 }

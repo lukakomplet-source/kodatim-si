@@ -57,25 +57,33 @@ function Povezava({ url, children }: { url: string; children?: ReactNode }) {
 function KrogDela({ krog, koraki }: { krog: number; koraki: Korak[] }) {
   const iskanja = koraki.filter((k) => k.vrsta === "iskanje");
   const branja = koraki.filter((k) => k.vrsta === "branje");
+  const registra = koraki.filter((k) => k.vrsta === "register");
   const povzetek = koraki.find((k) => k.vrsta === "krog");
   const ocena = koraki.find((k) => k.vrsta === "ocenjevalec");
+  const zakaj = typeof povzetek?.podatki?.zakaj === "string" ? povzetek.podatki.zakaj : "";
   return (
     <details className="rounded-xl bg-white p-3 ring-1 ring-zinc-200" open={!povzetek}>
       <summary className="cursor-pointer text-sm font-medium text-zinc-900">
         Krog {krog}: {iskanja.length} iskanj, {branja.length} prebranih strani
+        {registra.length ? `, ${registra.length} klicev registra` : ""}
         {povzetek ? ` · ${povzetek.izid}` : " · teče"}
-        {ocena ? ` · ocenjevalec ${ocena.izid}` : ""}
+        {ocena ? ` · skeptik: ${ocena.izid}` : ""}
       </summary>
       {povzetek?.vsebina ? <p className="mt-2 text-sm text-zinc-700">{povzetek.vsebina}</p> : null}
+      {zakaj ? <p className="mt-1 text-sm text-zinc-600">Zakaj tako: {zakaj}</p> : null}
       <ol className="mt-2 space-y-1 text-xs text-zinc-600">
         {koraki
-          .filter((k) => k.vrsta === "iskanje" || k.vrsta === "branje")
+          .filter((k) => k.vrsta === "iskanje" || k.vrsta === "branje" || k.vrsta === "register")
           .map((k) => (
             <li key={k.id} className="flex gap-2">
               <span className="w-12 shrink-0 tabular-nums text-zinc-400">{cas(k.cas).split(" ").pop()}</span>
               {k.vrsta === "iskanje" ? (
                 <span>
                   Iskanje »{k.vsebina}« — {k.izid}
+                </span>
+              ) : k.vrsta === "register" ? (
+                <span>
+                  Register: {k.vsebina} — {k.izid}
                 </span>
               ) : (
                 <span>
@@ -85,7 +93,7 @@ function KrogDela({ krog, koraki }: { krog: number; koraki: Korak[] }) {
             </li>
           ))}
       </ol>
-      {ocena ? <p className="mt-2 text-xs text-zinc-600">Ocenjevalec: {ocena.vsebina}</p> : null}
+      {ocena ? <p className="mt-2 text-xs text-zinc-600">Skeptik: {ocena.vsebina}</p> : null}
     </details>
   );
 }
@@ -228,21 +236,70 @@ export default async function RaziskavaPage({ params }: { params: Promise<{ id: 
         )}
       </Razdelek>
 
-      <Razdelek naslov="Ali je raziskava dovolj dobra" opis="Pogoje preveri koda; ocenjevalec je ločen klic brez orodij, ki išče, kje rezultat ne drži.">
+      <Razdelek
+        naslov="Odločitev agenta in skeptik"
+        opis="Kdaj je dovolj, odloči agent sam. Skeptik je ločen klic brez orodij, ki poskuša sklep ovreči; agent na ugovore odgovori."
+      >
         <div className="grid gap-3 md:grid-cols-2">
-          <ul className="space-y-1 rounded-xl bg-white p-4 text-sm ring-1 ring-zinc-200">
-            {r.merila.length ? (
-              r.merila.map((m) => (
-                <li key={m.pogoj} className={m.izpolnjen ? "text-emerald-800" : "text-red-800"}>
-                  {m.izpolnjen ? "✔" : "✘"} {m.pogoj}
-                </li>
-              ))
-            ) : (
-              <li className="text-zinc-400">Po prvem krogu.</li>
-            )}
-          </ul>
           <div className="rounded-xl bg-white p-4 text-sm ring-1 ring-zinc-200">
-            {ocena?.ocene ? (
+            {s.odlocitev ? (
+              <>
+                <p className="font-medium text-zinc-900">
+                  Agent: {s.odlocitev === "dovolj" ? "dovolj za odločitev" : "raziskujem naprej"}
+                </p>
+                {s.zakaj ? <p className="mt-1 text-zinc-700">{s.zakaj}</p> : null}
+              </>
+            ) : (
+              <p className="text-zinc-400">Po prvem krogu.</p>
+            )}
+            {s.odgovori_skeptiku?.length ? (
+              <div className="mt-3">
+                <h3 className="text-xs font-medium text-zinc-500">Odgovori na ugovore</h3>
+                <ul className="mt-1 space-y-1 text-zinc-700">
+                  {s.odgovori_skeptiku.map((o, i) => (
+                    <li key={i}>
+                      <span className="text-zinc-500">{o.ugovor}</span> → {o.odgovor}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {r.merila.length ? (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs text-zinc-500">Kontrolni seznam kode (informativno, ne odloča)</summary>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {r.merila.map((m) => (
+                    <li key={m.pogoj} className={m.izpolnjen ? "text-emerald-800" : "text-zinc-500"}>
+                      {m.izpolnjen ? "✔" : "·"} {m.pogoj}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+          <div className="rounded-xl bg-white p-4 text-sm ring-1 ring-zinc-200">
+            {ocena?.ugovori ? (
+              <>
+                <p className="font-medium text-zinc-900">
+                  Skeptik{ocena.zaupanje ? `: zaupanje v sklep ${ocena.zaupanje}/5` : ""}
+                </p>
+                {ocena.povzetek ? <p className="mt-1 text-zinc-700">{ocena.povzetek}</p> : null}
+                {ocena.ugovori.length ? (
+                  <ul className="mt-2 space-y-2">
+                    {ocena.ugovori.map((u, i) => (
+                      <li key={i} className="text-zinc-700">
+                        {u.usodno ? <span className="mr-1 rounded bg-red-100 px-1.5 text-xs text-red-900">lahko obrne sklep</span> : null}
+                        {u.za_luko ? <span className="mr-1 rounded bg-sky-100 px-1.5 text-xs text-sky-900">samo s pogovorom</span> : null}
+                        {u.ugovor}
+                        {u.kaj_bi_razresilo ? <span className="block text-xs text-zinc-500">Razrešilo bi: {u.kaj_bi_razresilo}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-zinc-500">Ni resnih ugovorov.</p>
+                )}
+              </>
+            ) : ocena?.ocene && Object.keys(ocena.ocene).length ? (
               <>
                 <p className="font-medium text-zinc-900">
                   Ocenjevalec: {ocena.povprecje?.toLocaleString("sl-SI")} / 5 · {ocena.odlocitev === "zakljuci" ? "dovolj za odločitev" : "raziskuj naprej"}
@@ -272,6 +329,25 @@ export default async function RaziskavaPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       </Razdelek>
+
+      {r.dnevnik ? (
+        <Razdelek naslov="Delovni dnevnik agenta" opis="Agent ga piše sam in ga prebere na začetku vsakega kroga; to je njegov spomin.">
+          <p className="whitespace-pre-wrap rounded-xl bg-white p-4 text-sm text-zinc-700 ring-1 ring-zinc-200">{r.dnevnik}</p>
+        </Razdelek>
+      ) : null}
+
+      {s.ugotovitve?.length ? (
+        <Razdelek naslov="Ugotovitve" opis="Kar je agent zapisal po svoje, zunaj ustaljenih razdelkov.">
+          <div className="space-y-2">
+            {s.ugotovitve.map((u, i) => (
+              <div key={i} className="rounded-xl bg-white p-3 text-sm ring-1 ring-zinc-200">
+                <p className="font-medium text-zinc-900">{u.naslov}</p>
+                <p className="mt-1 whitespace-pre-wrap text-zinc-700">{u.besedilo}</p>
+              </div>
+            ))}
+          </div>
+        </Razdelek>
+      ) : null}
 
       <Razdelek naslov="Hipoteze" opis="Tekmujoče razlage; raziskovalec mora iskati tudi dokaze proti.">
         {s.hipoteze?.length ? (

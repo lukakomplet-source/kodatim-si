@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/require-admin";
-import { preberiRaziskave } from "@/lib/priloznosti";
+import { preberiRaziskave, preberiTeme } from "@/lib/priloznosti";
 import { OZNAKE_FAZ } from "@/lib/priloznostiFaze";
 import { Osvezevanje } from "../nadzor/Osvezevanje";
 import { NovaRaziskava } from "./NovaRaziskava";
+import { PredlogiTem } from "./PredlogiTem";
 import { IZID, STANJE, cas, dolarji, minute } from "./oblika";
 
 /**
@@ -17,8 +18,12 @@ export const dynamic = "force-dynamic";
 
 export default async function PriloznostiPage() {
   await requireAdmin();
-  const raziskave = await preberiRaziskave();
-  const tece = raziskave?.some((r) => r.stanje === "v_teku" || r.stanje === "caka");
+  const [raziskave, teme] = await Promise.all([preberiRaziskave(), preberiTeme()]);
+  const zadnjiPredlog = teme?.[0] ?? null;
+  const tece =
+    raziskave?.some((r) => r.stanje === "v_teku" || r.stanje === "caka") ||
+    zadnjiPredlog?.stanje === "caka" ||
+    zadnjiPredlog?.stanje === "v_teku";
 
   return (
     <div>
@@ -29,7 +34,8 @@ export default async function PriloznostiPage() {
         plačali. Sme reči tudi »ne«. Pisati podjetjem začnemo šele, ko je povpraševanje potrjeno z resničnim signalom.
       </p>
 
-      <div className="mt-5 max-w-3xl">
+      <div className="mt-5 max-w-3xl space-y-4">
+        <PredlogiTem predlog={zadnjiPredlog} />
         <NovaRaziskava />
       </div>
 
