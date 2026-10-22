@@ -21,6 +21,18 @@ function Vir({ url, besedilo = "vir" }: { url: string; besedilo?: string }) {
  */
 export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
   return (
+    <>
+    {r.opozorila && r.opozorila.length > 0 ? (
+      <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 ring-1 ring-amber-300">
+        <p className="font-medium">Preveri pred odobritvijo — kritik tega ni našel v njihovih virih:</p>
+        <ul className="mt-1 list-disc space-y-1 pl-4">
+          {r.opozorila.map((o, i) => (
+            <li key={i}>{o}</li>
+          ))}
+        </ul>
+        <p className="mt-1 text-amber-800">Popravi z »Uredi besedilo« ali osnutek zavrni.</p>
+      </div>
+    ) : null}
     <details open className="mt-3 rounded-lg bg-sky-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-700 ring-1 ring-sky-200">
       <summary className="cursor-pointer font-medium text-sky-900">Kako je agent razmišljal</summary>
       <dl className="mt-2 space-y-2">
@@ -128,5 +140,6 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
         ) : null}
       </dl>
     </details>
+    </>
   );
 }

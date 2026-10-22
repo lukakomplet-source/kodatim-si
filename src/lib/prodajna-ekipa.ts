@@ -112,6 +112,8 @@ export type Razmisljanje = {
   kritik: string;
   /** Kako problem rešujejo drugi (forumi, revije, OZS), s preverjenimi viri. */
   raziskavaResitve?: RaziskavaResitve | null;
+  /** Trditve, ki jih kritik še vedno označi (največ 2 gresta v pregled): Luka jih preveri. */
+  opozorila?: string[];
 };
 
 export type RaziskavaResitve = {
