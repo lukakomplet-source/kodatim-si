@@ -35,6 +35,8 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
   const problem = alineje(p.mail.uvod);
   const glavni = p.cene?.find((c) => c.st === a.paket.st);
   const ai = a.paket.ai ? p.cene?.find((c) => c.st === "+") : undefined;
+  // »Mesečnina je 20–25 € + DDV. Vključuje …« → samo znesek; vsebina mesečnine je na predlogu.
+  const mesecno = p.mesecnina?.match(/\d[\d.,–-]*\s*€(\s*\+\s*DDV)?/)?.[0];
 
   return (
     <main
@@ -44,13 +46,13 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
       <style>{"@page { size: A4; } html, body { background: #ffffff !important; }"}</style>
 
       {/* 1 · Problem */}
-      <Stran p={p} prva>
+      <Stran p={p} prva sredina>
         <Oznaka>Kaj sem opazil pri vas</Oznaka>
         <h1 className="mt-4 flex items-start gap-4 text-[34px] font-bold leading-[1.1] tracking-tight">
           <X className="mt-1.5 h-9 w-9 shrink-0 text-[#c2410c]" strokeWidth={3} aria-hidden />
           {a.hero.problem}
         </h1>
-        <div className="mt-10 flex flex-1 items-start gap-8">
+        <div className="mt-10 flex items-start gap-8">
           <div className="flex-1 space-y-4">
             {problem.map((t) => (
               <p key={t} className="border-l-4 border-[#c2410c] pl-4 text-[18px] font-medium leading-snug">
@@ -63,13 +65,13 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
           </div>
           {p.ima_posnetek && (
             <figure className="w-[56mm] shrink-0">
-              <div className="overflow-hidden rounded-[1.6rem] border-[7px] border-[#0b1530] bg-[#0b1530]">
+              <div className="h-[62mm] overflow-hidden rounded-t-[1.6rem] border-[7px] border-b-0 border-[#0b1530] bg-[#0b1530]">
                 <img
                   src={`/predlog/${p.koda}/posnetek`}
                   alt={`Vaša stran ${p.domena} danes`}
                   width={390}
                   height={844}
-                  className="block h-auto w-full rounded-[1.1rem] bg-white"
+                  className="block h-auto w-full rounded-t-[1.1rem] bg-white"
                 />
               </div>
               <figcaption className="mt-2 text-center text-[11px] text-[#6b7280]">{p.domena} danes</figcaption>
@@ -79,7 +81,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
       </Stran>
 
       {/* 2 · Rešitev: danes → telefon v treh korakih */}
-      <Stran p={p}>
+      <Stran p={p} sredina>
         <Oznaka>Rešitev</Oznaka>
         <h2 className="mt-4 flex items-start gap-4 text-[34px] font-bold leading-[1.1] tracking-tight">
           <Check className="mt-1.5 h-9 w-9 shrink-0 text-[var(--b)]" strokeWidth={3} aria-hidden />
@@ -96,10 +98,10 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
             ))}
           </p>
         )}
-        <div className="mt-10 grid flex-1 grid-cols-3 gap-6">
+        <div className="mt-10 grid grid-cols-3 gap-6">
           {a.hero.potem.slice(0, 3).map((k, i) => (
             <div key={k} className="flex flex-col items-center text-center">
-              <TelefonKorak p={p} a={a} korak={i} besedilo={k} />
+              <TelefonKorak p={p} a={a} korak={i} besedilo={i === 0 ? "" : k} />
               <p className="mt-4 text-[15px] font-semibold leading-snug">{k}</p>
             </div>
           ))}
@@ -113,9 +115,9 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
       </Stran>
 
       {/* 3 · Kako se lotimo (zaporedje, zato številke) */}
-      <Stran p={p}>
+      <Stran p={p} sredina>
         <Oznaka>Kako se tega lotimo</Oznaka>
-        <ol className="mt-12 flex-1 space-y-10">
+        <ol className="mt-12 space-y-10">
           {a.pdf.lotimo.map((k, i) => (
             <li key={k} className="flex items-center gap-6">
               <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[var(--b)] text-[26px] font-bold text-white">
@@ -125,16 +127,16 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
             </li>
           ))}
         </ol>
-        {a.paket.zakaj && <p className="text-[13px] leading-relaxed text-[#4b5563]">{a.paket.zakaj}</p>}
+        {a.paket.zakaj && <p className="mt-12 text-[13px] leading-relaxed text-[#4b5563]">{a.paket.zakaj}</p>}
       </Stran>
 
       {/* 4 · Kaj pridobite */}
-      <Stran p={p}>
+      <Stran p={p} sredina>
         <Oznaka>Kaj pridobite</Oznaka>
         {p.mail.zakljucek && (
           <p className="mt-4 text-[30px] font-bold leading-[1.15] tracking-tight">{p.mail.zakljucek}</p>
         )}
-        <div className="mt-10 flex-1 space-y-5">
+        <div className="mt-10 space-y-5">
           {a.pdf.korist.map((k) => (
             <div key={k.naslov} className="rounded-2xl bg-[#f6f7f9] px-6 py-5">
               <p className="flex items-center gap-3 text-[20px] font-bold">
@@ -153,7 +155,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
         <div className="mt-6 rounded-2xl border-2 border-[#0b1530] px-6 py-5">
           {glavni && <Vrstica ime={glavni.ime} cena={glavni.cena} krepko />}
           {ai && <Vrstica ime={ai.ime} cena={ai.cena} />}
-          {p.mesecnina && <Vrstica ime="Mesečno vzdrževanje" cena={p.mesecnina} />}
+          {mesecno && <Vrstica ime="Mesečno vzdrževanje" cena={mesecno} />}
         </div>
         {p.garancija && (
           <p className="mt-5 flex gap-3 text-[14px] leading-relaxed">
@@ -183,7 +185,18 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
 }
 
 /** Ena stran A4: glava z logotipom, vsebina zapolni višino (natisnjeno brez praznih repov). */
-function Stran({ p, prva = false, children }: { p: Predlog; prva?: boolean; children: ReactNode }) {
+function Stran({
+  p,
+  prva = false,
+  sredina = false,
+  children,
+}: {
+  p: Predlog;
+  prva?: boolean;
+  /** Vsebina na sredini višine: malo besed na stran ne pusti spodaj prazne pol strani. */
+  sredina?: boolean;
+  children: ReactNode;
+}) {
   return (
     <section className={`${prva ? "" : "break-before-page"} flex h-[262mm] flex-col px-[16mm]`}>
       <div className="mb-10 flex items-center justify-between">
@@ -192,7 +205,7 @@ function Stran({ p, prva = false, children }: { p: Predlog; prva?: boolean; chil
           Za {p.kratko_ime} · {datumPredloga(p.ustvarjeno)}
         </p>
       </div>
-      {children}
+      {sredina ? <div className="flex flex-1 flex-col justify-center pb-16">{children}</div> : children}
     </section>
   );
 }
