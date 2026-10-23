@@ -1,4 +1,4 @@
-import type { Razmisljanje, TrznaCena } from "@/lib/prodajna-ekipa";
+import type { Presoja, Razmisljanje, TrznaCena } from "@/lib/prodajna-ekipa";
 
 function Vir({ url, besedilo = "vir" }: { url: string; besedilo?: string }) {
   if (!/^https?:\/\//.test(url)) return null;
@@ -36,6 +36,8 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
     <details open className="mt-3 rounded-lg bg-sky-50/60 px-3 py-2 text-xs leading-relaxed text-zinc-700 ring-1 ring-sky-200">
       <summary className="cursor-pointer font-medium text-sky-900">Kako je agent razmišljal</summary>
       <dl className="mt-2 space-y-2">
+        {r.presoja ? <PresojaKupca p={r.presoja} /> : null}
+
         {r.bolecina ? (
           <div>
             <dt className="text-zinc-500">Panoga {r.panoga} — glavna bolečina</dt>
@@ -196,6 +198,24 @@ function CenaTrga({ c }: { c: TrznaCena }) {
           </table>
         </dd>
       ) : null}
+    </div>
+  );
+}
+
+/** Presoja pred pisanjem: ali bi lastnik kupil, preden je agent porabil žetone za mail, stran in PDF. */
+function PresojaKupca({ p }: { p: Presoja }) {
+  return (
+    <div className="rounded-md bg-white/70 px-2.5 py-2 ring-1 ring-sky-200">
+      <dt className="text-zinc-500">
+        Presoja pred pisanjem · kupi {p.kupi} % · inovativno {p.inovativno}/5
+      </dt>
+      <dd className="font-medium text-zinc-900">
+        {p.problem} → {p.resitev}
+      </dd>
+      {p.velikost ? <dd>Velikost: {p.velikost}</dd> : null}
+      {p.vrednost ? <dd>Vrednost: {p.vrednost}</dd> : null}
+      {p.pristop ? <dd className="text-zinc-600">Pristop iz raziskave: {p.pristop}</dd> : null}
+      {p.zakaj ? <dd className="text-zinc-600">{p.zakaj}</dd> : null}
     </div>
   );
 }

@@ -115,6 +115,8 @@ export type Razmisljanje = {
   /** Trditve, ki jih kritik še vedno označi (največ 2 gresta v pregled): Luka jih preveri. */
   opozorila?: string[];
   cena?: TrznaCena | null;
+  /** Stroga presoja pred pisanjem: ali bi statistično kupili (od 23. 10. 2026). */
+  presoja?: Presoja | null;
 };
 
 export type RaziskavaResitve = {
@@ -766,3 +768,14 @@ export async function preberiLijak(): Promise<Lijak> {
     vrednost,
   };
 }
+
+export type Presoja = {
+  velikost: string;
+  problem: string;
+  resitev: string;
+  pristop: string;
+  inovativno: number;
+  vrednost: string;
+  kupi: number;
+  zakaj: string;
+};
