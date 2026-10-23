@@ -21,11 +21,15 @@ export function PrviZaslon({ p, a, h, zaSliko = false }: { p: Predlog; a: DeloAg
     <section id="za-vas" className="scroll-mt-10 bg-[#0b1530] text-white">
       <div className="mx-auto max-w-6xl px-4 pb-14 pt-10 sm:pt-14">
         <p className="text-sm font-semibold text-white/55">Za {p.kratko_ime}</p>
-        <h1 className="mt-3 max-w-4xl text-[clamp(1.9rem,4.6vw,3.4rem)] font-bold leading-[1.05] tracking-tight">
-          <span className="block text-white/45 line-through decoration-[color-mix(in_srgb,var(--b)_80%,white)] decoration-[3px]">
+        <h1 className="mt-3 max-w-4xl font-bold tracking-tight">
+          <span className="flex items-baseline gap-3 text-[clamp(1.15rem,2.4vw,1.6rem)] leading-snug text-white/50">
+            <X className="h-5 w-5 shrink-0 translate-y-0.5 text-white/35" aria-hidden />
             {h.problem}
           </span>
-          <span className="mt-1 block">{h.resitev}</span>
+          <span className="mt-3 flex items-baseline gap-3 text-[clamp(1.9rem,4.6vw,3.4rem)] leading-[1.05]">
+            <Check className="h-8 w-8 shrink-0 translate-y-1 text-[color-mix(in_srgb,var(--b)_75%,white)]" aria-hidden />
+            {h.resitev}
+          </span>
         </h1>
 
         <div className="mt-10 grid items-center gap-6 lg:grid-cols-[1fr_auto_1.15fr] lg:gap-8">
