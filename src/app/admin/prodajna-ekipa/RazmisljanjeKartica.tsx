@@ -1,4 +1,4 @@
-import type { Razmisljanje } from "@/lib/prodajna-ekipa";
+import type { Razmisljanje, TrznaCena } from "@/lib/prodajna-ekipa";
 
 function Vir({ url, besedilo = "vir" }: { url: string; besedilo?: string }) {
   if (!/^https?:\/\//.test(url)) return null;
@@ -94,6 +94,18 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
                 : ` · ${r.raziskavaResitve.krogi} ${r.raziskavaResitve.krogi === 1 ? "krog" : r.raziskavaResitve.krogi === 2 ? "kroga" : "krogi"}, ${r.raziskavaResitve.branj} prebranih strani, ${r.raziskavaResitve.minut.toLocaleString("sl-SI")} min`}
               {r.raziskavaResitve.izpadlo > 0 ? ` · ${r.raziskavaResitve.izpadlo} nepreverjenih izsekov izpadlo` : ""}
             </dt>
+            {r.raziskavaResitve.bistvo ? (
+              <dd className="font-medium text-zinc-900">Bistvo: {r.raziskavaResitve.bistvo}</dd>
+            ) : null}
+            {(r.raziskavaResitve.glasovi ?? []).map((g, i) => (
+              <dd key={`g${i}`} className="italic text-zinc-600">
+                »{g.odlomek}« <Vir url={g.url} />
+                {g.tuj ? <span className="ml-1 not-italic text-amber-700">(tuj vir)</span> : null}
+              </dd>
+            ))}
+            {r.raziskavaResitve.enaFunkcija ? (
+              <dd className="text-zinc-900">Ena glavna funkcija: {r.raziskavaResitve.enaFunkcija}</dd>
+            ) : null}
             {r.raziskavaResitve.pristopi.map((p, i) => (
               <dd key={i}>
                 <span className="font-medium text-zinc-900">{p.pristop}</span>
@@ -110,7 +122,7 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
               <dd className="text-zinc-900">Za njih: {r.raziskavaResitve.priporocilo}</dd>
             ) : null}
             {r.raziskavaResitve.nasvet ? (
-              <dd className="text-zinc-600">Brezplačen nasvet v mailu: {r.raziskavaResitve.nasvet}</dd>
+              <dd className="text-zinc-600">Brezplačen nasvet: {r.raziskavaResitve.nasvet}</dd>
             ) : null}
           </div>
         ) : null}
@@ -130,6 +142,8 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
           </div>
         ) : null}
 
+        {r.cena ? <CenaTrga c={r.cena} /> : null}
+
         {r.ocena !== null && r.ocena !== undefined ? (
           <div>
             <dt className="text-zinc-500">Kritik</dt>
@@ -141,5 +155,47 @@ export function RazmisljanjeKartica({ r }: { r: Razmisljanje }) {
       </dl>
     </details>
     </>
+  );
+}
+
+const SKUPINE: Record<string, string> = { slo_agencija: "SLO agencija", saas: "naročnina", tuja: "tuja ponudba" };
+
+/** Cena paketa iz preverjenih tržnih cen: pravilo in viri, da Luka vidi, od kod je številka. */
+function CenaTrga({ c }: { c: TrznaCena }) {
+  return (
+    <div>
+      <dt className="text-zinc-500">
+        Cena{c.tip ? ` · ${c.tip}` : ""}
+        {c.brezPrimerjave ? " · brez tržne primerjave (premalo preverjenih cen), ostane cenik" : ""}
+      </dt>
+      {c.cena ? (
+        <dd className="font-medium text-zinc-900">
+          {c.cena.toLocaleString("sl-SI")} € + DDV
+          {c.pravilo ? <span className="font-normal text-zinc-500"> — {c.pravilo}</span> : null}
+        </dd>
+      ) : null}
+      {c.primerjava ? <dd className="text-zinc-600">V mailu: {c.primerjava}</dd> : null}
+      {c.viri.length > 0 ? (
+        <dd>
+          <table className="mt-1 w-full text-left">
+            <tbody>
+              {c.viri.map((v, i) => (
+                <tr key={i} className="border-t border-sky-100 align-top">
+                  <td className="py-1 pr-2 text-zinc-500">{SKUPINE[v.skupina] ?? v.skupina}</td>
+                  <td className="py-1 pr-2">{v.ponudnik}</td>
+                  <td className="py-1 pr-2 whitespace-nowrap font-medium">
+                    {v.eur !== null ? `${v.eur.toLocaleString("sl-SI")} €` : ""}
+                    {v.obdobje === "mesecno" || v.obdobje === "letno" ? "/mes" : ""}
+                  </td>
+                  <td className="py-1 italic text-zinc-600">
+                    »{v.odlomek}« <Vir url={v.url} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </dd>
+      ) : null}
+    </div>
   );
 }

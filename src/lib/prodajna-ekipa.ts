@@ -114,6 +114,7 @@ export type Razmisljanje = {
   raziskavaResitve?: RaziskavaResitve | null;
   /** Trditve, ki jih kritik še vedno označi (največ 2 gresta v pregled): Luka jih preveri. */
   opozorila?: string[];
+  cena?: TrznaCena | null;
 };
 
 export type RaziskavaResitve = {
@@ -125,6 +126,22 @@ export type RaziskavaResitve = {
   izpadlo: number;
   minut: number;
   ponovno: boolean;
+  /** Dobesedne izjave ljudi, ki to bolečino imajo (preverjene na viru). */
+  glasovi?: { url: string; odlomek: string; tuj: boolean }[];
+  bistvo?: string;
+  enaFunkcija?: string;
+};
+
+/** Cena paketa 3 iz preverjenih tržnih cen (Harvey, harvey/cene.py). */
+export type TrznaCena = {
+  cena: number | null;
+  dno: number | null;
+  strop: number | null;
+  pravilo: string;
+  primerjava: string;
+  brezPrimerjave: boolean;
+  tip: string;
+  viri: { skupina: string; ponudnik: string; url: string; odlomek: string; eur: number | null; obdobje: string }[];
 };
 
 /** Profil panoge (Harvey, harvey/panoga.py): kaj lastnike v panogi muči, z viri. */
