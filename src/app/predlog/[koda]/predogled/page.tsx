@@ -5,6 +5,7 @@ import { AgentStran } from "../AgentStran";
 import { DemoStran } from "../DemoStran";
 import { pisavaPoImenu, pisavaZa } from "../pisave";
 import { PredogledStrani } from "../PredogledStrani";
+import { imaProdajo, ProdajnaStran } from "../ProdajnaStran";
 
 /**
  * Samo nova stran podjetja, čez celo širino — s te poti Harvey naredi sliki
@@ -26,6 +27,8 @@ export default async function PredogledPage({
   const korak = Number.parseInt((await searchParams).korak ?? "", 10);
   const branje = await preberiPredlog(koda);
   if (branje.stanje !== "ok") notFound();
+  const k = Number.isNaN(korak) ? undefined : korak;
+  if (imaProdajo(branje.predlog)) return <ProdajnaStran p={branje.predlog} samoVrh korak={k} />;
   // Agentova stran brez dela za lastnika: z nje sta sliki za mail in PDF.
   if (branje.predlog.stran && branje.predlog.agent)
     return (

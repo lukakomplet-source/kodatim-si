@@ -105,7 +105,7 @@ function Danes({ koraki }: { koraki: string[] }) {
 
 const IKONE = [Smartphone, FileText, BellRing];
 
-function Telefon({
+export function Telefon({
   p,
   a,
   koraki,

@@ -12,6 +12,7 @@ import { pisavaPoImenu, pisavaZa } from "./pisave";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
 import { PredogledStrani } from "./PredogledStrani";
+import { imaProdajo, ProdajnaStran } from "./ProdajnaStran";
 
 /**
  * Osebni predlog za podjetje, ki mu piše prodajna ekipa — tako, kot Luka
@@ -57,6 +58,16 @@ export default async function PredlogPage({ params, searchParams }: Props) {
   if (branje.stanje === "nedosegljiv") return <Nedosegljiv />;
   const p = branje.predlog;
   const pripravljeno = datumPredloga(p.ustvarjeno);
+
+  // Agentov predlog od 23. 10. 2026: prodajna stran (problem → rešitev v živo → kako → korist → cena).
+  if (imaProdajo(p)) {
+    return (
+      <>
+        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        <ProdajnaStran p={p} />
+      </>
+    );
+  }
 
   // Predlog prodajnega agenta: njihova stran po agentovem načrtu, zgoraj »Za vas«.
   if (p.stran && p.agent) {
