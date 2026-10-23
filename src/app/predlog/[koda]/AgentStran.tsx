@@ -4,9 +4,10 @@
 import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Check, ChevronDown, Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
-import type { BlokAgenta, DeloAgenta, Predlog, StranAgenta } from "@/lib/predlogi";
+import type { BlokAgenta, DeloAgenta, HeroAgenta, Predlog, StranAgenta } from "@/lib/predlogi";
 import { Eposta, Tekst } from "./Eposta";
 import { PredogledFunkcije } from "./PredogledFunkcije";
+import { PrviZaslon } from "./PrviZaslon";
 
 /**
  * Predlog prodajnega agenta (Luka, 20. 10. 2026: »pametni morejo bit ti agenti,
@@ -47,10 +48,17 @@ export function AgentStran({ p, zaSliko = false, pisava = "" }: { p: Predlog; za
         className={`${pisava} min-h-screen overflow-x-hidden bg-[var(--bg)] text-[var(--fg)] antialiased [&_h1]:font-[family-name:var(--font-demo)] [&_h2]:font-[family-name:var(--font-demo)] [&_h3]:font-[family-name:var(--font-demo)]`}
       >
         {!zaSliko && <Vrstica p={p} />}
-        {!zaSliko && <ZaVas p={p} a={a} />}
+        {imaPrviZaslon(a) ? (
+          <>
+            <PrviZaslon p={p} a={a} h={a.hero} zaSliko={zaSliko} />
+            {!zaSliko && <Temelji p={p} a={a} />}
+          </>
+        ) : (
+          !zaSliko && <ZaVas p={p} a={a} />
+        )}
         {!zaSliko && (
           <p className="bg-[#0b1530] pb-3 text-center text-xs font-semibold text-white/60">
-            Spodaj je vaša nova stran, kot bi jo videli vaši kupci
+            {imaPrviZaslon(a) ? "Spodaj je primer, kako bi to delovalo pri vas" : "Spodaj je vaša nova stran, kot bi jo videli vaši kupci"}
           </p>
         )}
         <Glava p={p} s={s} />
@@ -85,6 +93,31 @@ function Vrstica({ p }: { p: Predlog }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function imaPrviZaslon(a: DeloAgenta): a is DeloAgenta & { hero: HeroAgenta } {
+  return !!(a.hero?.problem && a.hero.resitev && a.hero.potem?.length);
+}
+
+/** Na čem temelji predlog: problemi s posledico, človeško; brez surovih citatov z njihove strani. */
+function Temelji({ p, a }: { p: Predlog; a: DeloAgenta }) {
+  const problemi = a.diagnoza.problemi.slice(0, 3);
+  if (!problemi.length) return null;
+  return (
+    <details className="bg-[#0b1530] text-white">
+      <summary className="mx-auto max-w-6xl cursor-pointer px-4 pb-6 text-sm font-semibold text-white/60 hover:text-white">
+        Kaj smo opazili pri {p.kratko_ime}
+      </summary>
+      <ul className="mx-auto grid max-w-6xl gap-5 px-4 pb-10 sm:grid-cols-3">
+        {problemi.map((x) => (
+          <li key={x.problem} className="border-l-2 border-[color-mix(in_srgb,var(--b)_70%,white)] pl-4">
+            <p className="font-semibold leading-snug">{x.problem}</p>
+            {x.posledica && <p className="mt-1.5 text-sm leading-relaxed text-white/70">{x.posledica}</p>}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

@@ -121,6 +121,16 @@ export type DeloAgenta = {
   };
   paket: { st: "1" | "2" | "3"; ime3: string; ai: boolean; oglasevanje: boolean; zakaj: string };
   ocena?: { povprecje: number; povzetek: string };
+  /** Prvi zaslon za 5 sekund (od 23. 10. 2026); starejši predlogi ga nimajo. */
+  hero?: HeroAgenta;
+};
+
+export type HeroAgenta = {
+  problem: string;
+  resitev: string;
+  danes: string[];
+  potem: string[];
+  vrednost: string;
 };
 
 /** Paket iz Lukovega cenika; cena je shranjena s predlogom, da ponudba ostane, kakršna je bila poslana. */
