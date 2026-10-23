@@ -32,7 +32,17 @@ const PODLAGE: Record<StranAgenta["tema"]["podlaga"], Record<string, string>> = 
   temna: { "--bg": "#121417", "--fg": "#f2f3f5", "--mut": "#a8afba", "--pov": "#1c1f24", "--rob": "#2c3139" },
 };
 
-export function AgentStran({ p, zaSliko = false, pisava = "" }: { p: Predlog; zaSliko?: boolean; pisava?: string }) {
+export function AgentStran({
+  p,
+  zaSliko = false,
+  pisava = "",
+  korak,
+}: {
+  p: Predlog;
+  zaSliko?: boolean;
+  pisava?: string;
+  korak?: number;
+}) {
   const s = p.stran as StranAgenta;
   const a = p.agent as DeloAgenta;
   const barva = /^#[0-9a-f]{6}$/i.test(p.vizual?.barva ?? "") ? (p.vizual?.barva as string) : PRIVZETA_BARVA;
@@ -50,7 +60,7 @@ export function AgentStran({ p, zaSliko = false, pisava = "" }: { p: Predlog; za
         {!zaSliko && <Vrstica p={p} />}
         {imaPrviZaslon(a) ? (
           <>
-            <PrviZaslon p={p} a={a} h={a.hero} zaSliko={zaSliko} />
+            <PrviZaslon p={p} a={a} h={a.hero} zaSliko={zaSliko} korak={korak} />
             {!zaSliko && <Temelji p={p} a={a} />}
           </>
         ) : (

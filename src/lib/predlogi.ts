@@ -123,7 +123,18 @@ export type DeloAgenta = {
   ocena?: { povprecje: number; povzetek: string };
   /** Prvi zaslon za 5 sekund (od 23. 10. 2026); starejši predlogi ga nimajo. */
   hero?: HeroAgenta;
+  /** Vsebina PDF ponudbe (od 23. 10. 2026): problem bolj razložen, kako se lotimo, kaj pridobijo. */
+  pdf?: PdfAgenta;
 };
+
+export type PdfAgenta = {
+  problem_pdf: string;
+  lotimo: string[];
+  korist: { naslov: string; izracun: string }[];
+};
+
+/** Agentov mail: uvod = alineje problema, jedro = alineje rešitve, zakljucek = kaj pridobijo. */
+export type MailAgenta = { zadeva: string; uvod: string; jedro: string; zakljucek: string };
 
 export type HeroAgenta = {
   problem: string;
@@ -169,6 +180,9 @@ export type Predlog = {
   /** Predlog prodajnega agenta: njihova stran po agentovem načrtu in njegovo delo. */
   stran?: StranAgenta;
   agent?: DeloAgenta;
+  mail?: MailAgenta;
+  /** Primerjava s tržnimi cenami (Harvey, cene.py); v PDF gre samo vrstica »primerjava«. */
+  cene_trg?: { primerjava?: string };
   vizual?: { logo: string; barva: string };
   kontakt?: { telefon?: string; email?: string; naslov?: string };
 };

@@ -14,7 +14,20 @@ import type { DeloAgenta, HeroAgenta, Predlog } from "@/lib/predlogi";
 
 const KORAK_MS = 2600;
 
-export function PrviZaslon({ p, a, h, zaSliko = false }: { p: Predlog; a: DeloAgenta; h: HeroAgenta; zaSliko?: boolean }) {
+export function PrviZaslon({
+  p,
+  a,
+  h,
+  zaSliko = false,
+  korak,
+}: {
+  p: Predlog;
+  a: DeloAgenta;
+  h: HeroAgenta;
+  zaSliko?: boolean;
+  /** Pri sliki: kateri korak telefona (Harvey iz treh posnetkov naredi GIF za mail). */
+  korak?: number;
+}) {
   const paket = p.cene?.find((c) => c.st === a.paket.st);
   const vec = a.resitev.kaj_dobijo.slice(0, 3);
   return (
@@ -35,7 +48,7 @@ export function PrviZaslon({ p, a, h, zaSliko = false }: { p: Predlog; a: DeloAg
         <div className="mt-10 grid items-center gap-6 lg:grid-cols-[1fr_auto_1.15fr] lg:gap-8">
           <Danes koraki={h.danes} />
           <ArrowRight className="mx-auto hidden h-8 w-8 text-white/30 lg:block" aria-hidden />
-          <Telefon p={p} a={a} koraki={h.potem} zaSliko={zaSliko} />
+          <Telefon p={p} a={a} koraki={h.potem} zaSliko={zaSliko} zacetni={korak} />
         </div>
 
         <div className="mt-10 grid gap-3 sm:grid-cols-3">
@@ -92,10 +105,24 @@ function Danes({ koraki }: { koraki: string[] }) {
 
 const IKONE = [Smartphone, FileText, BellRing];
 
-function Telefon({ p, a, koraki, zaSliko }: { p: Predlog; a: DeloAgenta; koraki: string[]; zaSliko: boolean }) {
+function Telefon({
+  p,
+  a,
+  koraki,
+  zaSliko,
+  zacetni,
+}: {
+  p: Predlog;
+  a: DeloAgenta;
+  koraki: string[];
+  zaSliko: boolean;
+  zacetni?: number;
+}) {
   const mirno = useReducedMotion();
   const staticno = zaSliko || !!mirno;
-  const [korak, setKorak] = useState(staticno ? koraki.length - 1 : 0);
+  const [korak, setKorak] = useState(
+    zacetni !== undefined && zacetni >= 0 && zacetni < koraki.length ? zacetni : staticno ? koraki.length - 1 : 0,
+  );
   useEffect(() => {
     if (staticno) return;
     const t = setInterval(() => setKorak((k) => (k + 1) % koraki.length), KORAK_MS);
@@ -147,6 +174,27 @@ function Telefon({ p, a, koraki, zaSliko }: { p: Predlog; a: DeloAgenta; koraki:
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+/** En korak telefona brez animacije, za PDF ponudbo (tri drug ob drugem). */
+export function TelefonKorak({ p, a, korak, besedilo }: { p: Predlog; a: DeloAgenta; korak: number; besedilo: string }) {
+  return (
+    <div className="w-[170px] rounded-[1.7rem] bg-[#05070d] p-2">
+      <div className="relative h-[300px] overflow-hidden rounded-[1.3rem] bg-white text-[#0b1530]">
+        <div className="flex items-center gap-2 border-b border-[#eef0f4] px-3 py-2.5">
+          {p.vizual?.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element -- logotip z njihove strani
+            <img src={p.vizual.logo} alt="" className="h-4 max-w-[90px] object-contain" />
+          ) : (
+            <span className="text-xs font-bold">{p.kratko_ime}</span>
+          )}
+        </div>
+        <div className="absolute inset-x-0 bottom-0 top-[37px] origin-top-left scale-[0.85] p-3" style={{ width: "117.6%" }}>
+          <Zaslon korak={korak} a={a} besedilo={besedilo} />
+        </div>
+      </div>
     </div>
   );
 }

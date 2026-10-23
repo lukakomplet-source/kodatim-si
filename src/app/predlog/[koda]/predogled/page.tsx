@@ -14,13 +14,28 @@ import { PredogledStrani } from "../PredogledStrani";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function PredogledPage({ params }: { params: Promise<{ koda: string }> }) {
+export default async function PredogledPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ koda: string }>;
+  searchParams: Promise<{ korak?: string }>;
+}) {
   const { koda } = await params;
+  // ?korak=0..2: telefon na prvem zaslonu v tem koraku (Harvey iz treh posnetkov naredi GIF za mail).
+  const korak = Number.parseInt((await searchParams).korak ?? "", 10);
   const branje = await preberiPredlog(koda);
   if (branje.stanje !== "ok") notFound();
   // Agentova stran brez dela za lastnika: z nje sta sliki za mail in PDF.
   if (branje.predlog.stran && branje.predlog.agent)
-    return <AgentStran p={branje.predlog} zaSliko pisava={pisavaPoImenu(branje.predlog.stran.tema.pisava)} />;
+    return (
+      <AgentStran
+        p={branje.predlog}
+        zaSliko
+        pisava={pisavaPoImenu(branje.predlog.stran.tema.pisava)}
+        korak={Number.isNaN(korak) ? undefined : korak}
+      />
+    );
   // Demo v paketu 3 brez vrstice s paketi: z njega so sliki za mail in PDF.
   if (branje.predlog.demo)
     return <DemoStran p={branje.predlog} zacetniPaket={3} zaSliko pisava={pisavaZa(branje.predlog.dejavnost)} />;

@@ -6,6 +6,7 @@ import { preberiPredlog, type DeloAgenta, type Predlog } from "@/lib/predlogi";
 import { Cene } from "../Cene";
 import { datumPredloga } from "../oblika";
 import { PredogledStrani } from "../PredogledStrani";
+import { imaPdfAgenta, PonudbaAgenta } from "./PonudbaAgenta";
 
 /**
  * Ponudba v PDF (A4), ki gre s prvim mailom kot priloga — ista vsebina kot
@@ -26,6 +27,8 @@ export default async function PonudbaPage({ params }: { params: Promise<{ koda: 
   const imaSliki = ["predogled-racunalnik.jpg", "predogled-telefon.jpg"].every((i) => p.priloge?.includes(i));
   const podjetje = p.podjetje.replace(/\.+$/, "");
   const a = p.agent;
+  // Agentova ponudba od 23. 10. 2026: pet strani, problem → rešitev → kako → korist → cena.
+  if (imaPdfAgenta(p)) return <PonudbaAgenta p={p} />;
 
   return (
     <main className="flex-1 bg-white text-zinc-900 [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
