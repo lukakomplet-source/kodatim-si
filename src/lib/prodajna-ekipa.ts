@@ -400,6 +400,20 @@ export async function odlociOsnutek(
   }
 }
 
+/** Lukov popravek osnutka, ki mu je všeč (24. 10. 2026): Harvey popravi besedila in ga vrne v odobritev. */
+export async function popraviOsnutek(id: string, opomba: string): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    const r = await izHarveyja<{ success: boolean; message?: string }>(`/api/outbox/${encodeURIComponent(id)}/popravi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ opomba }),
+    });
+    return r.success ? { ok: true } : { ok: false, napaka: r.message ?? "Harvey popravka ni sprejel." };
+  } catch {
+    return { ok: false, napaka: "Harvey popravka ni sprejel — ali teče?" };
+  }
+}
+
 type VnosPredaje = {
   pogovor: string;
   podjetje: string;

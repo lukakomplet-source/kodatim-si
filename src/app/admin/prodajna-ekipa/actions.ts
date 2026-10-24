@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
-import { odlociOsnutek, odlociPanogo, type StanjePanoge } from "@/lib/prodajna-ekipa";
+import { odlociOsnutek, odlociPanogo, popraviOsnutek, type StanjePanoge } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 
 /**
@@ -39,6 +39,24 @@ export async function odlociOsnutekAkcija(
   revalidatePath("/admin/prodajna-ekipa");
   revalidatePath("/admin/prodajna-ekipa/odobritev");
   return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
+}
+
+/**
+ * Popravek osnutka namesto zavrnitve: Harvey popravi besedila po Lukovi opombi, osnutek ostane
+ * v odobritvi, opomba pa postane pravilo za vse naslednje.
+ */
+export async function popraviOsnutekAkcija(id: string, opomba: string): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return { ok: false, napaka: "Neveljaven osnutek." };
+  const o = opomba.trim();
+  if (o.length < 3 || o.length > 1200) return { ok: false, napaka: "Napiši, kaj naj popravi (do 1200 znakov)." };
+  const r = await popraviOsnutek(id, o);
+  revalidatePath("/admin/prodajna-ekipa/odobritev");
+  return r;
 }
 
 /** Potrditev ali zavrnitev profila panoge; popravek Harvey upošteva bolj kot vire. */

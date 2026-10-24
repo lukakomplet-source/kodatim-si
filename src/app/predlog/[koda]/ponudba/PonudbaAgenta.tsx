@@ -33,10 +33,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
   const a = p.agent;
   const barva = /^#[0-9a-f]{6}$/i.test(p.vizual?.barva ?? "") ? (p.vizual?.barva as string) : PRIVZETA_BARVA;
   const problem = alineje(p.mail.uvod);
-  const glavni = p.cene?.find((c) => c.st === a.paket.st);
-  const ai = a.paket.ai ? p.cene?.find((c) => c.st === "+") : undefined;
-  // »Mesečnina je 20–25 € + DDV. Vključuje …« → samo znesek; vsebina mesečnine je na predlogu.
-  const mesecno = p.mesecnina?.match(/\d[\d.,–-]*\s*€(\s*\+\s*DDV)?/)?.[0];
+  const nadgradnje = a.pdf.nadgradnje ?? [];
 
   return (
     <main
@@ -149,21 +146,23 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
         </div>
       </Stran>
 
-      {/* 5 · Cena in klic */}
+      {/* 5 · Nadgradnje, cena brez zneskov in klic (Luka 24. 10.) */}
       <Stran p={p}>
-        <Oznaka>Cena</Oznaka>
-        <div className="mt-6 rounded-2xl border-2 border-[#0b1530] px-6 py-5">
-          {glavni && <Vrstica ime={glavni.ime} cena={glavni.cena} krepko />}
-          {ai && <Vrstica ime={ai.ime} cena={ai.cena} />}
-          {mesecno && <Vrstica ime="Mesečno vzdrževanje" cena={mesecno} />}
-        </div>
-        {p.garancija && (
-          <p className="mt-5 flex gap-3 text-[14px] leading-relaxed">
-            <Check className="mt-0.5 h-5 w-5 shrink-0 text-[var(--b)]" strokeWidth={3} aria-hidden />
-            <span>{p.garancija}</span>
-          </p>
+        {nadgradnje.length > 0 && (
+          <>
+            <Oznaka>Ko prvi del dela, lahko dodamo</Oznaka>
+            <div className="mt-4 space-y-3">
+              {nadgradnje.map((n) => (
+                <div key={n.naslov} className="rounded-2xl bg-[#f6f7f9] px-5 py-4">
+                  <p className="text-[17px] font-bold">{n.naslov}</p>
+                  {n.opis && <p className="mt-1 text-[13px] leading-relaxed text-[#374151]">{n.opis}</p>}
+                </div>
+              ))}
+            </div>
+          </>
         )}
-        {p.cene_trg?.primerjava && <p className="mt-3 text-[12px] text-[#6b7280]">{p.cene_trg.primerjava}</p>}
+        <p className="mt-8 text-[20px] font-bold">Cena je ugodna in se vam prilagodimo.</p>
+        <p className="mt-1 text-[14px] text-[#4b5563]">Dogovoriva se v kratkem klicu. Garancija je zapisana v pogodbi.</p>
 
         <div className="mt-auto rounded-2xl bg-[#0b1530] px-7 py-7 text-white">
           <p className="text-[24px] font-bold leading-tight">Prepoznate to pri sebi?</p>
@@ -171,7 +170,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
             <Phone className="h-7 w-7" aria-hidden /> {TELEFON}
           </p>
           <p className="mt-2 text-[14px] text-white/70">
-            Pokličite ali odgovorite na mail — v 15 minutah vam pokažem, kako bi delovalo pri vas.
+            Pokličite ali na kodatim.si/predlog/{p.koda} kliknite »Zanima me« — pokličem vas jaz.
           </p>
           <p className="mt-5 text-[13px] text-white/80">Luka Komplet · KodaTim · luka@kodatim.si</p>
         </div>
@@ -212,13 +211,4 @@ function Stran({
 
 function Oznaka({ children }: { children: ReactNode }) {
   return <p className="text-[14px] font-semibold text-[var(--b)]">{children}</p>;
-}
-
-function Vrstica({ ime, cena, krepko = false }: { ime: string; cena: string; krepko?: boolean }) {
-  return (
-    <p className={`flex items-baseline justify-between gap-6 py-1.5 ${krepko ? "text-[18px] font-bold" : "text-[15px]"}`}>
-      <span>{ime}</span>
-      <span className="whitespace-nowrap">{cena}</span>
-    </p>
-  );
 }

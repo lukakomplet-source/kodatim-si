@@ -1,11 +1,12 @@
 /* eslint-disable @next/next/no-img-element -- posnetek njihove strani pride s Harveyja */
 import type { CSSProperties, ReactNode } from "react";
-import { Check, Mail, Phone, ShieldCheck, X } from "lucide-react";
+import { ArrowUpRight, Check, Mail, Phone, ShieldCheck, X } from "lucide-react";
 import type { DeloAgenta, HeroAgenta, MailAgenta, PdfAgenta, Predlog } from "@/lib/predlogi";
 import { Eposta } from "./Eposta";
 import { pisavaPoImenu } from "./pisave";
 import { PredogledFunkcije } from "./PredogledFunkcije";
 import { Telefon } from "./PrviZaslon";
+import { ZanimaMe } from "./ZanimaMe";
 
 /**
  * Prodajna stran predloga (Luka, 23. 10. 2026: »res naredi lep dizajn … prodajni dizajn …
@@ -63,10 +64,13 @@ function ProdajniVrh({ p, zaSliko = false, korak }: { p: PredlogProdaja; zaSliko
           )}
           {!zaSliko && (
             <div className="mt-9 flex flex-wrap items-center gap-3">
-              <a href={TEL} className="flex items-center gap-2 rounded-xl bg-[var(--b)] px-6 py-3.5 font-semibold text-white shadow-lg shadow-black/30 hover:brightness-110">
-                <Phone className="h-4 w-4" aria-hidden /> Pokličite {TELEFON}
+              <a href="#zanima" className="rounded-xl bg-[var(--b)] px-6 py-3.5 font-semibold text-white shadow-lg shadow-black/30 hover:brightness-110">
+                Zanima me
               </a>
-              <a href="#preizkusite" className="rounded-xl px-5 py-3.5 font-semibold text-white/85 ring-1 ring-white/20 hover:bg-white/10">
+              <a href={TEL} className="flex items-center gap-2 rounded-xl px-5 py-3.5 font-semibold text-white/85 ring-1 ring-white/20 hover:bg-white/10">
+                <Phone className="h-4 w-4" aria-hidden /> {TELEFON}
+              </a>
+              <a href="#preizkusite" className="px-2 py-3.5 font-semibold text-white/70 underline decoration-white/30 underline-offset-4 hover:text-white">
                 Preizkusite sami
               </a>
             </div>
@@ -88,9 +92,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
       </div>
     );
   const problem = alineje(p.mail.uvod);
-  const glavni = p.cene?.find((c) => c.st === a.paket.st);
-  const ai = a.paket.ai ? p.cene?.find((c) => c.st === "+") : undefined;
-  const mesecno = p.mesecnina?.match(/\d[\d.,–-]*\s*€(\s*\+\s*DDV)?/)?.[0];
+  const nadgradnje = a.pdf.nadgradnje ?? [];
   const [prva, ...ostale] = a.pdf.korist;
 
   return (
@@ -101,8 +103,8 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
           <p className="min-w-0 truncate text-xs font-semibold text-white/70">
             Predlog za {p.kratko_ime}, pripravil KodaTim
           </p>
-          <a href={TEL} className="hidden shrink-0 items-center gap-2 rounded-lg bg-[var(--b)] px-3.5 py-1.5 text-xs font-semibold sm:flex">
-            <Phone className="h-3.5 w-3.5" aria-hidden /> {TELEFON}
+          <a href="#zanima" className="hidden shrink-0 rounded-lg bg-[var(--b)] px-3.5 py-1.5 text-xs font-semibold sm:block">
+            Zanima me
           </a>
         </div>
       </div>
@@ -230,32 +232,45 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
         </div>
       </Odsek>
 
-      {/* Cena in klic */}
+      {/* Nadgradnje za kasneje (Luka 24. 10.: »nekaj upsellanja od spodaj«) */}
+      {nadgradnje.length > 0 && (
+        <Odsek>
+          <Oznaka barva="b">Ko prvi del dela, lahko dodamo</Oznaka>
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            {nadgradnje.map((n) => (
+              <div key={n.naslov} className="rounded-3xl p-7 ring-1 ring-[#e7e9ee]">
+                <p className="flex items-center gap-3 text-xl font-bold">
+                  <ArrowUpRight className="h-5 w-5 shrink-0 text-[var(--b)]" aria-hidden />
+                  {n.naslov}
+                </p>
+                {n.opis && <p className="mt-2 pl-8 leading-relaxed text-[#4b5563]">{n.opis}</p>}
+              </div>
+            ))}
+          </div>
+        </Odsek>
+      )}
+
+      {/* Zanimanje in klic — brez zneskov (Luka 24. 10.: »odstrani ceno … se mu prilagajali«) */}
       <section id="ponudba-kodatim" className="scroll-mt-12 bg-[var(--crn)] text-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 lg:grid-cols-2 lg:items-center">
-          <div className="rounded-3xl bg-white p-7 text-[var(--crn)] sm:p-9">
-            <Oznaka barva="b">Cena</Oznaka>
-            <div className="mt-5 divide-y divide-[#eef0f4]">
-              {glavni && <Vrstica ime={glavni.ime} cena={glavni.cena} krepko />}
-              {ai && <Vrstica ime={ai.ime} cena={ai.cena} />}
-              {mesecno && <Vrstica ime="Mesečno vzdrževanje" cena={mesecno} />}
-            </div>
-            {p.garancija && (
-              <p className="mt-6 flex gap-3 rounded-2xl bg-[#f4f5f7] p-4 text-sm leading-relaxed text-[#374151]">
-                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--b)]" aria-hidden />
-                <span>
-                  <span className="font-semibold text-[var(--crn)]">Garancija v pogodbi. </span>
-                  {p.garancija}
-                </span>
-              </p>
-            )}
-            {p.cene_trg?.primerjava && <p className="mt-4 text-xs leading-relaxed text-[#6b7280]">{p.cene_trg.primerjava}</p>}
+          <div id="zanima" className="scroll-mt-16">
+            <ZanimaMe koda={p.koda} ime={p.kratko_ime} />
           </div>
           <div>
             <h2 className={`${NASLOV} text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[1.02]`}>Prepoznate to pri sebi?</h2>
             <p className="mt-5 max-w-md text-lg leading-relaxed text-white/70">
-              Pokličite me. V 15 minutah vam pokažem, kako bi delovalo pri vas.
+              Pustite telefon ali pokličite me. V 15 minutah vam pokažem, kako bi delovalo pri vas.
             </p>
+            <p className="mt-5 max-w-md leading-relaxed text-white/80">
+              <span className="font-semibold text-white">Cena je ugodna in se vam prilagodimo</span> — dogovoriva
+              se v kratkem klicu.
+            </p>
+            {p.garancija && (
+              <p className="mt-4 flex max-w-md gap-3 text-sm leading-relaxed text-white/65">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[color-mix(in_srgb,var(--b)_60%,white)]" aria-hidden />
+                <span>Garancija v pogodbi: če v 6 mesecih ne prinese rezultata, vrnemo 50 % začetnega plačila.</span>
+              </p>
+            )}
             <a href={TEL} className="mt-8 inline-flex items-center gap-3 rounded-2xl bg-[var(--b)] px-7 py-5 text-[clamp(1.5rem,3vw,2.1rem)] font-extrabold shadow-xl shadow-black/30 hover:brightness-110">
               <Phone className="h-7 w-7" aria-hidden /> {TELEFON}
             </a>
@@ -272,9 +287,14 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
       </section>
 
       {/* Na telefonu je klic vedno pri palcu */}
-      <a href={TEL} className="fixed inset-x-4 bottom-4 z-50 flex items-center justify-center gap-2 rounded-2xl bg-[var(--b)] py-4 font-semibold text-white shadow-2xl shadow-black/40 sm:hidden">
-        <Phone className="h-4 w-4" aria-hidden /> Pokličite {TELEFON}
-      </a>
+      <div className="fixed inset-x-4 bottom-4 z-50 flex gap-2 sm:hidden">
+        <a href="#zanima" className="flex flex-1 items-center justify-center rounded-2xl bg-[var(--b)] py-4 font-semibold text-white shadow-2xl shadow-black/40">
+          Zanima me
+        </a>
+        <a href={TEL} aria-label={`Pokličite ${TELEFON}`} className="flex w-16 items-center justify-center rounded-2xl bg-[var(--crn)] text-white shadow-2xl shadow-black/40">
+          <Phone className="h-5 w-5" aria-hidden />
+        </a>
+      </div>
     </div>
   );
 }
@@ -297,15 +317,6 @@ function Oznaka({ barva, children }: { barva: keyof typeof OZNAKE; children: Rea
   return (
     <p className={`text-sm font-bold ${OZNAKE[barva]}`}>
       {children}
-    </p>
-  );
-}
-
-function Vrstica({ ime, cena, krepko = false }: { ime: string; cena: string; krepko?: boolean }) {
-  return (
-    <p className={`flex items-baseline justify-between gap-6 py-3 ${krepko ? "text-lg font-bold" : ""}`}>
-      <span>{ime}</span>
-      <span className={`whitespace-nowrap ${krepko ? "text-2xl text-[var(--b)]" : ""}`}>{cena}</span>
     </p>
   );
 }

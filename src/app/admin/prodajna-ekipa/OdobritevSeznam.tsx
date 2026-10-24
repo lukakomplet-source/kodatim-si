@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { Postavka } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type RazlogZavrnitve, type Zavrnitev } from "@/lib/razlogiZavrnitve";
-import { odlociOsnutekAkcija } from "./actions";
+import { odlociOsnutekAkcija, popraviOsnutekAkcija } from "./actions";
 import { RazmisljanjeKartica } from "./RazmisljanjeKartica";
 
 /**
@@ -22,6 +22,22 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
   const [zavracam, setZavracam] = useState<string | null>(null);
   const [razlog, setRazlog] = useState<RazlogZavrnitve | "">("");
   const [opomba, setOpomba] = useState("");
+  const [popravljam, setPopravljam] = useState<string | null>(null);
+  const [popravek, setPopravek] = useState("");
+  const [poslanPopravek, setPoslanPopravek] = useState<Record<string, boolean>>({});
+
+  function popravi(id: string) {
+    zacni(async () => {
+      const r = await popraviOsnutekAkcija(id, popravek);
+      if (r.ok) {
+        setPoslanPopravek((o) => ({ ...o, [id]: true }));
+        setPopravljam(null);
+        setPopravek("");
+      } else {
+        setNapake((n) => ({ ...n, [id]: r.napaka ?? "Napaka." }));
+      }
+    });
+  }
 
   const ostali = postavke.filter((p) => p.id && !odloceni[p.id]);
 
@@ -174,7 +190,12 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
                   </div>
                 ) : null}
                 {napake[id] ? <p className="mt-2 text-sm text-red-700">{napake[id]}</p> : null}
-                <div className="mt-3 flex gap-2">
+                {poslanPopravek[id] ? (
+                  <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-200">
+                    Popravljam po tvoji opombi … Ko bo nared, dobiš Telegram in osnutek bo tu posodobljen.
+                  </p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={cakam}
@@ -195,7 +216,40 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
                   >
                     {zavracam === id ? "Prekliči" : "Zavrni …"}
                   </button>
+                  <button
+                    type="button"
+                    disabled={cakam}
+                    onClick={() => {
+                      setPopravljam(popravljam === id ? null : id);
+                      setPopravek("");
+                      setZavracam(null);
+                    }}
+                    className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-sky-800 ring-1 ring-sky-300 disabled:opacity-50"
+                  >
+                    {popravljam === id ? "Prekliči popravek" : "Popravi …"}
+                  </button>
                 </div>
+                {popravljam === id ? (
+                  <div className="mt-3 rounded-lg bg-sky-50 p-3 ring-1 ring-sky-200">
+                    <p className="text-xs font-medium text-sky-900">Kaj naj popravi? Osnutek ostane, opomba velja tudi za vse naslednje.</p>
+                    <textarea
+                      value={popravek}
+                      onChange={(e) => setPopravek(e.target.value)}
+                      maxLength={1200}
+                      rows={3}
+                      placeholder="npr. »odstrani ceno, dodaj nadgradnjo z AI klici, prva alineja bolj konkretno«"
+                      className="mt-2 w-full rounded-lg border border-sky-300 bg-white p-2 text-sm text-zinc-800 focus:border-sky-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={cakam || popravek.trim().length < 3}
+                      onClick={() => popravi(id)}
+                      className="mt-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      Popravi
+                    </button>
+                  </div>
+                ) : null}
                 {zavracam === id ? (
                   <div className="mt-3 rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-200">
                     <p className="text-xs font-medium text-zinc-600">Zakaj ne?</p>

@@ -131,6 +131,8 @@ export type PdfAgenta = {
   problem_pdf: string;
   lotimo: string[];
   korist: { naslov: string; izracun: string }[];
+  /** Nadgradnje za kasneje (od 24. 10. 2026), npr. AI, ki se po telefonu pogovarja s strankami. */
+  nadgradnje?: { naslov: string; opis: string }[];
 };
 
 /** Agentov mail: uvod = alineje problema, jedro = alineje rešitve, zakljucek = kaj pridobijo. */
@@ -251,6 +253,26 @@ export async function preberiPrilogo(koda: string, ime: string): Promise<ArrayBu
 }
 
 /** Šteje ogled, da ekipa ve, kdo je predlog odprl. */
+/** »Zanima me« s strani predloga: Harvey shrani, ustavi follow-up in obvesti Luka. */
+export async function zabeleziZanimanje(
+  koda: string,
+  vnos: { ime: string; telefon: string; email: string; sporocilo: string },
+): Promise<boolean> {
+  if (!veljavnaKoda(koda)) return false;
+  try {
+    const r = await fetch(`${HARVEY}/api/predlog/${koda}/zanimanje`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(vnos),
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function zabeleziOgled(koda: string): Promise<boolean> {
   if (!veljavnaKoda(koda)) return false;
   try {
