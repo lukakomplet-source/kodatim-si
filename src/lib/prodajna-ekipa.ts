@@ -406,6 +406,50 @@ export async function preberiZdaj(): Promise<Zdaj | null> {
   }
 }
 
+/** Problem, ki ga je agent našel pri podjetju in čaka na Lukovo potrditev (harvey/problemi.py). */
+export type ProblemPodjetja = {
+  id: number;
+  podjetje: string;
+  kratkoIme: string;
+  domena: string;
+  kraj: string;
+  dejavnost: string;
+  stanje: "caka" | "potrjen" | "zavrnjen";
+  razlog: string;
+  ustvarjeno: string;
+  kajDelajo: string;
+  kupci: string;
+  kakoKupujejoDanes: string;
+  problemi: { problem: string; citat: string; dokaz: string; posledica: string; gotovost: string }[];
+  lastnikRece: string;
+  velikost: string;
+};
+
+export async function preberiProbleme(): Promise<{ caka: ProblemPodjetja[]; odloceni: ProblemPodjetja[] } | null> {
+  try {
+    return await izHarveyja("/api/problemi");
+  } catch {
+    return null;
+  }
+}
+
+export async function odlociProblem(
+  id: number,
+  stanje: "potrjen" | "zavrnjen",
+  razlog: string,
+): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    const r = await izHarveyja<{ success: boolean; message?: string }>(`/api/problemi/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stanje, razlog }),
+    });
+    return r.success ? { ok: true } : { ok: false, napaka: r.message ?? "Harvey ni sprejel." };
+  } catch {
+    return { ok: false, napaka: "Ta problem ne čaka več ali Harvey ne odgovarja." };
+  }
+}
+
 export type Drevo = { veje: Veja[]; priprava: { veja: string; preostane: number; zacetek: string } | null };
 
 export async function preberiDrevo(): Promise<Drevo | null> {

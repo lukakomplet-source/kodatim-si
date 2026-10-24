@@ -6,6 +6,7 @@ import {
   nastaviRecept,
   odlociOsnutek,
   odlociPanogo,
+  odlociProblem,
   popraviOsnutek,
   pripraviVejo,
   type StanjePanoge,
@@ -107,4 +108,21 @@ export async function odlociPanogoAkcija(
   const ok = await odlociPanogo(kljuc, stanje, popravek.trim());
   revalidatePath("/admin/prodajna-ekipa/panoge");
   return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
+}
+
+/** Luka potrdi ali zavrne problem, ki ga je agent našel pri podjetju (korak za korakom). */
+export async function odlociProblemAkcija(
+  id: number,
+  potrdi: boolean,
+  razlog: string,
+): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, napaka: "Neznan problem." };
+  const r = await odlociProblem(id, potrdi ? "potrjen" : "zavrnjen", razlog.slice(0, 500));
+  revalidatePath("/admin/prodajna-ekipa/problemi");
+  return r;
 }

@@ -4,6 +4,7 @@ import {
   predajVPromocije,
   preberiEkipo,
   preberiLijak,
+  preberiProbleme,
   preberiZdaj,
   type Lijak,
   type PredajaRezultat,
@@ -27,7 +28,8 @@ const OSVEZI_VSAKIH_S = 15;
 
 export default async function ProdajnaEkipaPage() {
   await requireAdmin();
-  const [{ povzetek, napaka }, zdaj] = await Promise.all([preberiEkipo(), preberiZdaj()]);
+  const [{ povzetek, napaka }, zdaj, problemi] = await Promise.all([preberiEkipo(), preberiZdaj(), preberiProbleme()]);
+  const problemovCaka = problemi?.caka.length ?? 0;
 
   let predaja: PredajaRezultat | null = null;
   let lijak: Lijak | null = null;
@@ -95,6 +97,18 @@ export default async function ProdajnaEkipaPage() {
           Predaja v Promocije: {predaja.napaka}
         </p>
       ) : null}
+
+      <Link
+        href="/admin/prodajna-ekipa/problemi"
+        className={`mt-5 flex items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold ring-1 ${
+          problemovCaka > 0
+            ? "bg-amber-50 text-amber-950 ring-amber-300"
+            : "bg-white text-zinc-700 ring-zinc-200"
+        }`}
+      >
+        <span>Problemi za potrditev</span>
+        <span className="text-2xl">{problemovCaka}</span>
+      </Link>
 
       {zdaj ? <KajDelaZdaj podatki={zdaj} /> : null}
 
