@@ -240,6 +240,35 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
         )}
       </Odsek>
 
+      {/* Več zaslužka: kar že prodajajo, AI proda vsaki stranki (Luka 24. 10.) */}
+      {a.pdf.dodatna_prodaja?.length ? (
+        <section className="bg-[var(--meta)]">
+          <div className="mx-auto max-w-6xl px-4 py-20">
+            <Oznaka barva="b">Več zaslužka na vsako stranko</Oznaka>
+            <h2 className={`${NASLOV} mt-3 max-w-3xl text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.08]`}>
+              AI sam ponudi, kar že prodajate
+            </h2>
+            <p className="mt-3 max-w-2xl text-lg text-[#4b5563]">
+              Kot pri letalskih družbah: osnovna storitev, zaslužek pri dodatkih.
+            </p>
+            <div className={`mt-10 grid gap-10 ${a.pdf.promocija?.sporocila?.length ? "lg:grid-cols-[1fr_auto] lg:items-center" : ""}`}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {a.pdf.dodatna_prodaja.map((x) => (
+                  <div key={x.kaj} className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#e3e9e7]">
+                    <p className="text-lg font-bold leading-snug">{x.kaj}</p>
+                    {x.cena ? <p className={`${NASLOV} mt-2 text-3xl font-bold text-[var(--b)]`}>{x.cena}</p> : null}
+                    {x.kako ? <p className="mt-2 text-sm leading-relaxed text-[#4b5563]">{x.kako}</p> : null}
+                  </div>
+                ))}
+              </div>
+              {a.pdf.promocija?.sporocila?.length ? (
+                <WhatsAppPogovor ime={p.kratko_ime} pogovor={a.pdf.promocija} visina={460} />
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {/* Preizkusite sami: pripomoček v živo */}
       <section id="preizkusite" className="scroll-mt-12 bg-[var(--crn)] text-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">

@@ -165,6 +165,28 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
         </div>
       </Stran>
 
+      {a.pdf.dodatna_prodaja?.length ? (
+        <Stran p={p} sredina>
+          <Oznaka>Več zaslužka na vsako stranko</Oznaka>
+          <p className="mt-3 text-[26px] font-bold leading-tight">AI sam ponudi, kar že prodajate</p>
+          <p className="mt-1 text-[14px] text-[#4b5563]">Kot pri letalskih družbah: osnovna storitev, zaslužek pri dodatkih.</p>
+          <div className="mt-8 flex items-center gap-8">
+            <div className="grid flex-1 grid-cols-2 gap-3">
+              {a.pdf.dodatna_prodaja.map((x) => (
+                <div key={x.kaj} className="rounded-2xl bg-[#f6f7f9] px-4 py-4">
+                  <p className="text-[15px] font-bold leading-snug">{x.kaj}</p>
+                  {x.cena ? <p className="mt-1 text-[22px] font-bold text-[var(--b)]">{x.cena}</p> : null}
+                  {x.kako ? <p className="mt-1 text-[12px] leading-relaxed text-[#4b5563]">{x.kako}</p> : null}
+                </div>
+              ))}
+            </div>
+            {a.pdf.promocija?.sporocila?.length ? (
+              <WhatsAppPogovor ime={p.kratko_ime} pogovor={a.pdf.promocija} zaSliko visina={420} />
+            ) : null}
+          </div>
+        </Stran>
+      ) : null}
+
       {a.pdf.klic?.replike?.length ? (
         <Stran p={p} sredina>
           <Oznaka>Nadgradnja: AI, ki se pogovarja po telefonu</Oznaka>

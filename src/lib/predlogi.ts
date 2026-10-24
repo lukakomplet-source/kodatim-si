@@ -136,6 +136,9 @@ export type PdfAgenta = {
   /** Realističen prikaz rešitve (od 24. 10. 2026): pogovor na WhatsAppu in AI klic, iz njihovih ponudb. */
   pogovor?: PogovorAgenta;
   klic?: KlicAgenta;
+  /** Kar podjetje že prodaja in kako to AI proda (od 24. 10. 2026: »mi njim dvignemo dobiček«). */
+  dodatna_prodaja?: { kaj: string; cena: string; kako: string }[];
+  promocija?: PogovorAgenta;
 };
 
 export type PogovorAgenta = { opis?: string; sporocila: { od: "gost" | "ai"; besedilo: string; cas: string }[] };
