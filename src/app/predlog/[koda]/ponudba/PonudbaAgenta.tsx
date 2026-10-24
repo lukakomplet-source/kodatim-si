@@ -4,6 +4,7 @@ import { ArrowRight, Check, Phone, X } from "lucide-react";
 import type { DeloAgenta, HeroAgenta, MailAgenta, PdfAgenta, Predlog } from "@/lib/predlogi";
 import { datumPredloga } from "../oblika";
 import { TelefonKorak } from "../PrviZaslon";
+import { AiKlic, WhatsAppPogovor } from "../RealniPrikaz";
 
 /**
  * PDF ponudba prodajnega agenta (Luka, 23. 10. 2026: »problem, rešitev … kak bi se ti tega
@@ -96,6 +97,22 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
             ))}
           </p>
         )}
+        {a.pdf.pogovor?.sporocila?.length ? (
+          <div className="mt-8 flex items-center gap-8">
+            <WhatsAppPogovor ime={p.kratko_ime} pogovor={a.pdf.pogovor} zaSliko visina={520} />
+            <ol className="flex-1 space-y-5">
+              {a.hero.potem.slice(0, 3).map((k, i) => (
+                <li key={k} className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F2B544] text-[15px] font-bold">
+                    {i + 1}
+                  </span>
+                  <span className="pt-1 text-[16px] font-semibold leading-snug">{k}</span>
+                </li>
+              ))}
+              {a.pdf.pogovor.opis ? <li className="text-[13px] leading-relaxed text-[#4b5563]">{a.pdf.pogovor.opis}</li> : null}
+            </ol>
+          </div>
+        ) : (
         <div className="mt-10 grid grid-cols-3 gap-6">
           {a.hero.potem.slice(0, 3).map((k, i) => (
             <div key={k} className="flex flex-col items-center text-center">
@@ -104,6 +121,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
             </div>
           ))}
         </div>
+        )}
         <p className="mt-6 rounded-xl bg-[color-mix(in_srgb,var(--b)_8%,white)] px-4 py-3 text-[13px]">
           Preizkusite v živo:{" "}
           <a href={`https://kodatim.si/predlog/${p.koda}`} className="font-semibold text-[var(--b)]">
@@ -146,6 +164,18 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
           ))}
         </div>
       </Stran>
+
+      {a.pdf.klic?.replike?.length ? (
+        <Stran p={p} sredina>
+          <Oznaka>Nadgradnja: AI, ki se pogovarja po telefonu</Oznaka>
+          <div className="mt-8 flex items-center gap-10">
+            <AiKlic ime={p.kratko_ime} klic={a.pdf.klic} zaSliko />
+            <p className="flex-1 text-[18px] font-semibold leading-snug">
+              Ko gost raje pokliče, se oglasi AI — v njegovem jeziku, tudi ponoči — in mu ob tem ponudi, kar že prodajate.
+            </p>
+          </div>
+        </Stran>
+      ) : null}
 
       {/* 5 · Nadgradnje, cena brez zneskov in klic (Luka 24. 10.) */}
       <Stran p={p}>

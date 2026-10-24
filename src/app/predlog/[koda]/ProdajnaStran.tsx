@@ -19,6 +19,7 @@ import { Eposta } from "./Eposta";
 import { pisavaPoImenu } from "./pisave";
 import { PredogledFunkcije } from "./PredogledFunkcije";
 import { Telefon, TelefonKorak } from "./PrviZaslon";
+import { AiKlic, WhatsAppPogovor } from "./RealniPrikaz";
 import { ZanimaMe } from "./ZanimaMe";
 
 /**
@@ -97,7 +98,16 @@ function ProdajniVrh({ p, zaSliko = false, korak }: { p: PredlogProdaja; zaSliko
             </div>
           )}
         </div>
-        <Telefon p={p} a={a} koraki={a.hero.potem} zaSliko={zaSliko} zacetni={korak} />
+        {a.pdf.pogovor?.sporocila?.length ? (
+          <WhatsAppPogovor
+            ime={p.kratko_ime}
+            pogovor={a.pdf.pogovor}
+            zaSliko={zaSliko}
+            korak={korak !== undefined ? vidnaSporocila(a.pdf.pogovor.sporocila.length, korak) : undefined}
+          />
+        ) : (
+          <Telefon p={p} a={a} koraki={a.hero.potem} zaSliko={zaSliko} zacetni={korak} />
+        )}
       </div>
     </section>
   );
@@ -196,6 +206,24 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
         <h2 className={`${NASLOV} mt-3 max-w-3xl text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.08]`}>
           {a.hero.resitev}
         </h2>
+        {a.pdf.pogovor?.sporocila?.length ? (
+          <div className="mt-12 grid items-center gap-12 lg:grid-cols-[1fr_auto]">
+            <ol className="space-y-6">
+              {a.hero.potem.slice(0, 3).map((k, i) => (
+                <li key={k} className="flex items-start gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--amb)] text-lg font-bold text-[var(--crn)]">
+                    {i + 1}
+                  </span>
+                  <p className="pt-1.5 text-xl font-semibold leading-snug">{k}</p>
+                </li>
+              ))}
+              {a.pdf.pogovor.opis ? (
+                <li className="rounded-2xl bg-[var(--meta)] px-5 py-4 text-[#374151]">{a.pdf.pogovor.opis}</li>
+              ) : null}
+            </ol>
+            <WhatsAppPogovor ime={p.kratko_ime} pogovor={a.pdf.pogovor} visina={600} />
+          </div>
+        ) : (
         <div className="mt-12 grid gap-10 sm:grid-cols-3">
           {a.hero.potem.slice(0, 3).map((k, i) => (
             <div key={k} className="flex flex-col items-center text-center">
@@ -209,6 +237,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
             </div>
           ))}
         </div>
+        )}
       </Odsek>
 
       {/* Preizkusite sami: pripomoček v živo */}
@@ -297,7 +326,9 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
       {nadgradnje.length > 0 && (
         <Odsek siv>
           <Oznaka barva="b">Ko prvi del dela, lahko dodamo</Oznaka>
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
+          <div className={`mt-6 grid gap-8 ${a.pdf.klic?.replike?.length ? "lg:grid-cols-[auto_1fr] lg:items-center" : ""}`}>
+            {a.pdf.klic?.replike?.length ? <AiKlic ime={p.kratko_ime} klic={a.pdf.klic} /> : null}
+            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-1">
             {nadgradnje.map((n) => (
               <div key={n.naslov} className="rounded-3xl border-l-4 border-[var(--amb)] bg-white p-7 shadow-sm">
                 <p className="flex items-center gap-3 text-xl font-bold">
@@ -307,6 +338,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
                 {n.opis && <p className="mt-2 pl-8 leading-relaxed text-[#4b5563]">{n.opis}</p>}
               </div>
             ))}
+            </div>
           </div>
         </Odsek>
       )}
@@ -384,3 +416,8 @@ function Oznaka({ barva, children }: { barva: keyof typeof OZNAKE; children: Rea
 
 const KORAKI = [ClipboardList, MessageCircle, BellRing];
 const KORISTI = [MoonStar, TrendingUp, Check];
+
+/** GIF za mail: trije posnetki, vsak z več sporočili (2, 4, vsa). */
+function vidnaSporocila(vseh: number, korak: number): number {
+  return korak <= 0 ? Math.min(2, vseh) : korak === 1 ? Math.min(4, vseh) : vseh;
+}

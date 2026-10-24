@@ -133,7 +133,13 @@ export type PdfAgenta = {
   korist: { naslov: string; izracun: string }[];
   /** Nadgradnje za kasneje (od 24. 10. 2026), npr. AI, ki se po telefonu pogovarja s strankami. */
   nadgradnje?: { naslov: string; opis: string }[];
+  /** Realističen prikaz rešitve (od 24. 10. 2026): pogovor na WhatsAppu in AI klic, iz njihovih ponudb. */
+  pogovor?: PogovorAgenta;
+  klic?: KlicAgenta;
 };
+
+export type PogovorAgenta = { opis?: string; sporocila: { od: "gost" | "ai"; besedilo: string; cas: string }[] };
+export type KlicAgenta = { opis?: string; replike: { od: "gost" | "ai"; besedilo: string }[] };
 
 /** Agentov mail: uvod = alineje problema, jedro = alineje rešitve, zakljucek = kaj pridobijo. */
 export type MailAgenta = { zadeva: string; uvod: string; jedro: string; zakljucek: string };
