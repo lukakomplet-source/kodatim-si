@@ -4,11 +4,13 @@ import {
   predajVPromocije,
   preberiEkipo,
   preberiLijak,
+  preberiZdaj,
   type Lijak,
   type PredajaRezultat,
 } from "@/lib/prodajna-ekipa";
 import { Osvezevanje } from "../nadzor/Osvezevanje";
 import { Diagram } from "./Diagram";
+import { KajDelaZdaj } from "./KajDelaZdaj";
 
 /**
  * Prodajna ekipa KodaTim: Harvey kot ekipa delavcev, od iskanja do prodaje.
@@ -25,7 +27,7 @@ const OSVEZI_VSAKIH_S = 15;
 
 export default async function ProdajnaEkipaPage() {
   await requireAdmin();
-  const { povzetek, napaka } = await preberiEkipo();
+  const [{ povzetek, napaka }, zdaj] = await Promise.all([preberiEkipo(), preberiZdaj()]);
 
   let predaja: PredajaRezultat | null = null;
   let lijak: Lijak | null = null;
@@ -93,6 +95,8 @@ export default async function ProdajnaEkipaPage() {
           Predaja v Promocije: {predaja.napaka}
         </p>
       ) : null}
+
+      {zdaj ? <KajDelaZdaj podatki={zdaj} /> : null}
 
       {povzetek ? <Diagram povzetek={povzetek} lijak={lijak} /> : null}
     </div>

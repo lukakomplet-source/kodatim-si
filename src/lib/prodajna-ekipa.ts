@@ -372,6 +372,40 @@ export type Veja = {
   recept: Recept | null;
   receptStanje: "" | "predlog" | "potrjen";
 };
+/** Kaj Harvey dela zdaj in lijak za danes (Harvey `/api/ekipa-zdaj`, harvey/zdaj.py). */
+export type StanjeZdaj =
+  | { stanje: "dela"; korak: string; naziv: string; podjetje: string; od: string }
+  | { stanje: "pociva"; od: string; do: string }
+  | { stanje: "ustavljen"; od: string }
+  | { stanje: "ni_podatka" };
+export type DogodekLijaka = {
+  podjetje: string;
+  faza: "izbor" | "problem" | "resitev" | "presoja" | "preverja" | "napisan";
+  zakaj: string;
+  odstotek: number | null;
+  cas: string;
+};
+export type KorakLijaka = {
+  id: string;
+  naziv: string;
+  opis: string;
+  vstop: number;
+  naprej: number;
+  izpadli: DogodekLijaka[];
+};
+export type Zdaj = {
+  zdaj: StanjeZdaj;
+  lijak: { pregledanih: number; napisanih: number; caka: number; koraki: KorakLijaka[]; zadnji: DogodekLijaka[] } | null;
+};
+
+export async function preberiZdaj(): Promise<Zdaj | null> {
+  try {
+    return await izHarveyja<Zdaj>("/api/ekipa-zdaj");
+  } catch {
+    return null;
+  }
+}
+
 export type Drevo = { veje: Veja[]; priprava: { veja: string; preostane: number; zacetek: string } | null };
 
 export async function preberiDrevo(): Promise<Drevo | null> {
