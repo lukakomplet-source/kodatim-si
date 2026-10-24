@@ -282,7 +282,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
         </div>
         <p className="mx-auto max-w-6xl px-4 pb-8 text-[11px] leading-relaxed text-white/35">
           Predlog je pripravila ekipa KodaTim iz javno dostopnih podatkov na {p.domena}. To ni uradna stran podjetja{" "}
-          {p.podjetje.replace(/\.+$/, "")}. Cene so brez DDV.
+          {p.podjetje.replace(/\.+$/, "")}.
         </p>
       </section>
 

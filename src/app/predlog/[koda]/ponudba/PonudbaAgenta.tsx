@@ -176,7 +176,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
         </div>
         <p className="mt-4 text-[10px] leading-relaxed text-[#9ca3af]">
           Predlog je pripravila ekipa KodaTim iz javno dostopnih podatkov na {p.domena}. To ni uradna stran podjetja{" "}
-          {p.podjetje.replace(/\.+$/, "")}. Cene so brez DDV.
+          {p.podjetje.replace(/\.+$/, "")}.
         </p>
       </Stran>
     </main>
