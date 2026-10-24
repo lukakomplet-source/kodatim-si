@@ -55,7 +55,11 @@ export default async function ProdajnaEkipaPage() {
         <Link href="/admin/prodajna-ekipa/panoge" className="text-zinc-900 underline underline-offset-2">
           Panoge
         </Link>{" "}
-        — kaj lastnike v posamezni panogi muči.
+        — kaj lastnike v posamezni panogi muči.{" "}
+        <Link href="/admin/prodajna-ekipa/drevo" className="text-zinc-900 underline underline-offset-2">
+          Drevo
+        </Link>{" "}
+        — veje panog z recepti in pošiljanje po vejah.
       </p>
 
       {napaka ? (

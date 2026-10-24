@@ -2,7 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/require-admin";
-import { odlociOsnutek, odlociPanogo, popraviOsnutek, type StanjePanoge } from "@/lib/prodajna-ekipa";
+import {
+  nastaviRecept,
+  odlociOsnutek,
+  odlociPanogo,
+  popraviOsnutek,
+  pripraviVejo,
+  type StanjePanoge,
+} from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 
 /**
@@ -57,6 +64,30 @@ export async function popraviOsnutekAkcija(id: string, opomba: string): Promise<
   const r = await popraviOsnutek(id, o);
   revalidatePath("/admin/prodajna-ekipa/odobritev");
   return r;
+}
+
+/** Drevo: pripravi osnutke za vejo (po receptu) ali potrdi recept veje. */
+export async function pripraviVejoAkcija(veja: string, stevilo: number): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^[a-z/]{2,60}$/.test(veja)) return { ok: false, napaka: "Neznana veja." };
+  const r = await pripraviVejo(veja, Math.max(1, Math.min(10, Math.round(stevilo))));
+  revalidatePath("/admin/prodajna-ekipa/drevo");
+  return r;
+}
+
+export async function potrdiReceptAkcija(veja: string, potrdi: boolean): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  const ok = await nastaviRecept(veja, potrdi ? "potrjen" : "predlog");
+  revalidatePath("/admin/prodajna-ekipa/drevo");
+  return ok ? { ok } : { ok, napaka: "Harvey recepta ni shranil." };
 }
 
 /** Potrditev ali zavrnitev profila panoge; popravek Harvey upošteva bolj kot vire. */

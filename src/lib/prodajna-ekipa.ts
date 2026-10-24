@@ -357,6 +357,58 @@ export async function preberiPanoge(): Promise<ProfilPanoge[] | null> {
   }
 }
 
+/** Drevo panog (Harvey, drevo.py): veje, števila po stanjih in recepti. */
+export type Recept = { ime: string; problem: string; resitev: string; mail: string; prikaz: string; isci: string; preveri: string };
+export type Veja = {
+  id: string;
+  nadrejena: string;
+  ime: string;
+  skd: string[];
+  podjetja: number;
+  neobdelano: number;
+  odobritev: number;
+  poslano: number;
+  zanimanje: number;
+  recept: Recept | null;
+  receptStanje: "" | "predlog" | "potrjen";
+};
+export type Drevo = { veje: Veja[]; priprava: { veja: string; preostane: number; zacetek: string } | null };
+
+export async function preberiDrevo(): Promise<Drevo | null> {
+  try {
+    return await izHarveyja<Drevo>("/api/drevo");
+  } catch {
+    return null;
+  }
+}
+
+/** »Ta veja, po istem principu«: Harvey pripravi toliko osnutkov za podjetja te veje (vse čaka odobritev). */
+export async function pripraviVejo(veja: string, stevilo: number): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    const r = await izHarveyja<{ success: boolean; message?: string }>("/api/drevo/pripravi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ veja, stevilo }),
+    });
+    return r.success ? { ok: true } : { ok: false, napaka: r.message ?? "Harvey ni sprejel." };
+  } catch {
+    return { ok: false, napaka: "Harvey ne odgovarja — ali teče?" };
+  }
+}
+
+export async function nastaviRecept(veja: string, stanje: "potrjen" | "predlog"): Promise<boolean> {
+  try {
+    const r = await izHarveyja<{ success: boolean }>("/api/drevo/recept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ veja, stanje }),
+    });
+    return r.success;
+  } catch {
+    return false;
+  }
+}
+
 /** Luka potrdi ali zavrne profil panoge, po želji s popravkom. */
 export async function odlociPanogo(kljuc: string, stanje: StanjePanoge, popravek: string): Promise<boolean> {
   try {
