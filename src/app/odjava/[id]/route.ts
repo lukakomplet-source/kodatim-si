@@ -36,7 +36,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (!VELJA.test(id)) return stran("Povezava ni veljavna", "Za odjavo nam lahko tudi samo odpišete.");
   try {
     const r = await fetch(`${HARVEY}/api/odjava/${id}`, { method: "POST", signal: AbortSignal.timeout(8000) });
-    if (r.ok) return stran("Odjavljeni ste", "Ne bomo vam več pisali. Hvala in lep pozdrav, Luka Komplet, KodaTim.");
+    const d = (await r.json().catch(() => ({}))) as { success?: boolean };
+    if (r.ok && d.success) return stran("Odjavljeni ste", "Ne bomo vam več pisali. Hvala in lep pozdrav, Luka Komplet, KodaTim.");
   } catch {
     // spodaj: prosimo za odgovor na mail
   }
