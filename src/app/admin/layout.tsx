@@ -22,6 +22,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import LastPathTracker from "@/components/dashboard/LastPathTracker";
+import { OznaciInterno } from "@/app/predlog/[koda]/OznaciInterno";
 import { getCurrentUserPermissions, hasPermission } from "@/lib/permissions/require-permission";
 import type { PermissionKey } from "@/lib/permissions/registry";
 
@@ -201,6 +202,8 @@ export default async function AdminLayout({
       userEmail={user.email ?? ""}
     >
       <LastPathTracker />
+      {/* Whoever uses the admin is team: their proposal views never count */}
+      <OznaciInterno />
       {children}
     </DashboardShell>
   );

@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
+import { jeInterno } from "./interno";
 
 /**
  * Šteje ogled predloga, ko je stran vsaj 4 sekunde vidna — enkrat na zavihek.
  * Pregledovalniki povezav v e-pošti strani ne gledajo tako dolgo, zato jih
- * ne štejemo kot človeka, ki je predlog odprl.
+ * ne štejemo kot človeka, ki je predlog odprl. Brskalnik ekipe (glej interno.ts)
+ * se ne šteje nikoli.
  */
 export function Ogled({ koda }: { koda: string }) {
   useEffect(() => {
+    if (jeInterno()) return;
     const kljuc = `predlog-ogled:${koda}`;
     try {
       if (sessionStorage.getItem(kljuc) === "1") return;

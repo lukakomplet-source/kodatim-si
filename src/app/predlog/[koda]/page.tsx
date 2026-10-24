@@ -11,6 +11,7 @@ import { Eposta } from "./Eposta";
 import { pisavaPoImenu, pisavaZa } from "./pisave";
 import { datumPredloga } from "./oblika";
 import { Ogled } from "./Ogled";
+import { OznaciInterno } from "./OznaciInterno";
 import { PredogledStrani } from "./PredogledStrani";
 import { imaProdajo, ProdajnaStran } from "./ProdajnaStran";
 
@@ -21,7 +22,7 @@ import { imaProdajo, ProdajnaStran } from "./ProdajnaStran";
  * splača, cene z garancijo in en jasen korak naprej.
  *
  * Stran ni v iskalnikih in jasno piše, da ni uradna stran podjetja.
- * ?interno = ogled, ki se ne šteje (Luka, ekipa).
+ * ?interno = ogled, ki se ne šteje (Luka, ekipa); brskalnik si to zapomni.
  */
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
   if (imaProdajo(p)) {
     return (
       <>
-        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        {"interno" in iskanje ? <OznaciInterno /> : <Ogled koda={p.koda} />}
         <ProdajnaStran p={p} />
       </>
     );
@@ -73,7 +74,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
   if (p.stran && p.agent) {
     return (
       <>
-        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        {"interno" in iskanje ? <OznaciInterno /> : <Ogled koda={p.koda} />}
         <AgentStran p={p} pisava={pisavaPoImenu(p.stran.tema.pisava)} />
       </>
     );
@@ -85,7 +86,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
     const paket = izbran === "2" ? 2 : izbran === "3" ? 3 : 1;
     return (
       <>
-        {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+        {"interno" in iskanje ? <OznaciInterno /> : <Ogled koda={p.koda} />}
         <DemoStran p={p} zacetniPaket={paket} pisava={pisavaZa(p.dejavnost)} />
       </>
     );
@@ -93,7 +94,7 @@ export default async function PredlogPage({ params, searchParams }: Props) {
 
   return (
     <>
-      {!("interno" in iskanje) && <Ogled koda={p.koda} />}
+      {"interno" in iskanje ? <OznaciInterno /> : <Ogled koda={p.koda} />}
       <Glava oznaka={`Predlog KodaTim · ni uradna stran podjetja ${p.kratko_ime}`} />
 
       <main className="flex-1">
