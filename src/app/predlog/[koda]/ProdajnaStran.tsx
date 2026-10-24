@@ -1,23 +1,37 @@
 /* eslint-disable @next/next/no-img-element -- posnetek njihove strani pride s Harveyja */
 import type { CSSProperties, ReactNode } from "react";
-import { ArrowUpRight, Check, Mail, Phone, ShieldCheck, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  BellRing,
+  Check,
+  ClipboardList,
+  Clock,
+  Mail,
+  MessageCircle,
+  MoonStar,
+  Phone,
+  ShieldCheck,
+  TrendingUp,
+  X,
+} from "lucide-react";
 import type { DeloAgenta, HeroAgenta, MailAgenta, PdfAgenta, Predlog } from "@/lib/predlogi";
 import { Eposta } from "./Eposta";
 import { pisavaPoImenu } from "./pisave";
 import { PredogledFunkcije } from "./PredogledFunkcije";
-import { Telefon } from "./PrviZaslon";
+import { Telefon, TelefonKorak } from "./PrviZaslon";
 import { ZanimaMe } from "./ZanimaMe";
 
 /**
  * Prodajna stran predloga (Luka, 23. 10. 2026: »res naredi lep dizajn … prodajni dizajn …
  * v 3 sekundah se mora najti v svojem problemu in takoj videti rešitev«). Ista zgodba kot mail
  * in PDF: problem → rešitev v živo → kako se lotimo → kaj pridobite → cena → pokličite.
- * Barvi nosita pomen skozi vso stran: problem je rja z ✕, rešitev njihova barva s ✓.
+ * Ena paleta za vso stran (Luka 24. 10.: »eno paleto barv … ne samo te ene vijolične«): temno modra
+ * podlaga, koralna za problem ✕, turkizna za rešitev ✓ in gumbe, jantarna za številke, svetla meta za
+ * izmenjujoča ozadja. Barva podjetja ostane samo v njihovem logotipu.
  */
 
 const TELEFON = "040 199 051";
 const TEL = "tel:+38640199051";
-const PRIVZETA_BARVA = "#2f5bd3";
 
 export type AgentProdaja = DeloAgenta & { hero: HeroAgenta; pdf: PdfAgenta };
 export type PredlogProdaja = Predlog & { agent: AgentProdaja; mail: MailAgenta };
@@ -36,9 +50,16 @@ function alineje(t: string): string[] {
     .map((v) => v.replace(/^[•\-*]\s*/, ""));
 }
 
-function slog(p: Predlog): CSSProperties {
-  const barva = /^#[0-9a-f]{6}$/i.test(p.vizual?.barva ?? "") ? (p.vizual?.barva as string) : PRIVZETA_BARVA;
-  return { "--b": barva, "--rja": "#c2410c", "--crn": "#0b1530" } as CSSProperties;
+const PALETA = {
+  "--crn": "#0E1B2C", // podlaga, besedilo
+  "--rja": "#E8573F", // problem
+  "--b": "#0F9D8A", // rešitev, gumbi
+  "--amb": "#F2B544", // številke, poudarki
+  "--meta": "#EEF4F2", // izmenjujoča ozadja
+} as CSSProperties;
+
+function slog(): CSSProperties {
+  return PALETA;
 }
 
 const NASLOV = "font-[family-name:var(--font-demo)] tracking-[-0.025em]";
@@ -51,8 +72,8 @@ function ProdajniVrh({ p, zaSliko = false, korak }: { p: PredlogProdaja; zaSliko
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-16 pt-10 sm:pt-14 lg:grid-cols-[1.05fr_1fr]">
         <div>
           <p className="text-sm font-semibold text-white/50">Za {p.kratko_ime}</p>
-          <p className="mt-6 flex items-start gap-3 text-[clamp(1.1rem,2.2vw,1.45rem)] font-semibold leading-snug text-[#fdba8c]">
-            <X className="mt-1 h-5 w-5 shrink-0 text-[#fb923c]" strokeWidth={3} aria-hidden />
+          <p className="mt-6 flex items-start gap-3 text-[clamp(1.1rem,2.2vw,1.45rem)] font-semibold leading-snug text-[#F7A08F]">
+            <X className="mt-1 h-5 w-5 shrink-0 text-[var(--rja)]" strokeWidth={3} aria-hidden />
             {a.hero.problem}
           </p>
           <h1 className={`${NASLOV} mt-4 flex items-start gap-3 text-[clamp(2.2rem,5vw,3.9rem)] font-bold leading-[1.02]`}>
@@ -87,7 +108,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
   // /predogled: samo prvi zaslon, iz njega Harvey naredi sliko in GIF za mail.
   if (samoVrh)
     return (
-      <div style={slog(p)} className={`${pisavaPoImenu("sodobna")} antialiased`}>
+      <div style={slog()} className={`${pisavaPoImenu("sodobna")} antialiased`}>
         <ProdajniVrh p={p} zaSliko korak={korak} />
       </div>
     );
@@ -96,7 +117,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
   const [prva, ...ostale] = a.pdf.korist;
 
   return (
-    <div style={slog(p)} className={`${pisavaPoImenu("sodobna")} min-h-screen bg-white pb-20 text-[var(--crn)] antialiased sm:pb-0`}>
+    <div style={slog()} className={`${pisavaPoImenu("sodobna")} min-h-screen bg-white pb-20 text-[var(--crn)] antialiased sm:pb-0`}>
       {/* Vrstica: komu je predlog in en klic */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-[var(--crn)] text-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
@@ -119,7 +140,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
             <ul className="mt-6 space-y-5">
               {problem.map((t) => (
                 <li key={t} className="flex gap-4 text-[clamp(1.15rem,2vw,1.4rem)] font-semibold leading-snug">
-                  <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff1ea]">
+                  <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FDE8E4]">
                     <X className="h-4 w-4 text-[var(--rja)]" strokeWidth={3} aria-hidden />
                   </span>
                   {t}
@@ -144,7 +165,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
       {/* Danes ↔ z rešitvijo */}
       <Odsek siv>
         <div className="grid gap-5 md:grid-cols-2">
-          <div className="rounded-3xl bg-white p-7 ring-1 ring-[#e7e9ee]">
+          <div className="rounded-3xl border-t-4 border-[var(--rja)] bg-white p-7 shadow-sm ring-1 ring-[#e3e9e7]">
             <Oznaka barva="rja">Danes</Oznaka>
             <ol className="mt-5 space-y-4">
               {a.hero.danes.map((k) => (
@@ -155,7 +176,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
               ))}
             </ol>
           </div>
-          <div className="rounded-3xl bg-[var(--crn)] p-7 text-white">
+          <div className="rounded-3xl border-t-4 border-[var(--b)] bg-[var(--crn)] p-7 text-white shadow-sm">
             <Oznaka barva="svetla">Z rešitvijo</Oznaka>
             <ol className="mt-5 space-y-4">
               {a.hero.potem.map((k) => (
@@ -166,6 +187,27 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
               ))}
             </ol>
           </div>
+        </div>
+      </Odsek>
+
+      {/* Kako deluje: trije telefoni, zaporedje, zato številke */}
+      <Odsek>
+        <Oznaka barva="b">Kako deluje</Oznaka>
+        <h2 className={`${NASLOV} mt-3 max-w-3xl text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.08]`}>
+          {a.hero.resitev}
+        </h2>
+        <div className="mt-12 grid gap-10 sm:grid-cols-3">
+          {a.hero.potem.slice(0, 3).map((k, i) => (
+            <div key={k} className="flex flex-col items-center text-center">
+              <div className="relative">
+                <span className="absolute -left-4 -top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--amb)] text-lg font-bold text-[var(--crn)] shadow-md">
+                  {i + 1}
+                </span>
+                <TelefonKorak p={p} a={a} korak={i} besedilo={i === 0 ? "" : k} />
+              </div>
+              <p className="mt-5 max-w-[15rem] text-lg font-semibold leading-snug">{k}</p>
+            </div>
+          ))}
         </div>
       </Odsek>
 
@@ -193,54 +235,73 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
       </section>
 
       {/* Kako se lotimo: zaporedje, zato številke */}
-      <Odsek>
+      <Odsek siv>
         <Oznaka barva="b">Kako se tega lotimo</Oznaka>
-        <ol className="relative mt-10 grid gap-8 md:grid-cols-3">
-          <span aria-hidden className="absolute left-0 right-0 top-7 hidden h-0.5 bg-[color-mix(in_srgb,var(--b)_25%,white)] md:block" />
-          {a.pdf.lotimo.map((k, i) => (
-            <li key={k} className="relative">
-              <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[var(--b)] text-xl font-bold text-white ring-8 ring-white">
-                {i + 1}
-              </span>
-              <p className="mt-5 text-lg font-semibold leading-snug">{k}</p>
-            </li>
-          ))}
+        <h2 className={`${NASLOV} mt-3 text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.08]`}>
+          Trije koraki in sistem dela za vas
+        </h2>
+        <ol className="relative mt-12 grid gap-6 md:grid-cols-3">
+          <span aria-hidden className="absolute left-[16%] right-[16%] top-[3.25rem] hidden border-t-2 border-dashed border-[color-mix(in_srgb,var(--b)_40%,white)] md:block" />
+          {a.pdf.lotimo.map((k, i) => {
+            const Ikona = KORAKI[i] ?? Check;
+            return (
+              <li key={k} className="relative rounded-3xl bg-white p-7 shadow-sm ring-1 ring-[#e3e9e7]">
+                <div className="flex items-center justify-between">
+                  <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--b)] text-white shadow-md">
+                    <Ikona className="h-6 w-6" aria-hidden />
+                  </span>
+                  <span className={`${NASLOV} text-5xl font-bold text-[var(--amb)]`}>{i + 1}</span>
+                </div>
+                <p className="mt-6 text-lg font-semibold leading-snug">{k}</p>
+              </li>
+            );
+          })}
         </ol>
       </Odsek>
 
       {/* Kaj pridobite: prva korist velika, ostale ob njej */}
-      <Odsek siv>
+      <Odsek>
         <Oznaka barva="b">Kaj pridobite</Oznaka>
         <div className="mt-8 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
           {prva && (
-            <div className="rounded-3xl bg-[var(--b)] p-8 text-white sm:p-10">
-              <p className={`${NASLOV} text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.05]`}>{prva.naslov}</p>
-              {prva.izracun && <p className="mt-5 text-lg leading-relaxed text-white/85">{prva.izracun}</p>}
+            <div className="rounded-3xl bg-[var(--crn)] p-8 text-white sm:p-10">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--amb)] text-[var(--crn)]">
+                <Clock className="h-6 w-6" aria-hidden />
+              </span>
+              <p className={`${NASLOV} mt-6 text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.05] text-[var(--amb)]`}>
+                {prva.naslov}
+              </p>
+              {prva.izracun && <p className="mt-5 text-lg leading-relaxed text-white/80">{prva.izracun}</p>}
             </div>
           )}
           <div className="space-y-5">
-            {ostale.map((k) => (
-              <div key={k.naslov} className="rounded-3xl bg-white p-7 ring-1 ring-[#e7e9ee]">
-                <p className="flex items-center gap-3 text-xl font-bold">
-                  <Check className="h-5 w-5 shrink-0 text-[var(--b)]" strokeWidth={3} aria-hidden />
-                  {k.naslov}
-                </p>
-                {k.izracun && <p className="mt-2 pl-8 leading-relaxed text-[#4b5563]">{k.izracun}</p>}
-              </div>
-            ))}
+            {ostale.map((k, i) => {
+              const Ikona = KORISTI[i] ?? Check;
+              return (
+                <div key={k.naslov} className="flex gap-5 rounded-3xl bg-white p-7 shadow-sm ring-1 ring-[#e3e9e7]">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_srgb,var(--b)_14%,white)] text-[var(--b)]">
+                    <Ikona className="h-6 w-6" aria-hidden />
+                  </span>
+                  <div>
+                    <p className="text-xl font-bold">{k.naslov}</p>
+                    {k.izracun && <p className="mt-2 leading-relaxed text-[#4b5563]">{k.izracun}</p>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </Odsek>
 
       {/* Nadgradnje za kasneje (Luka 24. 10.: »nekaj upsellanja od spodaj«) */}
       {nadgradnje.length > 0 && (
-        <Odsek>
+        <Odsek siv>
           <Oznaka barva="b">Ko prvi del dela, lahko dodamo</Oznaka>
           <div className="mt-6 grid gap-5 md:grid-cols-2">
             {nadgradnje.map((n) => (
-              <div key={n.naslov} className="rounded-3xl p-7 ring-1 ring-[#e7e9ee]">
+              <div key={n.naslov} className="rounded-3xl border-l-4 border-[var(--amb)] bg-white p-7 shadow-sm">
                 <p className="flex items-center gap-3 text-xl font-bold">
-                  <ArrowUpRight className="h-5 w-5 shrink-0 text-[var(--b)]" aria-hidden />
+                  <ArrowUpRight className="h-5 w-5 shrink-0 text-[var(--amb)]" strokeWidth={3} aria-hidden />
                   {n.naslov}
                 </p>
                 {n.opis && <p className="mt-2 pl-8 leading-relaxed text-[#4b5563]">{n.opis}</p>}
@@ -301,7 +362,7 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
 
 function Odsek({ siv = false, children }: { siv?: boolean; children: ReactNode }) {
   return (
-    <section className={siv ? "bg-[#f4f5f7]" : ""}>
+    <section className={siv ? "bg-[var(--meta)]" : ""}>
       <div className="mx-auto max-w-6xl px-4 py-20">{children}</div>
     </section>
   );
@@ -309,7 +370,7 @@ function Odsek({ siv = false, children }: { siv?: boolean; children: ReactNode }
 
 const OZNAKE = {
   rja: "text-[var(--rja)]",
-  b: "text-[color-mix(in_srgb,var(--b)_85%,#0b1530)]",
+  b: "text-[color-mix(in_srgb,var(--b)_80%,#0E1B2C)]",
   svetla: "text-[color-mix(in_srgb,var(--b)_55%,white)]",
 };
 
@@ -320,3 +381,6 @@ function Oznaka({ barva, children }: { barva: keyof typeof OZNAKE; children: Rea
     </p>
   );
 }
+
+const KORAKI = [ClipboardList, MessageCircle, BellRing];
+const KORISTI = [MoonStar, TrendingUp, Check];

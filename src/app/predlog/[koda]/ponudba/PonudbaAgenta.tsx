@@ -12,7 +12,8 @@ import { TelefonKorak } from "../PrviZaslon";
  */
 
 const TELEFON = "040 199 051";
-const PRIVZETA_BARVA = "#2f5bd3";
+// Ista paleta kot prodajna stran (Luka 24. 10.): turkizna za rešitev, koralna za problem.
+const BARVA = "#0F9D8A";
 
 type Agent = DeloAgenta & { hero: HeroAgenta; pdf: PdfAgenta };
 
@@ -31,7 +32,7 @@ function alineje(t: string): string[] {
 
 export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAgenta } }) {
   const a = p.agent;
-  const barva = /^#[0-9a-f]{6}$/i.test(p.vizual?.barva ?? "") ? (p.vizual?.barva as string) : PRIVZETA_BARVA;
+  const barva = BARVA;
   const problem = alineje(p.mail.uvod);
   const nadgradnje = a.pdf.nadgradnje ?? [];
 
@@ -46,13 +47,13 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
       <Stran p={p} prva sredina>
         <Oznaka>Kaj sem opazil pri vas</Oznaka>
         <h1 className="mt-4 flex items-start gap-4 text-[34px] font-bold leading-[1.1] tracking-tight">
-          <X className="mt-1.5 h-9 w-9 shrink-0 text-[#c2410c]" strokeWidth={3} aria-hidden />
+          <X className="mt-1.5 h-9 w-9 shrink-0 text-[#E8573F]" strokeWidth={3} aria-hidden />
           {a.hero.problem}
         </h1>
         <div className="mt-10 flex items-start gap-8">
           <div className="flex-1 space-y-4">
             {problem.map((t) => (
-              <p key={t} className="border-l-4 border-[#c2410c] pl-4 text-[18px] font-medium leading-snug">
+              <p key={t} className="border-l-4 border-[#E8573F] pl-4 text-[18px] font-medium leading-snug">
                 {t}
               </p>
             ))}
