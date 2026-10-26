@@ -414,7 +414,7 @@ export type ProblemPodjetja = {
   domena: string;
   kraj: string;
   dejavnost: string;
-  stanje: "caka" | "potrjen" | "zavrnjen";
+  stanje: "caka" | "potrjen" | "zavrnjen" | "ponovno" | "zgrajen";
   razlog: string;
   ustvarjeno: string;
   kajDelajo: string;
@@ -423,6 +423,21 @@ export type ProblemPodjetja = {
   problemi: { problem: string; citat: string; dokaz: string; posledica: string; gotovost: string }[];
   lastnikRece: string;
   velikost: string;
+  /** Deset idej z oceno slepega lastnika (harvey/ideje.py); null, dokler jih agent pripravlja. */
+  ideje: IdejaResitve[] | null;
+  izbrana: number | null;
+  koda: string;
+};
+
+export type IdejaResitve = {
+  ime: string;
+  tri_sekunde: string;
+  kako: string[];
+  zakaj_wow: string;
+  denar: string;
+  dokaz: string;
+  kje_obstaja: string;
+  ocena: { wow: number; razumem: number; kupil: number; zakaj: string };
 };
 
 export async function preberiProbleme(): Promise<{ caka: ProblemPodjetja[]; odloceni: ProblemPodjetja[] } | null> {
@@ -435,14 +450,15 @@ export async function preberiProbleme(): Promise<{ caka: ProblemPodjetja[]; odlo
 
 export async function odlociProblem(
   id: number,
-  stanje: "potrjen" | "zavrnjen",
+  stanje: "potrjen" | "zavrnjen" | "ponovno",
   razlog: string,
+  ideja: number | null,
 ): Promise<{ ok: boolean; napaka?: string }> {
   try {
     const r = await izHarveyja<{ success: boolean; message?: string }>(`/api/problemi/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stanje, razlog }),
+      body: JSON.stringify({ stanje, razlog, ideja }),
     });
     return r.success ? { ok: true } : { ok: false, napaka: r.message ?? "Harvey ni sprejel." };
   } catch {

@@ -110,11 +110,15 @@ export async function odlociPanogoAkcija(
   return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
 }
 
-/** Luka potrdi ali zavrne problem, ki ga je agent našel pri podjetju (korak za korakom). */
+/**
+ * Luka pri podjetju potrdi problem in eno rešitev (to se zgradi do konca), zavrne z razlogom ali
+ * pošlje nazaj z »Razišči še enkrat« in opombo (korak za korakom).
+ */
 export async function odlociProblemAkcija(
   id: number,
-  potrdi: boolean,
+  odlocitev: "potrjen" | "zavrnjen" | "ponovno",
   razlog: string,
+  ideja: number | null,
 ): Promise<{ ok: boolean; napaka?: string }> {
   try {
     await requireAdmin();
@@ -122,7 +126,10 @@ export async function odlociProblemAkcija(
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
   if (!Number.isInteger(id) || id <= 0) return { ok: false, napaka: "Neznan problem." };
-  const r = await odlociProblem(id, potrdi ? "potrjen" : "zavrnjen", razlog.slice(0, 500));
+  if (!["potrjen", "zavrnjen", "ponovno"].includes(odlocitev)) return { ok: false, napaka: "Neznana odločitev." };
+  if (odlocitev === "potrjen" && (ideja === null || !Number.isInteger(ideja) || ideja < 0))
+    return { ok: false, napaka: "Izberi rešitev." };
+  const r = await odlociProblem(id, odlocitev, razlog.slice(0, 500), odlocitev === "potrjen" ? ideja : null);
   revalidatePath("/admin/prodajna-ekipa/problemi");
   return r;
 }

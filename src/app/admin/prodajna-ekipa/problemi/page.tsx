@@ -22,8 +22,9 @@ export default async function ProblemiPage() {
       </Link>
       <h1 className="mt-1 text-3xl font-semibold text-zinc-900">Problemi za potrditev</h1>
       <p className="mt-2 text-base text-zinc-600">
-        Agent je pri vsakem podjetju raziskal njihovo stran in stroko ter našel glavni problem. Potrdi, če
-        drži in je vreden rešitve, ali zavrni z razlogom. Šele potrjeni gredo naprej v iskanje rešitev.
+        Agent je pri vsakem podjetju raziskal njihovo stran in stroko, našel glavni problem in pripravil
+        deset rešitev. Izberi eno in potrdi — Harvey jo zgradi do konca in ti mail pošlje v Odobritev.
+        Če problem ne drži, zavrni z razlogom ali ga pošlji nazaj z »Razišči še enkrat«.
       </p>
       {podatki === null ? (
         <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
