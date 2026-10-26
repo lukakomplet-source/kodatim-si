@@ -947,3 +947,59 @@ export type Presoja = {
   kupi: number;
   zakaj: string;
 };
+
+// ── Kompletko: hladni maili prevoznikom (Harvey Kompletko, harvey/posiljanja.py) ──
+
+const HARVEY_KOMPLETKO = process.env.HARVEY_KOMPLETKO_URL ?? "http://127.0.0.1:5556";
+
+export type StanjePosiljanja =
+  | "poslan" | "klic" | "odgovoril" | "sestanek" | "kupil" | "ne_zanima" | "nedostavljeno" | "zakljucen";
+
+export type Posiljanje = {
+  domena: string;
+  podjetje: string;
+  email: string;
+  skd: string;
+  varianta: string;
+  stanje: StanjePosiljanja;
+  poslano: string;
+  zadnje_poslano: string;
+  stevilo_poslanih: number;
+  zadeva: string;
+  odgovor: string | null;
+  odgovor_odlomek: string;
+  opomba: string;
+  naslednje: string;
+  naslednjeKdaj: string;
+  zaDanes: boolean;
+};
+
+export type PosiljanjaPodatki = {
+  podjetja: Posiljanje[];
+  kandidati: { podjetje: string; email: string; domena: string }[];
+  statistika: Record<string, { poslano: number; odgovori: number; sestanki: number; kupili: number }>;
+};
+
+export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja`, { cache: "no-store", signal: AbortSignal.timeout(4_000) });
+    return r.ok ? ((await r.json()) as PosiljanjaPodatki) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function nastaviPosiljanje(domena: string, stanje: string, opomba: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja/${encodeURIComponent(domena)}`, {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(4_000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stanje, opomba }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}

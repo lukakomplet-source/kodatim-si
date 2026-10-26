@@ -6,6 +6,7 @@ import {
   nastaviRecept,
   odlociOsnutek,
   odlociPanogo,
+  nastaviPosiljanje,
   odlociProblem,
   popraviOsnutek,
   pripraviVejo,
@@ -132,4 +133,19 @@ export async function odlociProblemAkcija(
   const r = await odlociProblem(id, odlocitev, razlog.slice(0, 500), odlocitev === "potrjen" ? ideja : null);
   revalidatePath("/admin/prodajna-ekipa/problemi");
   return r;
+}
+
+/** Kompletko: stanje podjetja, ki je dobilo hladni mail (klic, odgovoril, sestanek, kupil, ne zanima, zaključen). */
+export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
+  if (!["poslan", "klic", "odgovoril", "sestanek", "kupil", "ne_zanima", "zakljucen"].includes(stanje))
+    return { ok: false, napaka: "Neznano stanje." };
+  const ok = await nastaviPosiljanje(domena, stanje, "");
+  revalidatePath("/admin/prodajna-ekipa/kompletko");
+  return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
 }

@@ -110,6 +110,14 @@ export default async function ProdajnaEkipaPage() {
         <span className="text-2xl">{problemovCaka}</span>
       </Link>
 
+      <Link
+        href="/admin/prodajna-ekipa/kompletko"
+        className="mt-3 flex items-center justify-between rounded-2xl bg-white px-5 py-4 text-base font-semibold text-zinc-700 ring-1 ring-zinc-200"
+      >
+        <span>Kompletko: prevozniki (poslani maili, follow-up)</span>
+        <span aria-hidden>›</span>
+      </Link>
+
       {zdaj ? <KajDelaZdaj podatki={zdaj} /> : null}
 
       {povzetek ? <Diagram povzetek={povzetek} lijak={lijak} /> : null}
