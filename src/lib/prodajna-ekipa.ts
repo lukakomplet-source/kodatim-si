@@ -423,6 +423,14 @@ export type ProblemPodjetja = {
   problemi: { problem: string; citat: string; dokaz: string; posledica: string; gotovost: string }[];
   lastnikRece: string;
   velikost: string;
+  /** Prihodki in zaposleni s CompanyWall (»172.295 € prihodkov (2025), 0 zaposlenih«); prazno, če neznano. */
+  obseg?: string;
+  /** Kaj se zdaj prodaja v njihovi stroki (harvey/trend.py), vsak trend s preverjenim virom. */
+  trend?: {
+    stavek: string;
+    trendi: { trend: string; kaj_pomeni: string; vir: string }[];
+    kajSeProdaja: string;
+  };
   /** Deset idej z oceno slepega lastnika (harvey/ideje.py); null, dokler jih agent pripravlja. */
   ideje: IdejaResitve[] | null;
   izbrana: number | null;
