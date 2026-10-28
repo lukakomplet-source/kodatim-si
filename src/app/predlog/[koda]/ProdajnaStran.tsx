@@ -6,6 +6,7 @@ import {
   Check,
   ClipboardList,
   Clock,
+  KeyRound,
   Mail,
   MessageCircle,
   MoonStar,
@@ -85,6 +86,21 @@ function ProdajniVrh({ p, zaSliko = false, korak }: { p: PredlogProdaja; zaSliko
           {p.mail.zakljucek && (
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/70">{p.mail.zakljucek}</p>
           )}
+          {a.kanali?.length ? (
+            <div className="mt-6 max-w-xl">
+              <p className="flex flex-wrap gap-2">
+                {["WhatsApp", "Booking", "Airbnb", "e-pošta"].map((k) => (
+                  <span key={k} className="rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white/85 ring-1 ring-white/15">
+                    {k}
+                  </span>
+                ))}
+              </p>
+              <p className="mt-3 flex items-center gap-2 text-base text-white/75">
+                <KeyRound className="h-4 w-4 shrink-0 text-[var(--amb)]" aria-hidden />
+                Povežemo tudi s kodo na vratih — isti sistem gostu pošlje kodo za vstop.
+              </p>
+            </div>
+          ) : null}
           {!zaSliko && (
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <a href="#zanima" className="rounded-xl bg-[var(--b)] px-6 py-3.5 font-semibold text-white shadow-lg shadow-black/30 hover:brightness-110">
@@ -99,12 +115,21 @@ function ProdajniVrh({ p, zaSliko = false, korak }: { p: PredlogProdaja; zaSliko
             </div>
           )}
         </div>
-        {a.pdf.pogovor?.sporocila?.length ? (
+        {/* GIF v mailu pri nastanitvah (Luka 28. 10.): WhatsApp → Booking → Airbnb */}
+        {korak !== undefined && korak > 0 && a.kanali?.[korak - 1] ? (
+          <SporocilaKanala ime={p.kratko_ime} kanal={a.kanali[korak - 1]} najvec={2} visina={560} />
+        ) : a.pdf.pogovor?.sporocila?.length ? (
           <WhatsAppPogovor
             ime={p.kratko_ime}
             pogovor={a.pdf.pogovor}
             zaSliko={zaSliko}
-            korak={korak !== undefined ? vidnaSporocila(a.pdf.pogovor.sporocila.length, korak) : undefined}
+            korak={
+              korak === undefined
+                ? undefined
+                : a.kanali?.length
+                  ? vidnaSporocila(a.pdf.pogovor.sporocila.length, 2)
+                  : vidnaSporocila(a.pdf.pogovor.sporocila.length, korak)
+            }
           />
         ) : (
           <Telefon p={p} a={a} koraki={a.hero.potem} zaSliko={zaSliko} zacetni={korak} />

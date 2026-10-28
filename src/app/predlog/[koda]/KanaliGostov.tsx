@@ -29,14 +29,30 @@ const SLOG = {
   },
 } as const;
 
-/** Telefon je visok toliko, kolikor je pogovora; `najvec` skrajša pogovor (PDF: vprašanje in odgovor). */
-export function SporocilaKanala({ ime, kanal, najvec }: { ime: string; kanal: KanalGosta; najvec?: number }) {
+/**
+ * Telefon je visok toliko, kolikor je pogovora; `najvec` skrajša pogovor (PDF: vprašanje in odgovor).
+ * `visina` ga postavi na višino telefona z WhatsAppom (prvi zaslon in GIF v mailu), brez napisa spodaj.
+ */
+export function SporocilaKanala({
+  ime,
+  kanal,
+  najvec,
+  visina,
+}: {
+  ime: string;
+  kanal: KanalGosta;
+  najvec?: number;
+  visina?: number;
+}) {
   const s = SLOG[kanal.kanal];
   const sporocila = najvec ? kanal.sporocila.slice(0, najvec) : kanal.sporocila;
   return (
     <figure className="mx-auto w-[300px]">
       <div className="rounded-[2.6rem] bg-[#0b0f14] p-2.5 shadow-2xl shadow-black/30 ring-1 ring-white/10">
-        <div className="flex min-h-[420px] flex-col overflow-hidden rounded-[2.1rem]" style={{ background: s.podlaga }}>
+        <div
+          className={`flex flex-col overflow-hidden rounded-[2.1rem] ${visina ? "" : "min-h-[420px]"}`}
+          style={{ background: s.podlaga, height: visina }}
+        >
           <div
             className="px-4 pb-3 pt-7"
             style={{ background: s.glava, color: s.glavaBesedilo, borderBottom: kanal.kanal === "airbnb" ? "1px solid #ebebeb" : undefined }}
@@ -77,7 +93,9 @@ export function SporocilaKanala({ ime, kanal, najvec }: { ime: string; kanal: Ka
           </div>
         </div>
       </div>
-      <figcaption className="mt-3 text-center text-[12px] text-[#6b7280]">Primer · {s.ime}, AI odgovori v jeziku gosta</figcaption>
+      {visina ? null : (
+        <figcaption className="mt-3 text-center text-[12px] text-[#6b7280]">Primer · {s.ime}, AI odgovori v jeziku gosta</figcaption>
+      )}
     </figure>
   );
 }

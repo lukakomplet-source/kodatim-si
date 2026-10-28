@@ -90,6 +90,15 @@ export function OdobritevSeznam({ postavke }: { postavke: Postavka[] }) {
               className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left"
             >
               <div className="min-w-0">
+                {p.vrsta && p.vrsta !== "prvi" ? (
+                  <span
+                    className={`mb-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      p.vrsta === "odgovor" ? "bg-emerald-100 text-emerald-900" : "bg-sky-100 text-sky-900"
+                    }`}
+                  >
+                    {p.vrsta === "odgovor" ? "Odgovor na njihov mail" : "Follow-up"}
+                  </span>
+                ) : null}
                 <p className="truncate text-sm font-semibold text-zinc-900">{p.naslov}</p>
                 <p className="truncate text-xs text-zinc-500">{p.podnaslov}</p>
                 <p className="mt-1 truncate text-sm text-zinc-700">Zadeva: {p.zadeva}</p>

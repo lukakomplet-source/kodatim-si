@@ -22,8 +22,8 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
   const [poslaniOdprti, setPoslaniOdprti] = useState(false);
   const [napaka, setNapaka] = useState<string | null>(null);
   const [cakam, zacni] = useTransition();
-  const prvi = postavke.filter((p) => p.vrsta !== "follow_up");
-  const nadaljnji = postavke.filter((p) => p.vrsta === "follow_up");
+  const prvi = postavke.filter((p) => !p.vrsta || p.vrsta === "prvi");
+  const nadaljnji = postavke.filter((p) => p.vrsta === "follow_up" || p.vrsta === "odgovor");
 
   const lijak = [
     { ime: "Poslano", n: mapa.poslano, opis: "prvi mail" },
