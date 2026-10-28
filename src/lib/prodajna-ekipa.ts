@@ -1208,7 +1208,15 @@ export type Posiljanje = {
   naslednje: string;
   naslednjeKdaj: string;
   zaDanes: boolean;
+  /** Klic (28. 10. 2026): številka z njihove strani, izid zadnjega klica in kdo odloča, če so povedali. */
+  telefon?: string;
+  klicano?: string | null;
+  klic_izid?: "" | IzidKlica;
+  klic_poskusi?: number;
+  oseba?: string;
 };
+
+export type IzidKlica = "sestanek" | "poslji_mail" | "ni_dvignil" | "ne_zanima";
 
 export type PosiljanjaPodatki = {
   podjetja: Posiljanje[];
@@ -1222,6 +1230,21 @@ export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
     return r.ok ? ((await r.json()) as PosiljanjaPodatki) : null;
   } catch {
     return null;
+  }
+}
+
+export async function zabeleziKlic(domena: string, izid: IzidKlica, oseba: string, opomba: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja/${encodeURIComponent(domena)}/klic`, {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(4_000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ izid, oseba, opomba }),
+    });
+    return r.ok;
+  } catch {
+    return false;
   }
 }
 

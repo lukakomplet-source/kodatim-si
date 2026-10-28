@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { requireAdmin } from "@/lib/require-admin";
-import { preberiDelavca } from "@/lib/prodajna-ekipa";
+import { preberiDelavca, preberiPosiljanja } from "@/lib/prodajna-ekipa";
 import { OdobritevMape } from "../prodajna-ekipa/OdobritevMape";
 
 /**
@@ -16,7 +16,7 @@ const LISTMONK_URL = process.env.NEXT_PUBLIC_LISTMONK_URL || "https://listmonk.k
 
 export default async function MailiPage() {
   await requireAdmin();
-  const podrobnosti = await preberiDelavca("odobritev");
+  const [podrobnosti, posiljanja] = await Promise.all([preberiDelavca("odobritev"), preberiPosiljanja()]);
 
   return (
     <div>
@@ -28,7 +28,7 @@ export default async function MailiPage() {
 
       <div className="mt-6">
         {podrobnosti ? (
-          <OdobritevMape podrobnosti={podrobnosti} />
+          <OdobritevMape podrobnosti={podrobnosti} posiljanja={posiljanja?.podjetja} />
         ) : (
           <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
             Harvey trenutno ne odgovarja, zato map ni mogoče prebrati. Poskusi čez minuto.

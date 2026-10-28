@@ -7,6 +7,8 @@ import {
   odlociOsnutek,
   odlociPanogo,
   nastaviPosiljanje,
+  zabeleziKlic,
+  type IzidKlica,
   odlociProblem,
   oznaciVMapi,
   popraviOsnutek,
@@ -147,6 +149,26 @@ export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): P
   if (!["poslan", "klic", "odgovoril", "sestanek", "kupil", "ne_zanima", "zakljucen"].includes(stanje))
     return { ok: false, napaka: "Neznano stanje." };
   const ok = await nastaviPosiljanje(domena, stanje, "");
+  revalidatePath("/admin/prodajna-ekipa/kompletko");
+  return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
+}
+
+/** Kompletko, panik gumb: izid klica (sestanek, pošljite mail, ni dvignil, ne zanima) in kdo odloča. */
+export async function zabeleziKlicAkcija(
+  domena: string,
+  izid: IzidKlica,
+  oseba: string,
+  opomba: string,
+): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
+  if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(izid)) return { ok: false, napaka: "Neznan izid." };
+  const ok = await zabeleziKlic(domena, izid, oseba.slice(0, 120), opomba.slice(0, 500));
+  revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
 }

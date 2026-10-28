@@ -1,7 +1,8 @@
 import { Building2 } from "lucide-react";
-import type { MapaOdobritve as Mapa, Podrobnosti } from "@/lib/prodajna-ekipa";
+import type { MapaOdobritve as Mapa, Podrobnosti, Posiljanje } from "@/lib/prodajna-ekipa";
 import { MapaOdobritve } from "./MapaOdobritve";
 import { OdobritevSeznam } from "./OdobritevSeznam";
+import { PanikKoraki } from "./PanikKoraki";
 
 /**
  * Mape z maili (Hoteli, Panik gumb …) in pod njimi osnutki zunaj map. Isto na strani Maili (/admin/maili)
@@ -16,7 +17,14 @@ const FIRME: { kljuc: NonNullable<Mapa["lastnik"]>; ime: string }[] = [
   { kljuc: "kompletko", ime: "Kompletko varovanje d.o.o." },
 ];
 
-export function OdobritevMape({ podrobnosti }: { podrobnosti: Podrobnosti | null }) {
+/** `posiljanja`: Kompletkov sledilnik (5556); z njim mapa panik gumba pokaže, kdo je danes na vrsti. */
+export function OdobritevMape({
+  podrobnosti,
+  posiljanja,
+}: {
+  podrobnosti: Podrobnosti | null;
+  posiljanja?: Posiljanje[] | null;
+}) {
   const mape = podrobnosti?.mape ?? [];
   const seznam = podrobnosti?.seznam ?? [];
   // Brez »Nič ne čaka« pod mapami: to bi veljalo samo za maile zunaj map.
@@ -38,6 +46,7 @@ export function OdobritevMape({ podrobnosti }: { podrobnosti: Podrobnosti | null
                   <MapaOdobritve mapa={m} postavke={seznam.filter((p) => p.mapa === m.ime)} />
                 </div>
               ))}
+              {f.kljuc === "kompletko" && posiljanja?.length ? <PanikKoraki podjetja={posiljanja} /> : null}
             </div>
           </section>
         );
