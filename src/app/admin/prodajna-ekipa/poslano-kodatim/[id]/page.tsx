@@ -43,8 +43,8 @@ export default async function PoslanKodatimPage({ params }: { params: Promise<{ 
 
   return (
     <div className="max-w-4xl">
-      <Link href="/admin/prodajna-ekipa/odobritev" className="text-sm text-zinc-500 hover:text-zinc-900">
-        ← Odobritev
+      <Link href="/admin/maili" className="text-sm text-zinc-500 hover:text-zinc-900">
+        ← Maili
       </Link>
       {mail ? (
         <>

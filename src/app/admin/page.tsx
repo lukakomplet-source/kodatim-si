@@ -1,23 +1,22 @@
 import Link from "next/link";
-import { Inbox, Percent, PhoneCall, UserCheck, Users } from "lucide-react";
+import { Folder, Inbox, Percent, PhoneCall, UserCheck, Users } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/require-admin";
 import ResumeCard from "@/components/dashboard/ResumeCard";
 import {
   predajVPromocije,
   preberiDanes,
+  preberiDelavca,
+  type Podrobnosti,
   preberiEkipo,
-  preberiLijak,
   sinhronizirajLeade,
-  type Lijak,
 } from "@/lib/prodajna-ekipa";
 import { Osvezevanje } from "./nadzor/Osvezevanje";
-import { Diagram } from "./prodajna-ekipa/Diagram";
 
 /**
- * Prva stran admina: kaj danes čaka nate in prodajna ekipa pri delu, pod
- * tem stari kratki povzetek. Pot naprej je v meniju po korakih
- * (1 najdi stranke → 2 stik → 3 prodaja → …).
+ * Danes: kaj čaka nate, z enim klikom do vsakega (Luka, 28. 10. 2026: »naj bo izi to use«). Zgoraj mape z
+ * maili (Hoteli, Panik gumb …), nato klici in leadi, spodaj kratek povzetek. Diagram ekipe je samo pod
+ * »Harvey – ekipa«, da se ne ponavlja.
  */
 
 export const dynamic = "force-dynamic";
@@ -44,18 +43,18 @@ export default async function AdminOverviewPage() {
     ]);
 
   const ekipa = jeAdmin ? await preberiEkipo() : null;
-  let lijak: Lijak | null = null;
   let danes: { klicev: number; leadovIzKlepeta: number } | null = null;
+  let mape: NonNullable<Podrobnosti["mape"]> = [];
   if (jeAdmin) {
-    const [l, d] = await Promise.all([
-      preberiLijak().catch(() => null),
+    const [d, o] = await Promise.all([
       preberiDanes().catch(() => null),
+      preberiDelavca("odobritev").catch(() => null),
       // Predaja zanimanja v Promocije in kontakti ekipe v Bazo leadov.
       ekipa?.povzetek ? predajVPromocije().catch(() => null) : Promise.resolve(null),
       ekipa?.povzetek ? sinhronizirajLeade().catch(() => null) : Promise.resolve(null),
     ]);
-    lijak = l;
     danes = d;
+    mape = o?.mape ?? [];
   }
 
   const pendingTotal = (pending ?? []).reduce(
@@ -80,9 +79,9 @@ export default async function AdminOverviewPage() {
     {
       ikona: UserCheck,
       stevilo: osnutkov ?? 0,
-      besedilo: "osnutkov čaka na tvojo odobritev",
-      href: "/admin/prodajna-ekipa/odobritev",
-      gumb: "Odobri",
+      besedilo: "mailov čaka nate",
+      href: "/admin/maili",
+      gumb: "Maili",
     },
     {
       ikona: PhoneCall,
@@ -103,10 +102,8 @@ export default async function AdminOverviewPage() {
   return (
     <div>
       {jeAdmin ? <Osvezevanje vsakoS={30} /> : null}
-      <h1 className="text-3xl font-semibold text-zinc-900">Pregled</h1>
-      <p className="mt-2 text-base text-zinc-500">
-        Kaj danes čaka nate in kaj dela prodajna ekipa. Pot naprej je v meniju po korakih.
-      </p>
+      <h1 className="text-3xl font-semibold text-zinc-900">Danes</h1>
+      <p className="mt-2 text-base text-zinc-500">Kaj danes čaka nate. Klikni kartico in si tam.</p>
 
       <ResumeCard />
 
@@ -134,18 +131,39 @@ export default async function AdminOverviewPage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">Prodajna ekipa pri delu</h2>
-            <Link href="/admin/prodajna-ekipa" className="text-sm text-zinc-500 underline hover:text-zinc-900">
-              Odpri ekipo
-            </Link>
-          </div>
+          {mape.length > 0 ? (
+            <>
+              <h2 className="mt-8 text-sm font-semibold text-zinc-900">Mape z maili</h2>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {mape.map((m) => {
+                  const caka = m.osnutki?.length ?? 0;
+                  return (
+                    <Link
+                      key={m.kljuc}
+                      href={`/admin/maili#mapa-${m.kljuc}`}
+                      className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
+                    >
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                        <Folder className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-base font-semibold text-zinc-900">{m.ime}</span>
+                        <span className="block text-sm text-zinc-500">
+                          {caka} za poslat · {m.poslano} poslanih · {m.odgovoril} odpisalo
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">Odpri →</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
           {ekipa?.napaka ? (
-            <p className="mt-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
+            <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
               {ekipa.napaka}
             </p>
           ) : null}
-          {povzetek ? <Diagram povzetek={povzetek} lijak={lijak} /> : null}
         </>
       ) : null}
 

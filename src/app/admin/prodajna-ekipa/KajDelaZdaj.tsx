@@ -134,7 +134,7 @@ export function KajDelaZdaj({ podatki }: { podatki: Zdaj }) {
           <p className="mt-5 text-sm text-zinc-400">
             Danes: pregledanih <span className="font-semibold text-white">{l.pregledanih}</span> · napisanih{" "}
             <span className="font-semibold text-white">{l.napisanih}</span> ·{" "}
-            <Link href="/admin/prodajna-ekipa/odobritev" className="text-emerald-300 underline underline-offset-2">
+            <Link href="/admin/maili" className="text-emerald-300 underline underline-offset-2">
               čaka tebe {l.caka}
             </Link>
           </p>

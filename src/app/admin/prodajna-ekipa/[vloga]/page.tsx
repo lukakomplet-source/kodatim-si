@@ -10,8 +10,7 @@ import {
   type KljucDelavca,
 } from "@/lib/prodajna-ekipa";
 import { Osvezevanje } from "../../nadzor/Osvezevanje";
-import { MapaOdobritve } from "../MapaOdobritve";
-import { OdobritevSeznam } from "../OdobritevSeznam";
+import { OdobritevMape } from "../OdobritevMape";
 import { OZNAKE_STEVILK, kdaj, stanjeZaPrikaz, stevilo, vrednostStevilke } from "../oblika";
 
 /**
@@ -176,22 +175,7 @@ export default async function DelavecPage({ params }: { params: Promise<{ vloga:
           </h2>
           <div className="mt-2">
             {vloga === "odobritev" ? (
-              <div className="space-y-4">
-                {(podrobnosti?.mape ?? []).map((m) => (
-                  <MapaOdobritve
-                    key={m.kljuc}
-                    mapa={m}
-                    postavke={(podrobnosti?.seznam ?? []).filter((p) => p.mapa === m.ime)}
-                  />
-                ))}
-                {(() => {
-                  const ostali = (podrobnosti?.seznam ?? []).filter(
-                    (p) => !p.mapa || !(podrobnosti?.mape ?? []).some((m) => m.ime === p.mapa),
-                  );
-                  // Brez »Nič ne čaka« pod mapami: to bi veljalo samo za maile zunaj map.
-                  return ostali.length > 0 || !podrobnosti?.mape?.length ? <OdobritevSeznam postavke={ostali} /> : null;
-                })()}
-              </div>
+              <OdobritevMape podrobnosti={podrobnosti} />
             ) : podrobnosti?.seznam.length ? (
               <ul className="divide-y divide-zinc-100 rounded-xl bg-white ring-1 ring-zinc-200">
                 {podrobnosti.seznam.map((p, i) => (

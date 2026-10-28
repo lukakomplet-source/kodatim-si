@@ -15,6 +15,8 @@ export type NavItem = {
    * postavko skupine; meni brez skupin izgleda kot prej.
    */
   skupina?: string;
+  /** Druge poti, ki spadajo pod to točko (podstrani, zavihki), da je v meniju označena prava. */
+  poti?: string[];
 };
 
 /** Seznam povezav z naslovi skupin — isti v stranskem in v mobilnem meniju. */
@@ -30,10 +32,17 @@ function NavSeznam({
   // Pick the single longest (most specific) matching href as active — a
   // plain prefix check would keep e.g. "/admin" lit up on every nested
   // route, since "/admin/" prefixes all of them.
+  const ujemanje = (item: NavItem) =>
+    Math.max(
+      -1,
+      ...[item.href, ...(item.poti ?? [])]
+        .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+        .map((href) => href.length),
+    );
   const activeHref = navItems
-    .map((item) => item.href)
-    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
-    .sort((a, b) => b.length - a.length)[0];
+    .map((item) => ({ href: item.href, d: ujemanje(item) }))
+    .filter((x) => x.d >= 0)
+    .sort((a, b) => b.d - a.d)[0]?.href;
 
   return (
     <>
