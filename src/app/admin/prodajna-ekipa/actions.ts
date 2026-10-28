@@ -8,6 +8,7 @@ import {
   odlociPanogo,
   nastaviPosiljanje,
   odlociProblem,
+  oznaciVMapi,
   popraviOsnutek,
   pripraviVejo,
   type StanjePanoge,
@@ -148,4 +149,22 @@ export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): P
   const ok = await nastaviPosiljanje(domena, stanje, "");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
+}
+
+/** Mapa v Odobritvi: klic ali »začeli delati« pri podjetju, ki mu je šel prvi mail. */
+export async function oznaciVMapiAkcija(
+  prospect: string,
+  kaj: "klic" | "posel",
+  da: boolean,
+): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(prospect)) return { ok: false, napaka: "Neznano podjetje." };
+  if (kaj !== "klic" && kaj !== "posel") return { ok: false, napaka: "Neznana oznaka." };
+  const ok = await oznaciVMapi(prospect, kaj, da);
+  revalidatePath("/admin/prodajna-ekipa/odobritev");
+  return ok ? { ok } : { ok, napaka: "Harvey oznake ni shranil — ali teče?" };
 }

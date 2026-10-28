@@ -91,6 +91,32 @@ export type Postavka = {
   dokazi?: { besedilo: string; vir: string }[];
   /** Kako je prodajni agent prišel do osnutka (panoga → bolečina → dokaz → rešitev). */
   razmisljanje?: Razmisljanje | null;
+  /** Mapa v Odobritvi (Harvey, harvey/mape.py), npr. »Hoteli – avtomatski odgovori Booking in Airbnb«. */
+  mapa?: string;
+};
+
+/** Mapa v Odobritvi z lijakom: poslano → odgovorili → follow-up/klic → začeli delati. */
+export type MapaOdobritve = {
+  kljuc: string;
+  ime: string;
+  poslano: number;
+  odgovoril: number;
+  odjava: number;
+  follow_up: number;
+  klic: number;
+  posel: number;
+  podjetja: {
+    id: string;
+    podjetje: string;
+    email: string;
+    poslano: string;
+    odgovoril: boolean;
+    odjava: boolean;
+    follow_up: boolean;
+    klic: boolean;
+    posel: boolean;
+    predlog: string;
+  }[];
 };
 
 export type Razmisljanje = {
@@ -180,6 +206,7 @@ export type Podrobnosti = {
   seznam: Postavka[];
   razporeditev?: { oznaka: string; vrednost: number }[];
   poraba_po_delavcih?: { oznaka: string; klicev: number; vhodnih: number; izhodnih: number }[];
+  mape?: MapaOdobritve[];
 };
 
 /** Plast diagrama — od vodje do prodaje. */
@@ -548,6 +575,20 @@ export async function odlociOsnutek(
         ? { method: "POST" }
         : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(zavrnitev) },
     );
+    return Boolean(r.success);
+  } catch {
+    return false;
+  }
+}
+
+/** Mapa v Odobritvi: Luka označi klic ali »začeli delati« (Harvey tega sam ne vidi). */
+export async function oznaciVMapi(prospect: string, kaj: "klic" | "posel", da: boolean): Promise<boolean> {
+  try {
+    const r = await izHarveyja<{ success: boolean }>("/api/mape/oznaci", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prospect, kaj, da }),
+    });
     return Boolean(r.success);
   } catch {
     return false;

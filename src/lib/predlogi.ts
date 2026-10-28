@@ -125,6 +125,8 @@ export type DeloAgenta = {
   hero?: HeroAgenta;
   /** Vsebina PDF ponudbe (od 23. 10. 2026): problem bolj razložen, kako se lotimo, kaj pridobijo. */
   pdf?: PdfAgenta;
+  /** Nastanitve: AI odgovarja gostom tudi na Bookingu in Airbnbu (od 28. 10. 2026). */
+  kanali?: KanalGosta[];
 };
 
 export type PdfAgenta = {
@@ -142,6 +144,8 @@ export type PdfAgenta = {
 };
 
 export type PogovorAgenta = { opis?: string; sporocila: { od: "gost" | "ai"; besedilo: string; cas: string }[] };
+/** Primer sporočil gostov na Bookingu in Airbnbu (Harvey, harvey/kanali_gostov.py, od 28. 10. 2026). */
+export type KanalGosta = PogovorAgenta & { kanal: "booking" | "airbnb"; gost: string; jezik: string };
 export type KlicAgenta = { opis?: string; replike: { od: "gost" | "ai"; besedilo: string }[] };
 
 /** Agentov mail: uvod = alineje problema, jedro = alineje rešitve, zakljucek = kaj pridobijo. */

@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight, Check, Phone, X } from "lucide-react";
 import type { DeloAgenta, HeroAgenta, MailAgenta, PdfAgenta, Predlog } from "@/lib/predlogi";
 import { datumPredloga } from "../oblika";
+import { SISTEM, SporocilaKanala, VAROVANJE } from "../KanaliGostov";
 import { TelefonKorak } from "../PrviZaslon";
 import { AiKlic, WhatsAppPogovor } from "../RealniPrikaz";
 
@@ -129,6 +130,31 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
           </a>
         </p>
       </Stran>
+
+      {/* Nastanitve: Booking, Airbnb in celoten sistem (Luka 28. 10.) */}
+      {a.kanali?.length ? (
+        <Stran p={p}>
+          <Oznaka>Booking, Airbnb, WhatsApp, e-pošta</Oznaka>
+          <p className="mt-3 text-[26px] font-bold leading-tight">AI odgovori gostu tam, kjer piše, v njegovem jeziku</p>
+          <div className="mt-6 flex justify-center gap-6">
+            {a.kanali.map((k) => (
+              <SporocilaKanala key={k.kanal} ime={p.kratko_ime} kanal={k} visina={430} />
+            ))}
+          </div>
+          <p className="mt-6 text-[18px] font-bold">Celoten sistem vam postavimo mi</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            {SISTEM.map(({ naslov, opis }) => (
+              <div key={naslov} className="rounded-2xl bg-[#f6f7f9] px-4 py-3">
+                <p className="text-[14px] font-bold">{naslov}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-[#4b5563]">{opis}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 rounded-2xl border-l-4 border-[#F2B544] bg-[#fffaf0] px-4 py-3 text-[13px] leading-relaxed text-[#374151]">
+            {VAROVANJE}
+          </p>
+        </Stran>
+      ) : null}
 
       {/* 3 · Kako se lotimo (zaporedje, zato številke) */}
       <Stran p={p} sredina>

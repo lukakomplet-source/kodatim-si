@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { DeloAgenta, HeroAgenta, MailAgenta, PdfAgenta, Predlog } from "@/lib/predlogi";
 import { Eposta } from "./Eposta";
+import { SISTEM, SporocilaKanala, VAROVANJE } from "./KanaliGostov";
 import { pisavaPoImenu } from "./pisave";
 import { PredogledFunkcije } from "./PredogledFunkcije";
 import { Telefon, TelefonKorak } from "./PrviZaslon";
@@ -239,6 +240,41 @@ export function ProdajnaStran({ p, samoVrh = false, korak }: { p: PredlogProdaja
         </div>
         )}
       </Odsek>
+
+      {/* Nastanitve: isti AI na Bookingu in Airbnbu, celoten sistem (Luka 28. 10.) */}
+      {a.kanali?.length ? (
+        <Odsek siv>
+          <Oznaka barva="b">Booking, Airbnb, WhatsApp, e-pošta</Oznaka>
+          <h2 className={`${NASLOV} mt-3 max-w-3xl text-[clamp(1.8rem,3.4vw,2.6rem)] font-bold leading-[1.08]`}>
+            AI odgovori gostu tam, kjer piše, v njegovem jeziku
+          </h2>
+          <div className="mt-12 flex flex-wrap justify-center gap-10">
+            {a.kanali.map((k) => (
+              <SporocilaKanala key={k.kanal} ime={p.kratko_ime} kanal={k} />
+            ))}
+          </div>
+          <h3 className={`${NASLOV} mt-20 text-[clamp(1.5rem,2.8vw,2.1rem)] font-bold leading-tight`}>
+            Celoten sistem vam postavimo mi
+          </h3>
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
+            {SISTEM.map(({ Ikona, naslov, opis }) => (
+              <div key={naslov} className="flex gap-4 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#e3e9e7]">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_srgb,var(--b)_14%,white)] text-[var(--b)]">
+                  <Ikona className="h-5 w-5" aria-hidden />
+                </span>
+                <div>
+                  <p className="text-lg font-bold">{naslov}</p>
+                  <p className="mt-1 leading-relaxed text-[#4b5563]">{opis}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 flex gap-3 rounded-2xl border-l-4 border-[var(--amb)] bg-white px-5 py-4 leading-relaxed text-[#374151]">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[var(--amb)]" aria-hidden />
+            {VAROVANJE}
+          </p>
+        </Odsek>
+      ) : null}
 
       {/* Več zaslužka: kar že prodajajo, AI proda vsaki stranki (Luka 24. 10.) */}
       {a.pdf.dodatna_prodaja?.length ? (
