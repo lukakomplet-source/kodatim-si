@@ -389,7 +389,8 @@ export async function preberiEkipo(): Promise<{ povzetek: Povzetek | null; napak
 
 export async function preberiDelavca(vloga: KljucDelavca): Promise<Podrobnosti | null> {
   try {
-    return await izHarveyja<Podrobnosti>(`/api/ekipa/${vloga}`);
+    // Mape (Hoteli, Panik gumb) berejo dve bazi in predal: 2,5 s je premalo, sicer »Nič ne čaka« (28. 10. 2026).
+    return await izHarveyja<Podrobnosti>(`/api/ekipa/${vloga}`, { signal: AbortSignal.timeout(15_000) });
   } catch {
     return null;
   }
