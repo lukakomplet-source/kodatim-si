@@ -118,6 +118,9 @@ export type MapaOdobritve = {
     klic: boolean;
     posel: boolean;
     predlog: string;
+    /** Njihov zadnji odgovor (samo njihove besede) in kako ga je Harvey razumel. */
+    odgovor?: string;
+    namen?: string;
   }[];
 };
 

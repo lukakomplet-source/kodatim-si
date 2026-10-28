@@ -13,25 +13,41 @@ import { OdobritevSeznam } from "./OdobritevSeznam";
  * označi Luka, ostalo šteje Harvey sam.
  */
 
+type Stopnja = "poslano" | "odgovoril" | "follow_up" | "klic" | "posel";
+
+/** Kako je Harvey razumel odgovor (intent iz handlerja). */
+const NAMENI: Record<string, string> = {
+  interested: "zanima jih",
+  not_interested: "ne zanima jih",
+  objection: "pomislek",
+  question: "vprašanje",
+  meeting_request: "želijo sestanek",
+  out_of_office: "odsotni",
+  unsubscribe: "odjava",
+  referral: "napotili na drugega",
+};
+
 function odstotek(del: number, vse: number): string {
   return vse ? ` · ${Math.round((100 * del) / vse)} %` : "";
 }
 
 export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postavka[] }) {
   const [odprta, setOdprta] = useState(true);
-  const [poslaniOdprti, setPoslaniOdprti] = useState(false);
+  const [izbrana, setIzbrana] = useState<Stopnja | null>(null);
   const [napaka, setNapaka] = useState<string | null>(null);
   const [cakam, zacni] = useTransition();
   const prvi = postavke.filter((p) => !p.vrsta || p.vrsta === "prvi");
   const nadaljnji = postavke.filter((p) => p.vrsta === "follow_up" || p.vrsta === "odgovor");
 
-  const lijak = [
-    { ime: "Poslano", n: mapa.poslano, opis: "prvi mail" },
-    { ime: "Odpisali", n: mapa.odgovoril, opis: `odgovor${odstotek(mapa.odgovoril, mapa.poslano)}` },
-    { ime: "Follow-up po mailu", n: mapa.follow_up, opis: "drugi mail v niti" },
-    { ime: "Klic", n: mapa.klic, opis: "označiš ti" },
-    { ime: "Začeli delati", n: mapa.posel, opis: `konverzija${odstotek(mapa.posel, mapa.poslano)}` },
+  const lijak: { kljuc: Stopnja; ime: string; n: number; opis: string }[] = [
+    { kljuc: "poslano", ime: "Poslano", n: mapa.poslano, opis: "prvi mail" },
+    { kljuc: "odgovoril", ime: "Odpisali", n: mapa.odgovoril, opis: `odgovor${odstotek(mapa.odgovoril, mapa.poslano)}` },
+    { kljuc: "follow_up", ime: "Follow-up po mailu", n: mapa.follow_up, opis: "drugi mail v niti" },
+    { kljuc: "klic", ime: "Klic", n: mapa.klic, opis: "označiš ti" },
+    { kljuc: "posel", ime: "Začeli delati", n: mapa.posel, opis: `konverzija${odstotek(mapa.posel, mapa.poslano)}` },
   ];
+  const izbranaStopnja = lijak.find((k) => k.kljuc === izbrana);
+  const vStopnji = mapa.podjetja.filter((p) => izbrana === "poslano" || (izbrana ? p[izbrana] : false));
 
   function oznaci(id: string, kaj: "klic" | "posel", da: boolean) {
     setNapaka(null);
@@ -61,16 +77,92 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
 
       {odprta ? (
         <div className="border-t border-zinc-100 px-4 pb-4 pt-3">
-          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {lijak.map((k) => (
-              <div key={k.ime} className="rounded-xl bg-zinc-50 px-3 py-2.5 ring-1 ring-zinc-200">
-                <dt className="text-xs font-medium text-zinc-500">{k.ime}</dt>
-                <dd className="mt-0.5 text-2xl font-semibold text-zinc-900">{k.n}</dd>
-                <dd className="text-[11px] text-zinc-400">{k.opis}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {lijak.map((k) => {
+              const je = izbrana === k.kljuc;
+              return (
+                <button
+                  key={k.kljuc}
+                  type="button"
+                  onClick={() => setIzbrana(je ? null : k.kljuc)}
+                  aria-expanded={je}
+                  className={`group cursor-pointer rounded-xl px-3 py-2.5 text-left ring-1 transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
+                    je ? "bg-sky-50 ring-2 ring-sky-500" : "bg-zinc-50 ring-zinc-200 hover:bg-white hover:ring-sky-400"
+                  }`}
+                >
+                  <span className="flex items-center justify-between text-xs font-medium text-zinc-500">
+                    {k.ime}
+                    <span className={`text-sky-600 ${je ? "" : "opacity-0 group-hover:opacity-100"}`}>
+                      {je ? "Skrij" : "Pokaži ›"}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-2xl font-semibold text-zinc-900">{k.n}</span>
+                  <span className="block text-[11px] text-zinc-400">{k.opis}</span>
+                </button>
+              );
+            })}
+          </div>
           {mapa.odjava > 0 ? <p className="mt-2 text-xs text-zinc-500">Odjavljenih: {mapa.odjava}</p> : null}
+
+          {izbranaStopnja ? (
+            <div className="mt-3 rounded-xl bg-sky-50/50 p-3 ring-1 ring-sky-200">
+              <p className="mb-2 text-sm font-semibold text-zinc-900">
+                {izbranaStopnja.ime} ({vStopnji.length})
+              </p>
+              {vStopnji.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  {izbrana === "klic" || izbrana === "posel"
+                    ? "Še nobeno podjetje. Označiš ga pri »Poslano«."
+                    : "Še nobeno podjetje."}
+                </p>
+              ) : (
+                <ul className="divide-y divide-zinc-100 rounded-xl bg-white ring-1 ring-zinc-200">
+                  {vStopnji.map((p) => (
+                    <li key={p.id} className="px-3 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-900">{p.podjetje}</p>
+                          <p className="truncate text-xs text-zinc-500">
+                            {p.email} · poslano {new Date(p.poslano).toLocaleDateString("sl-SI")}
+                            {p.odgovoril ? " · odpisal" : ""}
+                            {p.odjava ? " · odjava" : ""}
+                            {p.follow_up ? " · follow-up poslan" : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          {p.predlog ? (
+                            <a
+                              href={`/predlog/${p.predlog}?interno`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full px-3 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-300 hover:ring-zinc-500"
+                            >
+                              Predlog
+                            </a>
+                          ) : null}
+                          <Preklop vkljucen={p.klic} onemogoceno={cakam} onClick={() => oznaci(p.id, "klic", !p.klic)}>
+                            Klic
+                          </Preklop>
+                          <Preklop vkljucen={p.posel} onemogoceno={cakam} onClick={() => oznaci(p.id, "posel", !p.posel)}>
+                            Začeli delati
+                          </Preklop>
+                        </div>
+                      </div>
+                      {p.odgovor ? (
+                        <div className="mt-2 rounded-lg border-l-2 border-emerald-400 bg-emerald-50/60 px-3 py-2">
+                          <p className="text-[11px] font-medium text-emerald-800">
+                            Njihov odgovor{p.namen ? ` · ${NAMENI[p.namen] ?? p.namen}` : ""}
+                          </p>
+                          <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-zinc-800">{p.odgovor}</p>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {napaka ? <p className="mt-2 text-sm text-red-700">{napaka}</p> : null}
+            </div>
+          ) : null}
 
           {postavke.length === 0 ? (
             <p className="mt-4 text-sm text-zinc-500">V tej mapi nič ne čaka na odobritev.</p>
@@ -91,44 +183,6 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
             </div>
           ) : null}
 
-          {mapa.podjetja.length > 0 ? (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setPoslaniOdprti(!poslaniOdprti)}
-                aria-expanded={poslaniOdprti}
-                className="text-sm font-medium text-zinc-700 underline-offset-2 hover:underline"
-              >
-                {poslaniOdprti ? "Skrij poslane" : `Poslani (${mapa.podjetja.length}): označi klic ali začetek dela`}
-              </button>
-              {poslaniOdprti ? (
-                <ul className="mt-2 divide-y divide-zinc-100 rounded-xl ring-1 ring-zinc-200">
-                  {mapa.podjetja.map((p) => (
-                    <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-zinc-900">{p.podjetje}</p>
-                        <p className="truncate text-xs text-zinc-500">
-                          {p.email} · poslano {new Date(p.poslano).toLocaleDateString("sl-SI")}
-                          {p.odgovoril ? " · odpisal" : ""}
-                          {p.odjava ? " · odjava" : ""}
-                          {p.follow_up ? " · follow-up poslan" : ""}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-1.5">
-                        <Preklop vkljucen={p.klic} onemogoceno={cakam} onClick={() => oznaci(p.id, "klic", !p.klic)}>
-                          Klic
-                        </Preklop>
-                        <Preklop vkljucen={p.posel} onemogoceno={cakam} onClick={() => oznaci(p.id, "posel", !p.posel)}>
-                          Začeli delati
-                        </Preklop>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {napaka ? <p className="mt-2 text-sm text-red-700">{napaka}</p> : null}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </section>
