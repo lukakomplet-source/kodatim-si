@@ -125,7 +125,18 @@ export type MapaOdobritve = {
   }[];
   /** Kompletko (panik gumb): kdo vodi mapo in .eml osnutki, ki jih Luka odpre v Outlooku in pošlje sam. */
   lastnik?: "kodatim" | "kompletko";
-  osnutki?: { ime: string; za: string; zadeva: string; ustvarjeno: string; vrsta: "prvi" | "follow_up" }[];
+  /** KodaTim mapa, ki jo Luka pošilja sam iz Outlooka (Harvey harvey/outlook.py): osnutki imajo id in odprt. */
+  outlook?: boolean;
+  osnutki?: {
+    ime?: string;
+    id?: string;
+    za: string;
+    email?: string;
+    zadeva: string;
+    ustvarjeno: string;
+    vrsta: "prvi" | "follow_up";
+    odprt?: boolean;
+  }[];
 };
 
 export type Razmisljanje = {

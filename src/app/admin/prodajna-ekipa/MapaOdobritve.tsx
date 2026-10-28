@@ -38,6 +38,10 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
   const [napaka, setNapaka] = useState<string | null>(null);
   const [cakam, zacni] = useTransition();
   const kompletko = mapa.lastnik === "kompletko";
+  // Hoteli (KodaTim): Luka maile pošlje sam iz Outlooka (Harvey harvey/outlook.py), kot pri panik gumbu.
+  const sam = kompletko || Boolean(mapa.outlook);
+  const [odpiram, setOdpiram] = useState<string | null>(null);
+  const [odprti, setOdprti] = useState<Set<string>>(new Set());
   const prvi = postavke.filter((p) => !p.vrsta || p.vrsta === "prvi");
   const nadaljnji = postavke.filter((p) => p.vrsta === "follow_up" || p.vrsta === "odgovor");
 
@@ -49,7 +53,23 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
     { kljuc: "posel", ime: "Začeli delati", n: mapa.posel, opis: `konverzija${odstotek(mapa.posel, mapa.poslano)}` },
   ];
   const izbranaStopnja = lijak.find((k) => k.kljuc === izbrana);
-  const vStopnji = mapa.podjetja.filter((p) => izbrana === "poslano" || (izbrana ? p[izbrana] : false));
+  // Luka 28. 10.: kdor je odpisal, je samo pod »Odpisali«; številka na ploščici ostane osnova za odstotke.
+  const vStopnji = mapa.podjetja.filter((p) => (izbrana === "poslano" ? !p.odgovoril : izbrana ? p[izbrana] : false));
+
+  async function odpriVOutlooku(id: string) {
+    setNapaka(null);
+    setOdpiram(id);
+    try {
+      const r = await fetch(`/api/admin/prodajna-ekipa/outlook/${encodeURIComponent(id)}`, { method: "POST" });
+      const data = (await r.json().catch(() => ({}))) as { ok?: boolean; napaka?: string };
+      if (!r.ok || !data.ok) setNapaka(data.napaka ?? "Outlook mail ni odprl.");
+      else setOdprti((prej) => new Set(prej).add(id));
+    } catch {
+      setNapaka("Outlook mail ni odprl.");
+    } finally {
+      setOdpiram(null);
+    }
+  }
 
   function oznaci(id: string, kaj: "klic" | "posel", da: boolean) {
     setNapaka(null);
@@ -72,7 +92,7 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
           <span className="truncate text-base font-semibold text-zinc-900">{mapa.ime}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2 text-sm text-zinc-500">
-          {postavke.length + (mapa.osnutki?.length ?? 0)} čaka
+          {(mapa.outlook ? 0 : postavke.length) + (mapa.osnutki?.length ?? 0)} čaka
           <ChevronDown className={`h-4 w-4 transition-transform ${odprta ? "rotate-180" : ""}`} aria-hidden />
         </span>
       </button>
@@ -109,7 +129,7 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
           {izbranaStopnja ? (
             <div className="mt-3 rounded-xl bg-sky-50/50 p-3 ring-1 ring-sky-200">
               <p className="mb-2 text-sm font-semibold text-zinc-900">
-                {izbranaStopnja.ime} ({vStopnji.length})
+                {izbrana === "poslano" ? "Poslano, brez odgovora" : izbranaStopnja.ime} ({vStopnji.length})
               </p>
               {kompletko ? (
                 <p className="mb-2 text-xs text-zinc-500">
@@ -155,6 +175,12 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                           </span>
                         ) : (
                         <div className="flex shrink-0 gap-1.5">
+                          <Link
+                            href={`/admin/prodajna-ekipa/poslano-kodatim/${encodeURIComponent(p.id)}`}
+                            className="rounded-full px-3 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-300 hover:ring-zinc-500"
+                          >
+                            Poglej mail
+                          </Link>
                           {p.predlog ? (
                             <a
                               href={`/predlog/${p.predlog}?interno`}
@@ -190,17 +216,17 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
             </div>
           ) : null}
 
-          {kompletko ? (
+          {sam ? (
             <div className="mt-4">
               <h3 className="text-sm font-semibold text-zinc-900">Pripravljeni maili ({mapa.osnutki?.length ?? 0})</h3>
               <p className="mb-2 text-xs text-zinc-500">
-                »Odpri v Outlooku« odpre mail s prilogami iz luka@kompletko.com. Preglej, popravi in pošlji sam; ko
-                je poslan, izgine od tu.
+                »Odpri v Outlooku« odpre mail s prilogami iz {kompletko ? "luka@kompletko.com" : "luka@kodatim.si"}.
+                Preglej, popravi in pošlji sam; ko je poslan, izgine od tu.
               </p>
               {mapa.osnutki?.length ? (
                 <ul className="divide-y divide-zinc-100 rounded-xl bg-white ring-1 ring-zinc-200">
                   {mapa.osnutki.map((o) => (
-                    <li key={o.ime} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <li key={o.ime ?? o.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                       <div className="min-w-0">
                         {o.vrsta === "follow_up" ? (
                           <span className="mb-1 inline-block rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-900">
@@ -209,32 +235,50 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                         ) : null}
                         <p className="truncate text-sm font-semibold text-zinc-900">{o.za}</p>
                         <p className="truncate text-sm text-zinc-700">Zadeva: {o.zadeva}</p>
+                        {o.id && (o.odprt || odprti.has(o.id)) ? (
+                          <p className="mt-0.5 text-xs font-medium text-emerald-700">
+                            Odprt v Outlooku – pošlji ga tam; ko ga pošlješ, izgine od tu.
+                          </p>
+                        ) : null}
                       </div>
-                      <a
-                        href={`/api/admin/prodajna-ekipa/eml/${encodeURIComponent(o.ime)}`}
-                        download={o.ime}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#0F6CBD] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#115EA3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
-                      >
-                        <Mail className="h-4 w-4" aria-hidden />
-                        Odpri v Outlooku
-                      </a>
+                      {mapa.outlook && o.id ? (
+                        <button
+                          type="button"
+                          disabled={odpiram !== null}
+                          onClick={() => odpriVOutlooku(o.id as string)}
+                          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#0F6CBD] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#115EA3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:opacity-60"
+                        >
+                          <Mail className="h-4 w-4" aria-hidden />
+                          {odpiram === o.id ? "Odpiram …" : "Odpri v Outlooku"}
+                        </button>
+                      ) : (
+                        <a
+                          href={`/api/admin/prodajna-ekipa/eml/${encodeURIComponent(o.ime ?? "")}`}
+                          download={o.ime}
+                          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#0F6CBD] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#115EA3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+                        >
+                          <Mail className="h-4 w-4" aria-hidden />
+                          Odpri v Outlooku
+                        </a>
+                      )}
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p className="text-sm text-zinc-500">Trenutno ni pripravljenega maila.</p>
               )}
+              {napaka && !izbranaStopnja ? <p className="mt-2 text-sm text-red-700">{napaka}</p> : null}
             </div>
           ) : postavke.length === 0 ? (
             <p className="mt-4 text-sm text-zinc-500">V tej mapi nič ne čaka na odobritev.</p>
           ) : null}
-          {prvi.length > 0 ? (
+          {!mapa.outlook && prvi.length > 0 ? (
             <div className="mt-4">
               <h3 className="mb-2 text-sm font-semibold text-zinc-900">Prvi maili ({prvi.length})</h3>
               <OdobritevSeznam postavke={prvi} />
             </div>
           ) : null}
-          {nadaljnji.length > 0 ? (
+          {!mapa.outlook && nadaljnji.length > 0 ? (
             <div className="mt-5">
               <h3 className="text-sm font-semibold text-zinc-900">Follow-upi in odgovori ({nadaljnji.length})</h3>
               <p className="mb-2 text-xs text-zinc-500">
