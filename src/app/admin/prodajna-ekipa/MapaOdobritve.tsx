@@ -237,7 +237,7 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                         <p className="truncate text-sm text-zinc-700">Zadeva: {o.zadeva}</p>
                         {o.id && (o.odprt || odprti.has(o.id)) ? (
                           <p className="mt-0.5 text-xs font-medium text-emerald-700">
-                            Odprt v Outlooku – pošlji ga tam; ko ga pošlješ, izgine od tu.
+                            V Outlooku med Osnutki – pošlji ga od tam; ko ga pošlješ, izgine od tu.
                           </p>
                         ) : null}
                       </div>
