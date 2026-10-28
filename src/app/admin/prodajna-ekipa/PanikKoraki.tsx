@@ -37,6 +37,42 @@ function jeKlic(korak: string): boolean {
   return korak.startsWith("Pokliči");
 }
 
+/** Odgovori na zavrnitve po 3A: potrdi, poveži, vprašaj (Documents\HARVEY\pravila-pogovora.md, 28. 10. 2026). */
+const ZAVRNITVE: { rece: string; odgovor: string; izid?: string }[] = [
+  {
+    rece: "Imamo GPS.",
+    odgovor:
+      "Odlično, to pomeni, da varnost voznikov že jemljete resno. GPS pove, kje je vozilo. Kdo pa danes ukrepa, če voznik ponoči na parkirišču potrebuje pomoč?",
+  },
+  {
+    rece: "Nimamo časa.",
+    odgovor: "Razumem, v prevozu je vedno veliko dela. Ravno zato traja samo 15 minut. Je lažje naslednji teden na Teams?",
+  },
+  {
+    rece: "Pošljite na mail.",
+    odgovor: "Seveda, z veseljem. Komu naj pošljem, da ne pristane med ostalimi?",
+    izid: "Pošljite na mail, vpiši ime in mail",
+  },
+  {
+    rece: "Moram vprašati šefa.",
+    odgovor: "Seveda, smiselno. Kaj mislite, kaj ga bo najprej zanimalo? Da mu pripravim točno to.",
+  },
+  {
+    rece: "Koliko stane?",
+    odgovor:
+      "Odvisno od števila vozil, zato vam na pamet ne bi rekel napačne številke. Koliko vozil imate na poti? Na sestanku vam pokažem točno za vaš vozni park.",
+  },
+  {
+    rece: "Bom premislil.",
+    odgovor: "Seveda. Kaj je glavna stvar, o kateri razmišljate?",
+  },
+  {
+    rece: "Ne rabimo.",
+    odgovor: "V redu, hvala za iskren odgovor. Lahko samo vprašam, kako imate to danes urejeno?",
+    izid: "Ne zanima",
+  },
+];
+
 function ScenarijKlica() {
   return (
     <div className="space-y-3 text-sm leading-6 text-zinc-700">
@@ -48,7 +84,7 @@ function ScenarijKlica() {
         </p>
       </div>
       <div>
-        <p className="font-semibold text-zinc-900">Dve vprašanji, odgovorita naj sama</p>
+        <p className="font-semibold text-zinc-900">Dve vprašanji, odgovori naj sam</p>
         <p>»Kaj voznik danes naredi, če ga ponoči na parkirišču kdo ogroža ali mu postane slabo?«</p>
         <p>»Kako hitro pa vi izveste, da je nekaj narobe?«</p>
       </div>
@@ -60,28 +96,20 @@ function ScenarijKlica() {
         </p>
       </div>
       <div>
-        <p className="font-semibold text-zinc-900">Če rečejo …</p>
-        <ul className="list-disc space-y-1 pl-5">
-          <li>
-            <span className="font-medium">»Imamo GPS.«</span> »GPS pove, kje je vozilo. Kdo pa pokliče pomoč, ko voznik
-            ne more?«
-          </li>
-          <li>
-            <span className="font-medium">»Nimamo časa.«</span> »Razumem. Je 15 minut na Teams naslednji teden lažje?«
-          </li>
-          <li>
-            <span className="font-medium">»Pošljite na mail.«</span> »Seveda. Komu naj pošljem, da ne pristane med
-            ostalimi?« Izid: Pošljite na mail.
-          </li>
-          <li>
-            <span className="font-medium">»Koliko stane?«</span> »Odvisno od števila vozil. Na sestanku vam pokažem
-            točno za vaš vozni park.«
-          </li>
-          <li>
-            <span className="font-medium">»Ne rabimo.«</span> »V redu, hvala. Lahko samo vprašam, kako imate to danes
-            urejeno?« Izid: Ne zanima.
-          </li>
+        <p className="font-semibold text-zinc-900">Če rečejo … (potrdi, poveži, vprašaj)</p>
+        <ul className="list-disc space-y-1.5 pl-5">
+          {ZAVRNITVE.map((z) => (
+            <li key={z.rece}>
+              <span className="font-medium">»{z.rece}«</span> »{z.odgovor}«
+              {z.izid ? <span className="text-zinc-500"> Izid: {z.izid}.</span> : null}
+            </li>
+          ))}
         </ul>
+      </div>
+      <div>
+        <p className="font-semibold text-zinc-900">Ko je pogovor dober</p>
+        <p>»Česa se bojite, da bi se zgodilo?« Na jasno vprašanje (licenca, kdo pride) odgovori naravnost: intervencijo izvaja ProtecTrans z licenco.</p>
+        <p className="mt-1 text-zinc-500">Nikoli: »Imate kakšno vprašanje?«, prepir, pritisk ali izmišljena zgodba o stranki.</p>
       </div>
     </div>
   );
@@ -91,13 +119,14 @@ function Korak({ p }: { p: Posiljanje }) {
   const [odprt, setOdprt] = useState(false);
   const [oseba, setOseba] = useState(p.oseba ?? "");
   const [opomba, setOpomba] = useState("");
+  const [komu, setKomu] = useState(p.oseba_email ?? "");
   const [napaka, setNapaka] = useState("");
   const [poteka, zacni] = useTransition();
   const klic = jeKlic(p.naslednje);
 
   const vpisi = (izid: IzidKlica) =>
     zacni(async () => {
-      const r = await zabeleziKlicAkcija(p.domena, izid, oseba, opomba);
+      const r = await zabeleziKlicAkcija(p.domena, izid, oseba, opomba, komu);
       setNapaka(r.ok ? "" : (r.napaka ?? "Ni uspelo."));
       if (r.ok) setOdprt(false);
     });
@@ -147,9 +176,23 @@ function Korak({ p }: { p: Posiljanje }) {
                 <input
                   value={oseba}
                   onChange={(e) => setOseba(e.target.value)}
-                  placeholder="npr. vodja voznega parka"
+                  placeholder="npr. gospod Novak, vodja voznega parka"
                   className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
                 />
+              </label>
+              <label className="block text-sm text-zinc-700">
+                Komu pisati (mail, ki ti ga povedo)
+                <input
+                  type="email"
+                  value={komu}
+                  onChange={(e) => setKomu(e.target.value)}
+                  placeholder="npr. novak@podjetje.si"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
+                />
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Pri »Pošljite na mail« pripravim mail na ime: »vaš sodelavec mi je svetoval, naj vam pišem«. Za nagovor
+                  zgoraj napiši »gospod« ali »gospa« in priimek.
+                </span>
               </label>
               <label className="block text-sm text-zinc-700">
                 Opomba

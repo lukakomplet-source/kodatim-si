@@ -159,6 +159,7 @@ export async function zabeleziKlicAkcija(
   izid: IzidKlica,
   oseba: string,
   opomba: string,
+  email = "",
 ): Promise<{ ok: boolean; napaka?: string }> {
   try {
     await requireAdmin();
@@ -167,7 +168,9 @@ export async function zabeleziKlicAkcija(
   }
   if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
   if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(izid)) return { ok: false, napaka: "Neznan izid." };
-  const ok = await zabeleziKlic(domena, izid, oseba.slice(0, 120), opomba.slice(0, 500));
+  const komu = email.trim().toLowerCase();
+  if (komu && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(komu)) return { ok: false, napaka: "Mail ni pravilen." };
+  const ok = await zabeleziKlic(domena, izid, oseba.slice(0, 120), opomba.slice(0, 500), komu.slice(0, 120));
   revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };

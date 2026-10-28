@@ -1214,6 +1214,8 @@ export type Posiljanje = {
   klic_izid?: "" | IzidKlica;
   klic_poskusi?: number;
   oseba?: string;
+  /** Komu pisati: mail, ki ga je podjetje samo povedalo pri klicu. */
+  oseba_email?: string;
 };
 
 export type IzidKlica = "sestanek" | "poslji_mail" | "ni_dvignil" | "ne_zanima";
@@ -1233,14 +1235,20 @@ export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
   }
 }
 
-export async function zabeleziKlic(domena: string, izid: IzidKlica, oseba: string, opomba: string): Promise<boolean> {
+export async function zabeleziKlic(
+  domena: string,
+  izid: IzidKlica,
+  oseba: string,
+  opomba: string,
+  email = "",
+): Promise<boolean> {
   try {
     const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja/${encodeURIComponent(domena)}/klic`, {
       method: "POST",
       cache: "no-store",
       signal: AbortSignal.timeout(4_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba }),
+      body: JSON.stringify({ izid, oseba, opomba, email }),
     });
     return r.ok;
   } catch {
