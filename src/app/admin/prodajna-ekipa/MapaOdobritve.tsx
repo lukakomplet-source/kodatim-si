@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ChevronDown, Folder, Mail } from "lucide-react";
-import type { MapaOdobritve as Mapa, Postavka } from "@/lib/prodajna-ekipa";
+import { opisObsega, type MapaOdobritve as Mapa, type Postavka } from "@/lib/prodajna-ekipa";
 import { oznaciVMapiAkcija } from "./actions";
 import { OdobritevSeznam } from "./OdobritevSeznam";
 
@@ -161,6 +161,9 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                             {p.odjava ? " · odjava" : ""}
                             {p.follow_up ? " · follow-up poslan" : ""}
                           </p>
+                          {kompletko && opisObsega(p) ? (
+                            <p className="truncate text-xs font-medium text-zinc-700">{opisObsega(p)}</p>
+                          ) : null}
                         </div>
                         {kompletko ? (
                           <span className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">

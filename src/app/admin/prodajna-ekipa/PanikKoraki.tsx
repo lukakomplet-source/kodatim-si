@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, Phone } from "lucide-react";
-import type { IzidKlica, Posiljanje } from "@/lib/prodajna-ekipa";
+import { opisObsega, type IzidKlica, type Posiljanje } from "@/lib/prodajna-ekipa";
 import { zabeleziKlicAkcija } from "./actions";
 
 /**
@@ -149,6 +149,11 @@ function Korak({ p }: { p: Posiljanje }) {
         {p.oseba ? ` · odloča: ${p.oseba}` : ""}
         {p.klic_izid ? ` · zadnji klic: ${IZID_BESEDILO[p.klic_izid]}` : ""}
       </p>
+      {opisObsega(p) ? (
+        <p className="mt-0.5 text-sm font-medium text-zinc-700" title={p.tovornjaki_dokaz || undefined}>
+          {opisObsega(p)}
+        </p>
+      ) : null}
       {klic ? (
         <div className="mt-2">
           <div className="flex flex-wrap items-center gap-2">
