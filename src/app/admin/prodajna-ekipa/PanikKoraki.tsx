@@ -111,6 +111,13 @@ function ScenarijKlica() {
         <p>»Česa se bojite, da bi se zgodilo?« Na jasno vprašanje (licenca, kdo pride) odgovori naravnost: intervencijo izvaja ProtecTrans z licenco.</p>
         <p className="mt-1 text-zinc-500">Nikoli: »Imate kakšno vprašanje?«, prepir, pritisk ali izmišljena zgodba o stranki.</p>
       </div>
+      <div>
+        <p className="font-semibold text-zinc-900">Na koncu sestanka: priporočilo</p>
+        <p>
+          »Poznate še kakšnega prevoznika, ki bi mu to koristilo? Lahko rečem, da prihajam od vas?« Ime in mail vpiši v
+          opombo, pripravim mail z njegovim priporočilom.
+        </p>
+      </div>
     </div>
   );
 }
