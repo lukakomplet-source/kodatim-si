@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, Phone } from "lucide-react";
-import { opisObsega, type IzidKlica, type Posiljanje } from "@/lib/prodajna-ekipa";
+import type { IzidKlica, Posiljanje } from "@/lib/prodajna-ekipa";
+import { opisObsega } from "@/lib/obsegPrevoznika";
 import { zabeleziKlicAkcija } from "./actions";
 
 /**

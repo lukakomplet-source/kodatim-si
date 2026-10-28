@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ChevronDown, Folder, Mail } from "lucide-react";
-import { opisObsega, type MapaOdobritve as Mapa, type Postavka } from "@/lib/prodajna-ekipa";
+import type { MapaOdobritve as Mapa, Postavka } from "@/lib/prodajna-ekipa";
+import { opisObsega } from "@/lib/obsegPrevoznika";
 import { oznaciVMapiAkcija } from "./actions";
 import { OdobritevSeznam } from "./OdobritevSeznam";
 
