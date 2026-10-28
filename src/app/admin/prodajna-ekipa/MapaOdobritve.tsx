@@ -143,9 +143,15 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                           </p>
                         </div>
                         {kompletko ? (
-                          <span className="shrink-0 text-xs text-zinc-500">
+                          <span className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
                             varianta {p.varianta || "?"}
                             {p.namen ? ` · ${p.namen}` : ""}
+                            <Link
+                              href={`/admin/prodajna-ekipa/poslano/${encodeURIComponent(p.id)}`}
+                              className="rounded-full px-3 py-1 font-medium text-zinc-700 ring-1 ring-zinc-300 hover:ring-zinc-500"
+                            >
+                              Poglej mail
+                            </Link>
                           </span>
                         ) : (
                         <div className="flex shrink-0 gap-1.5">
