@@ -93,6 +93,8 @@ export type Postavka = {
   razmisljanje?: Razmisljanje | null;
   /** Mapa v Odobritvi (Harvey, harvey/mape.py), npr. »Hoteli – avtomatski odgovori Booking in Airbnb«. */
   mapa?: string;
+  /** Odobritev: prvi mail ali follow-up/odgovor (ti so v mapi pod prvimi maili). */
+  vrsta?: "prvi" | "follow_up";
 };
 
 /** Mapa v Odobritvi z lijakom: poslano → odgovorili → follow-up/klic → začeli delati. */

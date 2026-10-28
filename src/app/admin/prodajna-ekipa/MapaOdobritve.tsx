@@ -22,6 +22,8 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
   const [poslaniOdprti, setPoslaniOdprti] = useState(false);
   const [napaka, setNapaka] = useState<string | null>(null);
   const [cakam, zacni] = useTransition();
+  const prvi = postavke.filter((p) => p.vrsta !== "follow_up");
+  const nadaljnji = postavke.filter((p) => p.vrsta === "follow_up");
 
   const lijak = [
     { ime: "Poslano", n: mapa.poslano, opis: "prvi mail" },
@@ -70,13 +72,24 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
           </dl>
           {mapa.odjava > 0 ? <p className="mt-2 text-xs text-zinc-500">Odjavljenih: {mapa.odjava}</p> : null}
 
-          <div className="mt-4">
-            {postavke.length > 0 ? (
-              <OdobritevSeznam postavke={postavke} />
-            ) : (
-              <p className="text-sm text-zinc-500">V tej mapi nič ne čaka na odobritev.</p>
-            )}
-          </div>
+          {postavke.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-500">V tej mapi nič ne čaka na odobritev.</p>
+          ) : null}
+          {prvi.length > 0 ? (
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-semibold text-zinc-900">Prvi maili ({prvi.length})</h3>
+              <OdobritevSeznam postavke={prvi} />
+            </div>
+          ) : null}
+          {nadaljnji.length > 0 ? (
+            <div className="mt-5">
+              <h3 className="text-sm font-semibold text-zinc-900">Follow-upi in odgovori ({nadaljnji.length})</h3>
+              <p className="mb-2 text-xs text-zinc-500">
+                Follow-up se pokaže, ko odobriš prvi mail; gre ven nekaj dni za njim, v isti niti.
+              </p>
+              <OdobritevSeznam postavke={nadaljnji} />
+            </div>
+          ) : null}
 
           {mapa.podjetja.length > 0 ? (
             <div className="mt-4">
