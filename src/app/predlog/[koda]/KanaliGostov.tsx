@@ -29,12 +29,14 @@ const SLOG = {
   },
 } as const;
 
-export function SporocilaKanala({ ime, kanal, visina = 520 }: { ime: string; kanal: KanalGosta; visina?: number }) {
+/** Telefon je visok toliko, kolikor je pogovora; `najvec` skrajša pogovor (PDF: vprašanje in odgovor). */
+export function SporocilaKanala({ ime, kanal, najvec }: { ime: string; kanal: KanalGosta; najvec?: number }) {
   const s = SLOG[kanal.kanal];
+  const sporocila = najvec ? kanal.sporocila.slice(0, najvec) : kanal.sporocila;
   return (
     <figure className="mx-auto w-[300px]">
       <div className="rounded-[2.6rem] bg-[#0b0f14] p-2.5 shadow-2xl shadow-black/30 ring-1 ring-white/10">
-        <div className="flex flex-col overflow-hidden rounded-[2.1rem]" style={{ height: visina, background: s.podlaga }}>
+        <div className="flex min-h-[420px] flex-col overflow-hidden rounded-[2.1rem]" style={{ background: s.podlaga }}>
           <div
             className="px-4 pb-3 pt-7"
             style={{ background: s.glava, color: s.glavaBesedilo, borderBottom: kanal.kanal === "airbnb" ? "1px solid #ebebeb" : undefined }}
@@ -53,8 +55,8 @@ export function SporocilaKanala({ ime, kanal, visina = 520 }: { ime: string; kan
               </div>
             </div>
           </div>
-          <div className="flex flex-1 flex-col justify-end gap-2 overflow-hidden px-3 py-3">
-            {kanal.sporocila.map((m, i) => {
+          <div className="flex flex-1 flex-col justify-end gap-2 px-3 py-3">
+            {sporocila.map((m, i) => {
               const ai = m.od === "ai";
               return (
                 <div key={i} className={`flex flex-col ${ai ? "items-end" : "items-start"}`}>

@@ -138,7 +138,7 @@ export function PonudbaAgenta({ p }: { p: Predlog & { agent: Agent; mail: MailAg
           <p className="mt-3 text-[26px] font-bold leading-tight">AI odgovori gostu tam, kjer piše, v njegovem jeziku</p>
           <div className="mt-6 flex justify-center gap-6">
             {a.kanali.map((k) => (
-              <SporocilaKanala key={k.kanal} ime={p.kratko_ime} kanal={k} visina={430} />
+              <SporocilaKanala key={k.kanal} ime={p.kratko_ime} kanal={k} najvec={2} />
             ))}
           </div>
           <p className="mt-6 text-[18px] font-bold">Celoten sistem vam postavimo mi</p>
