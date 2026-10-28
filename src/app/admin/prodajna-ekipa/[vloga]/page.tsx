@@ -184,11 +184,13 @@ export default async function DelavecPage({ params }: { params: Promise<{ vloga:
                     postavke={(podrobnosti?.seznam ?? []).filter((p) => p.mapa === m.ime)}
                   />
                 ))}
-                <OdobritevSeznam
-                  postavke={(podrobnosti?.seznam ?? []).filter(
+                {(() => {
+                  const ostali = (podrobnosti?.seznam ?? []).filter(
                     (p) => !p.mapa || !(podrobnosti?.mape ?? []).some((m) => m.ime === p.mapa),
-                  )}
-                />
+                  );
+                  // Brez »Nič ne čaka« pod mapami: to bi veljalo samo za maile zunaj map.
+                  return ostali.length > 0 || !podrobnosti?.mape?.length ? <OdobritevSeznam postavke={ostali} /> : null;
+                })()}
               </div>
             ) : podrobnosti?.seznam.length ? (
               <ul className="divide-y divide-zinc-100 rounded-xl bg-white ring-1 ring-zinc-200">

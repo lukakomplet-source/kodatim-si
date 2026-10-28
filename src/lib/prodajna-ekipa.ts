@@ -121,7 +121,11 @@ export type MapaOdobritve = {
     /** Njihov zadnji odgovor (samo njihove besede) in kako ga je Harvey razumel. */
     odgovor?: string;
     namen?: string;
+    varianta?: string;
   }[];
+  /** Kompletko (panik gumb): kdo vodi mapo in .eml osnutki, ki jih Luka odpre v Outlooku in pošlje sam. */
+  lastnik?: "kodatim" | "kompletko";
+  osnutki?: { ime: string; za: string; zadeva: string; ustvarjeno: string; vrsta: "prvi" | "follow_up" }[];
 };
 
 export type Razmisljanje = {
