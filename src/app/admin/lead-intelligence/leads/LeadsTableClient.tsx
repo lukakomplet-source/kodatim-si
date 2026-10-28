@@ -55,6 +55,61 @@ function bankruptStatus(lead: IntelLead): string | null {
   return status && /steč|likvidac|prisiln|izbrisan/i.test(status) ? status : null;
 }
 
+/** What Harvey's segment funnel stored on the lead (custom_fields.segment). */
+type SegmentLeada = {
+  segment_ime: string;
+  ocena: number;
+  razlogi: { razlog: string; odlomek: string; url: string }[];
+  enote: number | null;
+  prihodki: number | null;
+  leto: string | null;
+  stanje: string;
+  izbran_dne: string | null;
+};
+
+const STANJE_SEGMENTA: Record<string, string> = {
+  pregledan: "ustreza",
+  izbran: "izbran",
+  v_pripravi: "v pripravi",
+  caka_odobritev: "čaka na odobritev",
+  poslan: "poslano",
+  odgovoril: "odgovoril",
+  odjava: "odjava",
+};
+
+function segmentLeada(lead: IntelLead): SegmentLeada | null {
+  const s = (lead.custom_fields as Record<string, unknown> | null)?.segment;
+  return s && typeof s === "object" ? (s as SegmentLeada) : null;
+}
+
+function SegmentVrstica({ s }: { s: SegmentLeada }) {
+  const obseg = [
+    s.prihodki != null
+      ? `${Math.round(s.prihodki).toLocaleString("sl-SI")} € prihodkov${s.leto ? ` (${s.leto})` : ""}`
+      : null,
+    s.enote ? `${s.enote} enot na strani` : null,
+  ].filter(Boolean);
+  return (
+    <div className="mt-1.5 max-w-md text-xs leading-relaxed text-zinc-600">
+      <span className="font-semibold text-amber-800">{s.segment_ime}</span>
+      {" · ocena "}
+      <span className="font-semibold text-zinc-900">{s.ocena}</span>
+      {" · "}
+      {s.izbran_dne ? `izbran ${s.izbran_dne.split("-").reverse().join(". ")}` : STANJE_SEGMENTA[s.stanje] ?? s.stanje}
+      {s.izbran_dne && s.stanje !== "izbran" ? ` · ${STANJE_SEGMENTA[s.stanje] ?? s.stanje}` : ""}
+      {obseg.length > 0 && <div className="text-zinc-500">{obseg.join(" · ")}</div>}
+      {s.razlogi.length > 0 && (
+        <div className="text-zinc-500">
+          {s.razlogi
+            .slice(0, 4)
+            .map((r) => r.razlog)
+            .join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -368,6 +423,7 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
                         {bankruptStatus(lead)}
                       </span>
                     )}
+                    {segmentLeada(lead) && <SegmentVrstica s={segmentLeada(lead)!} />}
                     {lead.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {lead.tags.slice(0, 3).map((t) => (

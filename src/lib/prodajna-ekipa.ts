@@ -879,6 +879,180 @@ export async function sinhronizirajLeade(): Promise<{ novih: number; posodobljen
   return { novih: vstavljenih, posodobljenih };
 }
 
+// ── Segmenti (Harvey: harvey/segmenti.py) ──
+
+export type RazlogSegmenta = { razlog: string; odlomek: string; url: string; tocke?: number };
+
+export type KandidatSegmenta = {
+  davcna: string;
+  podjetje: string;
+  email: string;
+  spletna_stran: string;
+  telefon: string;
+  kraj: string;
+  dejavnost: string;
+  segment: string;
+  segment_ime: string;
+  posel: string;
+  ocena: number;
+  tocke_strani: number;
+  razlogi: RazlogSegmenta[];
+  enote: number | null;
+  prihodki: number | null;
+  zaposleni: number | null;
+  leto: string | null;
+  cw_url: string;
+  stanje: string;
+  izbran_dne: string | null;
+  najden: string;
+};
+
+/** Kar o segmentu hrani lead v custom_fields.segment. */
+export type SegmentLeada = Omit<
+  KandidatSegmenta,
+  "davcna" | "podjetje" | "email" | "spletna_stran" | "telefon" | "kraj" | "dejavnost" | "segment" | "najden"
+> & { kljuc: string };
+
+export type SegmentPovzetek = {
+  kljuc: string;
+  ime: string;
+  posel: string;
+  aktiven: boolean;
+  na_dan: number;
+  v_zalogi: number;
+  ustreznih: number;
+  neustreznih: number;
+  izkljucenih: number;
+  pregledanih_strani_danes: number;
+  izbranih_danes: number;
+  v_pripravi: number;
+  caka_odobritev: number;
+  poslanih: number;
+  odgovorov: number;
+  zakaj_ne: { razlog: string; stevilo: number }[];
+};
+
+export type SegmentiPovzetek = {
+  dan: string;
+  cw_pavza_do: string;
+  cw_danes: number;
+  cw_na_dan: number;
+  v_harveyja: boolean;
+  segmenti: SegmentPovzetek[];
+};
+
+/** Dnevni lijak po segmentih ali null, ko Harvey ne teče. */
+export async function preberiSegmente(): Promise<SegmentiPovzetek | null> {
+  try {
+    return await izHarveyja<SegmentiPovzetek>("/api/segmenti-povzetek");
+  } catch {
+    return null;
+  }
+}
+
+let zadnjaSinhronizacijaSegmentov = 0;
+
+/**
+ * Kandidate segmentov (ocena, razlogi z virom, obseg, stanje, dan izbora)
+ * prenese v Bazo leadov: nov lead ali custom_fields.segment pri obstoječem
+ * (e-pošta, nato davčna) z oznako »Segment: <ime>«. Drugih polj obstoječega
+ * leada ne prepisuje. Največ enkrat na 10 minut.
+ */
+export async function sinhronizirajSegmente(): Promise<{ novih: number; posodobljenih: number } | null> {
+  if (Date.now() - zadnjaSinhronizacijaSegmentov < SINHRONIZACIJA_NAJVEC_NA_MIN * 60_000) return null;
+  zadnjaSinhronizacijaSegmentov = Date.now();
+
+  let kandidati: KandidatSegmenta[];
+  try {
+    kandidati = await izHarveyja<KandidatSegmenta[]>("/api/segmenti-kandidati");
+  } catch {
+    return null;
+  }
+  if (kandidati.length === 0) return { novih: 0, posodobljenih: 0 };
+
+  type Obstojeci = { id: string; email: string | null; vat_id: string | null; tags: string[] | null; custom_fields: Record<string, unknown> | null };
+  const admin = createAdminClient();
+  const poPosti = new Map<string, Obstojeci>();
+  const poDavcni = new Map<string, Obstojeci>();
+  const emaili = kandidati.map((k) => k.email.toLowerCase());
+  for (let i = 0; i < emaili.length; i += 300) {
+    const { data } = await admin
+      .from("intel_leads")
+      .select("id, email, vat_id, tags, custom_fields")
+      .in("email", emaili.slice(i, i + 300));
+    for (const r of (data ?? []) as Obstojeci[]) if (r.email) poPosti.set(r.email.toLowerCase(), r);
+  }
+  // Davčna je v bazi zapisana različno (»SI 12345678«, »12345678«), zato po zadnjih 8 števkah.
+  const brez = kandidati.filter((k) => !poPosti.has(k.email.toLowerCase()));
+  for (let i = 0; i < brez.length; i += 100) {
+    const pogoj = brez.slice(i, i + 100).map((k) => `vat_id.ilike.*${stevke(k.davcna).slice(-8)}*`).join(",");
+    const { data } = await admin.from("intel_leads").select("id, email, vat_id, tags, custom_fields").or(pogoj);
+    for (const r of (data ?? []) as Obstojeci[]) if (r.vat_id) poDavcni.set(stevke(r.vat_id).slice(-8), r);
+  }
+
+  const novi: Record<string, unknown>[] = [];
+  let posodobljenih = 0;
+  for (const k of kandidati) {
+    const segment: SegmentLeada = {
+      kljuc: k.segment,
+      segment_ime: k.segment_ime,
+      posel: k.posel,
+      ocena: k.ocena,
+      tocke_strani: k.tocke_strani,
+      razlogi: k.razlogi.slice(0, 8),
+      enote: k.enote,
+      prihodki: k.prihodki,
+      zaposleni: k.zaposleni,
+      leto: k.leto,
+      cw_url: k.cw_url,
+      stanje: k.stanje,
+      izbran_dne: k.izbran_dne,
+    };
+    const oznaka = `Segment: ${k.segment_ime}`;
+    const obstojeci = poPosti.get(k.email.toLowerCase()) ?? poDavcni.get(stevke(k.davcna).slice(-8));
+    if (obstojeci) {
+      const cf = obstojeci.custom_fields ?? {};
+      const tags = obstojeci.tags ?? [];
+      if (JSON.stringify(cf.segment) === JSON.stringify(segment) && tags.includes(oznaka)) continue;
+      const { error } = await admin
+        .from("intel_leads")
+        .update({ custom_fields: { ...cf, segment }, tags: tags.includes(oznaka) ? tags : [...tags, oznaka] })
+        .eq("id", obstojeci.id);
+      if (!error) posodobljenih += 1;
+      continue;
+    }
+    const [skd, ...skdNaziv] = k.dejavnost.split(" ");
+    novi.push({
+      company_name: k.podjetje,
+      email: k.email,
+      website: k.spletna_stran || null,
+      phone: k.telefon || null,
+      vat_id: k.davcna || null,
+      address_city: k.kraj || null,
+      address_country: "Slovenija",
+      industry: skdNaziv.join(" ") || null,
+      tags: ["Harvey", oznaka],
+      lead_status: k.stanje === "odjava" ? "not_interested"
+        : k.stanje === "poslan" || k.stanje === "odgovoril" ? "contacted" : "new",
+      priority: k.izbran_dne ? "high" : "medium",
+      notes: `Našel segment »${k.segment_ime}« (Harvey): objavljen naslov na domeni podjetja.`,
+      custom_fields: {
+        segment,
+        skd_code: skd || undefined,
+        skd_name: skdNaziv.join(" ") || undefined,
+        revenue_amount: k.prihodki != null ? String(Math.round(k.prihodki)) : undefined,
+        revenue_year: k.leto || undefined,
+      },
+    });
+  }
+  let vstavljenih = 0;
+  for (let i = 0; i < novi.length; i += 200) {
+    const { error, data } = await admin.from("intel_leads").insert(novi.slice(i, i + 200)).select("id");
+    if (!error) vstavljenih += data?.length ?? 0;
+  }
+  return { novih: vstavljenih, posodobljenih };
+}
+
 /** Kar danes čaka na Luka: osnutki, klici in novi leadi iz klepeta. */
 export async function preberiDanes(): Promise<{ klicev: number; leadovIzKlepeta: number }> {
   const admin = createAdminClient();

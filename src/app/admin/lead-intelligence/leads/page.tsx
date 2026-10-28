@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { queryLeads } from "@/lib/lead-intelligence/query";
+import { danesLjubljana, queryLeads } from "@/lib/lead-intelligence/query";
 import { filtersFromSearchParams } from "@/lib/lead-intelligence/filters";
+import { sinhronizirajSegmente } from "@/lib/prodajna-ekipa";
 import {
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
@@ -24,10 +25,17 @@ export default async function LeadsPage({
   const params = await searchParams;
   const filters = filtersFromSearchParams(params);
 
+  // Kandidati segmentov (Harvey) — največ enkrat na 10 minut.
+  await sinhronizirajSegmente().catch(() => null);
+
   const supabase = createAdminClient();
-  const [{ leads, total, page, totalPages }, { data: stats }] = await Promise.all([
+  const [{ leads, total, page, totalPages }, { data: stats }, { count: izbranihDanes }] = await Promise.all([
     queryLeads(supabase, filters),
     supabase.rpc("intel_leads_dashboard_stats"),
+    supabase
+      .from("intel_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("custom_fields->segment->>izbran_dne", danesLjubljana()),
   ]);
   const statusBreakdown = (stats?.status_breakdown ?? {}) as StatusBreakdown;
   const totalAllStatuses = Object.values(statusBreakdown).reduce(
@@ -39,6 +47,17 @@ export default async function LeadsPage({
     const v = params[key];
     return typeof v === "string" ? v : "";
   };
+
+  function izbraniHref(vklop: boolean) {
+    const sp = new URLSearchParams(
+      Object.entries(params).flatMap(([k, v]) =>
+        typeof v === "string" && k !== "izbrani" && k !== "page" ? [[k, v]] : []
+      )
+    );
+    if (vklop) sp.set("izbrani", "danes");
+    const qs = sp.toString();
+    return `/admin/lead-intelligence/leads${qs ? `?${qs}` : ""}`;
+  }
 
   function statusTabHref(status: string) {
     const sp = new URLSearchParams(
@@ -110,6 +129,24 @@ export default async function LeadsPage({
             </span>
           </Link>
         ))}
+        <Link
+          href={izbraniHref(val("izbrani") !== "danes")}
+          title="Podjetja, ki jih je Harvey danes izbral v segmentih — najboljša za današnje maile."
+          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
+            val("izbrani") === "danes"
+              ? "bg-amber-500 text-white"
+              : "border border-amber-300 bg-amber-50 text-amber-800 hover:border-amber-400"
+          }`}
+        >
+          Danes izbrani
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              val("izbrani") === "danes" ? "bg-white/25" : "bg-white text-amber-700"
+            }`}
+          >
+            {izbranihDanes ?? 0}
+          </span>
+        </Link>
       </div>
 
       <form
@@ -117,6 +154,7 @@ export default async function LeadsPage({
         className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:grid-cols-4 lg:grid-cols-6"
       >
         <input type="hidden" name="status" value={val("status")} />
+        {val("izbrani") ? <input type="hidden" name="izbrani" value={val("izbrani")} /> : null}
         <input
           name="q"
           defaultValue={val("q")}

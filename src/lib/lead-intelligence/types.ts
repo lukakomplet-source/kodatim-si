@@ -84,6 +84,8 @@ export type LeadFilters = {
   reminderBefore?: string;
   createdFrom?: string;
   createdTo?: string;
+  /** "danes": leadi, ki jih je segment (Harvey) izbral danes. */
+  izbrani?: "danes";
   page?: number;
 };
 

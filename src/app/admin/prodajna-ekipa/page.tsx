@@ -5,6 +5,7 @@ import {
   preberiEkipo,
   preberiLijak,
   preberiProbleme,
+  preberiSegmente,
   preberiZdaj,
   type Lijak,
   type PredajaRezultat,
@@ -12,6 +13,7 @@ import {
 import { Osvezevanje } from "../nadzor/Osvezevanje";
 import { Diagram } from "./Diagram";
 import { KajDelaZdaj } from "./KajDelaZdaj";
+import { SegmentiDanes } from "./SegmentiDanes";
 
 /**
  * Prodajna ekipa KodaTim: Harvey kot ekipa delavcev, od iskanja do prodaje.
@@ -28,7 +30,12 @@ const OSVEZI_VSAKIH_S = 15;
 
 export default async function ProdajnaEkipaPage() {
   await requireAdmin();
-  const [{ povzetek, napaka }, zdaj, problemi] = await Promise.all([preberiEkipo(), preberiZdaj(), preberiProbleme()]);
+  const [{ povzetek, napaka }, zdaj, problemi, segmenti] = await Promise.all([
+    preberiEkipo(),
+    preberiZdaj(),
+    preberiProbleme(),
+    preberiSegmente(),
+  ]);
   const problemovCaka = problemi?.caka.length ?? 0;
 
   let predaja: PredajaRezultat | null = null;
@@ -117,6 +124,8 @@ export default async function ProdajnaEkipaPage() {
         <span>Kompletko: prevozniki (poslani maili, follow-up)</span>
         <span aria-hidden>›</span>
       </Link>
+
+      {segmenti && segmenti.segmenti.length > 0 ? <SegmentiDanes povzetek={segmenti} /> : null}
 
       {zdaj ? <KajDelaZdaj podatki={zdaj} /> : null}
 

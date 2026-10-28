@@ -8,6 +8,7 @@ import { getLeadContacts } from "@/lib/lead-intelligence/contacts";
 import Timeline from "@/components/ui/Timeline";
 import LeadEditor from "./LeadEditor";
 import SalesSummaryCard from "./SalesSummaryCard";
+import SegmentKartica from "./SegmentKartica";
 
 export default async function LeadDetailPage({
   params,
@@ -52,6 +53,7 @@ export default async function LeadDetailPage({
             </div>
           </div>
 
+          <SegmentKartica lead={lead as IntelLead} />
           <SalesSummaryCard lead={lead as IntelLead} bestContact={bestContact} />
         </div>
       </div>

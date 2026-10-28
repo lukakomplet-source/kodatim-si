@@ -77,6 +77,8 @@ export function sanitizeFilters(raw: Record<string, unknown>): LeadFilters {
     filters.createdTo = createdTo;
   }
 
+  if (str(raw.izbrani) === "danes") filters.izbrani = "danes";
+
   const page = Number(raw.page);
   if (Number.isFinite(page) && page > 0) filters.page = Math.floor(page);
 

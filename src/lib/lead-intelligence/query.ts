@@ -4,6 +4,11 @@ import { LEADS_PER_PAGE, type IntelLead, type LeadFilters } from "./types";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/** Današnji datum v Ljubljani (YYYY-MM-DD), dan, ko Harvey izbere leade segmenta. */
+export function danesLjubljana(): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Ljubljana" }).format(new Date());
+}
+
 /**
  * Applies the whitelisted LeadFilters shape to an intel_leads query and
  * runs it with pagination. Shared by the leads list page and the AI-search
@@ -31,6 +36,9 @@ export async function queryLeads(supabase: AdminClient, filters: LeadFilters) {
   if (filters.reminderBefore) query = query.lte("reminder_date", filters.reminderBefore);
   if (filters.createdFrom) query = query.gte("created_at", `${filters.createdFrom}T00:00:00`);
   if (filters.createdTo) query = query.lte("created_at", `${filters.createdTo}T23:59:59`);
+  if (filters.izbrani === "danes") {
+    query = query.eq("custom_fields->segment->>izbran_dne", danesLjubljana());
+  }
   if (filters.q) {
     const words = filters.q
       .trim()
