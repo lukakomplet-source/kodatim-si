@@ -28,7 +28,12 @@ export default async function MailiPage() {
 
       <div className="mt-6">
         {podrobnosti ? (
-          <OdobritevMape podrobnosti={podrobnosti} posiljanja={posiljanja?.podjetja} />
+          <OdobritevMape
+            podrobnosti={podrobnosti}
+            posiljanja={posiljanja?.podjetja}
+            hladniKlici={posiljanja?.hladniKlici}
+            skrbi={posiljanja?.skrbi}
+          />
         ) : (
           <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
             Harvey trenutno ne odgovarja, zato map ni mogoče prebrati. Poskusi čez minuto.

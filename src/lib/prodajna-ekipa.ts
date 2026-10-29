@@ -1222,10 +1222,32 @@ export type Posiljanje = {
 export type { ObsegPrevoznika } from "./obsegPrevoznika";
 export type IzidKlica = "sestanek" | "poslji_mail" | "ni_dvignil" | "ne_zanima";
 
+/** Hladni klic (29. 10. 2026, »cold call mi deluje«): prevoznik, ki mu še nismo pisali, s številko z njegove strani. */
+export type HladniKlic = {
+  domena: string;
+  podjetje: string;
+  kraj: string;
+  telefon: string;
+  /** Splošni naslov z njihove strani (info@ …); prazno, če ga ni. */
+  email: string;
+  skupina: "klic" | "mail" | "neznano";
+  poskusi: number;
+  oseba: string;
+  oseba_email: string;
+  imaOsnutekG: boolean;
+} & ObsegPrevoznika;
+
+export type HladniKlici = { klici: HladniKlic[]; poklicaniDanes: number; naDan: number; vVrsti: number };
+
+/** Kar je prevoznike skrbelo, z njihovimi besedami (vprašanje »Kaj vas pri voznikih na poti najbolj skrbi?«). */
+export type Skrb = { domena: string; skrb: string; klicano: string; naziv: string };
+
 export type PosiljanjaPodatki = {
   podjetja: Posiljanje[];
   kandidati: { podjetje: string; email: string; domena: string }[];
   statistika: Record<string, { poslano: number; odgovori: number; sestanki: number; kupili: number }>;
+  hladniKlici?: HladniKlici;
+  skrbi?: Skrb[];
 };
 
 export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
@@ -1243,14 +1265,17 @@ export async function zabeleziKlic(
   oseba: string,
   opomba: string,
   email = "",
+  skrb = "",
+  hladni = false,
 ): Promise<boolean> {
+  const pot = hladni ? "hladni-klici" : "posiljanja";
   try {
-    const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja/${encodeURIComponent(domena)}/klic`, {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/${pot}/${encodeURIComponent(domena)}${hladni ? "" : "/klic"}`, {
       method: "POST",
       cache: "no-store",
-      signal: AbortSignal.timeout(4_000),
+      signal: AbortSignal.timeout(6_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba, email }),
+      body: JSON.stringify({ izid, oseba, opomba, email, skrb }),
     });
     return r.ok;
   } catch {

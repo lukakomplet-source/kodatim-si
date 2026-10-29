@@ -153,13 +153,18 @@ export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): P
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
 }
 
-/** Kompletko, panik gumb: izid klica (sestanek, pošljite mail, ni dvignil, ne zanima) in kdo odloča. */
+/**
+ * Kompletko, panik gumb: izid klica (sestanek, pošljite mail, ni dvignil, ne zanima), kdo odloča in kaj jih skrbi.
+ * `hladni`: klic prevozniku, ki mu še nismo pisali (seznam »Klici danes«).
+ */
 export async function zabeleziKlicAkcija(
   domena: string,
   izid: IzidKlica,
   oseba: string,
   opomba: string,
   email = "",
+  skrb = "",
+  hladni = false,
 ): Promise<{ ok: boolean; napaka?: string }> {
   try {
     await requireAdmin();
@@ -170,7 +175,15 @@ export async function zabeleziKlicAkcija(
   if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(izid)) return { ok: false, napaka: "Neznan izid." };
   const komu = email.trim().toLowerCase();
   if (komu && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(komu)) return { ok: false, napaka: "Mail ni pravilen." };
-  const ok = await zabeleziKlic(domena, izid, oseba.slice(0, 120), opomba.slice(0, 500), komu.slice(0, 120));
+  const ok = await zabeleziKlic(
+    domena,
+    izid,
+    oseba.slice(0, 120),
+    opomba.slice(0, 500),
+    komu.slice(0, 120),
+    skrb.slice(0, 500),
+    hladni === true,
+  );
   revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };

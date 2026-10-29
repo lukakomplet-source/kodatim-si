@@ -1,5 +1,5 @@
 import { Building2 } from "lucide-react";
-import type { MapaOdobritve as Mapa, Podrobnosti, Posiljanje } from "@/lib/prodajna-ekipa";
+import type { HladniKlici, MapaOdobritve as Mapa, Podrobnosti, Posiljanje, Skrb } from "@/lib/prodajna-ekipa";
 import { MapaOdobritve } from "./MapaOdobritve";
 import { OdobritevSeznam } from "./OdobritevSeznam";
 import { PanikKoraki } from "./PanikKoraki";
@@ -21,9 +21,14 @@ const FIRME: { kljuc: NonNullable<Mapa["lastnik"]>; ime: string }[] = [
 export function OdobritevMape({
   podrobnosti,
   posiljanja,
+  hladniKlici,
+  skrbi,
 }: {
   podrobnosti: Podrobnosti | null;
   posiljanja?: Posiljanje[] | null;
+  /** 29. 10. 2026: najprej klic, mail po klicu. */
+  hladniKlici?: HladniKlici | null;
+  skrbi?: Skrb[] | null;
 }) {
   const mape = podrobnosti?.mape ?? [];
   const seznam = podrobnosti?.seznam ?? [];
@@ -46,7 +51,9 @@ export function OdobritevMape({
                   <MapaOdobritve mapa={m} postavke={seznam.filter((p) => p.mapa === m.ime)} />
                 </div>
               ))}
-              {f.kljuc === "kompletko" && posiljanja?.length ? <PanikKoraki podjetja={posiljanja} /> : null}
+              {f.kljuc === "kompletko" && (posiljanja?.length || hladniKlici?.klici.length) ? (
+                <PanikKoraki podjetja={posiljanja ?? []} hladniKlici={hladniKlici ?? null} skrbi={skrbi ?? []} />
+              ) : null}
             </div>
           </section>
         );

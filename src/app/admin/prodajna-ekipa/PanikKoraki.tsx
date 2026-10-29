@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, Phone } from "lucide-react";
-import type { IzidKlica, Posiljanje } from "@/lib/prodajna-ekipa";
+import type { HladniKlic, HladniKlici, IzidKlica, Posiljanje, Skrb } from "@/lib/prodajna-ekipa";
 import { opisObsega } from "@/lib/obsegPrevoznika";
 import { zabeleziKlicAkcija } from "./actions";
 
@@ -80,12 +80,19 @@ function ScenarijKlica() {
       <div>
         <p className="font-semibold text-zinc-900">Uvod</p>
         <p>
-          »Dober dan, Luka Komplet iz Kompletka. Pred par dnevi sem vam pisal glede klica v sili za voznike. Kdo pri vas
-          skrbi za varnost voznikov na poti?«
+          Brez maila prej: »Dober dan, Luka Komplet iz Kompletka. Kličem prevoznike glede varnosti voznikov na poti. Kdo
+          pri vas skrbi za to?«
+        </p>
+        <p>
+          Po mailu: »Dober dan, Luka Komplet iz Kompletka. Pred par dnevi sem vam pisal glede klica v sili za voznike.
+          Kdo pri vas skrbi za varnost voznikov na poti?«
         </p>
       </div>
       <div>
-        <p className="font-semibold text-zinc-900">Dve vprašanji, odgovori naj sam</p>
+        <p className="font-semibold text-zinc-900">Vprašanja, odgovori naj sam</p>
+        <p>
+          »Kaj vas pri voznikih na poti najbolj skrbi?« Odgovor zapiši z njegovimi besedami v polje »Kaj jih skrbi«.
+        </p>
         <p>»Kaj voznik danes naredi, če ga ponoči na parkirišču kdo ogroža ali mu postane slabo?«</p>
         <p>»Kako hitro pa vi izveste, da je nekaj narobe?«</p>
       </div>
@@ -123,22 +130,129 @@ function ScenarijKlica() {
   );
 }
 
-function Korak({ p }: { p: Posiljanje }) {
+const POLJE = "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm";
+
+/** Številke kot tel: gumbi in »Vpiši izid« z obrazcem (kdo odloča, komu pisati, kaj jih skrbi, opomba). */
+function KlicIzid({
+  domena,
+  telefon,
+  oseba: zacetnaOseba,
+  komu: zacetniKomu,
+  hladni,
+}: {
+  domena: string;
+  telefon?: string;
+  oseba?: string;
+  komu?: string;
+  hladni: boolean;
+}) {
   const [odprt, setOdprt] = useState(false);
-  const [oseba, setOseba] = useState(p.oseba ?? "");
+  const [oseba, setOseba] = useState(zacetnaOseba ?? "");
+  const [komu, setKomu] = useState(zacetniKomu ?? "");
+  const [skrb, setSkrb] = useState("");
   const [opomba, setOpomba] = useState("");
-  const [komu, setKomu] = useState(p.oseba_email ?? "");
   const [napaka, setNapaka] = useState("");
   const [poteka, zacni] = useTransition();
-  const klic = jeKlic(p.naslednje);
 
   const vpisi = (izid: IzidKlica) =>
     zacni(async () => {
-      const r = await zabeleziKlicAkcija(p.domena, izid, oseba, opomba, komu);
+      const r = await zabeleziKlicAkcija(domena, izid, oseba, opomba, komu, skrb, hladni);
       setNapaka(r.ok ? "" : (r.napaka ?? "Ni uspelo."));
       if (r.ok) setOdprt(false);
     });
 
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {telefon ? (
+          telefon.split(",").map((t) => (
+            <a
+              key={t}
+              href={`tel:${t.replace(/[^\d+]/g, "")}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+            >
+              <Phone className="h-4 w-4" aria-hidden />
+              {t.trim()}
+            </a>
+          ))
+        ) : (
+          <span className="text-sm text-zinc-500">Številke na njihovi strani ni.</span>
+        )}
+        <button
+          type="button"
+          onClick={() => setOdprt((o) => !o)}
+          aria-expanded={odprt}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50"
+        >
+          Vpiši izid
+          <ChevronDown className={`h-4 w-4 transition-transform ${odprt ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+      </div>
+      {odprt ? (
+        <div className="mt-3 space-y-2 rounded-xl bg-zinc-50 p-3">
+          <label className="block text-sm text-zinc-700">
+            Kaj jih skrbi (njihove besede)
+            <input
+              value={skrb}
+              onChange={(e) => setSkrb(e.target.value)}
+              placeholder="npr. kraja goriva na parkiriščih v Italiji"
+              className={POLJE}
+            />
+          </label>
+          <label className="block text-sm text-zinc-700">
+            Kdo odloča (kar ti povedo)
+            <input
+              value={oseba}
+              onChange={(e) => setOseba(e.target.value)}
+              placeholder="npr. gospod Novak, vodja voznega parka"
+              className={POLJE}
+            />
+          </label>
+          <label className="block text-sm text-zinc-700">
+            Komu pisati (mail, ki ti ga povedo)
+            <input
+              type="email"
+              value={komu}
+              onChange={(e) => setKomu(e.target.value)}
+              placeholder="npr. novak@podjetje.si"
+              className={POLJE}
+            />
+            <span className="mt-1 block text-xs text-zinc-500">
+              Pri »Pošljite na mail« pripravim mail na ime: »vaš sodelavec mi je svetoval, naj vam pišem«. Za nagovor
+              zgoraj napiši »gospod« ali »gospa« in priimek.
+            </span>
+          </label>
+          <label className="block text-sm text-zinc-700">
+            Opomba
+            <input
+              value={opomba}
+              onChange={(e) => setOpomba(e.target.value)}
+              placeholder="npr. torek ob 9.00 na Teams"
+              className={POLJE}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {IZIDI.map((i) => (
+              <button
+                key={i.izid}
+                type="button"
+                disabled={poteka}
+                onClick={() => vpisi(i.izid)}
+                title={i.razlaga}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                {i.besedilo}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {napaka ? <p className="mt-1 text-sm text-red-700">{napaka}</p> : null}
+    </div>
+  );
+}
+
+function Korak({ p }: { p: Posiljanje }) {
   return (
     <li className="py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -155,93 +269,94 @@ function Korak({ p }: { p: Posiljanje }) {
           {opisObsega(p)}
         </p>
       ) : null}
-      {klic ? (
-        <div className="mt-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {p.telefon ? (
-              p.telefon.split(",").map((t) => (
-                <a
-                  key={t}
-                  href={`tel:${t.replace(/[^\d+]/g, "")}`}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
-                >
-                  <Phone className="h-4 w-4" aria-hidden />
-                  {t.trim()}
-                </a>
-              ))
-            ) : (
-              <span className="text-sm text-zinc-500">Številke na njihovi strani ni.</span>
-            )}
-            <button
-              type="button"
-              onClick={() => setOdprt((o) => !o)}
-              aria-expanded={odprt}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50"
-            >
-              Vpiši izid
-              <ChevronDown className={`h-4 w-4 transition-transform ${odprt ? "rotate-180" : ""}`} aria-hidden />
-            </button>
-          </div>
-          {odprt ? (
-            <div className="mt-3 space-y-2 rounded-xl bg-zinc-50 p-3">
-              <label className="block text-sm text-zinc-700">
-                Kdo odloča (kar ti povedo)
-                <input
-                  value={oseba}
-                  onChange={(e) => setOseba(e.target.value)}
-                  placeholder="npr. gospod Novak, vodja voznega parka"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="block text-sm text-zinc-700">
-                Komu pisati (mail, ki ti ga povedo)
-                <input
-                  type="email"
-                  value={komu}
-                  onChange={(e) => setKomu(e.target.value)}
-                  placeholder="npr. novak@podjetje.si"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-                />
-                <span className="mt-1 block text-xs text-zinc-500">
-                  Pri »Pošljite na mail« pripravim mail na ime: »vaš sodelavec mi je svetoval, naj vam pišem«. Za nagovor
-                  zgoraj napiši »gospod« ali »gospa« in priimek.
-                </span>
-              </label>
-              <label className="block text-sm text-zinc-700">
-                Opomba
-                <input
-                  value={opomba}
-                  onChange={(e) => setOpomba(e.target.value)}
-                  placeholder="npr. torek ob 9.00 na Teams"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm"
-                />
-              </label>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {IZIDI.map((i) => (
-                  <button
-                    key={i.izid}
-                    type="button"
-                    disabled={poteka}
-                    onClick={() => vpisi(i.izid)}
-                    title={i.razlaga}
-                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-50"
-                  >
-                    {i.besedilo}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
+      {jeKlic(p.naslednje) ? (
+        <KlicIzid domena={p.domena} telefon={p.telefon} oseba={p.oseba} komu={p.oseba_email} hladni={false} />
       ) : (
         <p className="mt-1 text-sm text-zinc-500">Osnutek pripravim jaz, med pripravljenimi maili ga odpreš v Outlooku.</p>
       )}
-      {napaka ? <p className="mt-1 text-sm text-red-700">{napaka}</p> : null}
     </li>
   );
 }
 
-export function PanikKoraki({ podjetja }: { podjetja: Posiljanje[] }) {
+/** Prevoznik, ki mu še nismo pisali: klic najprej, mail po klicu (Luka, 29. 10. 2026: »cold call mi deluje«). */
+function HladniKorak({ k }: { k: HladniKlic }) {
+  return (
+    <li className="py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="min-w-0 text-base font-semibold text-zinc-900">{k.podjetje}</p>
+        <span className="text-sm font-medium text-zinc-700">
+          {k.poskusi ? `Pokliči znova (${k.poskusi + 1}. poskus)` : "Prvi klic"}
+        </span>
+      </div>
+      <p className="mt-0.5 text-sm text-zinc-500">
+        {[k.kraj, k.email, k.oseba ? `odloča: ${k.oseba}` : ""].filter(Boolean).join(" · ")}
+      </p>
+      {opisObsega(k) ? (
+        <p className="mt-0.5 text-sm font-medium text-zinc-700" title={k.tovornjaki_dokaz || undefined}>
+          {opisObsega(k)}
+        </p>
+      ) : null}
+      <KlicIzid domena={k.domena} telefon={k.telefon} oseba={k.oseba} komu={k.oseba_email} hladni />
+    </li>
+  );
+}
+
+function KliciDanes({ hladni, skrbi }: { hladni: HladniKlici; skrbi: Skrb[] }) {
+  const [prikaziSkrbi, setPrikaziSkrbi] = useState(false);
+  const ostane = hladni.klici.length;
+  return (
+    <div className="mt-6 border-t border-zinc-100 pt-4">
+      <h4 className="text-base font-semibold text-zinc-900">Klici danes: najprej klic, mail po klicu</h4>
+      <p className="mt-1 text-sm text-zinc-500">
+        {ostane
+          ? `Poklicanih ${hladni.poklicaniDanes} od ${hladni.naDan}. Najprej večji prevozniki, številka je z njihove strani. Pri »Pošljite na mail« pripravim mail po klicu, hladni mail za to podjetje pa umaknem.`
+          : `Danes si poklical vseh ${hladni.poklicaniDanes}. Jutri jih pride novih ${hladni.naDan}.`}
+      </p>
+      {ostane ? (
+        <ul className="mt-2 divide-y divide-zinc-100">
+          {hladni.klici.map((k) => (
+            <HladniKorak key={k.domena} k={k} />
+          ))}
+        </ul>
+      ) : null}
+      {skrbi.length ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setPrikaziSkrbi((s) => !s)}
+            aria-expanded={prikaziSkrbi}
+            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50"
+          >
+            Kaj jih skrbi ({skrbi.length})
+            <ChevronDown className={`h-4 w-4 transition-transform ${prikaziSkrbi ? "rotate-180" : ""}`} aria-hidden />
+          </button>
+          {prikaziSkrbi ? (
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {skrbi.map((s) => (
+                <li key={`${s.domena}-${s.klicano}`}>
+                  <span className="text-zinc-900">»{s.skrb}«</span>{" "}
+                  <span className="text-zinc-500">
+                    {s.naziv}, {datum(s.klicano)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function PanikKoraki({
+  podjetja,
+  hladniKlici,
+  skrbi,
+}: {
+  podjetja: Posiljanje[];
+  hladniKlici: HladniKlici | null;
+  skrbi: Skrb[];
+}) {
   const [scenarij, setScenarij] = useState(false);
   const [kasneje, setKasneje] = useState(false);
   const vrsta = podjetja.filter((p) => p.naslednje);
@@ -302,6 +417,7 @@ export function PanikKoraki({ podjetja }: { podjetja: Posiljanje[] }) {
           ))}
         </ul>
       ) : null}
+      {hladniKlici ? <KliciDanes hladni={hladniKlici} skrbi={skrbi} /> : null}
     </section>
   );
 }
