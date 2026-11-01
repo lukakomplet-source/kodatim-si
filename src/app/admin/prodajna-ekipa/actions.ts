@@ -140,15 +140,16 @@ export async function odlociProblemAkcija(
 
 /** Kompletko: stanje podjetja, ki je dobilo hladni mail (klic, odgovoril, sestanek, kupil, ne zanima, zaključen). */
 export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): Promise<{ ok: boolean; napaka?: string }> {
+  let kdo = "";
   try {
-    await requireAdmin();
+    kdo = (await requireAdmin()).email ?? "";
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
   if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
   if (!["poslan", "klic", "odgovoril", "sestanek", "kupil", "ne_zanima", "zakljucen"].includes(stanje))
     return { ok: false, napaka: "Neznano stanje." };
-  const ok = await nastaviPosiljanje(domena, stanje, "");
+  const ok = await nastaviPosiljanje(domena, stanje, "", kdo);
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
 }
@@ -166,8 +167,9 @@ export async function zabeleziKlicAkcija(
   skrb = "",
   hladni = false,
 ): Promise<{ ok: boolean; napaka?: string }> {
+  let kdo = "";
   try {
-    await requireAdmin();
+    kdo = (await requireAdmin()).email ?? ""; // who called, for the numbers per person (harvey/stevilke.py)
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
@@ -183,6 +185,7 @@ export async function zabeleziKlicAkcija(
     komu.slice(0, 120),
     skrb.slice(0, 500),
     hladni === true,
+    kdo,
   );
   revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");

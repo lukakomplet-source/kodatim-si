@@ -1267,6 +1267,7 @@ export async function zabeleziKlic(
   email = "",
   skrb = "",
   hladni = false,
+  kdo = "",
 ): Promise<boolean> {
   const pot = hladni ? "hladni-klici" : "posiljanja";
   try {
@@ -1275,7 +1276,7 @@ export async function zabeleziKlic(
       cache: "no-store",
       signal: AbortSignal.timeout(6_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba, email, skrb }),
+      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo }),
     });
     return r.ok;
   } catch {
@@ -1283,14 +1284,14 @@ export async function zabeleziKlic(
   }
 }
 
-export async function nastaviPosiljanje(domena: string, stanje: string, opomba: string): Promise<boolean> {
+export async function nastaviPosiljanje(domena: string, stanje: string, opomba: string, kdo = ""): Promise<boolean> {
   try {
     const r = await fetch(`${HARVEY_KOMPLETKO}/api/posiljanja/${encodeURIComponent(domena)}`, {
       method: "POST",
       cache: "no-store",
       signal: AbortSignal.timeout(4_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stanje, opomba }),
+      body: JSON.stringify({ stanje, opomba, kdo }),
     });
     return r.ok;
   } catch {
