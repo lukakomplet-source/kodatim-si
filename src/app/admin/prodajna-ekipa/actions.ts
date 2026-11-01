@@ -9,6 +9,7 @@ import {
   nastaviPosiljanje,
   zabeleziKlic,
   type IzidKlica,
+  type PregledKlica,
   odlociProblem,
   oznaciVMapi,
   popraviOsnutek,
@@ -166,6 +167,7 @@ export async function zabeleziKlicAkcija(
   email = "",
   skrb = "",
   hladni = false,
+  pregled: PregledKlica = {},
 ): Promise<{ ok: boolean; napaka?: string }> {
   let kdo = "";
   try {
@@ -186,6 +188,11 @@ export async function zabeleziKlicAkcija(
     skrb.slice(0, 500),
     hladni === true,
     kdo,
+    {
+      ocena: /^[1-5]$/.test(pregled.ocena ?? "") ? pregled.ocena : "",
+      cena: (pregled.cena ?? "").slice(0, 300),
+      ugovor: (pregled.ugovor ?? "").slice(0, 120),
+    },
   );
   revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");

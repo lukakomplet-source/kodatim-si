@@ -38,48 +38,77 @@ function jeKlic(korak: string): boolean {
   return korak.startsWith("Pokliči");
 }
 
-/** Odgovori na zavrnitve po 3A: potrdi, poveži, vprašaj (Documents\HARVEY\pravila-pogovora.md, 28. 10. 2026). */
-const ZAVRNITVE: { rece: string; odgovor: string; izid?: string }[] = [
+/**
+ * Odgovori na zavrnitve po 3A: potrdi, poveži, vprašaj (Documents\HARVEY\pravila-pogovora.md, 28. 10. 2026).
+ * »zakaj« (1. 11. 2026, po paketu Closer): da klicatelj ve, kaj odgovor naredi, in ga ne bere na pamet.
+ * Besedilo »rece« Harvey uporablja za zadnji poskus (harvey/stevilke.py NE_ZDAJ): ne spreminjaj ga brez tam.
+ */
+const ZAVRNITVE: { rece: string; odgovor: string; zakaj: string; izid?: string }[] = [
   {
     rece: "Imamo GPS.",
     odgovor:
       "Odlično, to pomeni, da varnost voznikov že jemljete resno. GPS pove, kje je vozilo. Kdo pa danes ukrepa, če voznik ponoči na parkirišču potrebuje pomoč?",
+    zakaj: "Potrdiš, kar že imajo, in pokažeš vrzel: GPS vidi, ne ukrepa.",
   },
   {
     rece: "Tega nam po zakonu ni treba.",
     odgovor:
       "Imate prav, gumba zakon ne predpisuje. Predpisuje pa, da imate pisno oceno tveganja in ukrepe tudi za voznika na poti. Kako imate to danes napisano?",
+    zakaj: "Daš jim prav, brez pretiravanja, in jim daš nasvet, ki jim koristi tudi brez nakupa.",
   },
   {
     rece: "Imamo zavarovanje.",
     odgovor:
       "Odlično, to je pametno. Zavarovanje plača škodo za nazaj. Kdo pa vozniku pomaga v tistih petih minutah, ko se dogaja?",
+    zakaj: "Zavarovanje je za potem, gumb je za trenutek, ko se dogaja. Ne tekmuješ z njim.",
+  },
+  {
+    rece: "Že imamo varnostno službo.",
+    odgovor: "Odlično, potem že veste, da je to pomembno. Kaj bi si želeli, da pri vozniku na poti dela bolje?",
+    zakaj: "Drugega ne kritiziraš. Poiščeš vrzel, ki jo že sami čutijo.",
   },
   {
     rece: "Nimamo časa.",
     odgovor: "Razumem, v prevozu je vedno veliko dela. Ravno zato traja samo 15 minut. Je lažje naslednji teden na Teams?",
+    zakaj: "Zmanjšaš korak na 15 minut in ponudiš izbiro, ne pritiska.",
+  },
+  {
+    rece: "Ni pravi čas, pokličite kasneje.",
+    odgovor: "Seveda. Kdaj naj vas pokličem, da si zapišem? In kaj se mora zgoditi, da bo takrat pravi trenutek?",
+    zakaj: "Preveriš, ali je čas res razlog, in dobiš datum. Harvey čez 60 dni sam predlaga zadnji klic.",
   },
   {
     rece: "Pošljite na mail.",
     odgovor: "Seveda, z veseljem. Komu naj pošljem, da ne pristane med ostalimi?",
+    zakaj: "Pogosto je to vljuden konec. Z imenom dobiš pravega človeka in mail ne obleži.",
     izid: "Pošljite na mail, vpiši ime in mail",
   },
   {
     rece: "Moram vprašati šefa.",
     odgovor: "Seveda, smiselno. Kaj mislite, kaj ga bo najprej zanimalo? Da mu pripravim točno to.",
+    zakaj: "Pomagaš mu prodati naprej: pripraviš točno tisto, kar bo šef vprašal.",
   },
   {
     rece: "Koliko stane?",
     odgovor:
       "Odvisno od števila vozil, zato vam na pamet ne bi rekel napačne številke. Koliko vozil imate na poti? Na sestanku vam pokažem točno za vaš vozni park.",
+    zakaj: "Brez številke na pamet. Vprašanje o vozilih te pelje do sestanka.",
+  },
+  {
+    rece: "Ali to res deluje?",
+    odgovor:
+      "Dobro vprašanje. Zato predlagam, da začnete z dvema ali tremi vozili za en mesec, pa sami vidite, kako deluje pri vas.",
+    zakaj: "Ne izmišljuješ rezultatov drugih. Ponudiš majhen prvi korak, ki ga lahko preverijo sami.",
   },
   {
     rece: "Bom premislil.",
     odgovor: "Seveda. Kaj je glavna stvar, o kateri razmišljate?",
+    zakaj: "»Bom premislil« skriva eno pravo vprašanje. Vprašaš enkrat, prijazno.",
   },
   {
     rece: "Ne rabimo.",
     odgovor: "V redu, hvala za iskren odgovor. Lahko samo vprašam, kako imate to danes urejeno?",
+    zakaj: "Spoštuješ ne. Eno vprašanje, brez pritiska; če ponovi ne, je konec in ga ne kličemo več.",
     izid: "Ne zanima",
   },
 ];
@@ -141,6 +170,7 @@ function ScenarijKlica() {
             <li key={z.rece}>
               <span className="font-medium">»{z.rece}«</span> »{z.odgovor}«
               {z.izid ? <span className="text-zinc-500"> Izid: {z.izid}.</span> : null}
+              <span className="block text-zinc-500">Zakaj: {z.zakaj}</span>
             </li>
           ))}
         </ul>
@@ -182,12 +212,15 @@ function KlicIzid({
   const [komu, setKomu] = useState(zacetniKomu ?? "");
   const [skrb, setSkrb] = useState("");
   const [opomba, setOpomba] = useState("");
+  const [ocena, setOcena] = useState("");
+  const [cena, setCena] = useState("");
+  const [ugovor, setUgovor] = useState("");
   const [napaka, setNapaka] = useState("");
   const [poteka, zacni] = useTransition();
 
   const vpisi = (izid: IzidKlica) =>
     zacni(async () => {
-      const r = await zabeleziKlicAkcija(domena, izid, oseba, opomba, komu, skrb, hladni);
+      const r = await zabeleziKlicAkcija(domena, izid, oseba, opomba, komu, skrb, hladni, { ocena, cena, ugovor });
       setNapaka(r.ok ? "" : (r.napaka ?? "Ni uspelo."));
       if (r.ok) setOdprt(false);
     });
@@ -227,6 +260,39 @@ function KlicIzid({
               value={skrb}
               onChange={(e) => setSkrb(e.target.value)}
               placeholder="npr. kraja goriva na parkiriščih v Italiji"
+              className={POLJE}
+            />
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block text-sm text-zinc-700">
+              Kako varni so vozniki danes (njihova ocena)
+              <select value={ocena} onChange={(e) => setOcena(e.target.value)} className={POLJE}>
+                <option value="">ni povedal</option>
+                <option value="1">1, sploh ne</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5, povsem</option>
+              </select>
+            </label>
+            <label className="block text-sm text-zinc-700">
+              Glavni ugovor
+              <select value={ugovor} onChange={(e) => setUgovor(e.target.value)} className={POLJE}>
+                <option value="">brez ugovora</option>
+                {ZAVRNITVE.map((z) => (
+                  <option key={z.rece} value={z.rece}>
+                    {z.rece}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="block text-sm text-zinc-700">
+            Koliko bi jih stal tak dogodek (njihove besede)
+            <input
+              value={cena}
+              onChange={(e) => setCena(e.target.value)}
+              placeholder="npr. vozilo dva dni stoji, stranka čaka"
               className={POLJE}
             />
           </label>

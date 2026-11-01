@@ -1259,6 +1259,9 @@ export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
   }
 }
 
+/** Pregled po klicu v 30 sekundah (1. 11. 2026, Closer + Hormozi): njihova ocena 1–5, cena dogodka, glavni ugovor. */
+export type PregledKlica = { ocena?: string; cena?: string; ugovor?: string };
+
 export async function zabeleziKlic(
   domena: string,
   izid: IzidKlica,
@@ -1268,6 +1271,7 @@ export async function zabeleziKlic(
   skrb = "",
   hladni = false,
   kdo = "",
+  pregled: PregledKlica = {},
 ): Promise<boolean> {
   const pot = hladni ? "hladni-klici" : "posiljanja";
   try {
@@ -1276,7 +1280,7 @@ export async function zabeleziKlic(
       cache: "no-store",
       signal: AbortSignal.timeout(6_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo }),
+      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo, ...pregled }),
     });
     return r.ok;
   } catch {
