@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, Phone } from "lucide-react";
-import type { HladniKlic, HladniKlici, IzidKlica, Posiljanje, Skrb } from "@/lib/prodajna-ekipa";
+import type { HladniKlic, HladniKlici, IzidKlica, Posiljanje, Skrb, ZadetekKontakta } from "@/lib/prodajna-ekipa";
 import { opisObsega } from "@/lib/obsegPrevoznika";
-import { zabeleziKlicAkcija } from "./actions";
+import { poisciKontaktAkcija, rocniKlicAkcija, zabeleziKlicAkcija } from "./actions";
 
 /**
  * Panik gumb: kdo je danes na vrsti in kaj (Luka, 28. 10. 2026: »follow upala z mailom pa s klicom, pa še enkrat
@@ -36,6 +36,11 @@ function datum(iso: string): string {
 
 function jeKlic(korak: string): boolean {
   return korak.startsWith("Pokliči");
+}
+
+/** Follow-up pred prvim klicem pomeni: najprej pokliči, kratek mail samo, če ne dvigne (2. 11. 2026). */
+function najprejKlic(p: Posiljanje): boolean {
+  return p.naslednje === "Follow-up 1" && !p.klicano;
 }
 
 /**
@@ -215,12 +220,23 @@ function KlicIzid({
   const [ocena, setOcena] = useState("");
   const [cena, setCena] = useState("");
   const [ugovor, setUgovor] = useState("");
+  const [dogovor, setDogovor] = useState("");
   const [napaka, setNapaka] = useState("");
   const [poteka, zacni] = useTransition();
 
   const vpisi = (izid: IzidKlica) =>
     zacni(async () => {
-      const r = await zabeleziKlicAkcija(domena, izid, oseba, opomba, komu, skrb, hladni, { ocena, cena, ugovor });
+      const r = await zabeleziKlicAkcija(
+        domena,
+        izid,
+        oseba,
+        opomba,
+        komu,
+        skrb,
+        hladni,
+        { ocena, cena, ugovor },
+        dogovor,
+      );
       setNapaka(r.ok ? "" : (r.napaka ?? "Ni uspelo."));
       if (r.ok) setOdprt(false);
     });
@@ -328,6 +344,15 @@ function KlicIzid({
               className={POLJE}
             />
           </label>
+          {hladni ? null : (
+            <label className="block text-sm text-zinc-700">
+              Rekli so, naj pokličem dne
+              <input type="date" value={dogovor} onChange={(e) => setDogovor(e.target.value)} className={POLJE} />
+              <span className="mt-1 block text-xs text-zinc-500">
+                Do tega dne jim ne gre noben mail, na ta dan so na seznamu za klic.
+              </span>
+            </label>
+          )}
           <div className="flex flex-wrap gap-2 pt-1">
             {IZIDI.map((i) => (
               <button
@@ -354,7 +379,9 @@ function Korak({ p }: { p: Posiljanje }) {
     <li className="py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="min-w-0 text-base font-semibold text-zinc-900">{p.podjetje}</p>
-        <span className="text-sm font-medium text-zinc-700">{p.naslednje}</span>
+        <span className="text-sm font-medium text-zinc-700">
+          {najprejKlic(p) ? "Pokliči, če ne dvigne: follow-up mail" : p.naslednje}
+        </span>
       </div>
       <p className="mt-0.5 text-sm text-zinc-500">
         {p.email}
@@ -366,8 +393,15 @@ function Korak({ p }: { p: Posiljanje }) {
           {opisObsega(p)}
         </p>
       ) : null}
-      {jeKlic(p.naslednje) ? (
-        <KlicIzid domena={p.domena} telefon={p.telefon} oseba={p.oseba} komu={p.oseba_email} hladni={false} />
+      {jeKlic(p.naslednje) || najprejKlic(p) ? (
+        <>
+          <KlicIzid domena={p.domena} telefon={p.telefon} oseba={p.oseba} komu={p.oseba_email} hladni={false} />
+          {najprejKlic(p) ? (
+            <p className="mt-1 text-sm text-zinc-500">
+              Če ne dvigne, vpiši »Ni dvignil« in pošlji follow-up, ki je med pripravljenimi maili.
+            </p>
+          ) : null}
+        </>
       ) : (
         <p className="mt-1 text-sm text-zinc-500">Osnutek pripravim jaz, med pripravljenimi maili ga odpreš v Outlooku.</p>
       )}
@@ -445,6 +479,146 @@ function KliciDanes({ hladni, skrbi }: { hladni: HladniKlici; skrbi: Skrb[] }) {
   );
 }
 
+function Zadetki({ zadetki }: { zadetki: ZadetekKontakta[] }) {
+  return (
+    <ul className="mt-2 space-y-2 text-sm">
+      {zadetki.map((z) => (
+        <li key={z.domena} className="rounded-lg bg-white p-2 ring-1 ring-zinc-200">
+          <p className="font-medium text-zinc-900">
+            {z.podjetje}
+            {z.kraj ? <span className="font-normal text-zinc-500">, {z.kraj}</span> : null}
+          </p>
+          {z.telefon ? <p className="text-zinc-500">{z.telefon}</p> : null}
+          {z.zgodovina?.length ? (
+            <ul className="mt-1 list-disc pl-5 text-zinc-700">
+              {z.zgodovina.map((v) => (
+                <li key={v}>{v}</li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Pred klicem ali mailom (2. 11. 2026, Luka: »da ne bomo dvakrat klicali, pa dvakrat maile pošiljali«). */
+function PreveriKontakt() {
+  const [q, setQ] = useState("");
+  const [zadetki, setZadetki] = useState<ZadetekKontakta[] | null>(null);
+  const [napaka, setNapaka] = useState("");
+  const [poteka, zacni] = useTransition();
+
+  const isci = () =>
+    zacni(async () => {
+      const r = await poisciKontaktAkcija(q);
+      setNapaka(r.ok ? "" : (r.napaka ?? "Ni uspelo."));
+      setZadetki(r.ok ? (r.zadetki ?? []) : null);
+    });
+
+  return (
+    <form
+      className="mt-3 rounded-xl bg-zinc-50 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        isci();
+      }}
+    >
+      <label className="block text-sm text-zinc-700">
+        Preveri, preden kličeš ali pišeš (ime, številka ali spletna stran)
+        <div className="mt-1 flex gap-2">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="npr. Ferme ali 041 321 325" className={POLJE} />
+          <button
+            type="submit"
+            disabled={poteka}
+            className="mt-1 shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          >
+            Preveri
+          </button>
+        </div>
+      </label>
+      {napaka ? <p className="mt-1 text-sm text-red-700">{napaka}</p> : null}
+      {zadetki && !zadetki.length ? (
+        <p className="mt-2 text-sm text-zinc-700">Nismo jih še klicali in jim nismo pisali.</p>
+      ) : null}
+      {zadetki?.length ? <Zadetki zadetki={zadetki} /> : null}
+    </form>
+  );
+}
+
+/** Klic podjetju, ki ga ni na seznamu (iz zvezka); Harvey ga zavrne, če ga po številki ali imenu že pozna. */
+function RocniKlic() {
+  const [naziv, setNaziv] = useState("");
+  const [telefon, setTelefon] = useState("");
+  const [kraj, setKraj] = useState("");
+  const [oseba, setOseba] = useState("");
+  const [opomba, setOpomba] = useState("");
+  const [sporocilo, setSporocilo] = useState("");
+  const [obstaja, setObstaja] = useState<ZadetekKontakta[]>([]);
+  const [poteka, zacni] = useTransition();
+
+  const vpisi = (izid: IzidKlica) =>
+    zacni(async () => {
+      const r = await rocniKlicAkcija({ naziv, telefon, kraj, oseba, opomba, izid });
+      setObstaja(r.obstaja ?? []);
+      setSporocilo(r.ok ? `Vpisano: ${naziv}.` : (r.napaka ?? "Ni uspelo."));
+      if (r.ok) {
+        setNaziv("");
+        setTelefon("");
+        setKraj("");
+        setOseba("");
+        setOpomba("");
+      }
+    });
+
+  return (
+    <div className="mt-3 space-y-2 rounded-xl bg-zinc-50 p-3">
+      <p className="text-sm text-zinc-500">
+        Za podjetja, ki jih ni na seznamu (npr. iz zvezka). Če ga že imamo, ga ne vpišem znova, ampak pokažem, kaj se je z
+        njim že zgodilo.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block text-sm text-zinc-700">
+          Podjetje
+          <input value={naziv} onChange={(e) => setNaziv(e.target.value)} placeholder="npr. Ferme logistik" className={POLJE} />
+        </label>
+        <label className="block text-sm text-zinc-700">
+          Telefon
+          <input value={telefon} onChange={(e) => setTelefon(e.target.value)} placeholder="npr. 041 123 456" className={POLJE} />
+        </label>
+        <label className="block text-sm text-zinc-700">
+          Kraj
+          <input value={kraj} onChange={(e) => setKraj(e.target.value)} placeholder="npr. Trojane" className={POLJE} />
+        </label>
+        <label className="block text-sm text-zinc-700">
+          S kom si govoril
+          <input value={oseba} onChange={(e) => setOseba(e.target.value)} placeholder="npr. Miha" className={POLJE} />
+        </label>
+      </div>
+      <label className="block text-sm text-zinc-700">
+        Opomba
+        <input value={opomba} onChange={(e) => setOpomba(e.target.value)} placeholder="npr. pokliči v ponedeljek" className={POLJE} />
+      </label>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {IZIDI.map((i) => (
+          <button
+            key={i.izid}
+            type="button"
+            disabled={poteka}
+            onClick={() => vpisi(i.izid)}
+            title={i.razlaga}
+            className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            {i.besedilo}
+          </button>
+        ))}
+      </div>
+      {sporocilo ? <p className="text-sm text-zinc-700">{sporocilo}</p> : null}
+      {obstaja.length ? <Zadetki zadetki={obstaja} /> : null}
+    </div>
+  );
+}
+
 export function PanikKoraki({
   podjetja,
   hladniKlici,
@@ -461,7 +635,8 @@ export function PanikKoraki({
   const prihodnji = vrsta
     .filter((p) => !p.zaDanes)
     .sort((a, b) => (a.naslednjeKdaj || "").localeCompare(b.naslednjeKdaj || ""));
-  const klicev = danes.filter((p) => jeKlic(p.naslednje)).length;
+  const klicev = danes.filter((p) => jeKlic(p.naslednje) || najprejKlic(p)).length;
+  const [rocni, setRocni] = useState(false);
 
   return (
     <section className="rounded-2xl bg-white p-4 ring-1 ring-zinc-200 sm:p-5" aria-labelledby="panik-danes">
@@ -473,9 +648,19 @@ export function PanikKoraki({
           ? `Pošlji ${danes.length - klicev}, pokliči ${klicev}. Cilj vsakega koraka je 15 minut na Teams ali obisk.`
           : "Danes ni nič na vrsti."}
       </p>
+      <PreveriKontakt />
       {danes.length ? <ul className="mt-2 divide-y divide-zinc-100">{danes.map((p) => <Korak key={p.domena} p={p} />)}</ul> : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setRocni((s) => !s)}
+          aria-expanded={rocni}
+          className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50"
+        >
+          Klic, ki ga ni na seznamu
+          <ChevronDown className={`h-4 w-4 transition-transform ${rocni ? "rotate-180" : ""}`} aria-hidden />
+        </button>
         <button
           type="button"
           onClick={() => setScenarij((s) => !s)}
@@ -497,6 +682,7 @@ export function PanikKoraki({
           </button>
         ) : null}
       </div>
+      {rocni ? <RocniKlic /> : null}
       {scenarij ? (
         <div className="mt-3 rounded-xl bg-zinc-50 p-4">
           <ScenarijKlica />

@@ -1217,6 +1217,8 @@ export type Posiljanje = {
   oseba?: string;
   /** Komu pisati: mail, ki ga je podjetje samo povedalo pri klicu. */
   oseba_email?: string;
+  /** Danes že klican ali mu je šel mail (en stik na dan). */
+  stikDanes?: boolean;
 } & ObsegPrevoznika;
 
 export type { ObsegPrevoznika } from "./obsegPrevoznika";
@@ -1272,6 +1274,7 @@ export async function zabeleziKlic(
   hladni = false,
   kdo = "",
   pregled: PregledKlica = {},
+  dogovor = "",
 ): Promise<boolean> {
   const pot = hladni ? "hladni-klici" : "posiljanja";
   try {
@@ -1280,11 +1283,51 @@ export async function zabeleziKlic(
       cache: "no-store",
       signal: AbortSignal.timeout(6_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo, ...pregled }),
+      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo, dogovor, ...pregled }),
     });
     return r.ok;
   } catch {
     return false;
+  }
+}
+
+/** Ali smo jih že klicali ali jim pisali (2. 11. 2026: »da ne bomo dvakrat klicali, pa dvakrat maile pošiljali«). */
+export type ZadetekKontakta = { domena: string; podjetje: string; kraj?: string; telefon?: string; zgodovina?: string[] };
+
+export async function poisciKontakt(q: string): Promise<ZadetekKontakta[] | null> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/kontakt?q=${encodeURIComponent(q)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(6_000),
+    });
+    return r.ok ? ((await r.json()) as { zadetki: ZadetekKontakta[] }).zadetki : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Klic podjetju, ki ga ni na našem seznamu (npr. iz zvezka). Harvey ga zavrne, če ga po številki ali imenu že pozna. */
+export async function zabeleziRocniKlic(podatki: {
+  naziv: string;
+  telefon: string;
+  kraj: string;
+  oseba: string;
+  opomba: string;
+  izid: IzidKlica;
+  kdo: string;
+}): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/hladni-klici-rocno`, {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(6_000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(podatki),
+    });
+    const j = (await r.json().catch(() => ({}))) as { success?: boolean; message?: string; obstaja?: ZadetekKontakta[] };
+    return j.success ? { ok: true } : { ok: false, napaka: j.message ?? "Ni uspelo.", obstaja: j.obstaja };
+  } catch {
+    return { ok: false, napaka: "Harvey Kompletko ne odgovarja (5556)." };
   }
 }
 

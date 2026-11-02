@@ -8,6 +8,9 @@ import {
   odlociPanogo,
   nastaviPosiljanje,
   zabeleziKlic,
+  poisciKontakt,
+  zabeleziRocniKlic,
+  type ZadetekKontakta,
   type IzidKlica,
   type PregledKlica,
   odlociProblem,
@@ -168,6 +171,7 @@ export async function zabeleziKlicAkcija(
   skrb = "",
   hladni = false,
   pregled: PregledKlica = {},
+  dogovor = "",
 ): Promise<{ ok: boolean; napaka?: string }> {
   let kdo = "";
   try {
@@ -176,6 +180,7 @@ export async function zabeleziKlicAkcija(
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
   if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
+  if (dogovor && !/^\d{4}-\d{2}-\d{2}$/.test(dogovor)) return { ok: false, napaka: "Datum ni pravilen." };
   if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(izid)) return { ok: false, napaka: "Neznan izid." };
   const komu = email.trim().toLowerCase();
   if (komu && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(komu)) return { ok: false, napaka: "Mail ni pravilen." };
@@ -193,10 +198,57 @@ export async function zabeleziKlicAkcija(
       cena: (pregled.cena ?? "").slice(0, 300),
       ugovor: (pregled.ugovor ?? "").slice(0, 120),
     },
+    hladni ? "" : dogovor,
   );
   revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
+}
+
+/** Preveri pred klicem ali mailom: ali smo jih že klicali ali jim pisali (ime, številka ali domena). */
+export async function poisciKontaktAkcija(
+  q: string,
+): Promise<{ ok: boolean; zadetki?: ZadetekKontakta[]; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  const iskanje = q.trim().slice(0, 100);
+  if (iskanje.length < 3) return { ok: false, napaka: "Vpiši vsaj 3 znake." };
+  const zadetki = await poisciKontakt(iskanje);
+  return zadetki ? { ok: true, zadetki } : { ok: false, napaka: "Harvey Kompletko ne odgovarja (5556)." };
+}
+
+/** Klic podjetju, ki ga ni na seznamu (iz zvezka). Če ga po številki ali imenu že poznamo, vrne obstoječega. */
+export async function rocniKlicAkcija(podatki: {
+  naziv: string;
+  telefon: string;
+  kraj: string;
+  oseba: string;
+  opomba: string;
+  izid: IzidKlica;
+}): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
+  let kdo = "";
+  try {
+    kdo = (await requireAdmin()).email ?? "";
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  if (podatki.naziv.trim().length < 3) return { ok: false, napaka: "Vpiši ime podjetja." };
+  if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(podatki.izid))
+    return { ok: false, napaka: "Neznan izid." };
+  const r = await zabeleziRocniKlic({
+    naziv: podatki.naziv.trim().slice(0, 200),
+    telefon: podatki.telefon.trim().slice(0, 40),
+    kraj: podatki.kraj.trim().slice(0, 80),
+    oseba: podatki.oseba.trim().slice(0, 120),
+    opomba: podatki.opomba.trim().slice(0, 500),
+    izid: podatki.izid,
+    kdo,
+  });
+  if (r.ok) revalidatePath("/admin/prodajna-ekipa/kompletko");
+  return r;
 }
 
 /** Mapa v Odobritvi: klic ali »začeli delati« pri podjetju, ki mu je šel prvi mail. */
