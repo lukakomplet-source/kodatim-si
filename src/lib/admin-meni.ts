@@ -74,15 +74,32 @@ export const RAZDELKI: Razdelek[] = [
     ],
   },
   {
+    // Faza 6 (3. 11. 2026): /admin/podjetja/* so zaprte z zahtevajStran("lead_intelligence.view", "kompletko.view")
+    // (podjetja/kontekst.ts); Prodaja Kompletko vidi samo Kompletko. Stare strani ostanejo kot svoji zavihki.
     kljuc: "podjetja",
     label: "Podjetja",
-    href: "/admin/lead-intelligence/leads",
+    href: "/admin/podjetja",
     permission: ["lead_intelligence.view", "promotion.view", "kompletko.view"],
     zavihki: [
-      { label: "Vsa podjetja", href: "/admin/lead-intelligence/leads", permission: "lead_intelligence.view" },
-      { label: "Priložnosti", href: "/admin/promocije", permission: "promotion.view" },
+      { label: "Vsa podjetja", href: "/admin/podjetja", permission: ["lead_intelligence.view", "kompletko.view"] },
+      {
+        label: "Priložnosti",
+        href: "/admin/podjetja/priloznosti",
+        permission: ["lead_intelligence.view", "kompletko.view"],
+      },
+      { label: "Kampanje", href: "/admin/promocije", permission: "promotion.view" },
       { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view" },
-      { label: "Dodaj in uvozi", href: "/admin/lead-intelligence/import", permission: "lead_intelligence.view" },
+      {
+        label: "Stranke (KodaTim)",
+        href: "/admin/lead-intelligence/leads",
+        permission: "lead_intelligence.view",
+      },
+      {
+        label: "Dodaj in uvozi",
+        href: "/admin/podjetja/dodaj",
+        poti: ["/admin/lead-intelligence/import"],
+        permission: ["lead_intelligence.view", "kompletko.view"],
+      },
     ],
   },
   {
@@ -263,7 +280,7 @@ export const STARI_MENI: StaraTocka[] = [
   { label: "Vloge", href: "/admin/vloge", permission: "roles.manage" },
   { label: "Nadzor zbiralnikov", href: "/admin/nadzor", permission: "crm.view" },
   // Arhiv: Podjetja (Firecrawl v tabelo `companies`, ki je nihče drug ne bere) — samo še v starem adminu.
-  { label: "Arhiv: podjetja", href: "/admin/podjetja", permission: "crm.view" },
+  { label: "Arhiv: podjetja", href: "/admin/stari-admin/arhiv-podjetij", permission: "admin" },
 ];
 
 /** Strani, ki niso v nobenem razdelku, a imajo svoje ime (naslov zavihka, »Nadaljujte, kjer ste ostali«). */

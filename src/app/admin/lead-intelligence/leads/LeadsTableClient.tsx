@@ -12,7 +12,6 @@ import {
   Pencil,
   Download,
   Tag as TagIcon,
-  Trash2,
   AlertTriangle,
   Sparkles,
   Loader2,
@@ -32,8 +31,6 @@ import {
   updateLead,
   bulkAssignTags,
   bulkUpdateStatus,
-  deleteLead,
-  bulkDeleteLeads,
 } from "../actions";
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
@@ -346,20 +343,6 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
           </button>
           <button
             type="button"
-            disabled={isPending}
-            onClick={() => {
-              if (!confirm(`Izbrisati ${selected.size} izbranih leadov? Tega ni mogoče razveljaviti.`)) return;
-              const ids = Array.from(selected);
-              run(() => bulkDeleteLeads(ids));
-              setSelected(new Set());
-            }}
-            className="flex items-center gap-1.5 rounded-full border border-red-200 px-4 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Izbriši izbrane
-          </button>
-          <button
-            type="button"
             onClick={() => setSelected(new Set())}
             className="text-sm text-zinc-500 hover:text-zinc-900"
           >
@@ -513,18 +496,6 @@ export default function LeadsTableClient({ leads }: { leads: IntelLead[] }) {
                         className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="Izbriši lead"
-                        disabled={isPending}
-                        onClick={() => {
-                          if (!confirm(`Izbrisati "${lead.company_name}"? Tega ni mogoče razveljaviti.`)) return;
-                          run(() => deleteLead(lead.id));
-                        }}
-                        className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </td>

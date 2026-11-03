@@ -3,10 +3,10 @@
 import { useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Copy, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Copy } from "lucide-react";
 import type { PromoCampaign, PromoCampaignSummary } from "@/lib/promocije/types";
 import { CAMPAIGN_STATUS_LABELS } from "@/lib/promocije/types";
-import { duplicateCampaign, setCampaignStatus, deleteCampaign } from "./actions";
+import { duplicateCampaign, setCampaignStatus } from "./actions";
 
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-zinc-100 text-zinc-600",
@@ -108,18 +108,6 @@ export default function CampaignsGrid({
               ) : (
                 <Archive className="h-3.5 w-3.5" />
               )}
-            </button>
-            <button
-              type="button"
-              title="Izbriši"
-              disabled={isPending}
-              onClick={() => {
-                if (!confirm(`Izbrisati kampanjo "${campaign.name}"? Tega ni mogoče razveljaviti.`)) return;
-                run(() => deleteCampaign(campaign.id));
-              }}
-              className="rounded-full border border-zinc-200 p-2 text-zinc-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

@@ -21,6 +21,7 @@ import {
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 import { jeIzid, preveriDogovorInSestanek, type IzidKlica, type SestanekKlica } from "@/lib/klicPanik";
 import { pozabiCaka } from "@/lib/komunikacija";
+import { pozabiPodjetja } from "@/lib/podjetja/podatki";
 
 /** Faza 5: odločitev o mailu spremeni »čaka« na Danes, v Komunikaciji in v meniju. */
 function revalidirajKomunikacijo() {
@@ -174,6 +175,9 @@ function revalidirajKlice() {
   revalidatePath("/admin/danes/naslednji");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
   revalidirajKomunikacijo();
+  // A logged call shows on the company card right away, not after the 10-minute memo.
+  pozabiPodjetja();
+  revalidatePath("/admin/podjetja", "layout");
 }
 
 /**
@@ -245,6 +249,8 @@ export async function rocniKlicAkcija(podatki: {
   naziv: string;
   telefon: string;
   kraj: string;
+  spletna?: string;
+  email?: string;
   oseba: string;
   opomba: string;
   izid: IzidKlica;
@@ -267,6 +273,8 @@ export async function rocniKlicAkcija(podatki: {
     naziv: podatki.naziv.trim().slice(0, 200),
     telefon: podatki.telefon.trim().slice(0, 40),
     kraj: podatki.kraj.trim().slice(0, 80),
+    spletna: (podatki.spletna ?? "").trim().slice(0, 200),
+    email: (podatki.email ?? "").trim().slice(0, 200),
     oseba: podatki.oseba.trim().slice(0, 120),
     opomba: podatki.opomba.trim().slice(0, 500),
     izid: podatki.izid,

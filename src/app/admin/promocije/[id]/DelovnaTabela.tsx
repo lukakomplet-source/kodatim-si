@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, ChevronRight, Loader2, Mail, Phone, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Loader2, Mail, Phone } from "lucide-react";
 import type { TargetWithLead } from "@/lib/promocije/queries";
 import type { PromoCampaign } from "@/lib/promocije/types";
 import {
@@ -13,7 +13,7 @@ import {
   type PipelineStage,
   type SocialOutreach,
 } from "@/lib/promocije/types";
-import { removeTarget, toggleSocialOutreach, updateCallInfo, updatePipelineStage } from "../actions";
+import { toggleSocialOutreach, updateCallInfo, updatePipelineStage } from "../actions";
 
 /**
  * The working surface for a campaign: every company on one screen, with the
@@ -478,17 +478,6 @@ export default function DelovnaTabela({
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Link>
-                    <button
-                      type="button"
-                      title="Odstrani iz kampanje"
-                      onClick={() => {
-                        if (!confirm(`Odstraniti "${t.lead.company_name}" iz kampanje?`)) return;
-                        shrani(t.id, () => removeTarget(campaign.id, t.id));
-                      }}
-                      className="ml-1 rounded p-1 text-zinc-300 hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
                   </td>
                 </tr>
               );

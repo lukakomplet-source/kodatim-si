@@ -188,19 +188,16 @@ export async function duplicateCampaign(campaignId: string): Promise<ActionResul
   return { success: true };
 }
 
-export async function deleteCampaign(campaignId: string): Promise<ActionResult> {
+export async function deleteCampaign(): Promise<ActionResult> {
   try {
     await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("promo_campaigns").delete().eq("id", campaignId);
-
-  if (error) return { error: "Kampanje ni bilo mogoče izbrisati." };
-  revalidatePath("/admin/promocije");
-  return { success: true };
+  // Phase 6 (3. 11. 2026): nothing is deleted from the admin (a lead cascades its targets and timeline away).
+  // The buttons are gone; this refuses a direct call too.
+  return { error: "Brisanje je izklopljeno: v adminu se nič ne briše." };
 }
 
 // ---------------------------------------------------------------------------
@@ -229,19 +226,16 @@ export async function addTargetsToCampaign(
   return { success: true };
 }
 
-export async function removeTarget(campaignId: string, targetId: string): Promise<ActionResult> {
+export async function removeTarget(): Promise<ActionResult> {
   try {
     await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("promo_campaign_targets").delete().eq("id", targetId);
-
-  if (error) return { error: "Cilja ni bilo mogoče odstraniti." };
-  revalidateCampaign(campaignId);
-  return { success: true };
+  // Phase 6 (3. 11. 2026): nothing is deleted from the admin (a lead cascades its targets and timeline away).
+  // The buttons are gone; this refuses a direct call too.
+  return { error: "Brisanje je izklopljeno: v adminu se nič ne briše." };
 }
 
 export async function updatePipelineStage(

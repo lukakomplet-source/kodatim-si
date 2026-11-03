@@ -14,6 +14,7 @@ import { Zavihki } from "./Zavihki";
 import { StikaloPosla } from "./StikaloPosla";
 import { NaslovStrani } from "./NaslovStrani";
 import { ZnackaCaka } from "./ZnackaCaka";
+import { IskanjePodjetij } from "./IskanjePodjetij";
 
 const ICON_CLASS = "h-5 w-5";
 
@@ -99,6 +100,9 @@ export default async function AdminLayout({
   const dovoljeniZavihki = Object.fromEntries(meni.flatMap((r) => (r.zavihki ?? []).map((z) => [z.href, z.vhod])));
 
   // »Stari admin« only for admins (whoever sees Nastavitve), never for Prodaja Kompletko.
+  // Ctrl+K (phase 6): whoever may open Podjetja (the search route checks the same permissions).
+  const iscePodjetja = jeAdmin || pravice.ima("lead_intelligence.view") || pravice.ima("kompletko.view");
+
   const vidiStariAdmin =
     perms?.roleKey !== "prodaja_kompletko" && meni.some((r) => r.kljuc === "nastavitve");
 
@@ -108,7 +112,12 @@ export default async function AdminLayout({
       navItems={visibleNavItems}
       userEmail={user.email ?? ""}
       lepljiv
-      zgoraj={<StikaloPosla zacetno={posel} />}
+      zgoraj={
+        <>
+          <StikaloPosla zacetno={posel} />
+          {iscePodjetja ? <IskanjePodjetij /> : null}
+        </>
+      }
       spodaj={
         vidiStariAdmin ? (
           <Link

@@ -27,7 +27,6 @@ import {
   moveToCustomer,
   addNote,
   assignTags,
-  deleteLead,
   type UpdateLeadFields,
 } from "../../actions";
 import ContactPersonsField from "../../import/ContactPersonsField";
@@ -73,10 +72,15 @@ export default function LeadEditor({
   const [skdCode, setSkdCode] = useState(lead.custom_fields?.skd_code ?? "");
   const [skdName, setSkdName] = useState(lead.custom_fields?.skd_name ?? "");
   // Registry values have their own inputs below; without excluding them here
-  // they would also appear as free-form custom fields, i.e. twice.
+  // they would also appear as free-form custom fields, i.e. twice. Objects that
+  // Harvey's sync writes (custom_fields.harvey, .segment) are not text: they are
+  // left out here (they showed as "[object Object]") and updateLead keeps them.
   const [customFields, setCustomFields] = useState<[string, string][]>(
     Object.entries(lead.custom_fields ?? {}).filter(
-      ([k]) => !CUSTOM_FIELD_KEYS.includes(k) && !(REGISTRY_FIELDS as readonly string[]).includes(k)
+      (vnos): vnos is [string, string] =>
+        typeof vnos[1] === "string" &&
+        !CUSTOM_FIELD_KEYS.includes(vnos[0]) &&
+        !(REGISTRY_FIELDS as readonly string[]).includes(vnos[0])
     )
   );
   const [reminder, setReminder] = useState(lead.reminder_date ?? "");
@@ -157,18 +161,6 @@ export default function LeadEditor({
     run(() => assignTags(lead.id, tagsText.split(",").map((t) => t.trim())));
   }
 
-  function handleDelete() {
-    if (!confirm(`Izbrisati "${lead.company_name}"? Tega ni mogoče razveljaviti.`)) return;
-    startTransition(async () => {
-      const result = await deleteLead(lead.id);
-      if (result.error) {
-        alert(result.error);
-      } else {
-        router.push("/admin/lead-intelligence/leads");
-      }
-    });
-  }
-
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm">
@@ -206,15 +198,6 @@ export default function LeadEditor({
               className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               Premakni med stranke
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={handleDelete}
-              className="flex items-center gap-1.5 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Izbriši
             </button>
           </div>
         </div>

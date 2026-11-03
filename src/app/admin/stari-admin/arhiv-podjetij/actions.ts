@@ -55,7 +55,7 @@ export async function scrapeCompany(
     };
   }
 
-  revalidatePath("/admin/podjetja");
+  revalidatePath("/admin/stari-admin/arhiv-podjetij");
   return { success: true };
 }
 
@@ -140,6 +140,6 @@ export async function saveCompany(
     return { error: "Podjetja ni bilo mogoče shraniti v bazo." };
   }
 
-  revalidatePath("/admin/podjetja");
+  revalidatePath("/admin/stari-admin/arhiv-podjetij");
   return { success: true };
 }

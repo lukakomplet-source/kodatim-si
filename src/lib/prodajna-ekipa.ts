@@ -1391,6 +1391,9 @@ export async function zabeleziRocniKlic(podatki: {
   naziv: string;
   telefon: string;
   kraj: string;
+  /** Faza 6: spletna stran in e-pošta, da ga kartica podjetja poveže po domeni. */
+  spletna?: string;
+  email?: string;
   oseba: string;
   opomba: string;
   izid: IzidKlica;

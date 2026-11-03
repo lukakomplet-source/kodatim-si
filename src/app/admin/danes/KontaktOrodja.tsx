@@ -81,6 +81,8 @@ export function RocniKlic({ onShranjeno }: { onShranjeno?: () => void }) {
   const [naziv, setNaziv] = useState("");
   const [telefon, setTelefon] = useState("");
   const [kraj, setKraj] = useState("");
+  const [spletna, setSpletna] = useState("");
+  const [email, setEmail] = useState("");
   const [oseba, setOseba] = useState("");
   const [opomba, setOpomba] = useState("");
   const [izbran, setIzbran] = useState<IzidKlica | null>(null);
@@ -101,13 +103,15 @@ export function RocniKlic({ onShranjeno }: { onShranjeno?: () => void }) {
       return;
     }
     zacni(async () => {
-      const r = await rocniKlicAkcija({ naziv, telefon, kraj, oseba, opomba, izid, dogovor: d, ...sestanek });
+      const r = await rocniKlicAkcija({ naziv, telefon, kraj, spletna, email, oseba, opomba, izid, dogovor: d, ...sestanek });
       setObstaja(r.obstaja ?? []);
       setSporocilo(r.ok ? `Vpisano: ${naziv}.` : (r.napaka ?? "Ni uspelo."));
       if (r.ok) {
         setNaziv("");
         setTelefon("");
         setKraj("");
+        setSpletna("");
+        setEmail("");
         setOseba("");
         setOpomba("");
         setIzbran(null);
@@ -141,6 +145,20 @@ export function RocniKlic({ onShranjeno }: { onShranjeno?: () => void }) {
         <label className="block text-sm text-zinc-700">
           Kraj
           <input value={kraj} onChange={(e) => setKraj(e.target.value)} placeholder="npr. Trojane" className={POLJE} />
+        </label>
+        <label className="block text-sm text-zinc-700">
+          Spletna stran
+          <input value={spletna} onChange={(e) => setSpletna(e.target.value)} placeholder="npr. ferme.si" className={POLJE} />
+        </label>
+        <label className="block text-sm text-zinc-700">
+          E-pošta
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="npr. info@ferme.si"
+            className={POLJE}
+          />
         </label>
         <label className="block text-sm text-zinc-700">
           S kom si govoril

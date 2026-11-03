@@ -1,9 +1,14 @@
 import "server-only";
 import { createLeadClient } from "@/lib/leadDb";
+import { hrefPodjetja, jeBrezplacna } from "@/lib/podjetja/kljuc";
+import { preberiPodjetja, zaPosel } from "@/lib/podjetja/podatki";
+
+export { jeBrezplacna };
 
 /**
- * Povezava na podjetje v Komunikaciji (faza 5): kartica leada, če podjetje imamo v bazi (najprej po e-naslovu,
- * nato po domeni v spletni strani), sicer njihova stran (domena). Brez pravice za leade vedno domena.
+ * Povezava na podjetje v Komunikaciji: od faze 6 kartica podjetja (/admin/podjetja/<davčna>), če ga povezani
+ * seznam pozna; sicer kartica leada (najprej po e-naslovu, nato po domeni v spletni strani), sicer njihova stran
+ * (domena). Brez pravice za leade namesto kartice leada domena.
  *
  * Brezplačni ponudniki pošte (gmail.com, siol.net …) niso domena podjetja: taka vrstica ima ključ po celem
  * e-naslovu, išče se samo po e-naslovu in nikoli ne vodi na https://gmail.com ali na lead s to »spletno stranjo«.
@@ -13,17 +18,6 @@ export type Povezava = { href: string; zunanja: boolean };
 type Vrstica = { email?: string | null; domena?: string | null };
 
 const DOMENA = /^[a-z0-9][a-z0-9.-]{0,80}\.[a-z]{2,}$/;
-
-const BREZPLACNE = new Set([
-  "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com", "msn.com", "yahoo.com", "ymail.com",
-  "icloud.com", "me.com", "aol.com", "gmx.com", "gmx.net", "gmx.de", "web.de", "proton.me", "protonmail.com",
-  "siol.net", "t-2.net", "amis.net", "telemach.net", "volja.net", "email.si", "guest.arnes.si", "triera.net",
-  "hotmail.si", "yahoo.si", "net.hr", "gmail.si",
-]);
-
-export function jeBrezplacna(domena: string): boolean {
-  return BREZPLACNE.has((domena ?? "").trim().toLowerCase());
-}
 
 /** Domena podjetja iz e-naslova; "" za neveljavno ali brezplačno (gmail.com, siol.net …). */
 export function domenaIz(email: string): string {
@@ -62,7 +56,26 @@ export async function povezavePodjetij(vrstice: Vrstica[], smeLeade: boolean): P
   const izid = new Map<string, Povezava>();
   const domene = [...new Set(vrstice.map(domenaVrstice).filter(Boolean))];
   for (const d of domene) izid.set(d, { href: `https://${d}`, zunanja: true });
-  if (!smeLeade || !vrstice.length) return izid;
+  if (!vrstice.length) return izid;
+
+  // Phase 6: the company card (/admin/podjetja/<davčna>) when the company is in the joined index; whoever reads
+  // Komunikacija may open Podjetja (both are guarded by kompletko.view). The lead card and the domain stay as
+  // the fallback for a row the index does not know.
+  const indeks = await preberiPodjetja().catch(() => null);
+  if (indeks) {
+    for (const v of vrstice) {
+      const e = (v.email ?? "").trim().toLowerCase();
+      const kljuc = kljucPodjetja(v);
+      const najdeno = (e ? indeks.poKljucu.get(e) : undefined) ?? (kljuc ? indeks.poKljucu.get(kljuc) : undefined);
+      // Everyone in Komunikacija sees Kompletko; KodaTim only with the lead permission (same as the card).
+      const p = najdeno ? zaPosel(najdeno, smeLeade, true) : null;
+      if (!p) continue;
+      const povezava = { href: hrefPodjetja(p.kljuc), zunanja: false };
+      if (e) izid.set(e, povezava);
+      if (kljuc) izid.set(kljuc, povezava);
+    }
+  }
+  if (!smeLeade) return izid;
 
   const emaili = [...new Set(vrstice.map((v) => (v.email ?? "").trim().toLowerCase()).filter((e) => e.includes("@")))];
   try {
@@ -84,14 +97,16 @@ export async function povezavePodjetij(vrstice: Vrstica[], smeLeade: boolean): P
     }
     for (const z of poEmailu) {
       const e = (z.email ?? "").toLowerCase();
-      if (e && !izid.has(e)) izid.set(e, { href: `/admin/lead-intelligence/leads/${z.id}`, zunanja: false });
+      if (e && (!izid.has(e) || izid.get(e)!.zunanja)) {
+        izid.set(e, { href: `/admin/lead-intelligence/leads/${z.id}`, zunanja: false });
+      }
     }
     // By website only with an exact host match (»trans.si« never takes the lead of »bitrans.si«).
     const iskane = new Set(domene);
     const zeLead = new Set<string>();
     for (const z of poStrani) {
       const h = hostIz(z.website);
-      if (h && iskane.has(h) && !zeLead.has(h)) {
+      if (h && iskane.has(h) && !zeLead.has(h) && izid.get(h)?.zunanja !== false) {
         izid.set(h, { href: `/admin/lead-intelligence/leads/${z.id}`, zunanja: false });
         zeLead.add(h);
       }

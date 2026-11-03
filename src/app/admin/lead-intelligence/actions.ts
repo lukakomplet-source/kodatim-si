@@ -200,7 +200,27 @@ export async function updateLead(
   }
 
   const admin = createLeadClient();
-  const { error } = await admin.from("intel_leads").update(fields).eq("id", leadId);
+  let posodobitev: Record<string, unknown> = fields;
+  if (fields.custom_fields) {
+    // The editor sends only text fields; values that are not text (Harvey's sync writes the objects
+    // custom_fields.harvey and .segment; numbers, booleans) are kept, otherwise saving the card would erase them.
+    const { data: obstojeci, error: napakaBranja } = await admin
+      .from("intel_leads")
+      .select("custom_fields")
+      .eq("id", leadId)
+      .single();
+    if (napakaBranja) return { error: "Sprememb ni bilo mogoče shraniti." };
+    const ohrani = Object.fromEntries(
+      Object.entries((obstojeci?.custom_fields as Record<string, unknown> | null) ?? {}).filter(
+        ([, v]) => v !== null && v !== undefined && typeof v !== "string"
+      )
+    );
+    const poslano = Object.fromEntries(
+      Object.entries(fields.custom_fields).filter(([, v]) => typeof v === "string" && v !== "[object Object]")
+    );
+    posodobitev = { ...fields, custom_fields: { ...poslano, ...ohrani } };
+  }
+  const { error } = await admin.from("intel_leads").update(posodobitev).eq("id", leadId);
 
   if (error) return { error: "Sprememb ni bilo mogoče shraniti." };
 
@@ -404,40 +424,28 @@ export async function bulkUpdateStatus(
   return { success: true };
 }
 
-export async function deleteLead(leadId: string): Promise<ActionResult> {
+export async function deleteLead(): Promise<ActionResult> {
   try {
     await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  const admin = createLeadClient();
-  const { error } = await admin.from("intel_leads").delete().eq("id", leadId);
-
-  if (error) return { error: "Leada ni bilo mogoče izbrisati." };
-
-  revalidatePath("/admin/lead-intelligence/leads");
-  revalidatePath("/admin/lead-intelligence");
-  return { success: true };
+  // Phase 6 (3. 11. 2026): nothing is deleted from the admin (a lead cascades its targets and timeline away).
+  // The buttons are gone; this refuses a direct call too.
+  return { error: "Brisanje je izklopljeno: v adminu se nič ne briše." };
 }
 
-export async function bulkDeleteLeads(leadIds: string[]): Promise<ActionResult> {
+export async function bulkDeleteLeads(): Promise<ActionResult> {
   try {
     await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
   }
 
-  if (leadIds.length === 0) return { error: "Ni izbranih leadov." };
-
-  const admin = createLeadClient();
-  const { error } = await admin.from("intel_leads").delete().in("id", leadIds);
-
-  if (error) return { error: "Leadov ni bilo mogoče izbrisati." };
-
-  revalidatePath("/admin/lead-intelligence/leads");
-  revalidatePath("/admin/lead-intelligence");
-  return { success: true };
+  // Phase 6 (3. 11. 2026): nothing is deleted from the admin (a lead cascades its targets and timeline away).
+  // The buttons are gone; this refuses a direct call too.
+  return { error: "Brisanje je izklopljeno: v adminu se nič ne briše." };
 }
 
 /** Puts a stuck/failed lead back on the durable queue so a worker retries it. */
