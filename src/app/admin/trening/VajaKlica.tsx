@@ -41,13 +41,39 @@ export function VajaKlica({ persone }: { persone: Persona[] }) {
   const [poslusa, setPoslusa] = useState(false);
   const [poteka, zacni] = useTransition();
   const prepoznava = useRef<Prepoznava | null>(null);
+  const [glasVklopljen, setGlasVklopljen] = useState(true);
+  const [glasNapaka, setGlasNapaka] = useState(false);
+  const zvok = useRef<HTMLAudioElement | null>(null);
   const dno = useRef<HTMLDivElement>(null);
 
   // Chrome only, known after hydration (false on the server)
   const imaMikrofon = useSyncExternalStore(brezNarocnine, () => !!novaPrepoznava(), () => false);
   useEffect(() => dno.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [zgodovina, ocena]);
 
+  // The persona speaks (ElevenLabs via /api/admin/trening/glas); without a voice the practice goes on in text.
+  const predvajaj = async (persona: string, besedilo: string) => {
+    zvok.current?.pause();
+    if (!glasVklopljen) return;
+    try {
+      const r = await fetch("/api/admin/trening/glas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persona, besedilo }),
+      });
+      if (!r.ok) throw new Error();
+      const url = URL.createObjectURL(await r.blob());
+      const a = new Audio(url);
+      a.onended = () => URL.revokeObjectURL(url);
+      zvok.current = a;
+      await a.play();
+      setGlasNapaka(false);
+    } catch {
+      setGlasNapaka(true);
+    }
+  };
+
   const zacniVajo = (p: Persona) => {
+    void predvajaj(p.kljuc, p.zacetek);
     setIzbrana(p);
     setZgodovina([]);
     setKonec(false);
@@ -70,6 +96,7 @@ export function VajaKlica({ persone }: { persone: Persona[] }) {
       }
       setNapaka("");
       setZgodovina([...nova, { kdo: "s", besedilo: r.odgovor }]);
+      void predvajaj(izbrana.kljuc, r.odgovor);
       if (r.konec) setKonec(true);
     });
   };
@@ -138,8 +165,21 @@ export function VajaKlica({ persone }: { persone: Persona[] }) {
         </span>
         <button
           type="button"
-          onClick={() => setIzbrana(null)}
+          onClick={() => {
+            if (glasVklopljen) zvok.current?.pause();
+            setGlasVklopljen(!glasVklopljen);
+          }}
           className={`${GUMB} ml-auto bg-white text-zinc-800 ring-zinc-300 hover:bg-zinc-50`}
+        >
+          {glasVklopljen ? "Glas vklopljen" : "Glas izklopljen"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            zvok.current?.pause();
+            setIzbrana(null);
+          }}
+          className={`${GUMB} bg-white text-zinc-800 ring-zinc-300 hover:bg-zinc-50`}
         >
           Druga vloga
         </button>
@@ -208,6 +248,9 @@ export function VajaKlica({ persone }: { persone: Persona[] }) {
       ) : null}
 
       {napaka ? <p className="text-sm text-red-700">{napaka}</p> : null}
+      {glasVklopljen && glasNapaka ? (
+        <p className="text-sm text-amber-800">Glas trenutno ne dela, vaja teče naprej v besedilu.</p>
+      ) : null}
 
       {ocena ? (
         <section className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
