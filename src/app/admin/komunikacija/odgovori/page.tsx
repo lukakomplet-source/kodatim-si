@@ -114,8 +114,8 @@ async function KodaTim({ smeLeade }: { smeLeade: boolean }) {
   );
 }
 
-export default async function KomunikacijaOdgovoriPage() {
-  const k = await kontekstKomunikacije();
+export default async function KomunikacijaOdgovoriPage({ searchParams }: { searchParams: Promise<{ posel?: string }> }) {
+  const k = await kontekstKomunikacije((await searchParams).posel);
   return (
     <div>
       <h1 className="text-3xl font-semibold text-zinc-900">Odgovori</h1>

@@ -17,8 +17,8 @@ import { StevilkeDneva } from "../StevilkeDneva";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Klici · Danes" };
 
-export default async function KliciPage() {
-  const k = await kontekstDanes();
+export default async function KliciPage({ searchParams }: { searchParams: Promise<{ posel?: string }> }) {
+  const k = await kontekstDanes((await searchParams).posel);
   if (!k.kompletko && !k.kodatim) {
     return (
       <div>

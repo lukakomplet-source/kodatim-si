@@ -173,9 +173,14 @@ export const RAZDELKI: Razdelek[] = [
     kljuc: "stevilke",
     label: "Številke",
     href: "/admin/stevilke",
-    permission: ["promotion.view", "lead_intelligence.view"],
+    // Dan in teden vidi tudi Prodaja Kompletko (samo Kompletko del, stevilke/page.tsx).
+    permission: ["promotion.view", "lead_intelligence.view", "kompletko.view"],
     zavihki: [
-      { label: "Dan in teden", href: "/admin/stevilke", permission: ["promotion.view", "lead_intelligence.view"] },
+      {
+        label: "Dan in teden",
+        href: "/admin/stevilke",
+        permission: ["promotion.view", "lead_intelligence.view", "kompletko.view"],
+      },
       { label: "Lijak", href: "/admin/promocije/reports", permission: "promotion.view", posel: "kodatim" },
       // Samo /admin/lead-intelligence sam: /leads in /import sta Podjetja, /discovery Nastavitve (daljše poti zmagajo).
       { label: "Baza", href: "/admin/lead-intelligence", permission: "lead_intelligence.view", posel: "kodatim" },

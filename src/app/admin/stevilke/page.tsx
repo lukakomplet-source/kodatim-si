@@ -11,7 +11,7 @@ import {
 /**
  * Številke › Dan in teden (faza 7): samo iz vpisanih dogodkov (maili, odgovori, ogledi, vpisani klici).
  * Kjer vir ne odgovori, piše »ni podatka«. Napoved šele pri 5 sestankih, prej »premalo podatkov«.
- * Zapora: promotion.view ali lead_intelligence.view (kot zavihek v admin-meni.ts); Kompletko del vidi
+ * Zapora: promotion.view, lead_intelligence.view ali kompletko.view (kot zavihek v admin-meni.ts); Kompletko del vidi
  * administrator ali kdor ima kompletko.view, KodaTim del administrator ali kdor ima lead_intelligence.view.
  */
 
@@ -52,12 +52,14 @@ function NiPodatka({ vir }: { vir: string }) {
 const CELICA = "px-3 py-2 text-right tabular-nums";
 
 export default async function DanInTedenPage() {
-  await zahtevajStran("promotion.view", "lead_intelligence.view");
+  await zahtevajStran("promotion.view", "lead_intelligence.view", "kompletko.view");
   const [perms, posel] = await Promise.all([getCurrentUserPermissions(), preberiPosel()]);
   const aktiven = !!perms && !perms.neaktiven;
   const jeAdmin = aktiven && perms.bypassAll;
-  const kodatim = (jeAdmin || (aktiven && perms.granted.has("lead_intelligence.view"))) && posel !== "kompletko";
-  const kompletko = (jeAdmin || (aktiven && perms.granted.has("kompletko.view"))) && posel !== "kodatim";
+  const smeKodatim = jeAdmin || (aktiven && perms.granted.has("lead_intelligence.view"));
+  const smeKompletko = jeAdmin || (aktiven && perms.granted.has("kompletko.view"));
+  const kodatim = smeKodatim && posel !== "kompletko";
+  const kompletko = smeKompletko && posel !== "kodatim";
 
   const [kt, kp] = await Promise.all([
     kodatim ? preberiStevilkeKodaTimTeden() : Promise.resolve(null),
@@ -194,7 +196,11 @@ export default async function DanInTedenPage() {
       ) : null}
 
       {!kodatim && !kompletko ? (
-        <p className="mt-8 text-sm text-zinc-500">Stikalo posla je na poslu, ki ga ne vidiš. Preklopi na Vse.</p>
+        <p className="mt-8 text-sm text-zinc-500">
+          {smeKodatim || smeKompletko
+            ? "Stikalo posla je na poslu, ki ga ne vidiš. Preklopi na Vse."
+            : "Za številke rabiš pravico za KodaTim stranke ali Kompletko. Uredi jo administrator v Nastavitvah › Vloge."}
+        </p>
       ) : null}
     </div>
   );

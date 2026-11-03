@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * Kompletko); izid klica lahko vpiše samo s kompletko.calls (ista pravica kot v akcijah). Drugi (npr. manager, sales)
  * vidijo prazen Danes brez podatkov Kompletka.
  */
-export async function kontekstDanes(): Promise<{
+export async function kontekstDanes(prepisPosla?: string): Promise<{
   jeAdmin: boolean;
   posel: Posel;
   kodatim: boolean;
@@ -29,7 +29,9 @@ export async function kontekstDanes(): Promise<{
   ]);
   const jeAdmin = !!perms && !perms.neaktiven && perms.bypassAll;
   const aktiven = !!perms && !perms.neaktiven;
-  const posel: Posel = jeAdmin ? izbira : "kompletko";
+  // ?posel=kodatim|kompletko (Telegram, jutranji seznam): administrator vidi ta posel ne glede na stikalo.
+  const prepis = prepisPosla === "kodatim" || prepisPosla === "kompletko" ? prepisPosla : null;
+  const posel: Posel = jeAdmin ? (prepis ?? izbira) : "kompletko";
   const kompletko = jeAdmin ? posel !== "kodatim" : aktiven && perms.granted.has("kompletko.view");
   const klici = jeAdmin || (aktiven && kompletko && perms.granted.has("kompletko.calls"));
   const ime = ((profil.data?.full_name as string | null) ?? "").trim();

@@ -14,8 +14,8 @@ export const metadata = { title: "Naslednji dnevi · Danes" };
 
 const POSEL = { kodatim: "KodaTim", kompletko: "Kompletko" } as const;
 
-export default async function NaslednjiPage() {
-  const k = await kontekstDanes();
+export default async function NaslednjiPage({ searchParams }: { searchParams: Promise<{ posel?: string }> }) {
+  const k = await kontekstDanes((await searchParams).posel);
   if (!k.kompletko && !k.kodatim) {
     return (
       <div>

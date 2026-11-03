@@ -153,8 +153,8 @@ async function CakaKodaTim({ zMapami }: { zMapami: boolean }) {
   );
 }
 
-export default async function AdminOverviewPage() {
-  const k = await kontekstDanes();
+export default async function AdminOverviewPage({ searchParams }: { searchParams: Promise<{ posel?: string }> }) {
+  const k = await kontekstDanes((await searchParams).posel);
   if (!k.kompletko && !k.kodatim) {
     return (
       <div>

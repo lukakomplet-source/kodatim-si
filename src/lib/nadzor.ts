@@ -291,7 +291,7 @@ async function harveyJson<T>(url: string): Promise<T | null> {
 async function harveyja(): Promise<Skrejper[]> {
   const [kt, kp] = await Promise.all([
     harveyJson<{ skupaj?: number; caka_na_prej?: number }>(`${HARVEY_KODATIM}/api/caka`),
-    harveyJson<{ danes?: { klici?: number }; poslani_maili?: number }>(`${HARVEY_KOMPLETKO}/api/stevilke-dneva`),
+    harveyJson<{ skupaj?: { klici?: number }; poslani_maili?: number }>(`${HARVEY_KOMPLETKO}/api/stevilke-dneva`),
   ]);
   const ne = "ne odgovarja; PLOSCA-HARVEY.bat ga po padcu dvigne v 15 s. Če traja dlje, preveri okno plošče.";
   return [
@@ -313,12 +313,12 @@ async function harveyja(): Promise<Skrejper[]> {
       opis: "Panik gumb: seznam klicev, vpis klicev, osnutki in sledenje mailom.",
       tece: kp !== null,
       starostS: null,
-      poce: kp ? `danes ${kp.danes?.klici ?? 0} klicev, ${kp.poslani_maili ?? 0} mailov` : null,
+      poce: kp ? `danes ${kp.skupaj?.klici ?? 0} klicev, ${kp.poslani_maili ?? 0} mailov` : null,
       odstotek: null,
       eta: null,
       stevilke: kp
         ? [
-            { oznaka: "Klici danes", vrednost: stevilo(kp.danes?.klici ?? 0) },
+            { oznaka: "Klici danes", vrednost: stevilo(kp.skupaj?.klici ?? 0) },
             { oznaka: "Maili danes", vrednost: stevilo(kp.poslani_maili ?? 0) },
           ]
         : [],
