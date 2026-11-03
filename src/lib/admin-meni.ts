@@ -94,6 +94,14 @@ export const RAZDELKI: Razdelek[] = [
       },
       { label: "Kampanje", href: "/admin/promocije", permission: "promotion.view", posel: "kodatim" },
       { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view", posel: "kompletko" },
+      // Kompletko kampanje v pripravi (3. 11. 2026, src/lib/kompletko-kampanje.ts): brez seznamov in mailov
+      {
+        label: "Spremstvo tovora",
+        href: "/admin/kompletko-kampanje/spremstvo",
+        permission: "kompletko.view",
+        posel: "kompletko",
+      },
+      { label: "Monitoring", href: "/admin/kompletko-kampanje/monitoring", permission: "kompletko.view", posel: "kompletko" },
       {
         label: "Stranke (KodaTim)",
         href: "/admin/lead-intelligence/leads",
