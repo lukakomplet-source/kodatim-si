@@ -91,14 +91,24 @@ export const ZAVRNITVE: { rece: string; odgovor: string; zakaj: string; izid?: s
   },
   {
     rece: "Bom premislil.",
-    odgovor: "Seveda. Kaj je glavna stvar, o kateri razmišljate?",
-    zakaj: "»Bom premislil« skriva eno pravo vprašanje. Vprašaš enkrat, prijazno.",
+    odgovor:
+      "Seveda. Kaj je glavna stvar, o kateri razmišljate? … Hvala, to mi pomaga. Kaj bi moralo biti vključeno, da bi rekli da?",
+    zakaj: "»Bom premislil« skriva eno pravo vprašanje. Boomerang: on pove, kaj manjka. Vprašaš enkrat, prijazno.",
   },
   {
     rece: "Ne rabimo.",
-    odgovor: "V redu, hvala za iskren odgovor. Lahko samo vprašam, kako imate to danes urejeno?",
-    zakaj: "Spoštuješ ne. Eno vprašanje, brez pritiska; če ponovi ne, je konec in ga ne kličemo več.",
+    odgovor:
+      "V redu, hvala za iskren odgovor. Bi mi povedali, zakaj ne? … To mi zelo pomaga. Še eno vprašanje, če dovolite: kaj bi moralo biti, da bi si vzeli 15 minut?",
+    zakaj:
+      "Boomerang: »ne« je informacija, ne konec. Ne braniš se, on pove razlog in kaj manjka. Enkrat; če ponovi ne, je konec in ga ne kličemo več.",
     izid: "Ne zanima",
+  },
+  {
+    rece: "Predrago.",
+    odgovor:
+      "Razumem. Kaj bi moralo biti vključeno, da bi se vam ta cena splačala? (Po telefonu cene ne poveš: »Odvisno od flote, zato je 15 minut v živo.«)",
+    zakaj:
+      "Ceno ne braniš, on pove, kaj manjka. Če reče »nič«, je to pravi cenovni ugovor: spoštuj ga in ponudi pilot na 2 do 3 vozilih.",
   },
 ];
 

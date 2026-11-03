@@ -72,6 +72,14 @@ export function ScenarijKlica({ ime }: { ime: string }) {
         </p>
       </div>
       <div>
+        <p className="font-semibold text-zinc-900">Ko reče »ne«: boomerang (enkrat)</p>
+        <p>»Bi mi povedali, zakaj ne?« … »To mi zelo pomaga. Še eno vprašanje, če dovolite: kaj bi moralo biti, da bi rekli da?«</p>
+        <p className="mt-1 text-zinc-500">
+          »Ne« je informacija, ne konec. Ne braniš se in ne prepričuješ. Odgovor vpiši v »Kaj bi moralo biti vključeno«. Drugi
+          »ne« spoštuj.
+        </p>
+      </div>
+      <div>
         <p className="font-semibold text-zinc-900">Če rečejo … (potrdi, poveži, vprašaj)</p>
         <ul className="list-disc space-y-1.5 pl-5">
           {ZAVRNITVE.map((z) => (

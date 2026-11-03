@@ -123,6 +123,26 @@ export default async function DanInTedenPage() {
                   : "Napoved: premalo podatkov (manj kot 5 sestankov)."}
               </p>
 
+              <h3 className="mt-6 text-sm font-semibold text-zinc-900">Kaj bi moralo biti vključeno, da bi rekli da</h3>
+              {kp.vkljuceno?.length ? (
+                <ul className="mt-2 space-y-1 text-sm text-zinc-700">
+                  {kp.vkljuceno.map((v) => (
+                    <li key={`${v.cas}-${v.domena}`}>
+                      »{v.besedilo}«{" "}
+                      <span className="text-zinc-500">
+                        {v.domena}
+                        {v.ugovor ? `, rekli: ${v.ugovor}` : ""}
+                        {v.kdo ? `, klical ${v.kdo}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-zinc-500">
+                  Še noben odgovor. Vpiše se pri izidu klica, ko po »ne« vprašaš, kaj bi moralo biti vključeno.
+                </p>
+              )}
+
               <h3 className="mt-6 text-sm font-semibold text-zinc-900">Maili po varianti (od začetka)</h3>
               {Object.keys(kp.variante).length === 0 ? (
                 <p className="mt-2 text-sm text-zinc-500">Še noben mail.</p>

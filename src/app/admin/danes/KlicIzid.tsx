@@ -62,6 +62,7 @@ export function ObrazecIzida({
   const [ocena, setOcena] = useState("");
   const [cena, setCena] = useState("");
   const [ugovor, setUgovor] = useState("");
+  const [vkljuceno, setVkljuceno] = useState("");
   const [izbran, setIzbran] = useState<IzidKlica | null>(null);
   const [dogovor, setDogovor] = useState("");
   const [sDatum, setSDatum] = useState("");
@@ -89,7 +90,7 @@ export function ObrazecIzida({
               komu,
               skrb,
               cilj.hladni,
-              { ocena, cena, ugovor },
+              { ocena, cena, ugovor, vkljuceno },
               d,
               sestanek,
             )
@@ -147,6 +148,15 @@ export function ObrazecIzida({
               </span>
             </p>
           ) : null}
+          <label className="block text-sm text-zinc-700">
+            Kaj bi moralo biti vključeno, da bi rekli da (njihove besede)
+            <input
+              value={vkljuceno}
+              onChange={(e) => setVkljuceno(e.target.value)}
+              placeholder="npr. da deluje tudi v Nemčiji in Italiji"
+              className={POLJE}
+            />
+          </label>
           <label className="block text-sm text-zinc-700">
             Koliko bi jih stal tak dogodek (njihove besede)
             <input

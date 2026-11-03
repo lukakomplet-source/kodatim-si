@@ -1356,8 +1356,9 @@ export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
   }
 }
 
-/** Pregled po klicu v 30 sekundah (1. 11. 2026, Closer + Hormozi): njihova ocena 1–5, cena dogodka, glavni ugovor. */
-export type PregledKlica = { ocena?: string; cena?: string; ugovor?: string };
+/** Pregled po klicu v 30 sekundah (1. 11. 2026, Closer + Hormozi): njihova ocena 1–5, cena dogodka, glavni ugovor;
+ * od 3. 11. (boomerang) še njihov odgovor na »Kaj bi moralo biti vključeno, da bi rekli da?«. */
+export type PregledKlica = { ocena?: string; cena?: string; ugovor?: string; vkljuceno?: string };
 
 export type { SestanekKlica } from "./klicPanik";
 

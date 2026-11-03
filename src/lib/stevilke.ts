@@ -46,6 +46,8 @@ export type KlicniStevci = {
 export type StevilkeKompletko = {
   obdobje: { od: string; dni: number; skupaj: KlicniStevci; po_osebi: Record<string, KlicniStevci> };
   variante: Record<string, { poslano: number; odgovori: number; sestanki: number; kupili: number }>;
+  /** Boomerang (3. 11.): njihovi odgovori na »Kaj bi moralo biti vključeno, da bi rekli da?«; starejši Harvey jih nima. */
+  vkljuceno?: { cas: string; domena: string; kdo: string; ugovor: string; besedilo: string }[];
 };
 
 async function beri<T>(url: string): Promise<T | null> {

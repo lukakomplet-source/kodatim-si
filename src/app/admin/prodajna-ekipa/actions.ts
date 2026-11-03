@@ -234,6 +234,7 @@ export async function zabeleziKlicAkcija(
       ocena: /^[1-5]$/.test(pregled.ocena ?? "") ? pregled.ocena : "",
       cena: (pregled.cena ?? "").slice(0, 300),
       ugovor: (pregled.ugovor ?? "").slice(0, 120),
+      vkljuceno: (pregled.vkljuceno ?? "").slice(0, 300),
     },
     preverjeno.dogovor,
     preverjeno.sestanek,
