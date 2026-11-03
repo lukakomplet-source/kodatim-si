@@ -1,219 +1,264 @@
+import { Suspense } from "react";
 import Link from "next/link";
-import { Folder, Inbox, Percent, PhoneCall, UserCheck, Users } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, zahtevajStran } from "@/lib/require-admin";
+import { Folder, Inbox, Mail, Phone } from "lucide-react";
 import ResumeCard from "@/components/dashboard/ResumeCard";
 import {
-  predajVPromocije,
-  preberiDanes,
-  preberiDelavca,
-  type Podrobnosti,
-  preberiEkipo,
-  sinhronizirajLeade,
-} from "@/lib/prodajna-ekipa";
+  preberiCakaKodaTim,
+  preberiDanesKodaTim,
+  preberiDanesKompletko,
+  preberiStevilkeKodaTim,
+  preberiStevilkeKompletko,
+  zdruziVrstice,
+  type VrsticaDanes,
+} from "@/lib/danes";
+import { datum } from "@/lib/klicPanik";
+import { opisObsega } from "@/lib/obsegPrevoznika";
 import { Osvezevanje } from "./nadzor/Osvezevanje";
+import { kontekstDanes } from "./danes/kontekst";
+import { NiPodatka, StevilkeDneva } from "./danes/StevilkeDneva";
 
 /**
- * Danes: kaj čaka nate, z enim klikom do vsakega (Luka, 28. 10. 2026: »naj bo izi to use«). Zgoraj mape z
- * maili (Hoteli, Panik gumb …), nato klici in leadi, spodaj kratek povzetek. Diagram ekipe je samo pod
- * »Harvey – ekipa«, da se ne ponavlja.
+ * Danes (faza 4 »Danes in klici«, 3. 11. 2026): en seznam za oba posla, po stikalu posla, v vrstnem redu dela:
+ * 1) odgovori, 2) dogovorjeni klici za danes, 3) klici (večji najprej), 4) maili za pregled. Zgoraj štiri številke
+ * dneva proti cilju 10 + 10. Vsak vir, ki ne odgovori, pokaže »ni podatka«. Prodaja Kompletko vidi samo Kompletko.
+ * Predajo v Promocije in sinhronizacijo leadov dela opravilo »KodaTim - Harvey predaja« vsakih 15 minut, ne stran.
  */
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminOverviewPage() {
-  await zahtevajStran("dashboard.view");
-  const supabase = createAdminClient();
+const NA_DANES = 5;
+const POSEL = { kodatim: "KodaTim", kompletko: "Kompletko" } as const;
 
-  // Ekipo, predajo in sinhronizacijo vidi in sproži samo administrator.
-  let jeAdmin = true;
-  try {
-    await requireAdmin();
-  } catch {
-    jeAdmin = false;
-  }
-
-  // KodaTim figures (chat leads, partners, commissions) are admin-only: Prodaja Kompletko sees only Kompletko work.
-  const [{ count: leadsCount }, { count: partnersCount }, { data: pending }] = jeAdmin
-    ? await Promise.all([
-        supabase.from("leads").select("*", { count: "exact", head: true }),
-        supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("role", "partner"),
-        supabase.from("commissions").select("amount").eq("status", "pending"),
-      ])
-    : [{ count: 0 }, { count: 0 }, { data: [] as { amount: number }[] }];
-
-  const ekipa = jeAdmin ? await preberiEkipo() : null;
-  let danes: { klicev: number; leadovIzKlepeta: number } | null = null;
-  let mape: NonNullable<Podrobnosti["mape"]> = [];
-  if (jeAdmin) {
-    const [d, o] = await Promise.all([
-      preberiDanes().catch(() => null),
-      preberiDelavca("odobritev").catch(() => null),
-      // Predaja zanimanja v Promocije in kontakti ekipe v Bazo leadov.
-      // One after the other: a page run skips the shared queue when another run is in flight.
-      ekipa?.povzetek
-        ? predajVPromocije()
-            .catch(() => null)
-            .then(() => sinhronizirajLeade().catch(() => null))
-        : Promise.resolve(null),
-    ]);
-    danes = d;
-    mape = o?.mape ?? [];
-  }
-
-  const pendingTotal = (pending ?? []).reduce(
-    (sum, row) => sum + Number(row.amount),
-    0
-  );
-
-  const stats = [
-    { icon: Inbox, label: "Leadi iz klepeta", value: leadsCount ?? 0 },
-    { icon: Users, label: "Partnerji", value: partnersCount ?? 0 },
-    {
-      icon: Percent,
-      label: "Neizplačane provizije",
-      value: `${pendingTotal.toFixed(2)} €`,
-    },
-  ];
-
-  const povzetek = ekipa?.povzetek ?? null;
-  const osnutkov = povzetek?.delavci.find((d) => d.kljuc === "odobritev")?.glavna.vrednost ?? 0;
-  const zanimanje = povzetek?.delavci.find((d) => d.kljuc === "prodaja")?.glavna.vrednost ?? 0;
-  const naloge = [
-    {
-      ikona: UserCheck,
-      stevilo: osnutkov ?? 0,
-      besedilo: "mailov čaka nate",
-      href: "/admin/maili",
-      gumb: "Maili",
-    },
-    {
-      ikona: PhoneCall,
-      stevilo: danes?.klicev ?? 0,
-      besedilo: zanimanje ? `klicev za danes (${zanimanje} z zanimanjem)` : "klicev za danes",
-      href: "/admin/promocije",
-      gumb: "Pokliči",
-    },
-    {
-      ikona: Inbox,
-      stevilo: danes?.leadovIzKlepeta ?? 0,
-      besedilo: "novih leadov iz klepeta (7 dni)",
-      href: "/admin/leads",
-      gumb: "Poglej",
-    },
-  ];
-
+function Kratka({ v, oznaciPosel }: { v: VrsticaDanes; oznaciPosel: boolean }) {
+  const obseg = v.obseg ? opisObsega(v.obseg) : "";
+  const telefon = v.telefon.split(",")[0]?.trim();
   return (
-    <div>
-      {jeAdmin ? <Osvezevanje vsakoS={30} /> : null}
-      <h1 className="text-3xl font-semibold text-zinc-900">Danes</h1>
-      <p className="mt-2 text-base text-zinc-500">Kaj danes čaka nate. Klikni kartico in si tam.</p>
-
-      <ResumeCard />
-
-      {jeAdmin ? (
-        <>
-          <h2 className="mt-8 text-sm font-semibold text-zinc-900">Danes zate</h2>
-          <div className="mt-2 grid gap-3 sm:grid-cols-3">
-            {naloge.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                  <n.ikona className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-2xl font-semibold text-zinc-900">{n.stevilo}</span>
-                  <span className="block text-sm text-zinc-500">{n.besedilo}</span>
-                </span>
-                <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">
-                  {n.gumb} →
-                </span>
-              </Link>
-            ))}
-          </div>
-
-          {mape.length > 0 ? (
-            <>
-              <h2 className="mt-8 text-sm font-semibold text-zinc-900">Mape z maili</h2>
-              <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                {mape.map((m) => {
-                  const caka = m.osnutki?.length ?? 0;
-                  return (
-                    <Link
-                      key={m.kljuc}
-                      href={`/admin/maili#mapa-${m.kljuc}`}
-                      className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
-                    >
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
-                        <Folder className="h-5 w-5" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base font-semibold text-zinc-900">{m.ime}</span>
-                        <span className="block text-sm text-zinc-500">
-                          {caka} za poslat · {m.poslano} poslanih · {m.odgovoril} odpisalo
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">Odpri →</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </>
-          ) : null}
-          {ekipa?.napaka ? (
-            <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200">
-              {ekipa.napaka}
-            </p>
-          ) : null}
-        </>
+    <li className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-zinc-900">
+          {v.podjetje}
+          {oznaciPosel ? <span className="ml-2 text-xs font-medium text-zinc-500">{POSEL[v.posel]}</span> : null}
+        </p>
+        <p className="text-sm text-zinc-500">
+          {[v.razlog, v.vrsta === "dogovorjen" && v.kdaj ? datum(v.kdaj) : "", obseg].filter(Boolean).join(" · ")}
+        </p>
+        {v.odlomek ? <p className="mt-0.5 line-clamp-2 text-sm italic text-zinc-700">»{v.odlomek}«</p> : null}
+      </div>
+      {telefon ? (
+        <a
+          href={`tel:${telefon.replace(/[^\d+]/g, "")}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
+        >
+          <Phone className="h-4 w-4" aria-hidden />
+          {telefon}
+        </a>
       ) : (
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          {[
-            { href: "/admin/prodajna-ekipa/kompletko", naslov: "Panik gumb", opis: "Podjetja, klici in vpis klica" },
-            { href: "/admin/maili", naslov: "Maili", opis: "Kompletko maili in odgovori" },
-          ].map((k) => (
+        <span className="shrink-0 text-sm text-zinc-400">telefon: ni podatka</span>
+      )}
+    </li>
+  );
+}
+
+function Skupina({
+  st,
+  naslov,
+  vrstice,
+  prikazi,
+  oznaciPosel,
+  prazno,
+}: {
+  st: number;
+  naslov: string;
+  vrstice: VrsticaDanes[];
+  prikazi?: number;
+  oznaciPosel: boolean;
+  prazno: string;
+}) {
+  const vidne = prikazi ? vrstice.slice(0, prikazi) : vrstice;
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold text-zinc-900">
+          {st}. {naslov} <span className="font-normal text-zinc-500">({vrstice.length})</span>
+        </h2>
+        {vrstice.length ? (
+          <Link href="/admin/danes/klici" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+            {prikazi && vrstice.length > prikazi ? `Vseh ${vrstice.length} v Klici →` : "Pokliči →"}
+          </Link>
+        ) : null}
+      </div>
+      {vidne.length ? (
+        <ul className="mt-1 divide-y divide-zinc-100">
+          {vidne.map((v) => (
+            <Kratka key={v.kljuc} v={v} oznaciPosel={oznaciPosel} />
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-sm text-zinc-500">{prazno}</p>
+      )}
+    </section>
+  );
+}
+
+/** KodaTim maili za pregled (Harvey KodaTim, do 15 s): izriše se posebej, da Kompletko del ne čaka nanj. */
+async function CakaKodaTim({ zMapami }: { zMapami: boolean }) {
+  const caka = await preberiCakaKodaTim().catch(() => null);
+  return (
+    <>
+      <span className="block text-sm text-zinc-700">
+        KodaTim: <NiPodatka vrednost={caka?.caka} />
+      </span>
+      {zMapami && caka?.mape.length ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {caka.mape.map((m) => (
             <Link
-              key={k.href}
-              href={k.href}
-              className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
+              key={m.kljuc}
+              href={`/admin/maili#mapa-${m.kljuc}`}
+              className="group flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition hover:border-zinc-400"
             >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                <PhoneCall className="h-5 w-5" />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-500">
+                <Folder className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-base font-semibold text-zinc-900">{k.naslov}</span>
-                <span className="block text-sm text-zinc-500">{k.opis}</span>
+                <span className="block truncate text-sm font-semibold text-zinc-900">{m.ime}</span>
+                <span className="block text-xs text-zinc-500">
+                  {m.zaPoslat} za poslat · {m.poslano} poslanih · {m.odgovoril} odpisalo
+                </span>
               </span>
-              <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">Odpri →</span>
             </Link>
           ))}
         </div>
-      )}
+      ) : null}
+    </>
+  );
+}
 
-      {jeAdmin ? (
-        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                <stat.icon className="h-6 w-6" />
-              </div>
-              <p className="mt-5 text-3xl font-semibold text-zinc-900">
-                {stat.value}
-              </p>
-              <p className="mt-1 text-sm text-zinc-500">{stat.label}</p>
-            </div>
-          ))}
+export default async function AdminOverviewPage() {
+  const k = await kontekstDanes();
+  if (!k.kompletko && !k.kodatim) {
+    return (
+      <div>
+        <h1 className="text-3xl font-semibold text-zinc-900">Danes</h1>
+        <p className="mt-4 rounded-xl bg-white px-4 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200">
+          Za ta seznam nimate dodeljenega posla. Če ga potrebujete, pišite administratorju.
+        </p>
+      </div>
+    );
+  }
+  const [kompletko, kodatim, stKompletko, stKodaTim] = await Promise.all([
+    k.kompletko ? preberiDanesKompletko() : Promise.resolve(null),
+    k.kodatim ? preberiDanesKodaTim().catch(() => null) : Promise.resolve(null),
+    k.kompletko ? preberiStevilkeKompletko(k.email) : Promise.resolve(null),
+    k.kodatim ? preberiStevilkeKodaTim().catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const vse = zdruziVrstice(kompletko?.seznam.danes, kodatim?.seznam.danes);
+  const odgovori = vse.filter((v) => v.vrsta === "odgovor");
+  const dogovorjeni = vse.filter((v) => v.vrsta === "dogovorjen");
+  const klici = vse.filter((v) => v.vrsta === "klic");
+  const oba = k.kompletko && k.kodatim;
+
+  return (
+    <div>
+      <Osvezevanje vsakoS={90} />
+      <h1 className="text-3xl font-semibold text-zinc-900">Danes</h1>
+      <p className="mt-2 text-base text-zinc-500">
+        {oba ? "KodaTim in Kompletko" : k.kodatim ? "KodaTim" : "Kompletko"}: najprej odgovori, potem dogovorjeni klici,
+        klici in maili za pregled.
+      </p>
+
+      <StevilkeDneva kompletko={k.kompletko && stKompletko} kodatim={k.kodatim && stKodaTim} />
+
+      {(k.kompletko && !kompletko) || (k.kodatim && !kodatim) ? (
+        <div className="mt-4 space-y-2">
+          {k.kompletko && !kompletko ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+              Kompletko: ni podatka. Harvey Kompletko (5556) ne odgovarja ali še ne pozna seznama Danes.
+            </p>
+          ) : null}
+          {k.kodatim && !kodatim ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+              KodaTim: ni podatka. Promocij ni bilo mogoče prebrati.
+            </p>
+          ) : null}
         </div>
       ) : null}
+
+      <div className="mt-6 space-y-4">
+        <Skupina
+          st={1}
+          naslov="Odgovori"
+          vrstice={odgovori}
+          oznaciPosel={oba}
+          prazno="Danes ni novih odgovorov."
+        />
+        <Skupina
+          st={2}
+          naslov="Dogovorjeni klici za danes"
+          vrstice={dogovorjeni}
+          oznaciPosel={oba}
+          prazno="Za danes ni dogovorjenih klicev."
+        />
+        <Skupina
+          st={3}
+          naslov="Klici, najprej večji"
+          vrstice={klici}
+          prikazi={NA_DANES}
+          oznaciPosel={oba}
+          prazno={kompletko || !k.kompletko ? "Danes ni več klicev na vrsti." : "ni podatka"}
+        />
+
+        <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+              <Mail className="h-4 w-4 text-zinc-400" aria-hidden />
+              4. Maili za pregled
+            </h2>
+            <Link href="/admin/maili" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+              Komunikacija › Pregled →
+            </Link>
+          </div>
+          <p className="mt-1 text-sm text-zinc-500">Vse, kar čaka, da ga človek pregleda in pošlje.</p>
+          <div className="mt-2 space-y-1">
+            {k.kompletko ? (
+              <span className="block text-sm text-zinc-700">
+                Kompletko: <NiPodatka vrednost={kompletko?.podatki.osnutki?.caka} />
+                {kompletko?.podatki.osnutki ? (
+                  <span className="text-zinc-500">
+                    {" "}
+                    (za poslat {kompletko.podatki.osnutki.zaPoslat}, ostali čakajo na klic ali dogovorjeni dan)
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            {k.kodatim ? (
+              <Suspense fallback={<span className="block text-sm text-zinc-400">KodaTim: berem …</span>}>
+                <CakaKodaTim zMapami={k.posel === "kodatim"} />
+              </Suspense>
+            ) : null}
+          </div>
+        </section>
+
+        {k.kodatim && kodatim ? (
+          <Link
+            href="/admin/leads"
+            className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+              <Inbox className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-zinc-900">
+                {kodatim.leadovIzKlepeta} novih leadov iz klepeta (7 dni)
+              </span>
+              <span className="block text-sm text-zinc-500">KodaTim spletna stran</span>
+            </span>
+            <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">Poglej →</span>
+          </Link>
+        ) : null}
+      </div>
+
+      {k.posel === "kodatim" ? <ResumeCard /> : null}
     </div>
   );
 }

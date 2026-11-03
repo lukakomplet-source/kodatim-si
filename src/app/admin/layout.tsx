@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { BarChart3, Building2, History, LayoutDashboard, MessagesSquare, Search, Settings } from "lucide-react";
+import { AppWindow, BarChart3, Building2, History, LayoutDashboard, MessagesSquare, Search, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import LastPathTracker from "@/components/dashboard/LastPathTracker";
@@ -26,6 +26,7 @@ const IKONE: Record<string, ReactNode> = {
   komunikacija: <MessagesSquare className={ICON_CLASS} />,
   iskanje: <Search className={ICON_CLASS} />,
   stevilke: <BarChart3 className={ICON_CLASS} />,
+  aplikacije: <AppWindow className={ICON_CLASS} />,
   nastavitve: <Settings className={ICON_CLASS} />,
 };
 

@@ -1,8 +1,9 @@
-import { Building2 } from "lucide-react";
-import type { HladniKlici, MapaOdobritve as Mapa, Podrobnosti, Posiljanje, Skrb } from "@/lib/prodajna-ekipa";
+import Link from "next/link";
+import { Building2, PhoneCall } from "lucide-react";
+import type { MapaOdobritve as Mapa, Podrobnosti, Skrb } from "@/lib/prodajna-ekipa";
 import { MapaOdobritve } from "./MapaOdobritve";
 import { OdobritevSeznam } from "./OdobritevSeznam";
-import { PanikKoraki } from "./PanikKoraki";
+import { SkrbiSeznam } from "../danes/KontaktOrodja";
 
 /**
  * Mape z maili (Hoteli, Panik gumb …) in pod njimi osnutki zunaj map. Isto na strani Maili (/admin/maili)
@@ -17,17 +18,31 @@ const FIRME: { kljuc: NonNullable<Mapa["lastnik"]>; ime: string }[] = [
   { kljuc: "kompletko", ime: "Kompletko varovanje d.o.o." },
 ];
 
-/** `posiljanja`: Kompletkov sledilnik (5556); z njim mapa panik gumba pokaže, kdo je danes na vrsti. */
+/**
+ * Faza 4 (3. 11. 2026): klici panik gumba so na Danes › Klici in ne odvisni več od Harveyja KodaTim. Tu ostane
+ * kratka povezava in seznam »Kaj jih skrbi« (iz Kompletkovega sledilnika, 5556).
+ */
+export function PovezavaNaKlice({ skrbi }: { skrbi?: Skrb[] | null }) {
+  return (
+    <div className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
+      <Link
+        href="/admin/danes/klici"
+        className="inline-flex items-center gap-2 text-sm font-medium text-zinc-900 underline underline-offset-2"
+      >
+        <PhoneCall className="h-4 w-4 text-zinc-400" aria-hidden />
+        Klici so zdaj na Danes › Klici
+      </Link>
+      <SkrbiSeznam skrbi={skrbi ?? []} />
+    </div>
+  );
+}
+
+/** `skrbi`: iz Kompletkovega sledilnika (5556), pod mapo panik gumba. */
 export function OdobritevMape({
   podrobnosti,
-  posiljanja,
-  hladniKlici,
   skrbi,
 }: {
   podrobnosti: Podrobnosti | null;
-  posiljanja?: Posiljanje[] | null;
-  /** 29. 10. 2026: najprej klic, mail po klicu. */
-  hladniKlici?: HladniKlici | null;
   skrbi?: Skrb[] | null;
 }) {
   const mape = podrobnosti?.mape ?? [];
@@ -51,9 +66,7 @@ export function OdobritevMape({
                   <MapaOdobritve mapa={m} postavke={seznam.filter((p) => p.mapa === m.ime)} />
                 </div>
               ))}
-              {f.kljuc === "kompletko" && (posiljanja?.length || hladniKlici?.klici.length) ? (
-                <PanikKoraki podjetja={posiljanja ?? []} hladniKlici={hladniKlici ?? null} skrbi={skrbi ?? []} />
-              ) : null}
+              {f.kljuc === "kompletko" ? <PovezavaNaKlice skrbi={skrbi} /> : null}
             </div>
           </section>
         );

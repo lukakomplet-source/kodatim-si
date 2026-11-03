@@ -11,7 +11,6 @@ import {
   poisciKontakt,
   zabeleziRocniKlic,
   type ZadetekKontakta,
-  type IzidKlica,
   type PregledKlica,
   odlociProblem,
   oznaciVMapi,
@@ -20,6 +19,7 @@ import {
   type StanjePanoge,
 } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
+import { jeIzid, preveriDogovorInSestanek, type IzidKlica, type SestanekKlica } from "@/lib/klicPanik";
 
 /**
  * Odobritev ali zavrnitev Harveyjevega osnutka — tudi s telefona. Odobreno
@@ -158,9 +158,17 @@ export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): P
   return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
 }
 
+function revalidirajKlice() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/danes/klici");
+  revalidatePath("/admin/danes/naslednji");
+  revalidatePath("/admin/maili");
+  revalidatePath("/admin/prodajna-ekipa/kompletko");
+}
+
 /**
- * Kompletko, panik gumb: izid klica (sestanek, pošljite mail, ni dvignil, ne zanima), kdo odloča in kaj jih skrbi.
- * `hladni`: klic prevozniku, ki mu še nismo pisali (seznam »Klici danes«).
+ * Kompletko, panik gumb: izid klica (sestanek, pošljite mail, ni dvignil, ne zanima, pokliči kasneje), kdo odloča
+ * in kaj jih skrbi. `hladni`: klic prevozniku, ki mu še nismo pisali. `dogovor` velja tudi za hladne klice (faza 4).
  */
 export async function zabeleziKlicAkcija(
   domena: string,
@@ -172,6 +180,7 @@ export async function zabeleziKlicAkcija(
   hladni = false,
   pregled: PregledKlica = {},
   dogovor = "",
+  sestanek: SestanekKlica = {},
 ): Promise<{ ok: boolean; napaka?: string }> {
   let kdo = "";
   try {
@@ -180,11 +189,12 @@ export async function zabeleziKlicAkcija(
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
   if (!/^[a-z0-9.-]{3,100}$/.test(domena)) return { ok: false, napaka: "Neznano podjetje." };
-  if (dogovor && !/^\d{4}-\d{2}-\d{2}$/.test(dogovor)) return { ok: false, napaka: "Datum ni pravilen." };
-  if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(izid)) return { ok: false, napaka: "Neznan izid." };
+  if (!jeIzid(izid)) return { ok: false, napaka: "Neznan izid." };
+  const preverjeno = preveriDogovorInSestanek(izid, dogovor, sestanek);
+  if ("napaka" in preverjeno) return { ok: false, napaka: preverjeno.napaka };
   const komu = email.trim().toLowerCase();
   if (komu && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(komu)) return { ok: false, napaka: "Mail ni pravilen." };
-  const ok = await zabeleziKlic(
+  const r = await zabeleziKlic(
     domena,
     izid,
     oseba.slice(0, 120),
@@ -198,11 +208,11 @@ export async function zabeleziKlicAkcija(
       cena: (pregled.cena ?? "").slice(0, 300),
       ugovor: (pregled.ugovor ?? "").slice(0, 120),
     },
-    hladni ? "" : dogovor,
+    preverjeno.dogovor,
+    preverjeno.sestanek,
   );
-  revalidatePath("/admin/maili");
-  revalidatePath("/admin/prodajna-ekipa/kompletko");
-  return ok ? { ok } : { ok, napaka: "Harvey Kompletko ne odgovarja (5556)." };
+  revalidirajKlice();
+  return r;
 }
 
 /** Preveri pred klicem ali mailom: ali smo jih že klicali ali jim pisali (ime, številka ali domena). */
@@ -228,7 +238,8 @@ export async function rocniKlicAkcija(podatki: {
   oseba: string;
   opomba: string;
   izid: IzidKlica;
-}): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
+  dogovor?: string;
+} & SestanekKlica): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
   let kdo = "";
   try {
     kdo = (await requireAdminAli("kompletko.calls")).email ?? "";
@@ -236,8 +247,12 @@ export async function rocniKlicAkcija(podatki: {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
   if (podatki.naziv.trim().length < 3) return { ok: false, napaka: "Vpiši ime podjetja." };
-  if (!["sestanek", "poslji_mail", "ni_dvignil", "ne_zanima"].includes(podatki.izid))
-    return { ok: false, napaka: "Neznan izid." };
+  if (!jeIzid(podatki.izid)) return { ok: false, napaka: "Neznan izid." };
+  const preverjeno = preveriDogovorInSestanek(podatki.izid, podatki.dogovor ?? "", {
+    sestanek_kdaj: podatki.sestanek_kdaj,
+    sestanek_kraj: podatki.sestanek_kraj,
+  });
+  if ("napaka" in preverjeno) return { ok: false, napaka: preverjeno.napaka };
   const r = await zabeleziRocniKlic({
     naziv: podatki.naziv.trim().slice(0, 200),
     telefon: podatki.telefon.trim().slice(0, 40),
@@ -246,8 +261,10 @@ export async function rocniKlicAkcija(podatki: {
     opomba: podatki.opomba.trim().slice(0, 500),
     izid: podatki.izid,
     kdo,
+    dogovor: preverjeno.dogovor,
+    ...preverjeno.sestanek,
   });
-  if (r.ok) revalidatePath("/admin/prodajna-ekipa/kompletko");
+  if (r.ok) revalidirajKlice();
   return r;
 }
 

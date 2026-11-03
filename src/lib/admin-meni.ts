@@ -60,7 +60,19 @@ export type ZavihekZaUporabnika = Zavihek & { vhod: string };
 export type RazdelekZaUporabnika = Omit<Razdelek, "zavihki"> & { zavihki?: ZavihekZaUporabnika[] };
 
 export const RAZDELKI: Razdelek[] = [
-  { kljuc: "danes", label: "Danes", href: "/admin", permission: "dashboard.view" },
+  {
+    // Faza 4: vse tri strani so zaprte z zahtevajStran("dashboard.view") (src/app/admin/danes/kontekst.ts).
+    kljuc: "danes",
+    label: "Danes",
+    href: "/admin",
+    poti: ["/admin/danes"],
+    permission: "dashboard.view",
+    zavihki: [
+      { label: "Za danes", href: "/admin", permission: "dashboard.view" },
+      { label: "Klici", href: "/admin/danes/klici", permission: "dashboard.view" },
+      { label: "Naslednji dnevi", href: "/admin/danes/naslednji", permission: "dashboard.view" },
+    ],
+  },
   {
     kljuc: "podjetja",
     label: "Podjetja",
@@ -96,9 +108,9 @@ export const RAZDELKI: Razdelek[] = [
       {
         label: "Odgovori",
         href: "/admin/prodajna-ekipa/bralec_odgovorov",
-        poti: ["/admin/leads"],
         permission: "admin",
       },
+      { label: "Iz klepeta", href: "/admin/leads", permission: "lead.view" },
     ],
   },
   {
@@ -109,9 +121,13 @@ export const RAZDELKI: Razdelek[] = [
     // Vse tri strani so samo za administratorje (zahtevajStran() brez ključev).
     permission: "admin",
     zavihki: [
-      { label: "Register", href: "/admin/register-podjetij", poti: ["/admin/lead-skrejp", "/admin/promocije/tematska"] },
+      { label: "Register", href: "/admin/register-podjetij", poti: ["/admin/promocije/tematska"] },
       { label: "Kandidati", href: "/admin/prodajna-ekipa/problemi" },
       { label: "Raziskave", href: "/admin/priloznosti" },
+      // Luka 3. 11.: strani, ki so bile samo »poti«, ni našel — vsaka ima zdaj svoj zavihek.
+      { label: "Lead skrejp", href: "/admin/lead-skrejp" },
+      { label: "Panoge", href: "/admin/prodajna-ekipa/panoge" },
+      { label: "Drevo panog", href: "/admin/prodajna-ekipa/drevo" },
     ],
   },
   {
@@ -127,35 +143,36 @@ export const RAZDELKI: Razdelek[] = [
     ],
   },
   {
+    // Luka 3. 11. 2026: »ne najdem niti več tistih aplikacij« — skrite pod Nastavitve › Sistem jih ni videl.
+    kljuc: "aplikacije",
+    label: "Aplikacije",
+    href: "/admin/demo-strani",
+    // Obe strani sta samo za administratorje (zahtevajStran() brez ključev).
+    permission: "admin",
+    zavihki: [
+      { label: "Spletne strani in aplikacije", href: "/admin/demo-strani" },
+      { label: "Render", href: "/admin/render" },
+    ],
+  },
+  {
     kljuc: "nastavitve",
     label: "Nastavitve",
     href: "/admin/prodajna-ekipa",
     poti: ["/admin/nastavitve"],
-    permission: ["users.manage", "roles.manage", "partner.view"],
+    permission: ["users.manage", "roles.manage", "partner.view", "commission.view"],
     zavihki: [
       // Tudi dinamične /admin/prodajna-ekipa/[vloga], razen tistih, ki so naštete drugje (odobritev, posiljatelj …).
-      {
-        label: "Harvey",
-        href: "/admin/prodajna-ekipa",
-        poti: ["/admin/prodajna-ekipa/panoge", "/admin/prodajna-ekipa/drevo"],
-        permission: "admin",
-      },
+      { label: "Harvey", href: "/admin/prodajna-ekipa", permission: "admin" },
       {
         label: "Sistem",
         href: "/admin/nadzor",
-        poti: ["/admin/lead-intelligence/discovery", "/admin/demo-strani", "/admin/render"],
+        poti: ["/admin/lead-intelligence/discovery"],
         permission: "admin",
       },
-      {
-        label: "Ljudje",
-        href: "/admin/uporabniki",
-        poti: ["/admin/vloge", "/admin/partnerji", "/admin/provizije"],
-        vhodi: [
-          { href: "/admin/uporabniki", permission: "users.manage" },
-          { href: "/admin/vloge", permission: "roles.manage" },
-          { href: "/admin/partnerji", permission: "partner.view" },
-        ],
-      },
+      { label: "Uporabniki", href: "/admin/uporabniki", permission: "users.manage" },
+      { label: "Vloge", href: "/admin/vloge", permission: "roles.manage" },
+      { label: "Partnerji", href: "/admin/partnerji", permission: "partner.view" },
+      { label: "Provizije", href: "/admin/provizije", permission: "commission.view" },
     ],
   },
 ];

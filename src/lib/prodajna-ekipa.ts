@@ -3,6 +3,7 @@ import type { ObsegPrevoznika } from "./obsegPrevoznika";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PIPELINE_STAGE_LABELS, type PipelineStage } from "@/lib/promocije/types";
 import type { Zavrnitev } from "@/lib/razlogiZavrnitve";
+import type { IzidKlica, SestanekKlica } from "./klicPanik";
 
 /**
  * Prodajna ekipa KodaTim: Harveyjev cevovod, prikazan kot ekipa delavcev.
@@ -1292,7 +1293,7 @@ export type Posiljanje = {
 } & ObsegPrevoznika;
 
 export type { ObsegPrevoznika } from "./obsegPrevoznika";
-export type IzidKlica = "sestanek" | "poslji_mail" | "ni_dvignil" | "ne_zanima";
+export type { IzidKlica } from "./klicPanik";
 
 /** Hladni klic (29. 10. 2026, »cold call mi deluje«): prevoznik, ki mu še nismo pisali, s številko z njegove strani. */
 export type HladniKlic = {
@@ -1334,6 +1335,8 @@ export async function preberiPosiljanja(): Promise<PosiljanjaPodatki | null> {
 /** Pregled po klicu v 30 sekundah (1. 11. 2026, Closer + Hormozi): njihova ocena 1–5, cena dogodka, glavni ugovor. */
 export type PregledKlica = { ocena?: string; cena?: string; ugovor?: string };
 
+export type { SestanekKlica } from "./klicPanik";
+
 export async function zabeleziKlic(
   domena: string,
   izid: IzidKlica,
@@ -1345,7 +1348,8 @@ export async function zabeleziKlic(
   kdo = "",
   pregled: PregledKlica = {},
   dogovor = "",
-): Promise<boolean> {
+  sestanek: SestanekKlica = {},
+): Promise<{ ok: boolean; napaka?: string }> {
   const pot = hladni ? "hladni-klici" : "posiljanja";
   try {
     const r = await fetch(`${HARVEY_KOMPLETKO}/api/${pot}/${encodeURIComponent(domena)}${hladni ? "" : "/klic"}`, {
@@ -1353,11 +1357,17 @@ export async function zabeleziKlic(
       cache: "no-store",
       signal: AbortSignal.timeout(6_000),
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo, dogovor, ...pregled }),
+      body: JSON.stringify({ izid, oseba, opomba, email, skrb, kdo, dogovor, ...pregled, ...sestanek }),
     });
-    return r.ok;
+    if (r.ok) return { ok: true };
+    // 400 with a reason (e.g. an older Harvey that does not know »poklici_kasneje« yet, or a date it refuses).
+    const j = (await r.json().catch(() => ({}))) as { message?: unknown };
+    return {
+      ok: false,
+      napaka: typeof j.message === "string" && j.message ? j.message : `Harvey Kompletko je vrnil ${r.status}.`,
+    };
   } catch {
-    return false;
+    return { ok: false, napaka: "Harvey Kompletko ne odgovarja (5556)." };
   }
 }
 
@@ -1385,7 +1395,8 @@ export async function zabeleziRocniKlic(podatki: {
   opomba: string;
   izid: IzidKlica;
   kdo: string;
-}): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
+  dogovor?: string;
+} & SestanekKlica): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
   try {
     const r = await fetch(`${HARVEY_KOMPLETKO}/api/hladni-klici-rocno`, {
       method: "POST",

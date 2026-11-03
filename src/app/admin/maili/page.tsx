@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import { requireAdmin, zahtevajStran } from "@/lib/require-admin";
 import { preberiDelavca, preberiPosiljanja } from "@/lib/prodajna-ekipa";
-import { OdobritevMape } from "../prodajna-ekipa/OdobritevMape";
+import { OdobritevMape, PovezavaNaKlice } from "../prodajna-ekipa/OdobritevMape";
 
 /**
  * Maili: vse, kar Luka pošlje ali odobri, na enem mestu (Luka, 28. 10. 2026: »sploh nevem kak naj pridem nazaj
@@ -42,16 +42,15 @@ export default async function MailiPage() {
 
       <div className="mt-6">
         {podrobnosti ? (
-          <OdobritevMape
-            podrobnosti={podrobnosti}
-            posiljanja={posiljanja?.podjetja}
-            hladniKlici={posiljanja?.hladniKlici}
-            skrbi={posiljanja?.skrbi}
-          />
+          <OdobritevMape podrobnosti={podrobnosti} skrbi={posiljanja?.skrbi} />
         ) : (
-          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
-            Harvey trenutno ne odgovarja, zato map ni mogoče prebrati. Poskusi čez minuto.
-          </p>
+          // Faza 4: klici Kompletko ne visijo več na Harveyju KodaTim, zato povezava ostane tudi, ko ta ne teče.
+          <div className="space-y-4">
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+              Harvey KodaTim ne odgovarja, zato map z maili ni mogoče prebrati. Poskusi čez minuto.
+            </p>
+            <PovezavaNaKlice skrbi={posiljanja?.skrbi} />
+          </div>
         )}
       </div>
 
