@@ -6,7 +6,7 @@ import { OdobritevSeznam } from "./OdobritevSeznam";
 import { SkrbiSeznam } from "../danes/KontaktOrodja";
 
 /**
- * Mape z maili (Hoteli, Panik gumb …) in pod njimi osnutki zunaj map. Isto na strani Maili (/admin/maili)
+ * Mape z maili (Hoteli, Panik gumb …) in pod njimi osnutki zunaj map. Isto v Komunikacija › Pregled (/admin/komunikacija)
  * in pri delavcu »Ti — odobritev«, zato je tu enkrat.
  *
  * Mape so razvrščene pod podjetje, ki promocijo vodi (Luka, 28. 10. 2026: »za booking … mapa, firma KodaTim d.o.o.,
@@ -41,9 +41,12 @@ export function PovezavaNaKlice({ skrbi }: { skrbi?: Skrb[] | null }) {
 export function OdobritevMape({
   podrobnosti,
   skrbi,
+  samoLijak = false,
 }: {
   podrobnosti: Podrobnosti | null;
   skrbi?: Skrb[] | null;
+  /** Komunikacija › Pregled: mape brez mailov, ki čakajo (ti so v enotni vrsti). */
+  samoLijak?: boolean;
 }) {
   const mape = podrobnosti?.mape ?? [];
   const seznam = podrobnosti?.seznam ?? [];
@@ -63,7 +66,7 @@ export function OdobritevMape({
             <div className="mt-3 space-y-4 border-l-2 border-zinc-200 pl-3 sm:pl-5">
               {njene.map((m) => (
                 <div key={m.kljuc} id={`mapa-${m.kljuc}`} className="scroll-mt-6">
-                  <MapaOdobritve mapa={m} postavke={seznam.filter((p) => p.mapa === m.ime)} />
+                  <MapaOdobritve mapa={m} postavke={seznam.filter((p) => p.mapa === m.ime)} samoLijak={samoLijak} />
                 </div>
               ))}
               {f.kljuc === "kompletko" ? <PovezavaNaKlice skrbi={skrbi} /> : null}
@@ -71,7 +74,7 @@ export function OdobritevMape({
           </section>
         );
       })}
-      {ostali.length > 0 || !mape.length ? <OdobritevSeznam postavke={ostali} /> : null}
+      {!samoLijak && (ostali.length > 0 || !mape.length) ? <OdobritevSeznam postavke={ostali} /> : null}
     </div>
   );
 }

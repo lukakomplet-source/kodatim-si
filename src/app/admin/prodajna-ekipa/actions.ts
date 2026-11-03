@@ -20,6 +20,14 @@ import {
 } from "@/lib/prodajna-ekipa";
 import { RAZLOGI_ZAVRNITVE, type Zavrnitev } from "@/lib/razlogiZavrnitve";
 import { jeIzid, preveriDogovorInSestanek, type IzidKlica, type SestanekKlica } from "@/lib/klicPanik";
+import { pozabiCaka } from "@/lib/komunikacija";
+
+/** Faza 5: odločitev o mailu spremeni »čaka« na Danes, v Komunikaciji in v meniju. */
+function revalidirajKomunikacijo() {
+  pozabiCaka();
+  revalidatePath("/admin");
+  revalidatePath("/admin/komunikacija");
+}
 
 /**
  * Odobritev ali zavrnitev Harveyjevega osnutka — tudi s telefona. Odobreno
@@ -54,6 +62,7 @@ export async function odlociOsnutekAkcija(
   const ok = await odlociOsnutek(id, odobri, besedilo, odobri ? undefined : zavrnitev);
   revalidatePath("/admin/prodajna-ekipa");
   revalidatePath("/admin/prodajna-ekipa/odobritev");
+  revalidirajKomunikacijo();
   return ok ? { ok } : { ok, napaka: "Harvey odločitve ni sprejel — ali teče?" };
 }
 
@@ -72,6 +81,7 @@ export async function popraviOsnutekAkcija(id: string, opomba: string): Promise<
   if (o.length < 3 || o.length > 1200) return { ok: false, napaka: "Napiši, kaj naj popravi (do 1200 znakov)." };
   const r = await popraviOsnutek(id, o);
   revalidatePath("/admin/prodajna-ekipa/odobritev");
+  revalidirajKomunikacijo();
   return r;
 }
 
@@ -162,8 +172,8 @@ function revalidirajKlice() {
   revalidatePath("/admin");
   revalidatePath("/admin/danes/klici");
   revalidatePath("/admin/danes/naslednji");
-  revalidatePath("/admin/maili");
   revalidatePath("/admin/prodajna-ekipa/kompletko");
+  revalidirajKomunikacijo();
 }
 
 /**
@@ -283,5 +293,6 @@ export async function oznaciVMapiAkcija(
   if (kaj !== "klic" && kaj !== "posel") return { ok: false, napaka: "Neznana oznaka." };
   const ok = await oznaciVMapi(prospect, kaj, da);
   revalidatePath("/admin/prodajna-ekipa/odobritev");
+  revalidatePath("/admin/komunikacija");
   return ok ? { ok } : { ok, napaka: "Harvey oznake ni shranil — ali teče?" };
 }

@@ -40,8 +40,8 @@ export default async function PoslanMailPage({ params }: { params: Promise<{ dom
 
   return (
     <div className="max-w-4xl">
-      <Link href="/admin/prodajna-ekipa/odobritev" className="text-sm text-zinc-500 hover:text-zinc-900">
-        ← Odobritev
+      <Link href="/admin/komunikacija/poslano" className="text-sm text-zinc-500 hover:text-zinc-900">
+        ← Poslano
       </Link>
       {mail ? (
         <>

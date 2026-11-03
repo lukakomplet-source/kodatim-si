@@ -12,6 +12,7 @@ import {
   type VrsticaDanes,
 } from "@/lib/danes";
 import { datum } from "@/lib/klicPanik";
+import { preberiCaka, type CakaPosel } from "@/lib/komunikacija";
 import { opisObsega } from "@/lib/obsegPrevoznika";
 import { Osvezevanje } from "./nadzor/Osvezevanje";
 import { kontekstDanes } from "./danes/kontekst";
@@ -100,20 +101,39 @@ function Skupina({
   );
 }
 
-/** KodaTim maili za pregled (Harvey KodaTim, do 15 s): izriše se posebej, da Kompletko del ne čaka nanj. */
+/**
+ * Maili za pregled (faza 5): ENA številka »čaka« iz lib/komunikacija.ts, ista kot v Komunikaciji in v meniju.
+ * Kompletko: za poslat (najprej klic in dogovorjeni dan sta zraven); KodaTim: Odobritev + Hoteli v Outlooku.
+ */
+function VrsticaCaka({ ime, c, zraven }: { ime: string; c: CakaPosel | null; zraven: string }) {
+  return (
+    <span className="block text-sm text-zinc-700">
+      {ime}: <NiPodatka vrednost={c?.caka} />
+      {c?.caka != null && c.zraven ? (
+        <span className="text-zinc-500">
+          {" "}
+          (+ {c.zraven} {zraven})
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** KodaTim (Harvey KodaTim, lahko traja): izriše se posebej, da Kompletko del ne čaka nanj. Mape so samo povezave. */
 async function CakaKodaTim({ zMapami }: { zMapami: boolean }) {
-  const caka = await preberiCakaKodaTim().catch(() => null);
+  const [{ kodatim: c }, caka] = await Promise.all([
+    preberiCaka({ kodatim: true, kompletko: false }),
+    zMapami ? preberiCakaKodaTim().catch(() => null) : Promise.resolve(null),
+  ]);
   return (
     <>
-      <span className="block text-sm text-zinc-700">
-        KodaTim: <NiPodatka vrednost={caka?.caka} />
-      </span>
+      <VrsticaCaka ime="KodaTim" c={c} zraven="follow-upov čaka na prvi mail" />
       {zMapami && caka?.mape.length ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {caka.mape.map((m) => (
             <Link
               key={m.kljuc}
-              href={`/admin/maili#mapa-${m.kljuc}`}
+              href={`/admin/komunikacija?mapa=${encodeURIComponent(m.kljuc)}#mapa-${m.kljuc}`}
               className="group flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition hover:border-zinc-400"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-500">
@@ -145,11 +165,12 @@ export default async function AdminOverviewPage() {
       </div>
     );
   }
-  const [kompletko, kodatim, stKompletko, stKodaTim] = await Promise.all([
+  const [kompletko, kodatim, stKompletko, stKodaTim, { kompletko: cakaKompletko }] = await Promise.all([
     k.kompletko ? preberiDanesKompletko() : Promise.resolve(null),
     k.kodatim ? preberiDanesKodaTim().catch(() => null) : Promise.resolve(null),
     k.kompletko ? preberiStevilkeKompletko(k.email) : Promise.resolve(null),
     k.kodatim ? preberiStevilkeKodaTim().catch(() => null) : Promise.resolve(null),
+    preberiCaka({ kodatim: false, kompletko: k.kompletko }),
   ]);
 
   const vse = zdruziVrstice(kompletko?.seznam.danes, kodatim?.seznam.danes);
@@ -214,22 +235,14 @@ export default async function AdminOverviewPage() {
               <Mail className="h-4 w-4 text-zinc-400" aria-hidden />
               4. Maili za pregled
             </h2>
-            <Link href="/admin/maili" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+            <Link href="/admin/komunikacija" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
               Komunikacija › Pregled →
             </Link>
           </div>
           <p className="mt-1 text-sm text-zinc-500">Vse, kar čaka, da ga človek pregleda in pošlje.</p>
           <div className="mt-2 space-y-1">
             {k.kompletko ? (
-              <span className="block text-sm text-zinc-700">
-                Kompletko: <NiPodatka vrednost={kompletko?.podatki.osnutki?.caka} />
-                {kompletko?.podatki.osnutki ? (
-                  <span className="text-zinc-500">
-                    {" "}
-                    (za poslat {kompletko.podatki.osnutki.zaPoslat}, ostali čakajo na klic ali dogovorjeni dan)
-                  </span>
-                ) : null}
-              </span>
+              <VrsticaCaka ime="Kompletko za poslat" c={cakaKompletko} zraven="danes ne more (klic, dan, odgovor)" />
             ) : null}
             {k.kodatim ? (
               <Suspense fallback={<span className="block text-sm text-zinc-400">KodaTim: berem …</span>}>

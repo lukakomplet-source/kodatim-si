@@ -19,6 +19,8 @@ export type NavItem = {
   poti?: string[];
   /** `href` velja samo zase, ne kot predpona (admin: Danes = samo /admin). Brez tega kot prej. */
   natancno?: boolean;
+  /** Majhna številka desno od imena (npr. Komunikacija: koliko mailov čaka); prazno = brez. */
+  znacka?: ReactNode;
 };
 
 /** Seznam povezav z naslovi skupin — isti v stranskem in v mobilnem meniju. */
@@ -72,7 +74,8 @@ function NavSeznam({
               }`}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.znacka ?? null}
             </Link>
           </div>
         );

@@ -33,7 +33,19 @@ function odstotek(del: number, vse: number): string {
   return vse ? ` · ${Math.round((100 * del) / vse)} %` : "";
 }
 
-export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postavka[] }) {
+/**
+ * `samoLijak` (Komunikacija › Pregled, faza 5): samo lijak in podjetja. Maili, ki čakajo (osnutki, odobritve), so v
+ * enotni vrsti zgoraj, zato jih mapa ne kaže drugič (en mail na enem mestu, panik osnutki samo prek »Pošlji« s testom).
+ */
+export function MapaOdobritve({
+  mapa,
+  postavke,
+  samoLijak = false,
+}: {
+  mapa: Mapa;
+  postavke: Postavka[];
+  samoLijak?: boolean;
+}) {
   const [odprta, setOdprta] = useState(true);
   const [izbrana, setIzbrana] = useState<Stopnja | null>(null);
   const [napaka, setNapaka] = useState<string | null>(null);
@@ -93,7 +105,7 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
           <span className="truncate text-base font-semibold text-zinc-900">{mapa.ime}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2 text-sm text-zinc-500">
-          {(mapa.outlook ? 0 : postavke.length) + (mapa.osnutki?.length ?? 0)} čaka
+          {samoLijak ? "lijak" : `${(mapa.outlook ? 0 : postavke.length) + (mapa.osnutki?.length ?? 0)} čaka`}
           <ChevronDown className={`h-4 w-4 transition-transform ${odprta ? "rotate-180" : ""}`} aria-hidden />
         </span>
       </button>
@@ -220,7 +232,11 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
             </div>
           ) : null}
 
-          {sam ? (
+          {samoLijak ? (
+            <p className="mt-4 text-xs text-zinc-500">
+              Maili te mape, ki čakajo, so zgoraj v vrsti »čaka«.
+            </p>
+          ) : sam ? (
             <div className="mt-4">
               <h3 className="text-sm font-semibold text-zinc-900">Pripravljeni maili ({mapa.osnutki?.length ?? 0})</h3>
               <p className="mb-2 text-xs text-zinc-500">
@@ -266,6 +282,14 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                           <Mail className="h-4 w-4" aria-hidden />
                           {odpiram === o.id ? "Odpiram …" : "Odpri v Outlooku"}
                         </button>
+                      ) : kompletko ? (
+                        // Faza 5: panik osnutek gre ven samo prek »Pošlji« (TEST, 20 s, dnevnik), ne iz Outlooka mimo zapore.
+                        <Link
+                          href="/admin/komunikacija"
+                          className="inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-zinc-800 ring-1 ring-zinc-300 hover:ring-zinc-500"
+                        >
+                          Pošlji v Komunikaciji
+                        </Link>
                       ) : (
                         <a
                           href={`/api/admin/prodajna-ekipa/eml/${encodeURIComponent(o.ime ?? "")}`}
@@ -287,13 +311,13 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
           ) : postavke.length === 0 ? (
             <p className="mt-4 text-sm text-zinc-500">V tej mapi nič ne čaka na odobritev.</p>
           ) : null}
-          {!mapa.outlook && prvi.length > 0 ? (
+          {!samoLijak && !mapa.outlook && prvi.length > 0 ? (
             <div className="mt-4">
               <h3 className="mb-2 text-sm font-semibold text-zinc-900">Prvi maili ({prvi.length})</h3>
               <OdobritevSeznam postavke={prvi} />
             </div>
           ) : null}
-          {!mapa.outlook && nadaljnji.length > 0 ? (
+          {!samoLijak && !mapa.outlook && nadaljnji.length > 0 ? (
             <div className="mt-5">
               <h3 className="text-sm font-semibold text-zinc-900">Follow-upi in odgovori ({nadaljnji.length})</h3>
               <p className="mb-2 text-xs text-zinc-500">

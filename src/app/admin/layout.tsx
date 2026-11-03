@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AppWindow, BarChart3, Building2, History, LayoutDashboard, MessagesSquare, Search, Settings } from "lucide-react";
@@ -13,6 +13,7 @@ import { preberiPosel } from "@/lib/posel";
 import { Zavihki } from "./Zavihki";
 import { StikaloPosla } from "./StikaloPosla";
 import { NaslovStrani } from "./NaslovStrani";
+import { ZnackaCaka } from "./ZnackaCaka";
 
 const ICON_CLASS = "h-5 w-5";
 
@@ -69,6 +70,11 @@ export default async function AdminLayout({
   // Meni za tega uporabnika: razdelki in zavihki, ki jih sme videti (src/lib/admin-meni.ts).
   const pravice = praviceIz(perms);
   const meni = meniZa(isLegacyAdmin ? { admin: true, ima: () => true } : pravice);
+  const posel = await preberiPosel();
+  // Badge »čaka« (phase 5): the same businesses as Komunikacija (komunikacija/kontekst.ts) and the switch.
+  const jeAdmin = isLegacyAdmin || pravice.admin;
+  const vidiKodaTim = jeAdmin && posel !== "kompletko";
+  const vidiKompletko = jeAdmin ? posel !== "kodatim" : pravice.ima("kompletko.view");
 
   const visibleNavItems = meni.map((r) => {
     // Paths come from the full section, so the highlighted item always matches razdelekZa().
@@ -81,6 +87,12 @@ export default async function AdminLayout({
       poti: potiRazdelka(celoten),
       // Danes (/admin) is lit only on /admin itself, as in razdelekZa(); otherwise every page outside a section.
       natancno: r.href === "/admin",
+      znacka:
+        r.kljuc === "komunikacija" ? (
+          <Suspense fallback={null}>
+            <ZnackaCaka kodatim={vidiKodaTim} kompletko={vidiKompletko} />
+          </Suspense>
+        ) : undefined,
     };
   });
   // Tab href (as in RAZDELKI) -> the page it opens for this user (Ljudje may open /admin/vloge, …).
@@ -89,8 +101,6 @@ export default async function AdminLayout({
   // »Stari admin« only for admins (whoever sees Nastavitve), never for Prodaja Kompletko.
   const vidiStariAdmin =
     perms?.roleKey !== "prodaja_kompletko" && meni.some((r) => r.kljuc === "nastavitve");
-
-  const posel = await preberiPosel();
 
   return (
     <DashboardShell

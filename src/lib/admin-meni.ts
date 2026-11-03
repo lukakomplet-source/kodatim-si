@@ -86,29 +86,36 @@ export const RAZDELKI: Razdelek[] = [
     ],
   },
   {
+    // Faza 5 (3. 11. 2026): vse tri strani so /admin/komunikacija/* z zaporo kompletko.view (kontekst.ts); KodaTim
+    // del vidi samo administrator. Stari naslovi (maili, e-posta, odobritev, posiljatelj, bralec_odgovorov)
+    // preusmerijo sem, zato so med `poti` zavihka, ki ga nadomesti.
     kljuc: "komunikacija",
     label: "Komunikacija",
-    href: "/admin/maili",
-    poti: ["/admin/komunikacija"],
+    href: "/admin/komunikacija",
     permission: "kompletko.view",
     zavihki: [
       {
         label: "Pregled",
-        href: "/admin/maili",
-        poti: ["/admin/prodajna-ekipa/odobritev", "/admin/prodajna-ekipa/poslano-kodatim", "/admin/e-posta"],
+        href: "/admin/komunikacija",
+        poti: ["/admin/maili", "/admin/e-posta", "/admin/prodajna-ekipa/odobritev", "/admin/komunikacija/osnutek"],
         permission: "kompletko.view",
       },
-      // posiljatelj in bralec_odgovorov sta /admin/prodajna-ekipa/[vloga] (zahtevajStran() brez ključev).
       {
         label: "Poslano",
-        href: "/admin/prodajna-ekipa/posiljatelj",
-        poti: ["/admin/prodajna-ekipa/poslano"],
-        permission: "admin",
+        href: "/admin/komunikacija/poslano",
+        poti: [
+          "/admin/komunikacija/mail",
+          "/admin/prodajna-ekipa/posiljatelj",
+          "/admin/prodajna-ekipa/poslano",
+          "/admin/prodajna-ekipa/poslano-kodatim",
+        ],
+        permission: "kompletko.view",
       },
       {
         label: "Odgovori",
-        href: "/admin/prodajna-ekipa/bralec_odgovorov",
-        permission: "admin",
+        href: "/admin/komunikacija/odgovori",
+        poti: ["/admin/komunikacija/pogovor", "/admin/komunikacija/odgovor", "/admin/prodajna-ekipa/bralec_odgovorov"],
+        permission: "kompletko.view",
       },
       { label: "Iz klepeta", href: "/admin/leads", permission: "lead.view" },
     ],
@@ -191,12 +198,12 @@ export const STARI_MENI: StaraTocka[] = [
   { label: "Danes", href: "/admin", permission: "dashboard.view" },
   {
     label: "Maili",
-    href: "/admin/maili",
+    href: "/admin/komunikacija",
     permission: MAILI,
     podstrani: [
-      { label: "Za poslat", href: "/admin/maili" },
-      { label: "Poslano", href: "/admin/prodajna-ekipa/posiljatelj" },
-      { label: "Odgovori", href: "/admin/prodajna-ekipa/bralec_odgovorov" },
+      { label: "Za poslat", href: "/admin/komunikacija" },
+      { label: "Poslano", href: "/admin/komunikacija/poslano" },
+      { label: "Odgovori", href: "/admin/komunikacija/odgovori" },
     ],
   },
   { label: "Kompletko – panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: MAILI },

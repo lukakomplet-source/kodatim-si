@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { zahtevajStran } from "@/lib/require-admin";
 import {
   KLJUCI_DELAVCEV,
@@ -21,9 +21,21 @@ import { OZNAKE_STEVILK, kdaj, stanjeZaPrikaz, stevilo, vrednostStevilke } from 
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Faza 5: Odobritev, Pošiljatelj in Bralec odgovorov so zavihki Komunikacije (Pregled, Poslano, Odgovori). Stari
+ * naslovi (tudi povezave iz Telegrama) pridejo tja; zapora je na novi strani.
+ */
+const V_KOMUNIKACIJO: Partial<Record<string, string>> = {
+  odobritev: "/admin/komunikacija?posel=kodatim",
+  posiljatelj: "/admin/komunikacija/poslano",
+  bralec_odgovorov: "/admin/komunikacija/odgovori",
+};
+
 export default async function DelavecPage({ params }: { params: Promise<{ vloga: string }> }) {
-  await zahtevajStran();
   const { vloga: surovo } = await params;
+  const cilj = V_KOMUNIKACIJO[surovo];
+  if (cilj) redirect(cilj);
+  await zahtevajStran();
   if (!(KLJUCI_DELAVCEV as readonly string[]).includes(surovo)) notFound();
   const vloga = surovo as KljucDelavca;
   const opis = VLOGE[vloga];
