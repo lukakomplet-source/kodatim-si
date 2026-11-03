@@ -25,6 +25,8 @@ const POVEZAVE: Record<string, { href: string; oznaka: string }[]> = {
   ],
   nepremicnine: [{ href: "/nepremicnine/pregled", oznaka: "Research konzola" }],
   "nep-pdf": [{ href: "/nepremicnine/pregled", oznaka: "Research konzola" }],
+  "harvey-kodatim": [{ href: "/admin/prodajna-ekipa", oznaka: "Harvey" }],
+  "harvey-kompletko": [{ href: "/admin/danes/klici", oznaka: "Klici" }],
 };
 
 export default async function PodrobnostiPage({ params }: { params: Promise<{ kljuc: string }> }) {

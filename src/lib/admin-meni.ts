@@ -42,7 +42,11 @@ export type Zavihek = {
    * Zavihek je viden, če sme odpreti katerokoli; `permission` se tedaj ne uporablja.
    */
   vhodi?: { href: string; permission: Dovoljenje }[];
+  /** Samo za en posel: ob stikalu na drugem poslu je skrit (Luka 3. 11.: »če kliknem Kompletko, samo Kompletko«). */
+  posel?: PoselMenija;
 };
+
+export type PoselMenija = "kodatim" | "kompletko";
 
 export type Razdelek = {
   kljuc: string;
@@ -53,6 +57,7 @@ export type Razdelek = {
   skupina?: string;
   zavihki?: Zavihek[];
   poti?: string[];
+  posel?: PoselMenija;
 };
 
 /** Zavihek, kot ga vidi en uporabnik: `vhod` je stran, na katero zanj vodi (pri `vhodi` ni nujno `href`). */
@@ -87,12 +92,13 @@ export const RAZDELKI: Razdelek[] = [
         href: "/admin/podjetja/priloznosti",
         permission: ["lead_intelligence.view", "kompletko.view"],
       },
-      { label: "Kampanje", href: "/admin/promocije", permission: "promotion.view" },
-      { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view" },
+      { label: "Kampanje", href: "/admin/promocije", permission: "promotion.view", posel: "kodatim" },
+      { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view", posel: "kompletko" },
       {
         label: "Stranke (KodaTim)",
         href: "/admin/lead-intelligence/leads",
         permission: "lead_intelligence.view",
+        posel: "kodatim",
       },
       {
         label: "Dodaj in uvozi",
@@ -134,7 +140,7 @@ export const RAZDELKI: Razdelek[] = [
         poti: ["/admin/komunikacija/pogovor", "/admin/komunikacija/odgovor", "/admin/prodajna-ekipa/bralec_odgovorov"],
         permission: "kompletko.view",
       },
-      { label: "Iz klepeta", href: "/admin/leads", permission: "lead.view" },
+      { label: "Iz klepeta", href: "/admin/leads", permission: "lead.view", posel: "kodatim" },
     ],
   },
   {
@@ -146,30 +152,32 @@ export const RAZDELKI: Razdelek[] = [
     permission: "admin",
     zavihki: [
       { label: "Register", href: "/admin/register-podjetij", poti: ["/admin/promocije/tematska"] },
-      { label: "Kandidati", href: "/admin/prodajna-ekipa/problemi" },
-      { label: "Raziskave", href: "/admin/priloznosti" },
+      { label: "Kandidati", href: "/admin/prodajna-ekipa/problemi", posel: "kodatim" },
+      { label: "Raziskave", href: "/admin/priloznosti", posel: "kodatim" },
       // Luka 3. 11.: strani, ki so bile samo »poti«, ni našel — vsaka ima zdaj svoj zavihek.
-      { label: "Lead skrejp", href: "/admin/lead-skrejp" },
-      { label: "Panoge", href: "/admin/prodajna-ekipa/panoge" },
-      { label: "Drevo panog", href: "/admin/prodajna-ekipa/drevo" },
+      { label: "Lead skrejp", href: "/admin/lead-skrejp", posel: "kodatim" },
+      { label: "Panoge", href: "/admin/prodajna-ekipa/panoge", posel: "kodatim" },
+      { label: "Drevo panog", href: "/admin/prodajna-ekipa/drevo", posel: "kodatim" },
     ],
   },
   {
+    // Faza 7: /admin/stevilke (Dan in teden) je zaprta z zahtevajStran("promotion.view", "lead_intelligence.view").
     kljuc: "stevilke",
     label: "Številke",
-    href: "/admin/promocije/reports",
-    poti: ["/admin/stevilke"],
+    href: "/admin/stevilke",
     permission: ["promotion.view", "lead_intelligence.view"],
     zavihki: [
-      { label: "Lijak", href: "/admin/promocije/reports", permission: "promotion.view" },
+      { label: "Dan in teden", href: "/admin/stevilke", permission: ["promotion.view", "lead_intelligence.view"] },
+      { label: "Lijak", href: "/admin/promocije/reports", permission: "promotion.view", posel: "kodatim" },
       // Samo /admin/lead-intelligence sam: /leads in /import sta Podjetja, /discovery Nastavitve (daljše poti zmagajo).
-      { label: "Baza", href: "/admin/lead-intelligence", permission: "lead_intelligence.view" },
+      { label: "Baza", href: "/admin/lead-intelligence", permission: "lead_intelligence.view", posel: "kodatim" },
     ],
   },
   {
     // Luka 3. 11. 2026: »ne najdem niti več tistih aplikacij« — skrite pod Nastavitve › Sistem jih ni videl.
     kljuc: "aplikacije",
     label: "Aplikacije",
+    posel: "kodatim",
     href: "/admin/demo-strani",
     // Obe strani sta samo za administratorje (zahtevajStran() brez ključev).
     permission: "admin",
@@ -186,7 +194,7 @@ export const RAZDELKI: Razdelek[] = [
     permission: ["users.manage", "roles.manage", "partner.view", "commission.view"],
     zavihki: [
       // Tudi dinamične /admin/prodajna-ekipa/[vloga], razen tistih, ki so naštete drugje (odobritev, posiljatelj …).
-      { label: "Harvey", href: "/admin/prodajna-ekipa", permission: "admin" },
+      { label: "Harvey", href: "/admin/prodajna-ekipa", permission: "admin", posel: "kodatim" },
       {
         label: "Sistem",
         href: "/admin/nadzor",
@@ -195,8 +203,8 @@ export const RAZDELKI: Razdelek[] = [
       },
       { label: "Uporabniki", href: "/admin/uporabniki", permission: "users.manage" },
       { label: "Vloge", href: "/admin/vloge", permission: "roles.manage" },
-      { label: "Partnerji", href: "/admin/partnerji", permission: "partner.view" },
-      { label: "Provizije", href: "/admin/provizije", permission: "commission.view" },
+      { label: "Partnerji", href: "/admin/partnerji", permission: "partner.view", posel: "kodatim" },
+      { label: "Provizije", href: "/admin/provizije", permission: "commission.view", posel: "kodatim" },
     ],
   },
 ];
@@ -379,10 +387,16 @@ function vhodZavihka(z: Zavihek, r: Razdelek, pravice: Pravice): string | null {
  * Meni za enega uporabnika: samo razdelki in zavihki, ki jih sme videti. Razdelek z zavihki je viden, če je
  * viden vsaj en zavihek; če njegova prva stran zanj ni dovoljena, vodi na prvi zavihek, ki ga sme videti.
  */
-export function meniZa(pravice: Pravice): RazdelekZaUporabnika[] {
+/**
+ * Meni za uporabnika. `posel` je stikalo (Vse / KodaTim / Kompletko): ob enem poslu so razdelki in zavihki
+ * drugega posla skriti; strani same ostanejo dosegljive (povezave, Stari admin).
+ */
+export function meniZa(pravice: Pravice, posel: "vse" | PoselMenija = "vse"): RazdelekZaUporabnika[] {
+  const zaPosel = (p?: PoselMenija) => !p || posel === "vse" || p === posel;
   return RAZDELKI.flatMap((r): RazdelekZaUporabnika[] => {
+    if (!zaPosel(r.posel)) return [];
     if (!r.zavihki?.length) return ustreza(r.permission, pravice) ? [{ ...r, zavihki: undefined }] : [];
-    const zavihki = r.zavihki.flatMap((z) => {
+    const zavihki = r.zavihki.filter((z) => zaPosel(z.posel)).flatMap((z) => {
       const vhod = vhodZavihka(z, r, pravice);
       return vhod ? [{ ...z, vhod }] : [];
     });

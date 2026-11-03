@@ -39,6 +39,7 @@ export function SegmentiDanes({ povzetek }: { povzetek: SegmentiPovzetek }) {
             <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
               {[
                 ["Izbranih danes", `${s.izbranih_danes} / ${s.na_dan}`],
+                ["V pripravi", s.v_pripravi],
                 ["Čaka odobritev", s.caka_odobritev],
                 ["Poslanih", s.poslanih],
                 ["Ustreznih v zalogi", s.ustreznih],

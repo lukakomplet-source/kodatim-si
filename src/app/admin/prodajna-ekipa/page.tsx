@@ -13,6 +13,7 @@ import {
 import { Osvezevanje } from "../nadzor/Osvezevanje";
 import { Diagram } from "./Diagram";
 import { KajDelaZdaj } from "./KajDelaZdaj";
+import { GumbPavza } from "./GumbPavza";
 import { SegmentiDanes } from "./SegmentiDanes";
 
 /**
@@ -84,6 +85,17 @@ export default async function ProdajnaEkipaPage() {
           Pošiljanje je izklopljeno: {povzetek.posiljanje.razlog}. Osnutki se pišejo in čakajo na
           tvojo odobritev, ven ne gre nič.
         </p>
+      ) : null}
+
+      {povzetek && typeof povzetek.posiljanje.ustavljeno === "boolean" ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200">
+          <span className="text-sm text-zinc-700">
+            Pošiljanje KodaTim: {povzetek.posiljanje.ustavljeno ? "ustavljeno" : "teče po Odobri"}, danes{" "}
+            {povzetek.posiljanje.danes} od {povzetek.posiljanje.na_dan}, okno{" "}
+            {povzetek.posiljanje.okno_odprto ? "odprto" : "zaprto"} (pon-pet 8:00-15:30).
+          </span>
+          <GumbPavza ustavljeno={povzetek.posiljanje.ustavljeno} />
+        </div>
       ) : null}
 
       {predaja && predaja.predanih > 0 ? (

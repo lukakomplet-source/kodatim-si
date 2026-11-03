@@ -25,7 +25,7 @@ export default async function NadzorPage() {
   await zahtevajStran();
   const nadzor = await preberiNadzor();
 
-  const stoji = nadzor.skrejperji.filter((s) => s.tece === false || s.opozorilo);
+  const stoji = nadzor.skrejperji.filter((s) => (s.tece === false && !s.miruje) || s.opozorilo);
   const sistem = nadzor.sistem;
 
   return (

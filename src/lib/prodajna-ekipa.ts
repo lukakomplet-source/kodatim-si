@@ -69,6 +69,8 @@ export type Povzetek = {
   posiljanje: {
     vklopljeno: boolean;
     razlog: string;
+    /** Faza 7: ustavljeno z gumbom (sending_paused); Harvey pred ponovnim zagonom polja nima. */
+    ustavljeno?: boolean;
     okno_odprto: boolean;
     danes: number;
     na_dan: number;
@@ -252,18 +254,18 @@ export const VLOGE: Record<KljucDelavca, { ime: string; naloga: string; pravila:
     naloga: "Vsakih 15 minut pogleda stanje in odloči, kdo dela naslednji.",
     pravila: [
       "Vrstni red: odgovori, pošiljanje, pisanje, iskanje kontaktov, analiza.",
-      "Ponoči (22:00–7:00) in med vikendi ekipa miruje.",
-      "Porabi največ 40 % tvoje naročnine Claude; nad mejo počaka.",
+      "Dela tudi ponoči in ob vikendih (od 23. 10.); maili gredo ven samo ob delavnikih 8:00–15:30.",
+      "Sme porabiti do 100 % dnevne meje naročnine Claude; nad mejo počaka.",
     ],
   },
   iskalec: {
     ime: "Iskalec",
     sloj: "iskanje",
-    naloga: "Iz AJPES registra vzame nova podjetja iz izbranih dejavnosti.",
+    naloga: "Iz AJPES registra vsak dan izbere podjetja za segmente (npr. nastanitve), najboljša najprej.",
     pravila: [
       "Samo družbe; s.p. so po ZEKom-2 fizične osebe in jim ne pišemo.",
-      "Vsak ponedeljek ob 7:15 do 12 novih podjetij na dejavnost.",
-      "Že znana podjetja preskoči.",
+      "Register, nato njihova stran, nato CompanyWall samo za najboljše (do 30 na dan); največ 10 izbranih na segment na dan.",
+      "Že znana podjetja preskoči. Izbrani so vidni v Strankah pod »Danes izbrani«.",
     ],
   },
   bralec: {
@@ -297,11 +299,11 @@ export const VLOGE: Record<KljucDelavca, { ime: string; naloga: string; pravila:
   pisec: {
     ime: "Pisec",
     sloj: "pisanje",
-    naloga: "Napiše tri sporočila: opažanje z vprašanjem, ponudbo in vljuden zaključek.",
+    naloga: "Pri podjetju najde problem; ko ga potrdiš (Iskanje › Kandidati), naredi stran predloga, PDF in mail.",
     pravila: [
       "Usmeritev: aplikacije, ki prihranijo ročno delo (naročanje, rezervacije, AI asistent); stran kot vstop.",
       "Slovenščina z vikanjem, samo dejstva o podjetju, brez izmišljenih referenc.",
-      "Ne piše novih, dokler jih preveč čaka na tvojo odobritev (meja je na kartici).",
+      "Ne gradi novih, dokler 10 prvih mailov čaka nate (tudi Hoteli v Outlooku).",
     ],
   },
   kontrolor: {
@@ -318,8 +320,8 @@ export const VLOGE: Record<KljucDelavca, { ime: string; naloga: string; pravila:
     sloj: "ti",
     naloga: "Prebereš osnutek in ga odobriš ali zavrneš. Brez tebe ne gre nič ven.",
     pravila: [
-      "Odobriš lahko tudi s telefona, tukaj.",
-      "Dokler pošiljanje ni vklopljeno, z odobritvijo ne odide nič.",
+      "Odobriš v Komunikaciji › Pregled, tudi s telefona. Hotele odpreš v Outlooku in pošlješ sam.",
+      "Dokler pošiljanje ni vklopljeno ali je ustavljeno, z odobritvijo ne odide nič.",
     ],
   },
   preverjevalec: {
@@ -356,10 +358,10 @@ export const VLOGE: Record<KljucDelavca, { ime: string; naloga: string; pravila:
   prodaja: {
     ime: "Prodaja",
     sloj: "prodaja",
-    naloga: "Kdor odgovori z zanimanjem, gre v Promocije z nalogo »Pokliči« zate.",
+    naloga: "Kdor odgovori z zanimanjem ali odpre predlog, dobi nalogo »Pokliči« na Danes.",
     pravila: [
       "Kampanja »Harvey · KodaTim«, faza »Odgovorili«, brez podvajanja leadov.",
-      "Sestanek, ponudbo in posel vodiš v Promocijah kot doslej.",
+      "Vse o podjetju je na njegovi kartici (Podjetja), faze v Podjetja › Priložnosti.",
     ],
   },
 };
@@ -372,6 +374,20 @@ async function izHarveyja<T>(pot: string, init?: RequestInit): Promise<T> {
   });
   if (!r.ok) throw new Error(`Harvey je vrnil ${r.status}`);
   return (await r.json()) as T;
+}
+
+/** Faza 7: Ustavi / Nadaljuj pošiljanje KodaTim (Harvey POST /api/sending/pause|resume). Odobritev ostane. */
+export async function nastaviPavzoPosiljanja(ustavi: boolean): Promise<boolean> {
+  try {
+    const r = await fetch(`${HARVEY}/api/sending/${ustavi ? "pause" : "resume"}`, {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** Povzetek ekipe ali razlog, zakaj ga ni (Harvey ne teče). */
@@ -498,7 +514,15 @@ export type IdejaResitve = {
   ocena: { wow: number; razumem: number; kupil: number; zakaj: string };
 };
 
-export async function preberiProbleme(): Promise<{ caka: ProblemPodjetja[]; odloceni: ProblemPodjetja[] } | null> {
+/** Faza 7: potrjen problem, iz katerega Harvey še ni zgradil predloga in maila (stanje »potrjen«). */
+export type PotrjenBrezOsnutka = { id: number; podjetje: string; odloceno: string | null };
+
+export async function preberiProbleme(): Promise<{
+  caka: ProblemPodjetja[];
+  odloceni: ProblemPodjetja[];
+  /** Harvey pred ponovnim zagonom polja nima. */
+  potrjeniBrezOsnutka?: PotrjenBrezOsnutka[];
+} | null> {
   try {
     return await izHarveyja("/api/problemi");
   } catch {

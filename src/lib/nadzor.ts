@@ -76,6 +76,8 @@ export type Skrejper = {
   eta: string | null;
   stevilke: { oznaka: string; vrednost: string }[];
   opozorilo: string | null;
+  /** Namenoma miruje (npr. prazna vrsta obogatitve): ni »stoji« in ni alarm. */
+  miruje?: boolean;
 };
 
 export type Disk = { crka: string; skupajGb: number; prostoGb: number };
@@ -271,6 +273,58 @@ function naslednjiTermin(ure: string | undefined): string | null {
 
 function statZa(vrstice: { kljuc: string; podatki: Podatki; izracunano: string }[], kljuc: string) {
   return vrstice.find((v) => v.kljuc === kljuc);
+}
+
+const HARVEY_KODATIM = process.env.HARVEY_KODATIM_URL ?? "http://127.0.0.1:5555";
+const HARVEY_KOMPLETKO = process.env.HARVEY_KOMPLETKO_URL ?? "http://127.0.0.1:5556";
+
+async function harveyJson<T>(url: string): Promise<T | null> {
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(4_000) });
+    return r.ok ? ((await r.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Faza 7: oba Harveyja (iskanje kupcev). Ne odgovarja = stoji; .bat zanka ga dvigne v 15 s. */
+async function harveyja(): Promise<Skrejper[]> {
+  const [kt, kp] = await Promise.all([
+    harveyJson<{ skupaj?: number; caka_na_prej?: number }>(`${HARVEY_KODATIM}/api/caka`),
+    harveyJson<{ danes?: { klici?: number }; poslani_maili?: number }>(`${HARVEY_KOMPLETKO}/api/stevilke-dneva`),
+  ]);
+  const ne = "ne odgovarja; PLOSCA-HARVEY.bat ga po padcu dvigne v 15 s. Če traja dlje, preveri okno plošče.";
+  return [
+    {
+      kljuc: "harvey-kodatim",
+      ime: "Harvey KodaTim (5555)",
+      opis: "Iskanje kupcev KodaTim: osnutki, pošiljanje po Odobri, branje odgovorov.",
+      tece: kt !== null,
+      starostS: null,
+      poce: kt ? `čaka tebe ${kt.skupaj ?? 0}` : null,
+      odstotek: null,
+      eta: null,
+      stevilke: kt ? [{ oznaka: "Čaka tebe", vrednost: stevilo(kt.skupaj ?? 0) }] : [],
+      opozorilo: kt ? null : `Harvey KodaTim ${ne}`,
+    },
+    {
+      kljuc: "harvey-kompletko",
+      ime: "Harvey Kompletko (5556)",
+      opis: "Panik gumb: seznam klicev, vpis klicev, osnutki in sledenje mailom.",
+      tece: kp !== null,
+      starostS: null,
+      poce: kp ? `danes ${kp.danes?.klici ?? 0} klicev, ${kp.poslani_maili ?? 0} mailov` : null,
+      odstotek: null,
+      eta: null,
+      stevilke: kp
+        ? [
+            { oznaka: "Klici danes", vrednost: stevilo(kp.danes?.klici ?? 0) },
+            { oznaka: "Maili danes", vrednost: stevilo(kp.poslani_maili ?? 0) },
+          ]
+        : [],
+      opozorilo: kp ? null : `Harvey Kompletko ${ne}`,
+    },
+  ];
 }
 
 export async function preberiNadzor(): Promise<Nadzor> {
@@ -637,6 +691,8 @@ export async function preberiNadzor(): Promise<Nadzor> {
         opis: "Poišče e-pošto, telefon in kontaktne osebe; AJPES jih ne objavlja.",
         // „Dela“ pomeni: v zadnji uri se je kaj koncalo ali kaj ravno tece.
         tece: vUri > 0 || tece > 0,
+        // Faza 7: prazna vrsta je namenska (kontakte zdaj išče Harvey v segmentih), ne alarm.
+        miruje: vVrsti === 0 && tece === 0 && vUri === 0,
         starostS: null,
         poce:
           tece > 0
@@ -678,6 +734,8 @@ export async function preberiNadzor(): Promise<Nadzor> {
       });
     }
   }
+
+  skrejperji.unshift(...(await harveyja()));
 
   return {
     skrejperji,

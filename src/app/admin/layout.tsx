@@ -70,8 +70,9 @@ export default async function AdminLayout({
 
   // Meni za tega uporabnika: razdelki in zavihki, ki jih sme videti (src/lib/admin-meni.ts).
   const pravice = praviceIz(perms);
-  const meni = meniZa(isLegacyAdmin ? { admin: true, ima: () => true } : pravice);
   const posel = await preberiPosel();
+  // Switch on one business: the menu shows only that business (Luka 3. 11.: »samo Kompletko tematika«).
+  const meni = meniZa(isLegacyAdmin ? { admin: true, ima: () => true } : pravice, posel);
   // Badge »čaka« (phase 5): the same businesses as Komunikacija (komunikacija/kontekst.ts) and the switch.
   const jeAdmin = isLegacyAdmin || pravice.admin;
   const vidiKodaTim = jeAdmin && posel !== "kompletko";

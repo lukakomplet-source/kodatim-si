@@ -7,6 +7,7 @@ import {
   odlociOsnutek,
   odlociPanogo,
   nastaviPosiljanje,
+  nastaviPavzoPosiljanja,
   zabeleziKlic,
   poisciKontakt,
   zabeleziRocniKlic,
@@ -151,6 +152,18 @@ export async function odlociProblemAkcija(
   const r = await odlociProblem(id, odlocitev, razlog.slice(0, 500), odlocitev === "potrjen" ? ideja : null);
   revalidatePath("/admin/prodajna-ekipa/problemi");
   return r;
+}
+
+/** Nastavitve › Harvey: ustavi ali nadaljuj pošiljanje KodaTim. Samo administrator; ven gre še vedno le odobreno. */
+export async function pavzaPosiljanjaAkcija(ustavi: boolean): Promise<{ ok: boolean; napaka?: string }> {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
+  }
+  const ok = await nastaviPavzoPosiljanja(ustavi);
+  revalidatePath("/admin/prodajna-ekipa");
+  return ok ? { ok } : { ok, napaka: "Harvey KodaTim ne odgovarja (5555)." };
 }
 
 /** Kompletko: stanje podjetja, ki je dobilo hladni mail (klic, odgovoril, sestanek, kupil, ne zanima, zaključen). */
