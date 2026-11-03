@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -15,6 +16,7 @@ export default async function CampaignDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await zahtevajStran("promotion.view");
   const { id } = await params;
   const admin = createAdminClient();
 

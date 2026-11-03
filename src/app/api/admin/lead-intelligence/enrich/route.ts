@@ -19,7 +19,22 @@ type EnrichResult = {
   summary?: string;
 };
 
+// Closed in phase 2 (audit section 9): nothing calls this route any more, and
+// a call would overwrite company_name with an AI "normalized_name" and mark
+// leads as duplicates. The code stays for reference but never runs.
+const POT_ZAPRTA = true;
+
 export async function POST(request: NextRequest) {
+  if (POT_ZAPRTA) {
+    return NextResponse.json(
+      {
+        error:
+          "Ta pot je zaprta. Samodejna AI obogatitev bi prepisala imena podjetij, zato je izklopljena.",
+      },
+      { status: 410 }
+    );
+  }
+
   try {
     await requireAdmin();
   } catch (err) {

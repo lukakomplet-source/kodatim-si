@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiPosiljanja } from "@/lib/prodajna-ekipa";
 import { PosiljanjaPregled } from "./PosiljanjaPregled";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Kompletko: prevozniki" };
 
 export default async function KompletkoPage() {
-  await requireAdmin();
+  await zahtevajStran("kompletko.view");
   const podatki = await preberiPosiljanja();
   return (
     <div className="mx-auto max-w-4xl">

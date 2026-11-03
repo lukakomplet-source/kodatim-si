@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -9,6 +10,7 @@ export default async function DiscoveryPage({
 }: {
   searchParams: Promise<{ importId?: string }>;
 }) {
+  await zahtevajStran("lead_intelligence.view");
   const { importId } = await searchParams;
   const admin = createAdminClient();
   const leads = await getDiscoveryQueue(admin, { importId });

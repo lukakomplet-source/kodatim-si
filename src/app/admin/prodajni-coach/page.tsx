@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { KnowledgeEntry } from "@/lib/salesCoachTypes";
 import SalesCoachClient from "./SalesCoachClient";
@@ -6,7 +6,7 @@ import SalesCoachClient from "./SalesCoachClient";
 export const metadata = { title: "Prodajni coach" };
 
 export default async function SalesCoachPage() {
-  const user = await requireAdmin();
+  const user = await zahtevajStran();
   const admin = createAdminClient();
 
   const [{ data: knowledge, error }, { data: settings }] = await Promise.all([

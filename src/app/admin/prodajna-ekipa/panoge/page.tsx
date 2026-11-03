@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiPanoge } from "@/lib/prodajna-ekipa";
 import { PanogeSeznam } from "./PanogeSeznam";
 
@@ -13,7 +13,7 @@ import { PanogeSeznam } from "./PanogeSeznam";
 export const dynamic = "force-dynamic";
 
 export default async function PanogePage() {
-  await requireAdmin();
+  await zahtevajStran();
   const panoge = await preberiPanoge();
 
   return (

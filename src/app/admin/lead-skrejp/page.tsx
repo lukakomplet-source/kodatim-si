@@ -1,10 +1,10 @@
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import LeadScrapeClient from "./LeadScrapeClient";
 
 export const metadata = { title: "Lead skrejp" };
 
 export default async function LeadScrapePage() {
-  await requireAdmin();
+  await zahtevajStran();
 
   const credentialsReady = Boolean(process.env.AJPES_USERNAME && process.env.AJPES_PASSWORD);
 

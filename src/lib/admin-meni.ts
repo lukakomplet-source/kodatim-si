@@ -15,7 +15,8 @@ export type Razdelek = {
   kljuc: string;
   label: string;
   href: string;
-  permission: PermissionKey | null;
+  /** null = everyone in the admin; a list = any one of them is enough. */
+  permission: PermissionKey | PermissionKey[] | null;
   skupina?: string;
   zavihki?: Zavihek[];
   poti?: string[];
@@ -27,7 +28,7 @@ export const RAZDELKI: Razdelek[] = [
     kljuc: "maili",
     label: "Maili",
     href: "/admin/maili",
-    permission: "promotion.view",
+    permission: ["promotion.view", "kompletko.view"],
     poti: [
       "/admin/prodajna-ekipa/odobritev",
       "/admin/prodajna-ekipa/poslano-kodatim",
@@ -45,7 +46,7 @@ export const RAZDELKI: Razdelek[] = [
     kljuc: "kompletko",
     label: "Kompletko – panik gumb",
     href: "/admin/prodajna-ekipa/kompletko",
-    permission: "promotion.view",
+    permission: ["promotion.view", "kompletko.view"],
     poti: ["/admin/prodajna-ekipa/poslano"],
   },
   {
@@ -123,7 +124,7 @@ export const RAZDELKI: Razdelek[] = [
   },
   { kljuc: "uporabniki", label: "Uporabniki", href: "/admin/uporabniki", permission: "users.manage", skupina: "Nastavitve" },
   { kljuc: "vloge", label: "Vloge", href: "/admin/vloge", permission: "roles.manage", skupina: "Nastavitve" },
-  { kljuc: "nadzor", label: "Nadzor zbiralnikov", href: "/admin/nadzor", permission: "dashboard.view", skupina: "Nastavitve" },
+  { kljuc: "nadzor", label: "Nadzor zbiralnikov", href: "/admin/nadzor", permission: "crm.view", skupina: "Nastavitve" },
   // Arhiv: Podjetja (Firecrawl v tabelo `companies`, ki je nihče drug ne bere) — ostane, a ni v ospredju.
   { kljuc: "arhiv", label: "Arhiv: podjetja", href: "/admin/podjetja", permission: "crm.view", skupina: "Nastavitve" },
 ];

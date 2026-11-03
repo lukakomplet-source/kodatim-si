@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiRaziskavo, type Dokaz, type Korak } from "@/lib/priloznosti";
 import { OZNAKE_FAZ } from "@/lib/priloznostiFaze";
 import { Osvezevanje } from "../../nadzor/Osvezevanje";
@@ -122,7 +122,7 @@ function DokazVrstica({ d }: { d: Dokaz }) {
 }
 
 export default async function RaziskavaPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await zahtevajStran();
   const { id } = await params;
   const r = await preberiRaziskavo(id);
   if (r === "ni") notFound();

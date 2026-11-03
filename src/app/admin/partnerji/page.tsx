@@ -1,8 +1,10 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import InvitePartnerForm from "./InvitePartnerForm";
 
 export default async function AdminPartnersPage() {
+  await zahtevajStran("partner.view");
   const supabase = createAdminClient();
   const { data: partners } = await supabase
     .from("profiles")

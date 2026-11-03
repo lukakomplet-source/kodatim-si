@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AddCommissionForm from "./AddCommissionForm";
 import { markCommissionPaid } from "./actions";
@@ -8,6 +9,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default async function AdminCommissionsPage() {
+  await zahtevajStran("commission.view");
   const supabase = createAdminClient();
 
   const [{ data: partners }, { data: commissions }] = await Promise.all([

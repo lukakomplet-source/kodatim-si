@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
@@ -15,6 +16,7 @@ export default async function LeadDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await zahtevajStran("lead_intelligence.view");
   const { id } = await params;
   const supabase = createLeadClient();
 

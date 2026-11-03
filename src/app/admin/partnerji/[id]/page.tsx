@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Inbox, Percent, User, Wallet } from "lucide-react";
@@ -14,6 +15,7 @@ export default async function AdminPartnerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await zahtevajStran("partner.view");
   const { id } = await params;
   const supabase = createAdminClient();
 

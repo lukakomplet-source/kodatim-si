@@ -575,6 +575,14 @@ export async function deleteEmailStep(campaignId: string, stepId: string): Promi
 
 const MAX_SEND_BATCH = 100;
 
+// Phase 2 lock (audit section 9): this old path would send without footer or
+// unsubscribe link, to up to 100 recipients, and again on every click, the
+// moment Listmonk or Resend got configured. All sending goes through
+// Komunikacija (Harvey). The code below stays, but never runs while true.
+const POSILJANJE_IZ_PROMOCIJ_ZAKLENJENO = true;
+const SPOROCILO_ZAKLENJENO =
+  "Pošiljanje iz Promocij je izklopljeno. Maile pošiljaš prek Komunikacije (do prenove: Maili), kjer ima vsak mail nogo, odjavo in zaščito pred dvojnim pošiljanjem.";
+
 export async function sendEmailStepNow(
   campaignId: string,
   stepId: string
@@ -584,6 +592,10 @@ export async function sendEmailStepNow(
     user = await requireAdmin();
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Napaka." };
+  }
+
+  if (POSILJANJE_IZ_PROMOCIJ_ZAKLENJENO) {
+    return { error: SPOROCILO_ZAKLENJENO };
   }
 
   const admin = createAdminClient();

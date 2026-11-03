@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { VGRAJENE_DEMO_STRANI, type DemoStran } from "@/lib/demoStrani";
 import DemoPregled from "./DemoPregled";
@@ -6,7 +6,7 @@ import DemoPregled from "./DemoPregled";
 export const metadata = { title: "Spletne strani in aplikacije" };
 
 export default async function DemoStraniPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const admin = createAdminClient();
 
   const { data, error } = await admin

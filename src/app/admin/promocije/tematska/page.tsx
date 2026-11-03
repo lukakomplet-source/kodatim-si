@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import ThemedCampaignClient from "./ThemedCampaignClient";
 
 export const metadata = { title: "Tematska kampanja" };
 
 export default async function ThemedCampaignPage() {
-  await requireAdmin();
+  await zahtevajStran();
 
   return (
     <div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiDrevo } from "@/lib/prodajna-ekipa";
 import { DrevoSeznam } from "./DrevoSeznam";
 
@@ -12,7 +12,7 @@ import { DrevoSeznam } from "./DrevoSeznam";
 export const dynamic = "force-dynamic";
 
 export default async function DrevoPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const drevo = await preberiDrevo();
   return (
     <div>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiNadzor } from "@/lib/nadzor";
 import { Kartica } from "./Kartica";
 import { Osvezevanje } from "./Osvezevanje";
@@ -22,7 +22,7 @@ export const metadata = { title: "Nadzor zbiralnikov" };
 const OSVEZI_VSAKIH_S = 30;
 
 export default async function NadzorPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const nadzor = await preberiNadzor();
 
   const stoji = nadzor.skrejperji.filter((s) => s.tece === false || s.opozorilo);

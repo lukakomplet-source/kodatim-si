@@ -237,8 +237,19 @@ export function MapaOdobritve({ mapa, postavke }: { mapa: Mapa; postavke: Postav
                             Follow-up
                           </span>
                         ) : null}
+                        {/* 2. 11. 2026: Harveyjev odgovor stranki, ki je odpisala (prej viden samo na 5555). */}
+                        {(o.vrsta as string) === "odgovor" ? (
+                          <span className="mb-1 inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-900">
+                            Odgovor stranki
+                          </span>
+                        ) : null}
                         <p className="truncate text-sm font-semibold text-zinc-900">{o.za}</p>
                         <p className="truncate text-sm text-zinc-700">Zadeva: {o.zadeva}</p>
+                        {(o.vrsta as string) === "odgovor" && o.email ? (
+                          <p className="mt-1 line-clamp-3 whitespace-pre-line text-xs text-zinc-600">
+                            Njihov mail: {mapa.podjetja.find((p) => p.email === o.email)?.odgovor || "ni podatka"}
+                          </p>
+                        ) : null}
                         {o.id && (o.odprt || odprti.has(o.id)) ? (
                           <p className="mt-0.5 text-xs font-medium text-emerald-700">
                             V Outlooku med Osnutki – pošlji ga od tam; ko ga pošlješ, izgine od tu.

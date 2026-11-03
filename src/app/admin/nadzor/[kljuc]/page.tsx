@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiNadzor, preberiDnevnik, preberiTabele } from "@/lib/nadzor";
 import { Osvezevanje } from "../Osvezevanje";
 import { Kartica } from "../Kartica";
@@ -28,7 +28,7 @@ const POVEZAVE: Record<string, { href: string; oznaka: string }[]> = {
 };
 
 export default async function PodrobnostiPage({ params }: { params: Promise<{ kljuc: string }> }) {
-  await requireAdmin();
+  await zahtevajStran();
   const { kljuc } = await params;
 
   const nadzor = await preberiNadzor();

@@ -27,9 +27,14 @@ export default async function PartnerLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, status")
     .eq("id", user.id)
     .single();
+
+  // Status »Neaktiven« (set in /admin/uporabniki) locks the portal too.
+  if (profile?.status && profile.status !== "active") {
+    redirect("/racun-neaktiven");
+  }
 
   if (profile?.role !== "partner") {
     redirect("/admin");

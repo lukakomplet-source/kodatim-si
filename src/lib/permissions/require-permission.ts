@@ -24,9 +24,24 @@ export const getCurrentUserPermissions = cache(
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, status")
       .eq("id", user.id)
       .maybeSingle();
+
+    // Status »Neaktiven« (or suspended) locks the account out of everything,
+    // legacy admins included: no role, no bypass, no permissions. Layouts
+    // redirect such a user to /racun-neaktiven.
+    if (profile?.status && profile.status !== "active") {
+      return {
+        userId: user.id,
+        roleId: null,
+        roleKey: null,
+        roleName: null,
+        bypassAll: false,
+        granted: new Set(),
+        neaktiven: true,
+      };
+    }
 
     // Legacy admins (profiles.role = 'admin') bypass the new permission
     // system entirely, the same way Super Admin's bypass_all does. This

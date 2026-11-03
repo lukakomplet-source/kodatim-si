@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiRaziskave, preberiTeme } from "@/lib/priloznosti";
 import { OZNAKE_FAZ } from "@/lib/priloznostiFaze";
 import { Osvezevanje } from "../nadzor/Osvezevanje";
@@ -17,7 +17,7 @@ import { IZID, STANJE, cas, dolarji, minute } from "./oblika";
 export const dynamic = "force-dynamic";
 
 export default async function PriloznostiPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const [raziskave, teme] = await Promise.all([preberiRaziskave(), preberiTeme()]);
   const zadnjiPredlog = teme?.[0] ?? null;
   const tece =

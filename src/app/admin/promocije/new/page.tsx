@@ -1,8 +1,10 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import NewCampaignForm from "./NewCampaignForm";
 
-export default function NewCampaignPage() {
+export default async function NewCampaignPage() {
+  await zahtevajStran("promotion.create");
   return (
     <div className="mx-auto max-w-2xl">
       <Link

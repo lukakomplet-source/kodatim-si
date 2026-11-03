@@ -24,6 +24,10 @@ const STATUS_STYLES: Record<string, string> = {
   sent: "bg-emerald-50 text-emerald-600",
 };
 
+// Locked in phase 2: sending goes through Komunikacija. The server action
+// refuses as well, this only keeps the button from inviting a click.
+const POSILJANJE_ZAKLENJENO = true;
+
 function emptyDraft() {
   return { name: "", day_offset: 0, subject: "", preview_text: "", body_html: "" };
 }
@@ -196,12 +200,17 @@ export default function EmailTab({
                 </button>
                 <button
                   type="button"
-                  disabled={sendingId === step.id}
+                  disabled={POSILJANJE_ZAKLENJENO || sendingId === step.id}
                   onClick={() => handleSendNow(step.id)}
-                  className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  title={POSILJANJE_ZAKLENJENO ? "Pošiljanje gre prek Komunikacije." : undefined}
+                  className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="h-3.5 w-3.5" />
-                  {sendingId === step.id ? "Pošiljam …" : "Pošlji zdaj"}
+                  {POSILJANJE_ZAKLENJENO
+                    ? "Pošiljanje izklopljeno"
+                    : sendingId === step.id
+                      ? "Pošiljam …"
+                      : "Pošlji zdaj"}
                 </button>
                 <button
                   type="button"
@@ -219,14 +228,23 @@ export default function EmailTab({
         )}
       </div>
 
-      <p className="text-xs text-zinc-400">
-        &quot;Pošlji zdaj&quot; pošlje vsem podjetjem v kampanji z vnesenim
-        emailom prek Resend. Dokler <code>RESEND_API_KEY</code> ni nastavljen
-        v <code>.env.local</code>, bo pošiljanje vrnilo jasno napako namesto
-        lažnega uspeha. Samodejno pošiljanje po dnevih (4/10/18/30) zahteva
-        cron opravilo, ki še ni nastavljeno — za zdaj koraki čakajo na ročno
-        sprožitev.
-      </p>
+      {POSILJANJE_ZAKLENJENO ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          Pošiljanje iz Promocij je izklopljeno. Maile pošiljaš prek
+          Komunikacije (do prenove: Maili), kjer ima vsak mail nogo, odjavo in
+          zaščito pred dvojnim pošiljanjem. Korake tukaj lahko še naprej
+          urejaš kot osnutke.
+        </p>
+      ) : (
+        <p className="text-xs text-zinc-400">
+          &quot;Pošlji zdaj&quot; pošlje vsem podjetjem v kampanji z vnesenim
+          emailom prek Resend. Dokler <code>RESEND_API_KEY</code> ni nastavljen
+          v <code>.env.local</code>, bo pošiljanje vrnilo jasno napako namesto
+          lažnega uspeha. Samodejno pošiljanje po dnevih (4/10/18/30) zahteva
+          cron opravilo, ki še ni nastavljeno — za zdaj koraki čakajo na ročno
+          sprožitev.
+        </p>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Folder, Inbox, Percent, PhoneCall, UserCheck, Users } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/require-admin";
+import { requireAdmin, zahtevajStran } from "@/lib/require-admin";
 import ResumeCard from "@/components/dashboard/ResumeCard";
 import {
   predajVPromocije,
@@ -22,6 +22,7 @@ import { Osvezevanje } from "./nadzor/Osvezevanje";
 export const dynamic = "force-dynamic";
 
 export default async function AdminOverviewPage() {
+  await zahtevajStran("dashboard.view");
   const supabase = createAdminClient();
 
   // Ekipo, predajo in sinhronizacijo vidi in sproži samo administrator.
@@ -32,15 +33,17 @@ export default async function AdminOverviewPage() {
     jeAdmin = false;
   }
 
-  const [{ count: leadsCount }, { count: partnersCount }, { data: pending }] =
-    await Promise.all([
-      supabase.from("leads").select("*", { count: "exact", head: true }),
-      supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .eq("role", "partner"),
-      supabase.from("commissions").select("amount").eq("status", "pending"),
-    ]);
+  // KodaTim figures (chat leads, partners, commissions) are admin-only: Prodaja Kompletko sees only Kompletko work.
+  const [{ count: leadsCount }, { count: partnersCount }, { data: pending }] = jeAdmin
+    ? await Promise.all([
+        supabase.from("leads").select("*", { count: "exact", head: true }),
+        supabase
+          .from("profiles")
+          .select("*", { count: "exact", head: true })
+          .eq("role", "partner"),
+        supabase.from("commissions").select("amount").eq("status", "pending"),
+      ])
+    : [{ count: 0 }, { count: 0 }, { data: [] as { amount: number }[] }];
 
   const ekipa = jeAdmin ? await preberiEkipo() : null;
   let danes: { klicev: number; leadovIzKlepeta: number } | null = null;
@@ -50,8 +53,12 @@ export default async function AdminOverviewPage() {
       preberiDanes().catch(() => null),
       preberiDelavca("odobritev").catch(() => null),
       // Predaja zanimanja v Promocije in kontakti ekipe v Bazo leadov.
-      ekipa?.povzetek ? predajVPromocije().catch(() => null) : Promise.resolve(null),
-      ekipa?.povzetek ? sinhronizirajLeade().catch(() => null) : Promise.resolve(null),
+      // One after the other: a page run skips the shared queue when another run is in flight.
+      ekipa?.povzetek
+        ? predajVPromocije()
+            .catch(() => null)
+            .then(() => sinhronizirajLeade().catch(() => null))
+        : Promise.resolve(null),
     ]);
     danes = d;
     mape = o?.mape ?? [];
@@ -165,24 +172,48 @@ export default async function AdminOverviewPage() {
             </p>
           ) : null}
         </>
-      ) : null}
+      ) : (
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          {[
+            { href: "/admin/prodajna-ekipa/kompletko", naslov: "Panik gumb", opis: "Podjetja, klici in vpis klica" },
+            { href: "/admin/maili", naslov: "Maili", opis: "Kompletko maili in odgovori" },
+          ].map((k) => (
+            <Link
+              key={k.href}
+              href={k.href}
+              className="group flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-400"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                <PhoneCall className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-semibold text-zinc-900">{k.naslov}</span>
+                <span className="block text-sm text-zinc-500">{k.opis}</span>
+              </span>
+              <span className="shrink-0 text-sm font-medium text-zinc-400 group-hover:text-zinc-900">Odpri →</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
-      <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
-              <stat.icon className="h-6 w-6" />
+      {jeAdmin ? (
+        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl border border-zinc-200 bg-white p-7 shadow-sm"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                <stat.icon className="h-6 w-6" />
+              </div>
+              <p className="mt-5 text-3xl font-semibold text-zinc-900">
+                {stat.value}
+              </p>
+              <p className="mt-1 text-sm text-zinc-500">{stat.label}</p>
             </div>
-            <p className="mt-5 text-3xl font-semibold text-zinc-900">
-              {stat.value}
-            </p>
-            <p className="mt-1 text-sm text-zinc-500">{stat.label}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

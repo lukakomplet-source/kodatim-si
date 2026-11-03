@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/require-admin";
+import { requireAdminAli } from "@/lib/require-admin";
 
 /** Priloga poslanega maila za panik gumb (iz Poslano na luka@kompletko.com), samo za admina. */
 
@@ -9,7 +9,7 @@ const HARVEY = process.env.HARVEY_KODATIM_URL ?? "http://127.0.0.1:5555";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ domena: string; indeks: string }> }) {
   try {
-    await requireAdmin();
+    await requireAdminAli("kompletko.view");
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Napaka." }, { status: 401 });
   }

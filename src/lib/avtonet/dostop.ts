@@ -50,7 +50,7 @@ export async function preberiDostop(): Promise<Dostop> {
   const avtonet = createAvtonetClient();
 
   const [{ data: profil }, { data: vpis }] = await Promise.all([
-    admin.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+    admin.from("profiles").select("role, status").eq("id", user.id).maybeSingle(),
     avtonet
       .from("avtonet_uporabniki")
       .select("vloga, aktiven, obvestila_email")
@@ -58,7 +58,10 @@ export async function preberiDostop(): Promise<Dostop> {
       .maybeSingle(),
   ]);
 
-  const kodatimAdmin = (profil as { role?: string } | null)?.role === "admin";
+  // Status »Neaktiven« (set in /admin/uporabniki) locks the account out here too, like in the admin.
+  const p = profil as { role?: string; status?: string | null } | null;
+  if (p?.status && p.status !== "active") return BREZ_DOSTOPA;
+  const kodatimAdmin = p?.role === "admin";
   const zapis = vpis as { vloga: string; aktiven: boolean; obvestila_email: string | null } | null;
   const aktivenVpis = zapis?.aktiven === true;
 

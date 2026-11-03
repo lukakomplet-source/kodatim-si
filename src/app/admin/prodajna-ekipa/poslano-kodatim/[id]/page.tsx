@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 
 /**
  * Poslan KodaTim mail (hoteli), točno tak, kot je šel ven — enako kot pri panik gumbu (Luka, 28. 10. 2026:
@@ -24,7 +24,7 @@ type PoslanMail = {
 };
 
 export default async function PoslanKodatimPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await zahtevajStran();
   const { id } = await params;
   if (!/^[a-z0-9-]{6,40}$/i.test(id)) notFound();
 

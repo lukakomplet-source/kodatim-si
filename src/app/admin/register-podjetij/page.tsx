@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { filtriIz, poizvedbaIz, preberiNapredek, preberiPaket } from "@/lib/registerPodjetij";
 import { skdByCode } from "@/lib/skd";
 import { AiIskanje } from "./AiIskanje";
@@ -29,7 +29,7 @@ export default async function RegisterPodjetijPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdmin();
+  await zahtevajStran();
   const sp = await searchParams;
   const prvi = (k: string) => {
     const v = sp[k];

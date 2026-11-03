@@ -664,15 +664,59 @@ function danes(): string {
 }
 
 /**
+ * One queue for every write that hand-off and lead sync make, shared by the
+ * internal route (/api/interno/harvey-predaja) and the page renders. Kept on
+ * globalThis, not in a module variable, because Next bundles the route handler
+ * and each page separately and a module-level variable could exist twice in
+ * the same process. Runs never overlap, so "look up, then insert" cannot race
+ * with itself (no duplicate lead, target or "Pokliči" task).
+ *
+ * Only the scheduled route waits in this queue. A page render passes
+ * `zasedeno`: it skips its run when another one is in flight, and gives up
+ * waiting after STRAN_CAKA_MS (the run itself carries on in the queue), so a
+ * long or stalled run never holds Danes, Prodajna ekipa or Baza leadov.
+ */
+type HarveyZaklep = { veriga: Promise<unknown>; zadnjaSinhronizacija: number; vTeku?: number };
+const harveyGlobal = globalThis as typeof globalThis & { __kodatimHarveyZaklep?: HarveyZaklep };
+function harveyZaklep(): HarveyZaklep {
+  harveyGlobal.__kodatimHarveyZaklep ??= { veriga: Promise.resolve(), zadnjaSinhronizacija: 0 };
+  return harveyGlobal.__kodatimHarveyZaklep;
+}
+const STRAN_CAKA_MS = 10_000;
+function poVrsti<T>(delo: () => Promise<T>, zasedeno?: () => T): Promise<T> {
+  const z = harveyZaklep();
+  if (zasedeno && (z.vTeku ?? 0) > 0) return Promise.resolve(zasedeno());
+  z.vTeku = (z.vTeku ?? 0) + 1;
+  const izid = z.veriga.then(delo, delo).finally(() => {
+    z.vTeku = Math.max(0, (z.vTeku ?? 1) - 1);
+  });
+  z.veriga = izid.catch(() => undefined);
+  if (!zasedeno) return izid;
+  let casovnik: ReturnType<typeof setTimeout> | undefined;
+  const odneha = new Promise<T>((resolve) => {
+    casovnik = setTimeout(() => resolve(zasedeno()), STRAN_CAKA_MS);
+  });
+  return Promise.race([izid, odneha]).finally(() => clearTimeout(casovnik));
+}
+
+/**
  * Odgovore z zanimanjem preda v Promocije: lead (brez podvajanja po e-pošti
  * ali davčni), cilj v kampanji »Harvey · KodaTim« v fazi »Odgovorili« in
  * nalogo »Pokliči …« za danes. Podjetja, ki so po ponudbi odprla predlog,
  * odgovorila pa še niso, gredo v fazo »Email poslan« s klicem — tako kot
  * Luka pokliče po poslani ponudbi. Če tako podjetje pozneje odgovori z
  * zanimanjem, se premakne naprej. Drugače predanih ne dotakne več. `suho`
- * samo izpiše, kaj bi naredil.
+ * samo izpiše, kaj bi naredil. `pocakaj` (scheduled route) waits its turn in
+ * the queue; a page render does not (see poVrsti).
  */
-export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise<PredajaRezultat> {
+export function predajVPromocije(
+  opcije: { suho?: boolean; pocakaj?: boolean } = {},
+): Promise<PredajaRezultat> {
+  const preskoceno = (): PredajaRezultat => ({ predanih: 0, novihLeadov: 0, nalog: 0, napaka: null, nacrt: [] });
+  return poVrsti(() => predajVPromocijeEnkrat(opcije), opcije.pocakaj ? undefined : preskoceno);
+}
+
+async function predajVPromocijeEnkrat(opcije: { suho?: boolean }): Promise<PredajaRezultat> {
   const rezultat: PredajaRezultat = { predanih: 0, novihLeadov: 0, nalog: 0, napaka: null, nacrt: [] };
   let vnosi: VnosPredaje[];
   try {
@@ -769,18 +813,24 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
       if (!ogled && cilj.pipeline_stage === "email_sent") {
         rezultat.nacrt.push(`v Promocijah: ${v.podjetje} → Odgovorili + naloga »Pokliči«`);
         if (opcije.suho) continue;
-        const { error } = await admin
+        // Conditional update: only the run that actually moves the row out of
+        // "email_sent" gets a row back and creates the task. A second run (or
+        // another process) updates 0 rows and adds nothing.
+        const { data: premaknjen, error } = await admin
           .from("promo_campaign_targets")
           .update({
             pipeline_stage: "replied",
             call_status: "interested",
             call_notes: `Odgovor na Harveyjevo sporočilo:\n${v.odgovor}`.slice(0, 2000),
           })
-          .eq("id", cilj.id);
+          .eq("id", cilj.id)
+          .eq("pipeline_stage", "email_sent")
+          .select("id");
         if (error) {
           rezultat.napaka = `${v.podjetje} ni bilo mogoče premakniti v »Odgovorili«.`;
           continue;
         }
+        if (!premaknjen || premaknjen.length === 0) continue;
         rezultat.predanih += 1;
         const { error: napakaNaloge } = await admin.from("promo_tasks").insert({
           campaign_id: kampanja.id,
@@ -816,6 +866,8 @@ export async function predajVPromocije(opcije: { suho?: boolean } = {}): Promise
       .select("id")
       .single();
     if (error || !nov) {
+      // unique (campaign_id, lead_id): if another run inserted the target
+      // first, this insert fails and no second task is created.
       rezultat.napaka = `${v.podjetje} ni bilo mogoče dodati v kampanjo.`;
       continue;
     }
@@ -857,7 +909,6 @@ export const STANJE_KONTAKTA: Record<KontaktEkipe["stanje"], string> = {
 };
 
 const SINHRONIZACIJA_NAJVEC_NA_MIN = 10;
-let zadnjaSinhronizacija = 0;
 
 /**
  * Kontakte, ki jih je našla ekipa, prenese v Bazo leadov (intel_leads) z
@@ -866,9 +917,21 @@ let zadnjaSinhronizacija = 0;
  * obstoječemu leadu doda le oznako in stanje. Največ enkrat na 10 minut, ker
  * jo kličejo strani, ki se same osvežujejo. Obogatitve ne sproži.
  */
-export async function sinhronizirajLeade(): Promise<{ novih: number; posodobljenih: number } | null> {
-  if (Date.now() - zadnjaSinhronizacija < SINHRONIZACIJA_NAJVEC_NA_MIN * 60_000) return null;
-  zadnjaSinhronizacija = Date.now();
+export function sinhronizirajLeade(
+  opcije: { vsiljeno?: boolean } = {},
+): Promise<{ novih: number; posodobljenih: number } | null> {
+  // Same queue as the hand-off: both insert into intel_leads. Only the forced
+  // (scheduled) run waits; a page render skips when the queue is busy.
+  return poVrsti(() => sinhronizirajLeadeEnkrat(opcije), opcije.vsiljeno ? undefined : () => null);
+}
+
+async function sinhronizirajLeadeEnkrat(opcije: {
+  vsiljeno?: boolean;
+}): Promise<{ novih: number; posodobljenih: number } | null> {
+  // The throttle is for self-refreshing pages; the scheduled route forces a run.
+  const z = harveyZaklep();
+  if (!opcije.vsiljeno && Date.now() - z.zadnjaSinhronizacija < SINHRONIZACIJA_NAJVEC_NA_MIN * 60_000) return null;
+  z.zadnjaSinhronizacija = Date.now();
 
   let kontakti: KontaktEkipe[];
   try {
@@ -900,6 +963,8 @@ export async function sinhronizirajLeade(): Promise<{ novih: number; posodobljen
   }
 
   const novi: Record<string, unknown>[] = [];
+  // Harvey may list the same address or tax number twice; insert it once.
+  const zeVNovih = new Set<string>();
   let posodobljenih = 0;
   for (const k of kontakti) {
     const harvey = { stanje: k.stanje, oznaka: STANJE_KONTAKTA[k.stanje], najden: k.najden };
@@ -919,6 +984,11 @@ export async function sinhronizirajLeade(): Promise<{ novih: number; posodobljen
       if (!error) posodobljenih += 1;
       continue;
     }
+    const kljucPosta = `e:${k.email.toLowerCase()}`;
+    const kljucDavcna = stevke(k.davcna) ? `d:${stevke(k.davcna)}` : "";
+    if (zeVNovih.has(kljucPosta) || (kljucDavcna && zeVNovih.has(kljucDavcna))) continue;
+    zeVNovih.add(kljucPosta);
+    if (kljucDavcna) zeVNovih.add(kljucDavcna);
     novi.push({
       company_name: k.podjetje || k.email,
       email: k.email,

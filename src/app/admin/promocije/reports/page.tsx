@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -11,6 +12,7 @@ import {
 } from "@/lib/promocije/types";
 
 export default async function PromocijeReportsPage() {
+  await zahtevajStran("promotion.view");
   const admin = createAdminClient();
 
   let stats;

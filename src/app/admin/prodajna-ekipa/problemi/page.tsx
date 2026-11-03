@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { preberiProbleme } from "@/lib/prodajna-ekipa";
 import { ProblemiPregled } from "./ProblemiPregled";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Problemi za potrditev" };
 
 export default async function ProblemiPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const podatki = await preberiProbleme();
   return (
     <div className="mx-auto max-w-2xl">

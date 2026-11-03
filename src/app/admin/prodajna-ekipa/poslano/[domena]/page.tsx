@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 
 /**
  * Poslan mail za panik gumb, točno tak, kot je šel ven (Luka, 28. 10. 2026: »da tule lahka vidim te poslane
@@ -24,7 +24,7 @@ type PoslanMail = {
 };
 
 export default async function PoslanMailPage({ params }: { params: Promise<{ domena: string }> }) {
-  await requireAdmin();
+  await zahtevajStran("kompletko.view");
   const { domena } = await params;
   if (!/^[a-z0-9][a-z0-9.-]{1,80}\.[a-z]{2,}$/.test(domena)) notFound();
 

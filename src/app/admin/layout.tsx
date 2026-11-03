@@ -20,10 +20,14 @@ import DashboardShell from "@/components/dashboard/DashboardShell";
 import LastPathTracker from "@/components/dashboard/LastPathTracker";
 import { OznaciInterno } from "@/app/predlog/[koda]/OznaciInterno";
 import { getCurrentUserPermissions, hasPermission } from "@/lib/permissions/require-permission";
-import { RAZDELKI } from "@/lib/admin-meni";
+import { RAZDELKI, type Razdelek } from "@/lib/admin-meni";
+import type { RoleKey } from "@/lib/permissions/registry";
 import { Zavihki } from "./Zavihki";
 
 const ICON_CLASS = "h-5 w-5";
+
+/** RBAC roles that belong to the partner portal, never to the admin. */
+const PORTALNE_VLOGE: RoleKey[] = ["partner", "referral", "user"];
 
 /** Ikona vsake točke menija; točke same so v src/lib/admin-meni.ts (iz njih so tudi zavihki na vrhu). */
 const IKONE: Record<string, ReactNode> = {
@@ -65,16 +69,24 @@ export default async function AdminLayout({
   const isLegacyAdmin = profile?.role === "admin";
   const perms = await getCurrentUserPermissions();
 
-  // Additive widening: legacy admins keep working exactly as before; any of
-  // the 7 new RBAC roles also gets in, so the new permission system and nav
-  // filtering below are actually reachable/testable in this phase. Nothing
-  // existing is removed by this check.
-  if (!isLegacyAdmin && !perms?.roleKey) {
-    redirect("/partner");
+  // Status »Neaktiven« locks everyone out, legacy admins included.
+  if (perms?.neaktiven) {
+    redirect("/racun-neaktiven");
   }
 
+  // Legacy admins keep working exactly as before. RBAC roles get in, except
+  // the portal roles (Partner, Referral, User): per Luka's decision (Faza 2,
+  // Q1) a partner sees only /partner. A portal role whose profile isn't a
+  // partner goes home, because /partner would send it back here (loop).
+  if (!isLegacyAdmin && (!perms?.roleKey || PORTALNE_VLOGE.includes(perms.roleKey))) {
+    redirect(profile?.role === "partner" ? "/partner" : "/");
+  }
+
+  const vidi = (p: Razdelek["permission"]) =>
+    p === null || (Array.isArray(p) ? p.some((k) => hasPermission(perms, k)) : hasPermission(perms, p));
+
   const visibleNavItems = RAZDELKI.filter(
-    (item) => item.permission === null || isLegacyAdmin || hasPermission(perms, item.permission)
+    (item) => isLegacyAdmin || vidi(item.permission)
   ).map((r) => ({
     href: r.href,
     label: r.label,

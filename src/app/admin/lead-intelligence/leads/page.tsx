@@ -1,3 +1,4 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { danesLjubljana, queryLeads } from "@/lib/lead-intelligence/query";
@@ -22,6 +23,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await zahtevajStran("lead_intelligence.view");
   const params = await searchParams;
   const filters = filtersFromSearchParams(params);
 

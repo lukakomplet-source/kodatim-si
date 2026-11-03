@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/require-admin";
+import { requireAdmin, requireAdminAli } from "@/lib/require-admin";
 import {
   nastaviRecept,
   odlociOsnutek,
@@ -146,7 +146,7 @@ export async function odlociProblemAkcija(
 export async function nastaviPosiljanjeAkcija(domena: string, stanje: string): Promise<{ ok: boolean; napaka?: string }> {
   let kdo = "";
   try {
-    kdo = (await requireAdmin()).email ?? "";
+    kdo = (await requireAdminAli("kompletko.calls")).email ?? "";
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
@@ -175,7 +175,7 @@ export async function zabeleziKlicAkcija(
 ): Promise<{ ok: boolean; napaka?: string }> {
   let kdo = "";
   try {
-    kdo = (await requireAdmin()).email ?? ""; // who called, for the numbers per person (harvey/stevilke.py)
+    kdo = (await requireAdminAli("kompletko.calls")).email ?? ""; // who called, for the numbers per person (harvey/stevilke.py)
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
@@ -210,7 +210,7 @@ export async function poisciKontaktAkcija(
   q: string,
 ): Promise<{ ok: boolean; zadetki?: ZadetekKontakta[]; napaka?: string }> {
   try {
-    await requireAdmin();
+    await requireAdminAli("kompletko.calls");
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }
@@ -231,7 +231,7 @@ export async function rocniKlicAkcija(podatki: {
 }): Promise<{ ok: boolean; napaka?: string; obstaja?: ZadetekKontakta[] }> {
   let kdo = "";
   try {
-    kdo = (await requireAdmin()).email ?? "";
+    kdo = (await requireAdminAli("kompletko.calls")).email ?? "";
   } catch (err) {
     return { ok: false, napaka: err instanceof Error ? err.message : "Napaka." };
   }

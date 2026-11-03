@@ -1,6 +1,8 @@
+import { zahtevajStran } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function AdminLeadsPage() {
+  await zahtevajStran("lead.view");
   const supabase = createAdminClient();
   const { data: leads } = await supabase
     .from("leads")

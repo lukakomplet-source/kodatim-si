@@ -7,4 +7,6 @@ export type EffectivePermissions = {
   roleName: string | null;
   bypassAll: boolean;
   granted: Set<PermissionKey>;
+  /** profiles.status is not 'active' (Neaktiven/suspendiran): no access anywhere. */
+  neaktiven?: boolean;
 };

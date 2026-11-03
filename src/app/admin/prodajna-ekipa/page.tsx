@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import {
   predajVPromocije,
   preberiEkipo,
@@ -29,7 +29,7 @@ export const metadata = { title: "Prodajna ekipa" };
 const OSVEZI_VSAKIH_S = 15;
 
 export default async function ProdajnaEkipaPage() {
-  await requireAdmin();
+  await zahtevajStran();
   const [{ povzetek, napaka }, zdaj, problemi, segmenti] = await Promise.all([
     preberiEkipo(),
     preberiZdaj(),

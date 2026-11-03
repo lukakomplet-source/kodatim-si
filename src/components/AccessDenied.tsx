@@ -8,7 +8,7 @@ export default function AccessDenied() {
         <Lock className="h-5 w-5" />
       </span>
       <h1 className="mt-4 text-lg font-semibold text-zinc-900">
-        Nimate dovoljenja za ogled te strani.
+        Nimate dovoljenja za to stran.
       </h1>
       <p className="mt-2 text-sm text-zinc-500">
         Če menite, da je to napaka, se obrnite na skrbnika sistema.

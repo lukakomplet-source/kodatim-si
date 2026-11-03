@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import {
   KLJUCI_DELAVCEV,
   VLOGE,
@@ -22,7 +22,7 @@ import { OZNAKE_STEVILK, kdaj, stanjeZaPrikaz, stevilo, vrednostStevilke } from 
 export const dynamic = "force-dynamic";
 
 export default async function DelavecPage({ params }: { params: Promise<{ vloga: string }> }) {
-  await requireAdmin();
+  await zahtevajStran();
   const { vloga: surovo } = await params;
   if (!(KLJUCI_DELAVCEV as readonly string[]).includes(surovo)) notFound();
   const vloga = surovo as KljucDelavca;

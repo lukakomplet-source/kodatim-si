@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/require-admin";
+import { zahtevajStran } from "@/lib/require-admin";
 import { seznamNalog, stanjeDelavca } from "@/lib/render";
 import type { RenderNaloga } from "@/lib/renderOznake";
 import RenderKonzola from "./RenderKonzola";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Render" };
 
 export default async function RenderPage() {
-  await requireAdmin();
+  await zahtevajStran();
   let naloge: RenderNaloga[] = [];
   let napaka: string | null = null;
   try {

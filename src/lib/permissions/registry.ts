@@ -18,6 +18,7 @@ export const MODULES = [
   { key: "roles", label: "Vloge" },
   { key: "permissions", label: "Dovoljenja" },
   { key: "chat", label: "Klepet" },
+  { key: "kompletko", label: "Kompletko – panik gumb" },
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]["key"];
@@ -36,13 +37,15 @@ const ACTION_LABELS: Record<string, string> = {
   upload: "Nalaganje",
   manage: "Upravljanje",
   access: "Dostop",
+  calls: "Vpis klicev",
 };
 
 function perm(key: string, module: ModuleKey, action: string) {
   return { key, module, action, label: ACTION_LABELS[action] ?? action } as const;
 }
 
-// Mirrors supabase/migration_rbac.sql's permission seed exactly — 49 rows.
+// Mirrors supabase/migration_rbac.sql's permission seed (49 rows) plus
+// migration_vloge_faza2.sql (kompletko.*).
 // Extending later = add one entry here + one insert row in a new migration.
 export const PERMISSIONS = [
   perm("dashboard.view", "dashboard", "view"),
@@ -110,6 +113,11 @@ export const PERMISSIONS = [
 
   perm("chat.view", "chat", "view"),
   perm("chat.use", "chat", "use"),
+
+  // Faza 2 (supabase/migration_vloge_faza2.sql): Kompletko sales work without
+  // opening KodaTim mail approval, Harvey settings or anything else.
+  perm("kompletko.view", "kompletko", "view"),
+  perm("kompletko.calls", "kompletko", "calls"),
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
@@ -131,6 +139,7 @@ export const ROLE_KEYS = [
   "partner",
   "referral",
   "user",
+  "prodaja_kompletko",
 ] as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[number];
@@ -143,4 +152,5 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
   partner: "Partner",
   referral: "Referral",
   user: "User",
+  prodaja_kompletko: "Prodaja Kompletko",
 };

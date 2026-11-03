@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { requireAdmin } from "@/lib/require-admin";
+import { requireAdmin, zahtevajStran } from "@/lib/require-admin";
 import { preberiDelavca, preberiPosiljanja } from "@/lib/prodajna-ekipa";
 import { OdobritevMape } from "../prodajna-ekipa/OdobritevMape";
 
@@ -15,8 +15,22 @@ export const metadata = { title: "Maili" };
 const LISTMONK_URL = process.env.NEXT_PUBLIC_LISTMONK_URL || "https://listmonk.kodatim.si";
 
 export default async function MailiPage() {
-  await requireAdmin();
-  const [podrobnosti, posiljanja] = await Promise.all([preberiDelavca("odobritev"), preberiPosiljanja()]);
+  await zahtevajStran("kompletko.view");
+  let jeAdmin = true;
+  try {
+    await requireAdmin();
+  } catch {
+    jeAdmin = false;
+  }
+  const [vse, posiljanja] = await Promise.all([preberiDelavca("odobritev"), preberiPosiljanja()]);
+
+  // Prodaja Kompletko sees only Kompletko folders (Q1): no KodaTim drafts, no Hoteli guests' mails.
+  let podrobnosti = vse;
+  if (vse && !jeAdmin) {
+    const mape = (vse.mape ?? []).filter((m) => m.lastnik === "kompletko");
+    const imena = new Set(mape.map((m) => m.ime));
+    podrobnosti = { ...vse, mape, seznam: vse.seznam.filter((p) => !!p.mapa && imena.has(p.mapa)) };
+  }
 
   return (
     <div>
@@ -41,18 +55,20 @@ export default async function MailiPage() {
         )}
       </div>
 
-      <p className="mt-8 text-sm text-zinc-500">
-        Novice in obvestila strankam (ne hladni maili) urejaš v{" "}
-        <a
-          href={LISTMONK_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-zinc-900"
-        >
-          Listmonku <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-        </a>
-        .
-      </p>
+      {jeAdmin ? (
+        <p className="mt-8 text-sm text-zinc-500">
+          Novice in obvestila strankam (ne hladni maili) urejaš v{" "}
+          <a
+            href={LISTMONK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-zinc-900"
+          >
+            Listmonku <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          </a>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }
