@@ -19,11 +19,24 @@ export function ScenarijKlica({ ime }: { ime: string }) {
           Po mailu: »{pozdrav} Pred par dnevi smo vam pisali o voznikih ponoči na parkiriščih. Vas kličem v slabem
           trenutku?« (Skoraj vsak reče »ne, povejte«. S tem ti je sam dal dovoljenje.)
         </p>
+        <p>
+          Ponovni klic: »{pozdrav} Prejšnji teden sva govorila o voznikih ponoči. Ste imeli čas pogledati?«
+        </p>
+        <p className="mt-1 text-zinc-500">
+          Klic naj traja do 5 minut. Cilj je samo termin za 15 minut, ne predstavitev po telefonu.
+        </p>
       </div>
       <div>
         <p className="font-semibold text-zinc-900">1. Problem: vprašaj in molči, naj pove sam</p>
         <p>
           »Kaj vas pri voznikih na poti najbolj skrbi?« Odgovor zapiši z njegovimi besedami v polje »Kaj jih skrbi«.
+        </p>
+        <p>
+          Če ne ve, kaj bi rekel, mu daj izbiro: »Je to bolj kraja tovora, voznik sam ponoči na parkirišču ali to, da ob
+          težavi nihče ne ve, kje je?«
+        </p>
+        <p className="mt-1 text-zinc-500">
+          Ko izbere, ostani samo pri tej eni skrbi. Ostalo omeni le, če vpraša sam.
         </p>
         <p>»Se je pri vas ali pri kolegih že kaj zgodilo? Kraja goriva, prerezana cerada, napad na voznika?«</p>
         <p>»Če se to zgodi ponoči, kdo pri vas izve prvi? In v koliko časa?«</p>
