@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { requireAdmin } from "@/lib/require-admin";
+import { DELAVCI_ADMINA, requireAdminAli } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { imeStrani } from "@/lib/admin-meni";
 
 /**
  * "Carry on where you left off" — an offer, not a redirect.
@@ -10,20 +11,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * so this only ever shows a link.
  */
 
-const LABELS: { prefix: string; label: string }[] = [
-  { prefix: "/admin/lead-skrejp", label: "Lead skrejp" },
-  { prefix: "/admin/lead-intelligence/leads", label: "Baza leadov" },
-  { prefix: "/admin/lead-intelligence/import", label: "Uvoz leadov" },
-  { prefix: "/admin/lead-intelligence", label: "Lead Intelligence" },
-  { prefix: "/admin/promocije/tematska", label: "Tematska kampanja" },
-  { prefix: "/admin/promocije", label: "Promocije" },
-  { prefix: "/admin/prodajni-coach", label: "Prodajni coach" },
-  { prefix: "/admin/partnerji", label: "Partnerji" },
-  { prefix: "/admin/podjetja", label: "Podjetja" },
-];
-
+/** Ime strani iz menija (src/lib/admin-meni.ts), npr. »Vsa podjetja · Podjetja«; isto kot naslov zavihka. */
 function labelFor(path: string): string {
-  return LABELS.find((l) => path.startsWith(l.prefix))?.label ?? path;
+  return imeStrani(path) ?? path;
 }
 
 function agoText(at: number): string {
@@ -38,7 +28,8 @@ function agoText(at: number): string {
 export default async function ResumeCard() {
   let user;
   try {
-    user = await requireAdmin();
+    // Same circle as /api/admin/ui-state, which LastPathTracker writes to.
+    user = await requireAdminAli(...DELAVCI_ADMINA);
   } catch {
     return null;
   }

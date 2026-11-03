@@ -5,13 +5,15 @@ import { usePathname } from "next/navigation";
 import { razdelekZa } from "@/lib/admin-meni";
 
 /**
- * Zavihki razdelka na vrhu vsake strani (iz src/lib/admin-meni.ts), npr. Maili: Za poslat · Poslano · Odgovori.
+ * Zavihki razdelka na vrhu vsake strani (iz src/lib/admin-meni.ts), npr. Komunikacija: Pregled · Poslano · Odgovori.
  * Strani razdelka so tako vedno ena poleg druge; razdelek z eno samo stranjo zavihkov nima.
+ * `dovoljeni`: zavihki, ki jih uporabnik sme videti (layout jih izračuna iz meniZa), kot href zavihka → stran,
+ * na katero zanj vodi (npr. Ljudje → /admin/vloge); brez tega vsi.
  */
-export function Zavihki() {
+export function Zavihki({ dovoljeni }: { dovoljeni?: Record<string, string> }) {
   const pathname = usePathname();
   const najdeno = razdelekZa(pathname);
-  const zavihki = najdeno?.razdelek.zavihki ?? [];
+  const zavihki = (najdeno?.razdelek.zavihki ?? []).filter((z) => !dovoljeni || z.href in dovoljeni);
   if (zavihki.length < 2) return null;
   return (
     <nav aria-label={najdeno?.razdelek.label} className="-mx-1 mb-6 overflow-x-auto pb-1">
@@ -21,7 +23,7 @@ export function Zavihki() {
           return (
             <li key={z.href}>
               <Link
-                href={z.href}
+                href={dovoljeni?.[z.href] ?? z.href}
                 aria-current={aktiven ? "page" : undefined}
                 className={`block rounded-full px-4 py-1.5 text-sm font-medium ring-1 transition ${
                   aktiven

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/require-admin";
+import { DELAVCI_ADMINA, requireAdminAli } from "@/lib/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -12,13 +12,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
+/**
+ * Everyone who works in the admin, not only admins (DELAVCI_ADMINA): the business switch (key »posel«) and
+ * »last-path« must persist for Prodaja Kompletko too. Rows are per user, so nobody reaches anyone else's state.
+ */
+const KDO_SME = DELAVCI_ADMINA;
+
 /** jsonb will take more, but a screen's state that large is a bug, not a save. */
 const MAX_BYTES = 2_000_000;
 
 export async function GET(request: NextRequest) {
   let user;
   try {
-    user = await requireAdmin();
+    user = await requireAdminAli(...KDO_SME);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Napaka." }, { status: 401 });
   }
@@ -44,7 +50,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   let user;
   try {
-    user = await requireAdmin();
+    user = await requireAdminAli(...KDO_SME);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Napaka." }, { status: 401 });
   }
@@ -77,7 +83,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   let user;
   try {
-    user = await requireAdmin();
+    user = await requireAdminAli(...KDO_SME);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Napaka." }, { status: 401 });
   }

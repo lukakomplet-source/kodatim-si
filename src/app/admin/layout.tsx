@@ -1,28 +1,18 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import {
-  Activity,
-  Archive,
-  Factory,
-  Globe,
-  LayoutDashboard,
-  Mail,
-  Radar,
-  ShieldCheck,
-  Siren,
-  Target,
-  UserCog,
-  Users,
-  Workflow,
-} from "lucide-react";
+import Link from "next/link";
+import { BarChart3, Building2, History, LayoutDashboard, MessagesSquare, Search, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import LastPathTracker from "@/components/dashboard/LastPathTracker";
 import { OznaciInterno } from "@/app/predlog/[koda]/OznaciInterno";
-import { getCurrentUserPermissions, hasPermission } from "@/lib/permissions/require-permission";
-import { RAZDELKI, type Razdelek } from "@/lib/admin-meni";
+import { getCurrentUserPermissions } from "@/lib/permissions/require-permission";
+import { RAZDELKI, meniZa, potiRazdelka, praviceIz } from "@/lib/admin-meni";
 import type { RoleKey } from "@/lib/permissions/registry";
+import { preberiPosel } from "@/lib/posel";
 import { Zavihki } from "./Zavihki";
+import { StikaloPosla } from "./StikaloPosla";
+import { NaslovStrani } from "./NaslovStrani";
 
 const ICON_CLASS = "h-5 w-5";
 
@@ -32,18 +22,11 @@ const PORTALNE_VLOGE: RoleKey[] = ["partner", "referral", "user"];
 /** Ikona vsake točke menija; točke same so v src/lib/admin-meni.ts (iz njih so tudi zavihki na vrhu). */
 const IKONE: Record<string, ReactNode> = {
   danes: <LayoutDashboard className={ICON_CLASS} />,
-  maili: <Mail className={ICON_CLASS} />,
-  kompletko: <Siren className={ICON_CLASS} />,
-  stranke: <Radar className={ICON_CLASS} />,
-  iskanje: <Factory className={ICON_CLASS} />,
-  prodaja: <Target className={ICON_CLASS} />,
-  harvey: <Workflow className={ICON_CLASS} />,
-  izvedba: <Globe className={ICON_CLASS} />,
-  partnerji: <Users className={ICON_CLASS} />,
-  uporabniki: <UserCog className={ICON_CLASS} />,
-  vloge: <ShieldCheck className={ICON_CLASS} />,
-  nadzor: <Activity className={ICON_CLASS} />,
-  arhiv: <Archive className={ICON_CLASS} />,
+  podjetja: <Building2 className={ICON_CLASS} />,
+  komunikacija: <MessagesSquare className={ICON_CLASS} />,
+  iskanje: <Search className={ICON_CLASS} />,
+  stevilke: <BarChart3 className={ICON_CLASS} />,
+  nastavitve: <Settings className={ICON_CLASS} />,
 };
 
 export default async function AdminLayout({
@@ -82,29 +65,56 @@ export default async function AdminLayout({
     redirect(profile?.role === "partner" ? "/partner" : "/");
   }
 
-  const vidi = (p: Razdelek["permission"]) =>
-    p === null || (Array.isArray(p) ? p.some((k) => hasPermission(perms, k)) : hasPermission(perms, p));
+  // Meni za tega uporabnika: razdelki in zavihki, ki jih sme videti (src/lib/admin-meni.ts).
+  const pravice = praviceIz(perms);
+  const meni = meniZa(isLegacyAdmin ? { admin: true, ima: () => true } : pravice);
 
-  const visibleNavItems = RAZDELKI.filter(
-    (item) => isLegacyAdmin || vidi(item.permission)
-  ).map((r) => ({
-    href: r.href,
-    label: r.label,
-    icon: IKONE[r.kljuc],
-    skupina: r.skupina,
-    poti: [...(r.poti ?? []), ...(r.zavihki ?? []).flatMap((z) => [z.href, ...(z.poti ?? [])])],
-  }));
+  const visibleNavItems = meni.map((r) => {
+    // Paths come from the full section, so the highlighted item always matches razdelekZa().
+    const celoten = RAZDELKI.find((x) => x.kljuc === r.kljuc) ?? r;
+    return {
+      href: r.href,
+      label: r.label,
+      icon: IKONE[r.kljuc],
+      skupina: r.skupina,
+      poti: potiRazdelka(celoten),
+      // Danes (/admin) is lit only on /admin itself, as in razdelekZa(); otherwise every page outside a section.
+      natancno: r.href === "/admin",
+    };
+  });
+  // Tab href (as in RAZDELKI) -> the page it opens for this user (Ljudje may open /admin/vloge, …).
+  const dovoljeniZavihki = Object.fromEntries(meni.flatMap((r) => (r.zavihki ?? []).map((z) => [z.href, z.vhod])));
+
+  // »Stari admin« only for admins (whoever sees Nastavitve), never for Prodaja Kompletko.
+  const vidiStariAdmin =
+    perms?.roleKey !== "prodaja_kompletko" && meni.some((r) => r.kljuc === "nastavitve");
+
+  const posel = await preberiPosel();
 
   return (
     <DashboardShell
       title="Admin"
       navItems={visibleNavItems}
       userEmail={user.email ?? ""}
+      lepljiv
+      zgoraj={<StikaloPosla zacetno={posel} />}
+      spodaj={
+        vidiStariAdmin ? (
+          <Link
+            href="/admin/stari-admin"
+            className="flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm text-zinc-400 transition hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            <History className="h-4 w-4" />
+            Stari admin
+          </Link>
+        ) : null
+      }
     >
       <LastPathTracker />
+      <NaslovStrani />
       {/* Whoever uses the admin is team: their proposal views never count */}
       <OznaciInterno />
-      <Zavihki />
+      <Zavihki dovoljeni={dovoljeniZavihki} />
       {children}
     </DashboardShell>
   );

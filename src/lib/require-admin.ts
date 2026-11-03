@@ -5,6 +5,18 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserPermissions } from "@/lib/permissions/require-permission";
 import type { PermissionKey } from "@/lib/permissions/registry";
 
+/**
+ * Permissions of everyone who works in the admin, not only admins (e.g. Prodaja Kompletko). Used where per-user
+ * admin state is read or written: /api/admin/ui-state and ResumeCard.
+ */
+export const DELAVCI_ADMINA: PermissionKey[] = [
+  "dashboard.view",
+  "kompletko.view",
+  "promotion.view",
+  "lead_intelligence.view",
+  "crm.view",
+];
+
 type Preverjanje =
   | { ok: true; user: User }
   | { ok: false; razlog: "prijava" | "neaktiven" | "dovoljenje" };

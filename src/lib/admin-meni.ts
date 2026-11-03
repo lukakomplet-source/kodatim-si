@@ -1,80 +1,204 @@
 import type { PermissionKey } from "@/lib/permissions/registry";
+import type { EffectivePermissions } from "@/lib/permissions/types";
 
 /**
  * Meni admina na enem mestu (Luka, 28. 10. 2026: »naredi zdj celo to kodo tim mal bolj simple pa razumljivo
  * kak pridet do česa pa da se ne ponavljajo neke stvari … pa da se kaj ne zgubi«). Vsak razdelek je ena točka
- * v stranskem meniju; njegove strani so zavihki na vrhu (Zavihki.tsx). Stranski meni in zavihki berejo samo
- * ta seznam, zato se ne moreta razhajati.
+ * v stranskem meniju; njegove strani so zavihki na vrhu (Zavihki.tsx). Stranski meni, zavihki, naslov zavihka
+ * v brskalniku in »Nadaljujte, kjer ste ostali« berejo samo ta seznam, zato se ne morejo razhajati.
  *
- * `poti`: druge strani, ki spadajo v razdelek (podstrani, stari naslovi), da je v meniju označen pravi.
+ * Faza 3 (3. 11. 2026): 6 razdelkov (Danes, Podjetja, Komunikacija, Iskanje, Številke, Nastavitve), ki zaenkrat
+ * kažejo obstoječe strani. Stari meni s 13 točkami ostane kot STARI_MENI na strani »Stari admin«.
+ *
+ * `poti`: druge strani, ki spadajo v razdelek ali zavihek (podstrani, stari naslovi), da je označen pravi.
+ * Pri ujemanju zmaga najdaljša pot (npr. /admin/promocije/tematska je Iskanje, ne Podjetja).
+ *
+ * Dovoljenje zavihka je ISTO kot zapora njegove strani (zahtevajStran / requirePagePermission v page.tsx):
+ * viden zavihek = stran, ki se odpre. Ko se zapora strani spremeni, popravi tudi dovoljenje tu.
  */
 
-export type Zavihek = { label: string; href: string; poti?: string[] };
+/**
+ * null = everyone in the admin; "admin" = admin level only (legacy admin / Super Admin, i.e. a page guarded by
+ * zahtevajStran() without keys); a list = any one of them is enough.
+ */
+export type Dovoljenje = PermissionKey | PermissionKey[] | null | "admin";
+
+/** Kaj uporabnik sme: admin (bypass) in posamezna dovoljenja. */
+export type Pravice = { admin: boolean; ima: (k: PermissionKey) => boolean };
+
+export function praviceIz(perms: EffectivePermissions | null): Pravice {
+  const admin = !!perms && !perms.neaktiven && perms.bypassAll;
+  return { admin, ima: (k) => admin || (!!perms && !perms.neaktiven && perms.granted.has(k)) };
+}
+
+export type Zavihek = {
+  label: string;
+  href: string;
+  poti?: string[];
+  /** Brez tega velja dovoljenje razdelka. */
+  permission?: Dovoljenje;
+  /**
+   * Zavihek z več stranmi, ki imajo vsaka svojo zaporo (npr. Ljudje): vodi na prvo, ki jo uporabnik sme odpreti.
+   * Zavihek je viden, če sme odpreti katerokoli; `permission` se tedaj ne uporablja.
+   */
+  vhodi?: { href: string; permission: Dovoljenje }[];
+};
 
 export type Razdelek = {
   kljuc: string;
   label: string;
   href: string;
-  /** null = everyone in the admin; a list = any one of them is enough. */
-  permission: PermissionKey | PermissionKey[] | null;
+  /** Razdelek brez zavihkov je viden s tem dovoljenjem; z zavihki je viden, če je viden vsaj en zavihek. */
+  permission: Dovoljenje;
   skupina?: string;
   zavihki?: Zavihek[];
   poti?: string[];
 };
 
+/** Zavihek, kot ga vidi en uporabnik: `vhod` je stran, na katero zanj vodi (pri `vhodi` ni nujno `href`). */
+export type ZavihekZaUporabnika = Zavihek & { vhod: string };
+export type RazdelekZaUporabnika = Omit<Razdelek, "zavihki"> & { zavihki?: ZavihekZaUporabnika[] };
+
 export const RAZDELKI: Razdelek[] = [
   { kljuc: "danes", label: "Danes", href: "/admin", permission: "dashboard.view" },
   {
-    kljuc: "maili",
-    label: "Maili",
-    href: "/admin/maili",
-    permission: ["promotion.view", "kompletko.view"],
-    poti: [
-      "/admin/prodajna-ekipa/odobritev",
-      "/admin/prodajna-ekipa/poslano-kodatim",
-      "/admin/prodajna-ekipa/posiljatelj",
-      "/admin/prodajna-ekipa/bralec_odgovorov",
-      "/admin/e-posta",
-    ],
-    zavihki: [
-      { label: "Za poslat", href: "/admin/maili", poti: ["/admin/prodajna-ekipa/odobritev", "/admin/prodajna-ekipa/poslano-kodatim"] },
-      { label: "Poslano", href: "/admin/prodajna-ekipa/posiljatelj" },
-      { label: "Odgovori", href: "/admin/prodajna-ekipa/bralec_odgovorov" },
-    ],
-  },
-  {
-    kljuc: "kompletko",
-    label: "Kompletko – panik gumb",
-    href: "/admin/prodajna-ekipa/kompletko",
-    permission: ["promotion.view", "kompletko.view"],
-    poti: ["/admin/prodajna-ekipa/poslano"],
-  },
-  {
-    kljuc: "stranke",
-    label: "Stranke",
+    kljuc: "podjetja",
+    label: "Podjetja",
     href: "/admin/lead-intelligence/leads",
-    permission: "lead_intelligence.view",
-    poti: ["/admin/lead-intelligence", "/admin/leads"],
+    permission: ["lead_intelligence.view", "promotion.view", "kompletko.view"],
     zavihki: [
-      { label: "Vsi leadi", href: "/admin/lead-intelligence/leads" },
-      { label: "Pregled baze", href: "/admin/lead-intelligence" },
-      { label: "Iz klepeta", href: "/admin/leads" },
-      { label: "Uvoz", href: "/admin/lead-intelligence/import", poti: ["/admin/lead-intelligence/discovery"] },
+      { label: "Vsa podjetja", href: "/admin/lead-intelligence/leads", permission: "lead_intelligence.view" },
+      { label: "Priložnosti", href: "/admin/promocije", permission: "promotion.view" },
+      { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view" },
+      { label: "Dodaj in uvozi", href: "/admin/lead-intelligence/import", permission: "lead_intelligence.view" },
+    ],
+  },
+  {
+    kljuc: "komunikacija",
+    label: "Komunikacija",
+    href: "/admin/maili",
+    poti: ["/admin/komunikacija"],
+    permission: "kompletko.view",
+    zavihki: [
+      {
+        label: "Pregled",
+        href: "/admin/maili",
+        poti: ["/admin/prodajna-ekipa/odobritev", "/admin/prodajna-ekipa/poslano-kodatim", "/admin/e-posta"],
+        permission: "kompletko.view",
+      },
+      // posiljatelj in bralec_odgovorov sta /admin/prodajna-ekipa/[vloga] (zahtevajStran() brez ključev).
+      {
+        label: "Poslano",
+        href: "/admin/prodajna-ekipa/posiljatelj",
+        poti: ["/admin/prodajna-ekipa/poslano"],
+        permission: "admin",
+      },
+      {
+        label: "Odgovori",
+        href: "/admin/prodajna-ekipa/bralec_odgovorov",
+        poti: ["/admin/leads"],
+        permission: "admin",
+      },
     ],
   },
   {
     kljuc: "iskanje",
+    label: "Iskanje",
+    href: "/admin/register-podjetij",
+    poti: ["/admin/iskanje"],
+    // Vse tri strani so samo za administratorje (zahtevajStran() brez ključev).
+    permission: "admin",
+    zavihki: [
+      { label: "Register", href: "/admin/register-podjetij", poti: ["/admin/lead-skrejp", "/admin/promocije/tematska"] },
+      { label: "Kandidati", href: "/admin/prodajna-ekipa/problemi" },
+      { label: "Raziskave", href: "/admin/priloznosti" },
+    ],
+  },
+  {
+    kljuc: "stevilke",
+    label: "Številke",
+    href: "/admin/promocije/reports",
+    poti: ["/admin/stevilke"],
+    permission: ["promotion.view", "lead_intelligence.view"],
+    zavihki: [
+      { label: "Lijak", href: "/admin/promocije/reports", permission: "promotion.view" },
+      // Samo /admin/lead-intelligence sam: /leads in /import sta Podjetja, /discovery Nastavitve (daljše poti zmagajo).
+      { label: "Baza", href: "/admin/lead-intelligence", permission: "lead_intelligence.view" },
+    ],
+  },
+  {
+    kljuc: "nastavitve",
+    label: "Nastavitve",
+    href: "/admin/prodajna-ekipa",
+    poti: ["/admin/nastavitve"],
+    permission: ["users.manage", "roles.manage", "partner.view"],
+    zavihki: [
+      // Tudi dinamične /admin/prodajna-ekipa/[vloga], razen tistih, ki so naštete drugje (odobritev, posiljatelj …).
+      {
+        label: "Harvey",
+        href: "/admin/prodajna-ekipa",
+        poti: ["/admin/prodajna-ekipa/panoge", "/admin/prodajna-ekipa/drevo"],
+        permission: "admin",
+      },
+      {
+        label: "Sistem",
+        href: "/admin/nadzor",
+        poti: ["/admin/lead-intelligence/discovery", "/admin/demo-strani", "/admin/render"],
+        permission: "admin",
+      },
+      {
+        label: "Ljudje",
+        href: "/admin/uporabniki",
+        poti: ["/admin/vloge", "/admin/partnerji", "/admin/provizije"],
+        vhodi: [
+          { href: "/admin/uporabniki", permission: "users.manage" },
+          { href: "/admin/vloge", permission: "roles.manage" },
+          { href: "/admin/partnerji", permission: "partner.view" },
+        ],
+      },
+    ],
+  },
+];
+
+const MAILI: PermissionKey[] = ["promotion.view", "kompletko.view"];
+
+/** Stari meni (do faze 3) s 13 točkami; prikazan samo na strani »Stari admin«, vse poti delajo kot prej. */
+export type StaraTocka = {
+  label: string;
+  href: string;
+  permission: Dovoljenje;
+  podstrani?: { label: string; href: string }[];
+};
+
+export const STARI_MENI: StaraTocka[] = [
+  { label: "Danes", href: "/admin", permission: "dashboard.view" },
+  {
+    label: "Maili",
+    href: "/admin/maili",
+    permission: MAILI,
+    podstrani: [
+      { label: "Za poslat", href: "/admin/maili" },
+      { label: "Poslano", href: "/admin/prodajna-ekipa/posiljatelj" },
+      { label: "Odgovori", href: "/admin/prodajna-ekipa/bralec_odgovorov" },
+    ],
+  },
+  { label: "Kompletko – panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: MAILI },
+  {
+    label: "Stranke",
+    href: "/admin/lead-intelligence/leads",
+    permission: "lead_intelligence.view",
+    podstrani: [
+      { label: "Vsi leadi", href: "/admin/lead-intelligence/leads" },
+      { label: "Pregled baze", href: "/admin/lead-intelligence" },
+      { label: "Iz klepeta", href: "/admin/leads" },
+      { label: "Uvoz", href: "/admin/lead-intelligence/import" },
+    ],
+  },
+  {
     label: "Iskanje podjetij",
     href: "/admin/register-podjetij",
     permission: "crm.view",
-    poti: [
-      "/admin/lead-skrejp",
-      "/admin/priloznosti",
-      "/admin/prodajna-ekipa/problemi",
-      "/admin/prodajna-ekipa/panoge",
-      "/admin/prodajna-ekipa/drevo",
-    ],
-    zavihki: [
+    podstrani: [
       { label: "Register podjetij", href: "/admin/register-podjetij" },
       { label: "Lead skrejp", href: "/admin/lead-skrejp" },
       { label: "Priložnosti", href: "/admin/priloznosti" },
@@ -84,52 +208,51 @@ export const RAZDELKI: Razdelek[] = [
     ],
   },
   {
-    kljuc: "prodaja",
     label: "Prodaja",
     href: "/admin/promocije",
     permission: "promotion.view",
-    poti: ["/admin/prodajni-coach"],
-    zavihki: [
+    podstrani: [
       { label: "Promocije", href: "/admin/promocije" },
       { label: "Prodajni coach", href: "/admin/prodajni-coach" },
     ],
   },
+  { label: "Harvey – ekipa", href: "/admin/prodajna-ekipa", permission: "promotion.view" },
   {
-    kljuc: "harvey",
-    label: "Harvey – ekipa",
-    href: "/admin/prodajna-ekipa",
-    permission: "promotion.view",
-  },
-  {
-    kljuc: "izvedba",
     label: "Izvedba",
     href: "/admin/demo-strani",
     permission: "crm.view",
-    poti: ["/admin/render"],
-    zavihki: [
+    podstrani: [
       { label: "Spletne strani in aplikacije", href: "/admin/demo-strani" },
       { label: "Render", href: "/admin/render" },
     ],
   },
   {
-    kljuc: "partnerji",
     label: "Partnerji",
     href: "/admin/partnerji",
     permission: "partner.view",
-    poti: ["/admin/provizije"],
-    zavihki: [
+    podstrani: [
       { label: "Partnerji", href: "/admin/partnerji" },
       { label: "Provizije", href: "/admin/provizije" },
     ],
   },
-  { kljuc: "uporabniki", label: "Uporabniki", href: "/admin/uporabniki", permission: "users.manage", skupina: "Nastavitve" },
-  { kljuc: "vloge", label: "Vloge", href: "/admin/vloge", permission: "roles.manage", skupina: "Nastavitve" },
-  { kljuc: "nadzor", label: "Nadzor zbiralnikov", href: "/admin/nadzor", permission: "crm.view", skupina: "Nastavitve" },
-  // Arhiv: Podjetja (Firecrawl v tabelo `companies`, ki je nihče drug ne bere) — ostane, a ni v ospredju.
-  { kljuc: "arhiv", label: "Arhiv: podjetja", href: "/admin/podjetja", permission: "crm.view", skupina: "Nastavitve" },
+  { label: "Uporabniki", href: "/admin/uporabniki", permission: "users.manage" },
+  { label: "Vloge", href: "/admin/vloge", permission: "roles.manage" },
+  { label: "Nadzor zbiralnikov", href: "/admin/nadzor", permission: "crm.view" },
+  // Arhiv: Podjetja (Firecrawl v tabelo `companies`, ki je nihče drug ne bere) — samo še v starem adminu.
+  { label: "Arhiv: podjetja", href: "/admin/podjetja", permission: "crm.view" },
 ];
 
+/** Strani, ki niso v nobenem razdelku, a imajo svoje ime (naslov zavihka, »Nadaljujte, kjer ste ostali«). */
+const DRUGE_STRANI: { label: string; href: string }[] = [
+  { label: "Stari admin", href: "/admin/stari-admin" },
+  { label: "Nimate dovoljenja", href: "/admin/ni-dovoljenja" },
+  { label: "Prodajni coach", href: "/admin/prodajni-coach" },
+  ...STARI_MENI,
+];
+
+/** Koren /admin (Danes) velja samo zase, sicer bi bila Danes vsaka stran zunaj razdelkov (npr. Prodajni coach). */
 function ujema(pathname: string, href: string): boolean {
+  if (href === "/admin") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -138,11 +261,16 @@ export function dolzinaUjemanja(pathname: string, poti: string[]): number {
   return Math.max(-1, ...poti.filter((p) => ujema(pathname, p)).map((p) => p.length));
 }
 
+/** Vse poti razdelka: njegova, dodatne in poti vseh zavihkov. */
+export function potiRazdelka(r: Razdelek): string[] {
+  return [r.href, ...(r.poti ?? []), ...(r.zavihki ?? []).flatMap((z) => [z.href, ...(z.poti ?? [])])];
+}
+
 /** Razdelek, kateremu pripada stran, in njen zavihek (za zavihke na vrhu). */
 export function razdelekZa(pathname: string): { razdelek: Razdelek; zavihek: Zavihek | null } | null {
   let najboljsi: { razdelek: Razdelek; zavihek: Zavihek | null; d: number } | null = null;
   for (const r of RAZDELKI) {
-    const d = dolzinaUjemanja(pathname, [r.href, ...(r.poti ?? [])]);
+    const d = dolzinaUjemanja(pathname, potiRazdelka(r));
     if (d < 0 || (najboljsi && d <= najboljsi.d)) continue;
     let zavihek: Zavihek | null = null;
     let dz = -1;
@@ -156,4 +284,69 @@ export function razdelekZa(pathname: string): { razdelek: Razdelek; zavihek: Zav
     najboljsi = { razdelek: r, zavihek, d };
   }
   return najboljsi ? { razdelek: najboljsi.razdelek, zavihek: najboljsi.zavihek } : null;
+}
+
+/**
+ * Ime strani za ljudi: »Zavihek · Razdelek« ali »Razdelek«; za strani zunaj razdelkov ime iz starega menija.
+ * null, če strani ne poznamo.
+ */
+export function imeStrani(pathname: string): string | null {
+  const najdeno = razdelekZa(pathname);
+  if (najdeno) {
+    const { razdelek, zavihek } = najdeno;
+    return zavihek ? `${zavihek.label} · ${razdelek.label}` : razdelek.label;
+  }
+  let ime: string | null = null;
+  let d = -1;
+  for (const s of DRUGE_STRANI) {
+    const x = dolzinaUjemanja(pathname, [s.href]);
+    if (x > d) {
+      d = x;
+      ime = s.label;
+    }
+  }
+  return ime;
+}
+
+/** Ali uporabnik s `pravice` prestane `p` (null = vsak v adminu, "admin" = samo administrator, seznam = katerokoli). */
+export function ustreza(p: Dovoljenje, pravice: Pravice): boolean {
+  if (p === null) return true;
+  if (p === "admin") return pravice.admin;
+  return Array.isArray(p) ? p.some(pravice.ima) : pravice.ima(p);
+}
+
+/**
+ * Vsa dovoljenja, ki odprejo razdelek (za zahtevajStran na kratkih poteh). "admin" ne doda ničesar:
+ * administrator prestane zahtevajStran vedno, prazen seznam pa pomeni samo administrator.
+ */
+export function dovoljenjaRazdelka(r: Razdelek): PermissionKey[] {
+  const vsa: Dovoljenje[] = [
+    r.permission,
+    ...(r.zavihki ?? []).flatMap((z) => (z.vhodi ? z.vhodi.map((v) => v.permission) : [z.permission ?? r.permission])),
+  ];
+  const seznam = vsa.flatMap((p) => (p === null || p === "admin" ? [] : Array.isArray(p) ? p : [p]));
+  return [...new Set(seznam)];
+}
+
+/** Stran, na katero zavihek vodi tega uporabnika, ali null, če zavihka ne sme videti. */
+function vhodZavihka(z: Zavihek, r: Razdelek, pravice: Pravice): string | null {
+  if (z.vhodi) return z.vhodi.find((v) => ustreza(v.permission, pravice))?.href ?? null;
+  return ustreza(z.permission === undefined ? r.permission : z.permission, pravice) ? z.href : null;
+}
+
+/**
+ * Meni za enega uporabnika: samo razdelki in zavihki, ki jih sme videti. Razdelek z zavihki je viden, če je
+ * viden vsaj en zavihek; če njegova prva stran zanj ni dovoljena, vodi na prvi zavihek, ki ga sme videti.
+ */
+export function meniZa(pravice: Pravice): RazdelekZaUporabnika[] {
+  return RAZDELKI.flatMap((r): RazdelekZaUporabnika[] => {
+    if (!r.zavihki?.length) return ustreza(r.permission, pravice) ? [{ ...r, zavihki: undefined }] : [];
+    const zavihki = r.zavihki.flatMap((z) => {
+      const vhod = vhodZavihka(z, r, pravice);
+      return vhod ? [{ ...z, vhod }] : [];
+    });
+    if (!zavihki.length) return [];
+    const href = zavihki.some((z) => z.vhod === r.href) ? r.href : zavihki[0].vhod;
+    return [{ ...r, href, zavihki }];
+  });
 }

@@ -17,6 +17,8 @@ export type NavItem = {
   skupina?: string;
   /** Druge poti, ki spadajo pod to točko (podstrani, zavihki), da je v meniju označena prava. */
   poti?: string[];
+  /** `href` velja samo zase, ne kot predpona (admin: Danes = samo /admin). Brez tega kot prej. */
+  natancno?: boolean;
 };
 
 /** Seznam povezav z naslovi skupin — isti v stranskem in v mobilnem meniju. */
@@ -36,7 +38,11 @@ function NavSeznam({
     Math.max(
       -1,
       ...[item.href, ...(item.poti ?? [])]
-        .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+        .filter(
+          (href) =>
+            pathname === href ||
+            (pathname.startsWith(`${href}/`) && !(item.natancno && href === item.href)),
+        )
         .map((href) => href.length),
     );
   const activeHref = navItems
@@ -80,11 +86,20 @@ export default function DashboardShell({
   navItems,
   userEmail,
   children,
+  zgoraj,
+  spodaj,
+  lepljiv = false,
 }: {
   title: string;
   navItems: NavItem[];
   userEmail: string;
   children: React.ReactNode;
+  /** Nad menijem (npr. stikalo posla v adminu); na telefonu na vrhu mobilnega menija. */
+  zgoraj?: ReactNode;
+  /** Pod menijem, nad e-pošto (npr. povezava »Stari admin«). */
+  spodaj?: ReactNode;
+  /** Stranski meni ostane na mestu, ko se stran pomika (samo na računalniku). */
+  lepljiv?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -100,7 +115,11 @@ export default function DashboardShell({
 
   return (
     <div className="flex min-h-screen bg-[#fbfbfd]">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-white px-5 py-8 sm:flex">
+      <aside
+        className={`hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-white px-5 py-8 sm:flex${
+          lepljiv ? " sm:sticky sm:top-0 sm:h-screen sm:overflow-y-auto" : ""
+        }`}
+      >
         <Link href="/" className="flex items-center gap-2.5 px-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-accent-2 text-base font-bold text-white">
             K
@@ -113,9 +132,13 @@ export default function DashboardShell({
           {title}
         </p>
 
+        {zgoraj ? <div className="mt-5">{zgoraj}</div> : null}
+
         <nav className="mt-6 flex flex-1 flex-col gap-1">
           <NavSeznam navItems={navItems} pathname={pathname} />
         </nav>
+
+        {spodaj ? <div className="mt-4">{spodaj}</div> : null}
 
         <div className="mt-auto border-t border-zinc-200 pt-5">
           <p className="truncate px-2 text-sm text-zinc-500">{userEmail}</p>
@@ -168,11 +191,17 @@ export default function DashboardShell({
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto px-4 pb-6">
+              {zgoraj ? <div className="px-1 pt-4">{zgoraj}</div> : null}
               <NavSeznam
                 navItems={navItems}
                 pathname={pathname}
                 onIzbira={() => setMeniOdprt(false)}
               />
+              {spodaj ? (
+                <div className="mt-4" onClick={() => setMeniOdprt(false)}>
+                  {spodaj}
+                </div>
+              ) : null}
             </nav>
             <div className="border-t border-zinc-200 px-6 py-4">
               <p className="truncate text-sm text-zinc-500">{userEmail}</p>
