@@ -199,7 +199,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
             <span>
               <span className="block text-sm font-semibold text-emerald-900">Trening klica: panik gumb</span>
               <span className="block text-sm text-emerald-800">
-                Najprej Lukov sistem klica (lekcija 13), potem vaja s prevoznikom. Na prave klice greš po 3 vajah zapored z oceno 4 ali 5.
+                Najprej Lukov sistem klica (lekcija 13), potem poslušaj primere klicev, nato vaja s prevoznikom. Na prave klice greš po 3 vajah zapored z oceno 4 ali 5.
               </span>
             </span>
           </span>

@@ -3,6 +3,8 @@ import { zahtevajStran } from "@/lib/require-admin";
 import { getCurrentUserPermissions } from "@/lib/permissions/require-permission";
 import { preberiTecaj, vBloke, type Blok } from "@/lib/tecaj";
 import { preberiPersone, preberiVaje } from "@/lib/trening";
+import { PRIMERI_KLICEV } from "@/lib/primeriKlicev";
+import { PrimerKlica } from "./PrimerKlica";
 import { VajaKlica } from "./VajaKlica";
 
 /**
@@ -16,6 +18,7 @@ export const metadata = { title: "Trening klica" };
 
 const DELI = [
   { kljuc: "tecaj", ime: "Tečaj" },
+  { kljuc: "primeri", ime: "Primeri klicev" },
   { kljuc: "vaja", ime: "Vaja klica" },
   { kljuc: "vaje", ime: "Moje vaje" },
 ] as const;
@@ -110,10 +113,10 @@ function Bloki({ bloki }: { bloki: Blok[] }) {
 export default async function TreningPage({
   searchParams,
 }: {
-  searchParams: Promise<{ del?: string; lekcija?: string }>;
+  searchParams: Promise<{ del?: string; lekcija?: string; primer?: string }>;
 }) {
   const user = await zahtevajStran("kompletko.view");
-  const { del: izbranDel, lekcija } = await searchParams;
+  const { del: izbranDel, lekcija, primer } = await searchParams;
   const del = DELI.some((d) => d.kljuc === izbranDel) ? izbranDel : "tecaj";
   const perms = await getCurrentUserPermissions();
   const jeAdmin = !!perms && !perms.neaktiven && perms.bypassAll;
@@ -140,9 +143,50 @@ export default async function TreningPage({
       </nav>
       <div className="mt-6">
         {del === "tecaj" ? <Tecaj lekcija={lekcija} /> : null}
+        {del === "primeri" ? <Primeri izbran={primer} /> : null}
         {del === "vaja" ? <Vaja /> : null}
         {del === "vaje" ? <MojeVaje kdo={jeAdmin ? "" : (user.email ?? "")} jeAdmin={jeAdmin} /> : null}
       </div>
+    </div>
+  );
+}
+
+function Primeri({ izbran }: { izbran?: string }) {
+  const i = Math.max(0, PRIMERI_KLICEV.findIndex((p) => p.kljuc === izbran));
+  const p = PRIMERI_KLICEV[i];
+  return (
+    <div className="grid gap-6 md:grid-cols-[14rem_1fr]">
+      <nav className="space-y-1">
+        <p className="mb-2 text-sm text-zinc-500">Poslušaj, kako zveni klic po Lukovem sistemu. Na označenih mestih so možnosti, če prevoznik reče kaj drugega.</p>
+        {PRIMERI_KLICEV.map((x) => (
+          <Link
+            key={x.kljuc}
+            href={`/admin/trening?del=primeri&primer=${x.kljuc}`}
+            className={`block rounded-lg px-3 py-2 text-sm ${x.kljuc === p.kljuc ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"}`}
+          >
+            {x.naslov}
+          </Link>
+        ))}
+      </nav>
+      <section>
+        <h2 className="text-xl font-semibold text-zinc-900">{p.naslov}</h2>
+        <p className="mt-1 text-sm text-zinc-600">{p.kaj}</p>
+        <p className="mt-1 text-sm text-zinc-500">Koraki: {p.koraki}</p>
+        <div className="mt-4">
+          <PrimerKlica key={p.kljuc} primer={p} />
+        </div>
+        <p className="mt-6 text-sm">
+          {i + 1 < PRIMERI_KLICEV.length ? (
+            <Link href={`/admin/trening?del=primeri&primer=${PRIMERI_KLICEV[i + 1].kljuc}`} className="text-zinc-900 underline">
+              Naslednji primer: {PRIMERI_KLICEV[i + 1].naslov}
+            </Link>
+          ) : (
+            <Link href="/admin/trening?del=vaja" className="text-zinc-900 underline">
+              Zdaj poskusi sam: Vaja klica
+            </Link>
+          )}
+        </p>
+      </section>
     </div>
   );
 }
