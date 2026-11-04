@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { Folder, Inbox, Mail, Phone } from "lucide-react";
+import { Folder, GraduationCap, Inbox, Mail, Phone } from "lucide-react";
 import ResumeCard from "@/components/dashboard/ResumeCard";
 import {
   preberiCakaKodaTim,
@@ -187,6 +187,25 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         {oba ? "KodaTim in Kompletko" : k.kodatim ? "KodaTim" : "Kompletko"}: najprej odgovori, potem dogovorjeni klici,
         klici in maili za pregled.
       </p>
+
+      {k.kompletko ? (
+        // Luka 4. 11. 2026: sales people must see right after login where the call training is.
+        <Link
+          href="/admin/trening"
+          className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:bg-emerald-100"
+        >
+          <span className="flex items-center gap-3">
+            <GraduationCap className="h-6 w-6 shrink-0 text-emerald-700" aria-hidden />
+            <span>
+              <span className="block text-sm font-semibold text-emerald-900">Trening klica: panik gumb</span>
+              <span className="block text-sm text-emerald-800">
+                Najprej Lukov sistem klica (lekcija 13), potem vaja s prevoznikom. Na prave klice greš po 3 vajah zapored z oceno 4 ali 5.
+              </span>
+            </span>
+          </span>
+          <span className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white">Odpri trening</span>
+        </Link>
+      ) : null}
 
       <StevilkeDneva kompletko={k.kompletko && stKompletko} kodatim={k.kodatim && stKodaTim} />
 

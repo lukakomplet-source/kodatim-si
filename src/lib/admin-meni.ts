@@ -70,12 +70,15 @@ export const RAZDELKI: Razdelek[] = [
     kljuc: "danes",
     label: "Danes",
     href: "/admin",
-    poti: ["/admin/danes"],
+    poti: ["/admin/danes", "/admin/trening"],
     permission: "dashboard.view",
     zavihki: [
       { label: "Za danes", href: "/admin", permission: "dashboard.view" },
       { label: "Klici", href: "/admin/danes/klici", permission: "dashboard.view" },
       { label: "Naslednji dnevi", href: "/admin/danes/naslednji", permission: "dashboard.view" },
+      // Trening klica (3. 11. 2026; moved under Danes 4. 11. so sales see it right after login):
+      // course + practice with an invented haulier (admin/trening, guard kompletko.view)
+      { label: "Trening klica", href: "/admin/trening", permission: "kompletko.view", posel: "kompletko" },
     ],
   },
   {
@@ -94,8 +97,6 @@ export const RAZDELKI: Razdelek[] = [
       },
       { label: "Kampanje", href: "/admin/promocije", permission: "promotion.view", posel: "kodatim" },
       { label: "Panik gumb", href: "/admin/prodajna-ekipa/kompletko", permission: "kompletko.view", posel: "kompletko" },
-      // Trening klica (3. 11. 2026): tečaj + vaja z izmišljenim prevoznikom (admin/trening, zapora kompletko.view)
-      { label: "Trening klica", href: "/admin/trening", permission: "kompletko.view", posel: "kompletko" },
       // Kompletko kampanje v pripravi (3. 11. 2026, src/lib/kompletko-kampanje.ts): brez seznamov in mailov
       {
         label: "Spremstvo tovora",

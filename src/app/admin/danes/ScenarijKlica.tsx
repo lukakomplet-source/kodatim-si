@@ -40,6 +40,10 @@ export function ScenarijKlica({ ime }: { ime: string }) {
         </p>
         <p>»Se je pri vas ali pri kolegih že kaj zgodilo? Kraja goriva, prerezana cerada, napad na voznika?«</p>
         <p>»Če se to zgodi ponoči, kdo pri vas izve prvi? In v koliko časa?«</p>
+        <p>
+          Lukovo vprašanje: »Kaj naredite, če vam kdo ponoči krade s tovornjaka? Ali če gre vozniku na okno in mu
+          grozi? Koga pokliče?« Potem tišina, naj pove sam.
+        </p>
       </div>
       <div>
         <p className="font-semibold text-zinc-900">2. Cena: naj jo izračuna on</p>
@@ -62,10 +66,24 @@ export function ScenarijKlica({ ime }: { ime: string }) {
         </p>
       </div>
       <div>
-        <p className="font-semibold text-zinc-900">4. Predlog z dvema možnostma</p>
+        <p className="font-semibold text-zinc-900">4. Kdaj in kaj dobi (kratko)</p>
+        <p>»Kdaj ste mislili to urediti? Vam lahko pri tem pomagamo mi?«</p>
+        <p>
+          Šele potem: »Voznik pritisne gumb, mi takoj vidimo, kje je, in ukrepamo po postopku, ob kraji tudi z našimi
+          partnerji na terenu. Po dogodku vam pripravimo dokumentacijo za inšpekcijo in zavarovalnico. Pri varovanju
+          tovora sodelujemo s ProtecTransom, med drugim za Milšped in Essers. Kratko predstavitev vam pošljem na mail.«
+        </p>
+        <p className="mt-1 text-zinc-500">
+          Brez cene, brez obljube odzivnega časa, nikoli »rešeni pred zakonom«. Zavarovalnico samo kot vprašanje: »Kaj
+          je rekla zavarovalnica pri zadnji škodi?«
+        </p>
+      </div>
+      <div>
+        <p className="font-semibold text-zinc-900">5. Predlog z dvema možnostma</p>
         <p>
           »Predlagam takole: 15 minut, pri vas ali na Teams. Pokažem vam, kako gumb deluje, in skupaj pogledava, ali
-          imate voznike na poti v oceni tveganja pokrite. Vam bolj ustreza torek dopoldne ali četrtek popoldne?«
+          imate voznike na poti v oceni tveganja pokrite. S sabo prinesem vzorec gumba. Vam bolj ustreza torek dopoldne ali
+          četrtek popoldne?« Če je zainteresiran: »Najprej lahko brezplačno preizkusite na 2 do 3 vozilih.«
         </p>
         <p className="mt-1 text-zinc-500">
           Ko reče termin, ga ponovi in pri izidu »Sestanek« vpiši datum, uro in kraj. Potem nehaj prodajati.
