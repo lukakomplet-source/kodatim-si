@@ -30,6 +30,7 @@ const STANJE_POSTAVKE: Record<PostavkaPosla["stanje"], { ime: string; barva: str
 const VRSTA_DNEVNIKA: Record<string, string> = {
   test: "TEST poslan",
   potrditev: "test potrjen",
+  "potrditev-slika": "potrjeno s sliko v klepetu (brez testnega maila)",
   zavrnitev: "test zavrnjen",
   poslano: "poslano",
   preskoceno: "preskočeno",
