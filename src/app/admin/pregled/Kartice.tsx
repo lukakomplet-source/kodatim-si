@@ -2,8 +2,8 @@
 
 import { Fragment, type ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Minus } from "lucide-react";
-import { evri, type Kartica, type KarticaPregleda, type PovzetekPrihodkovPosli, type TockaTrenda } from "@/lib/pregled-racun";
-import type { StopnjaOdziva } from "@/lib/pregled-vodstvo";
+import { evri, type Kartica, type KarticaPregleda, type TockaTrenda } from "@/lib/pregled-racun";
+import type { PovzetekPoslov, StopnjaOdziva } from "@/lib/pregled-vodstvo";
 
 export type KarticeProps = {
   /** Naslov skupine (»Aktivnosti«, »Rezultati«). */
@@ -15,7 +15,7 @@ export type KarticeProps = {
   izbrana: Kartica["kljuc"] | null;
   onOdpri: (kljuc: Kartica["kljuc"]) => void;
   /** Kartica prihodkov na koncu mreže (pri rezultatih); klik skoči na razdelek Prihodki. */
-  prihodki?: { povzetek: PovzetekPrihodkovPosli; onOdpri: () => void };
+  prihodki?: { povzetek: PovzetekPoslov; onOdpri: () => void };
   /** Dodatne celice za kartico z danim ključem (npr. stopnja odziva za »Odzivi«). */
   vstavi?: Partial<Record<Kartica["kljuc"], ReactNode>>;
   /** Večje številke (razdelek Rezultat: najpomembnejše na strani). */
@@ -32,7 +32,8 @@ const STOLPCI: Record<number, string> = {
   3: "@4xl:grid-cols-3",
   4: "@4xl:grid-cols-4",
   5: "@4xl:grid-cols-5",
-  6: "@4xl:grid-cols-5 @6xl:grid-cols-6",
+  // Prihodki: šest ploščic v eni vrsti od 64rem, vmes 3 + 3.
+  6: "@3xl:grid-cols-3 @5xl:grid-cols-6",
   // Rezultat: v eni vrsti od 64rem širine (7 kartic po ~150 px), vmes 4 + 3.
   7: "@3xl:grid-cols-4 @5xl:grid-cols-7",
 };
@@ -328,18 +329,21 @@ function SpremembaTock({ razlika, prej }: { razlika: number; prej: string | null
   );
 }
 
-/** Kartica prihodkov: dokler zneskov ni, N/A s kratkim razlogom (nikoli 0); celoten razlog je v razdelku Prihodki. */
+/**
+ * Kartica prihodkov v Rezultatu: pogodbena vrednost novih poslov v obdobju (iz poslov, vpisanih na kartici podjetja),
+ * spodaj število poslov in MRR. Dokler ni nobenega posla, N/A s kratkim razlogom (nikoli 0). Klik skoči na Prihodke.
+ */
 export function KarticaPrihodkov({
   povzetek,
   onOdpri,
   velike,
 }: {
-  povzetek: PovzetekPrihodkovPosli;
+  povzetek: PovzetekPoslov;
   onOdpri: () => void;
   velike?: boolean;
 }) {
-  const na = povzetek.na !== null || povzetek.skupaj === null;
-  const posli = povzetek.posliZZneskom ?? 0;
+  const na = povzetek.na !== null || povzetek.pogodbena === null;
+  const posli = povzetek.posli;
   return (
     <button
       type="button"
@@ -357,15 +361,20 @@ export function KarticaPrihodkov({
         {na ? (
           <span className="text-xl font-medium text-zinc-400">N/A</span>
         ) : (
-          <span className={`${velikost(velike)} font-semibold tabular-nums tracking-tight text-zinc-900`}>{evri(povzetek.skupaj)}</span>
+          // Velik znesek (npr. 12.500,00 €) v ozki kartici: manjša pisava, da ne gre čez rob.
+          <span
+            className={`${evri(povzetek.pogodbena).length > 9 ? "text-2xl @6xl:text-3xl" : velikost(velike)} font-semibold tabular-nums tracking-tight text-zinc-900`}
+          >
+            {evri(povzetek.pogodbena)}
+          </span>
         )}
       </span>
       <span className="block text-xs text-zinc-500">
         {povzetek.na
-          ? "zneski se še ne beležijo"
-          : povzetek.skupaj === null
-            ? "zneski teh poslov niso znani"
-            : `${posli} ${enota("poslov", posli)} z zneskom${povzetek.posliBrezZneska ? `, ${povzetek.posliBrezZneska} brez zneska` : ""}`}
+          ? "zneski poslov se še ne beležijo"
+          : povzetek.pogodbena === null
+            ? "vrednost teh poslov ni znana"
+            : `${posli} ${enota("poslov", posli)}${povzetek.mrr ? ` · MRR ${evri(povzetek.mrr)}` : ""}`}
       </span>
     </button>
   );

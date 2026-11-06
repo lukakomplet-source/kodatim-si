@@ -1,8 +1,8 @@
 "use client";
 
 import { AlertCircle, ChevronRight, Info } from "lucide-react";
-import type { Kartica, KarticaPregleda, PovzetekPrihodkovPosli } from "@/lib/pregled-racun";
-import type { StopnjaOdziva, Ugotovitev } from "@/lib/pregled-vodstvo";
+import type { Kartica, KarticaPregleda } from "@/lib/pregled-racun";
+import type { PovzetekPoslov, StopnjaOdziva, Ugotovitev } from "@/lib/pregled-vodstvo";
 import { Kartice, KarticaStopnje } from "./Kartice";
 
 export type RezultatProps = {
@@ -11,7 +11,7 @@ export type RezultatProps = {
   /** Kontaktirana podjetja, odzivi, leadi, sestanki, posli (karticeRezultata). */
   kartice: KarticaPregleda[];
   stopnja: StopnjaOdziva;
-  prihodki: PovzetekPrihodkovPosli;
+  prihodki: PovzetekPoslov;
   izbrana: Kartica["kljuc"] | null;
   /** Odprt je seznam odzivov iz kartice stopnje. */
   izbranaStopnja: boolean;

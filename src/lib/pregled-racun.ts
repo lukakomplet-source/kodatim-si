@@ -69,6 +69,18 @@ export type PregledPodatki = {
   brezVidea: boolean;
   /** Harveyjev lokalni čas, iz njega je »danes«. */
   zdaj: string;
+  /** Aktivni posli z vrednostjo, vpisani ročno (Harvey posli_vrednost, od 6. 11. 2026); starejši Harvey jih nima. */
+  posli?: {
+    id: number;
+    domena: string;
+    produkt: string;
+    kampanja: string;
+    vrsta: "enkratno" | "mesecno" | "letno";
+    znesek: number;
+    datum: string;
+    zacetek: string;
+    trajanje: number | null;
+  }[];
 };
 
 export const PRODUKTI = [

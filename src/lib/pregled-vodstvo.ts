@@ -680,3 +680,184 @@ export function mere(dogodki: Dogodek[], podjetja: PregledPodatki["podjetja"], r
     posli: enaNaPodjetje(dogodki, "posel", r).size,
   };
 }
+
+// ——— E. prihodki iz vpisanih poslov (audit 6. 11.: one-time, MRR, ARR, pogodbena vrednost) ———
+
+export type PoselVrednost = NonNullable<PregledPodatki["posli"]>[number];
+
+/** Ime produkta za prihodke (ključi kot PRODUKTI). */
+export const IME_PRODUKTA: Record<string, string> = {
+  panik: "Panic button",
+  monitoring: "Monitoring",
+  spremstvo: "Escort",
+  varovanje: "Fizično varovanje",
+};
+
+const VRSTA_PLACILA: Record<PoselVrednost["vrsta"], string> = { enkratno: "enkratno", mesecno: "mesečno", letno: "letno" };
+
+/**
+ * Pogodbena vrednost: enkratno = znesek; mesečno = znesek × trajanje; letno = znesek / 12 × trajanje. Brez trajanja
+ * je pri ponavljajočem poslu neznana (null), nikoli ugibana.
+ */
+export function pogodbenaVrednost(p: PoselVrednost): number | null {
+  if (p.vrsta === "enkratno") return p.znesek;
+  if (!p.trajanje) return null;
+  return p.vrsta === "mesecno" ? p.znesek * p.trajanje : (p.znesek / 12) * p.trajanje;
+}
+
+/** Mesečni prihodek posla na dan »dan«: samo ponavljajoč, začet in ne iztekel (začetek + trajanje mesecev). */
+export function mrrPosla(p: PoselVrednost, dan: string): number {
+  if (p.vrsta === "enkratno" || p.zacetek > dan) return 0;
+  if (p.trajanje) {
+    const [y, m, d] = p.zacetek.split("-").map(Number);
+    const konec = new Date(Date.UTC(y, m - 1 + p.trajanje, d)).toISOString().slice(0, 10);
+    if (dan >= konec) return 0;
+  }
+  return p.vrsta === "mesecno" ? p.znesek : p.znesek / 12;
+}
+
+export type PovzetekPoslov = {
+  /** Razlog za N/A (poslov z vrednostjo še ni); null = so. */
+  na: string | null;
+  /** Novi posli v obdobju (datum sklenitve). */
+  posli: number;
+  /** Pogodbena vrednost novih poslov z znano vrednostjo; null, ko noben nov posel nima znane vrednosti. */
+  pogodbena: number | null;
+  brezPogodbene: number;
+  /** Enkratni prihodki novih poslov. */
+  enkratno: number;
+  /** MRR na zadnji dan obdobja (vsi aktivni ponavljajoči posli), ARR = MRR × 12. */
+  mrr: number;
+  arr: number;
+  /** Pogodbena vrednost / novi posli z znano vrednostjo. */
+  povprecje: number | null;
+  poProduktih: { produkt: string; ime: string; pogodbena: number | null; mrr: number }[];
+  /** Pogodbena vrednost novih poslov po mesecih (zadnjih n do konca obdobja). */
+  casovnica: { od: string; do: string; oznaka: string; znesek: number | null }[];
+  /** Vrstice za predal: novi posli v obdobju in aktivni ponavljajoči (MRR). */
+  novi: PoselVrednost[];
+  ponavljajoci: PoselVrednost[];
+};
+
+export const POSLI_NA = "Zneskov poslov še ni. Ko posel sklenete, ga vpiši na kartici podjetja (Zapiši posel).";
+
+const MES = ["jan", "feb", "mar", "apr", "maj", "jun", "jul", "avg", "sep", "okt", "nov", "dec"];
+
+/**
+ * Prihodki iz ročno vpisanih poslov za obdobje in filtre (produkt, kampanja, podjetja pri filtru osebe). Novi posli
+ * so po datumu sklenitve v obdobju; MRR in ARR sta stanje na zadnji dan obdobja (pri »Vse« danes).
+ */
+export function povzetekPoslov(
+  vsi: PoselVrednost[] | undefined,
+  k: { produkt: string; kampanja: string | null; domene: Set<string> | null },
+  r: Razpon,
+  konec: string,
+  n = 6,
+): PovzetekPoslov {
+  const [ky, km] = konec.split("-").map(Number);
+  const casovnicaPrazna = Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(ky, km - 1 - (n - 1 - i), 1));
+    const od = d.toISOString().slice(0, 10);
+    const zadnji = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    return { od, do: zadnji, oznaka: `${MES[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`, znesek: null as number | null };
+  });
+  const produkti = Object.keys(IME_PRODUKTA).filter((p) => k.produkt === "vsi" || p === k.produkt);
+  if (!vsi || !vsi.length) {
+    return {
+      na: POSLI_NA,
+      posli: 0,
+      pogodbena: null,
+      brezPogodbene: 0,
+      enkratno: 0,
+      mrr: 0,
+      arr: 0,
+      povprecje: null,
+      poProduktih: produkti.map((p) => ({ produkt: p, ime: IME_PRODUKTA[p], pogodbena: null, mrr: 0 })),
+      casovnica: casovnicaPrazna,
+      novi: [],
+      ponavljajoci: [],
+    };
+  }
+  const izbor = vsi.filter(
+    (p) =>
+      (k.produkt === "vsi" || p.produkt === k.produkt) &&
+      (!k.kampanja || (p.kampanja || NI_ZAPISANO) === k.kampanja) &&
+      (!k.domene || k.domene.has(p.domena)),
+  );
+  const vsota = (x: PoselVrednost[]): number | null => {
+    const v = x.map(pogodbenaVrednost).filter((z): z is number => z !== null);
+    return v.length ? v.reduce((a, b) => a + b, 0) : x.length ? null : 0;
+  };
+  const novi = izbor.filter((p) => vRazponu(p.datum, r)).sort((a, b) => b.datum.localeCompare(a.datum));
+  const znanih = novi.filter((p) => pogodbenaVrednost(p) !== null).length;
+  const pogodbena = vsota(novi);
+  const ponavljajoci = izbor.filter((p) => mrrPosla(p, konec) > 0);
+  const mrr = ponavljajoci.reduce((a, p) => a + mrrPosla(p, konec), 0);
+  return {
+    na: null,
+    posli: novi.length,
+    pogodbena,
+    brezPogodbene: novi.length - znanih,
+    enkratno: novi.filter((p) => p.vrsta === "enkratno").reduce((a, p) => a + p.znesek, 0),
+    mrr,
+    arr: mrr * 12,
+    povprecje: znanih && pogodbena !== null ? pogodbena / znanih : null,
+    poProduktih: produkti.map((pr) => ({
+      produkt: pr,
+      ime: IME_PRODUKTA[pr],
+      pogodbena: vsota(novi.filter((p) => p.produkt === pr)),
+      mrr: ponavljajoci.filter((p) => p.produkt === pr).reduce((a, p) => a + mrrPosla(p, konec), 0),
+    })),
+    casovnica: casovnicaPrazna.map((m) => ({ ...m, znesek: vsota(izbor.filter((p) => p.datum >= m.od && p.datum <= m.do)) })),
+    novi,
+    ponavljajoci,
+  };
+}
+
+/** »Panic button: mesečno 49,90 € × 12 mes. = 598,80 €« za vrstico v predalu. */
+export function opisPosla(p: PoselVrednost): string {
+  const e = (v: number) => new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(v);
+  const osnova = `${IME_PRODUKTA[p.produkt] ?? p.produkt}: ${VRSTA_PLACILA[p.vrsta]} ${e(p.znesek)}`;
+  if (p.vrsta === "enkratno") return osnova;
+  const v = pogodbenaVrednost(p);
+  return `${osnova}${v !== null ? ` × ${p.trajanje} mes. = ${e(v)}` : ", trajanje ni vpisano (pogodbena vrednost N/A)"}`;
+}
+
+/** Posli kot vrstice predala (ena na posel; dan je datum sklenitve). */
+export function posliZaPredal(posli: PoselVrednost[]): Dogodek[] {
+  return posli.map((p) => ({ cas: `${p.datum} 00:00`, korak: "posel", domena: p.domena, produkt: p.produkt, razlog: opisPosla(p) }));
+}
+
+// ——— prihodki iz aplikacije Kompletko (spremstvo, samo branje) ———
+
+export type NalogAplikacije = { datum: string; vrsta: string; znesek: number | null };
+
+export type PrihodkiAplikacije = {
+  /** Razlog za N/A (povezava ni nastavljena ali baza ne odgovarja); null = podatki so. */
+  na: string | null;
+  /** Cena za stranko in dodatni stroški opravljenih nalogov v obdobju (samo z znano ceno). */
+  skupaj: number | null;
+  nalogov: number;
+  brezCene: number;
+  /** Po vrsti naloga iz aplikacije (escort, static …). */
+  poVrsti: { vrsta: string; nalogov: number; znesek: number | null }[];
+};
+
+/** Opravljeni nalogi iz aplikacije za obdobje. Vrsta »static« ni preslikana v produkt (čaka Lukovo potrditev). */
+export function povzetekAplikacije(nalogi: NalogAplikacije[] | null, napaka: string | null, r: Razpon): PrihodkiAplikacije {
+  if (!nalogi) return { na: napaka ?? "Povezava z aplikacijo Kompletko še ni nastavljena.", skupaj: null, nalogov: 0, brezCene: 0, poVrsti: [] };
+  const v = nalogi.filter((x) => vRazponu(x.datum, r));
+  const znani = v.filter((x) => x.znesek !== null);
+  const vrste = [...new Set(v.map((x) => x.vrsta))].sort();
+  return {
+    na: null,
+    skupaj: znani.length ? znani.reduce((a, x) => a + (x.znesek as number), 0) : v.length ? null : 0,
+    nalogov: v.length,
+    brezCene: v.length - znani.length,
+    poVrsti: vrste.map((vr) => {
+      const t = v.filter((x) => x.vrsta === vr);
+      const z = t.filter((x) => x.znesek !== null);
+      return { vrsta: vr, nalogov: t.length, znesek: z.length ? z.reduce((a, x) => a + (x.znesek as number), 0) : null };
+    }),
+  };
+}

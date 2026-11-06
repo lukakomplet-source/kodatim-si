@@ -5,6 +5,8 @@ import { davcnaIz, domenaIz, hrefPodjetja } from "@/lib/podjetja/kljuc";
 import { danesKontaktiran, preberiPodjetja, zaPosel, type Podjetje } from "@/lib/podjetja/podatki";
 import { izRegistraPoDavcni } from "@/lib/podjetja/register";
 import { kontekstPodjetij } from "../kontekst";
+import { PosliPodjetja } from "./PosliPodjetja";
+import type { PoselHarvey } from "./posli-actions";
 import { Manjka, Opozorilo, STANJE_KODATIM, STANJE_KOMPLETKO, STATUS_LEADA, VRSTA_DOGODKA, ZnackePoslov, kdaj } from "../skupno";
 
 /**
@@ -71,6 +73,9 @@ export default async function KarticaPodjetjaPage({
   }
 
   const danes = danesKontaktiran(p);
+  // Posli z vrednostjo (Pregled v3): samo administrator in samo podjetja Kompletka z domeno (Harvey jih vodi po domeni).
+  const domenaPosla = k.jeAdmin && p.kompletko?.domena && /^[a-z0-9.-]{3,100}$/.test(p.kompletko.domena) ? p.kompletko.domena : "";
+  const posli = domenaPosla ? await preberiPosle(domenaPosla) : null;
   return (
     <div className="max-w-5xl">
       <Link href="/admin/podjetja" className="text-sm text-zinc-500 hover:text-zinc-900">
@@ -182,6 +187,21 @@ export default async function KarticaPodjetjaPage({
         ) : null}
       </div>
 
+      {domenaPosla ? (
+        posli ? (
+          <PosliPodjetja
+            kljuc={p.kljuc}
+            domena={domenaPosla}
+            posli={posli}
+            danes={new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Ljubljana" })}
+          />
+        ) : (
+          <p className="mt-8 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+            Poslov ni mogoče prebrati: Harvey Kompletko (5556) ne odgovarja.
+          </p>
+        )
+      ) : null}
+
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-zinc-900">Časovnica</h2>
         <p className="mt-0.5 text-sm text-zinc-500">Od prvega stika do danes, najstarejše zgoraj.</p>
@@ -218,6 +238,22 @@ export default async function KarticaPodjetjaPage({
 
 const GUMB =
   "inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-300 hover:ring-zinc-500";
+
+/** Posli podjetja z zgodovino (popravki, preklici) iz Harveyja; null, ko Harvey ne odgovarja. */
+async function preberiPosle(domena: string): Promise<PoselHarvey[] | null> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/posli?domena=${encodeURIComponent(domena)}&vsi=1`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!r.ok) return null;
+    return ((await r.json()) as { posli: PoselHarvey[] }).posli ?? [];
+  } catch {
+    return null;
+  }
+}
+
+const HARVEY_KOMPLETKO = process.env.HARVEY_KOMPLETKO_URL ?? "http://127.0.0.1:5556";
 
 function Vrstica({ ime, children }: { ime: string; children: React.ReactNode }) {
   return (

@@ -1,4 +1,5 @@
 import { zahtevajStran } from "@/lib/require-admin";
+import { preberiNalogeAplikacije } from "@/lib/kompletko-prihodki";
 import { preberiPregled } from "@/lib/pregled";
 import { PregledClient, type ZacetekPregleda } from "./PregledClient";
 
@@ -13,7 +14,11 @@ export const metadata = { title: "Pregled" };
 
 export default async function PregledPage({ searchParams }: { searchParams: Promise<ZacetekPregleda> }) {
   await zahtevajStran();
-  const [{ podatki, status }, iskanje] = await Promise.all([preberiPregled(), searchParams]);
+  const [{ podatki, status }, iskanje, aplikacija] = await Promise.all([
+    preberiPregled(),
+    searchParams,
+    preberiNalogeAplikacije(),
+  ]);
   if (!podatki) {
     return (
       <div className="max-w-3xl">
@@ -26,6 +31,7 @@ export default async function PregledPage({ searchParams }: { searchParams: Prom
       </div>
     );
   }
-  // Prihodkov še ni (pridejo iz aplikacije Kompletko po Lukovem posebnem OK): brez prop »prihodki« je razdelek N/A.
-  return <PregledClient podatki={podatki} zacetek={iskanje} />;
+  // Prihodki: posli z vrednostjo pridejo s Harveyjem (podatki.posli), opravljeni nalogi iz aplikacije Kompletko
+  // (samo branje, Luka 6. 11. »ok prihodki«); brez povezave je ta vrstica N/A z razlogom.
+  return <PregledClient podatki={podatki} zacetek={iskanje} aplikacija={aplikacija} />;
 }

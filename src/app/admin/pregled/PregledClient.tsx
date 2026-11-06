@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AKTIVNOSTI,
   IME_KORAKA,
+  MESECI,
   OBDOBJA,
   PRODUKTI,
   REZULTATI,
@@ -16,7 +17,6 @@ import {
   obdobjeSCeloPrimerjavo,
   opisRazpona,
   oznaciNaknadne,
-  povzetekPrihodkovPosli,
   predPrvimZapisom,
   prviDan,
   razdeliOdzive,
@@ -28,7 +28,6 @@ import {
   type Korak,
   type ObdobjeKljuc,
   type PregledPodatki,
-  type Prihodek,
   type Produkt,
 } from "@/lib/pregled-racun";
 import {
@@ -38,6 +37,9 @@ import {
   mere,
   moznostiFiltrov,
   opisMer,
+  posliZaPredal,
+  povzetekAplikacije,
+  povzetekPoslov,
   seznamCelice,
   seznamFaze,
   seznamNedostavljenih,
@@ -47,6 +49,7 @@ import {
   zaFiltre,
   type AkcijaKljuc,
   type FazaKljuc,
+  type NalogAplikacije,
   type StolpecTabele,
 } from "@/lib/pregled-vodstvo";
 import { AkcijskiCenter } from "./AkcijskiCenter";
@@ -89,6 +92,8 @@ export type OdprtSeznam =
   | { vrsta: "akcija"; kljuc: AkcijaKljuc }
   | { vrsta: "nedostavljeni" }
   | { vrsta: "celica"; aktivnost: Korak; stolpec: StolpecTabele }
+  /** Posli z vrednostjo: »novi« v obdobju, »ponavljajoci« (MRR) ali mesec »YYYY-MM« iz grafa. */
+  | { vrsta: "prihodki"; kljuc: string }
   | { vrsta: "dan"; dan: string };
 
 const STOLPCI = new Set<string>(["podjetja", "odziv", "lead", "sestanek", "posel"]);
@@ -109,6 +114,10 @@ function izNaslova(z: ZacetekPregleda): OdprtSeznam | null {
 /** »lijak-odgovor«, »akcija-zamujeno«, »aktivnost-klic«, »nedostavljeni«, »odgovor« → kaj odpreti. */
 function izCilja(s: string): OdprtSeznam | null {
   if (s === "nedostavljeni") return { vrsta: "nedostavljeni" };
+  if (s.startsWith("prihodki-")) {
+    const k = s.slice(9);
+    if (k === "novi" || k === "ponavljajoci" || /^\d{4}-\d{2}$/.test(k)) return { vrsta: "prihodki", kljuc: k };
+  }
   if (s.startsWith("celica-")) {
     const [, a, st] = s.split("-");
     if (AKTIVNOSTI.includes(a as Korak) && STOLPCI.has(st)) return { vrsta: "celica", aktivnost: a as Korak, stolpec: st as StolpecTabele };
@@ -156,12 +165,12 @@ const IME_FAZE: Record<FazaKljuc, string> = {
 export function PregledClient({
   podatki,
   zacetek,
-  prihodki,
+  aplikacija,
 }: {
   podatki: PregledPodatki;
   zacetek: ZacetekPregleda;
-  /** Prihodki iz aplikacije Kompletko; dokler niso povezani, undefined in vse je N/A. */
-  prihodki?: Prihodek[] | null;
+  /** Opravljeni nalogi iz aplikacije Kompletko (samo branje); brez povezave nalogi = null in razlog (N/A). */
+  aplikacija?: { nalogi: NalogAplikacije[] | null; napaka: string | null };
 }) {
   const danes = podatki.zdaj.slice(0, 10);
   const [produkt, setProdukt] = useState<Produkt>(
@@ -213,7 +222,16 @@ export function PregledClient({
     [dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi],
   );
   const stopnja = useMemo(() => stopnjaOdziva(dogodki, zdaj, prej, brezZapisov), [dogodki, zdaj, prej, brezZapisov]);
-  const povzetek = useMemo(() => povzetekPrihodkovPosli(prihodki, produkt, zdaj, konec), [prihodki, produkt, zdaj, konec]);
+  // E. prihodki: posli, vpisani na kartici podjetja (isti filtri; pri osebi podjetja, s katerimi je delala), in aplikacija
+  const domeneOsebe = useMemo(() => (oseba ? new Set(dogodki.map((e) => e.domena)) : null), [oseba, dogodki]);
+  const povzetek = useMemo(
+    () => povzetekPoslov(podatki.posli, { produkt, kampanja, domene: domeneOsebe }, zdaj, konec),
+    [podatki.posli, produkt, kampanja, domeneOsebe, zdaj, konec],
+  );
+  const prihodkiAplikacije = useMemo(
+    () => povzetekAplikacije(aplikacija?.nalogi ?? null, aplikacija?.napaka ?? null, zdaj),
+    [aplikacija, zdaj],
+  );
   const stevilo = (k: Izbor) => kartice.find((x) => x.kljuc === k)?.stevilo ?? 0;
   const stavek = stavekStanja({
     kontaktirana: stevilo("kontaktirana"),
@@ -274,6 +292,31 @@ export function PregledClient({
         prazno: "Nobenega podjetja.",
       };
     }
+    if (odprto.vrsta === "prihodki") {
+      const k = odprto.kljuc;
+      const mesec = /^\d{4}-\d{2}$/.test(k);
+      const vrstice =
+        k === "ponavljajoci"
+          ? povzetek.ponavljajoci
+          : mesec
+            ? (podatki.posli ?? []).filter(
+                (p) =>
+                  p.datum.startsWith(k) &&
+                  (produkt === "vsi" || p.produkt === produkt) &&
+                  (!kampanja || (p.kampanja || "ni-zapisano") === kampanja) &&
+                  (!domeneOsebe || domeneOsebe.has(p.domena)),
+              )
+            : povzetek.novi;
+      return {
+        naslov: k === "ponavljajoci" ? "Ponavljajoči posli (MRR)" : mesec ? `Posli: ${MESECI[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}` : "Novi posli",
+        podnaslov:
+          k === "ponavljajoci"
+            ? "Aktivni mesečni in letni posli na zadnji dan obdobja. Zneski brez DDV."
+            : `Posli, vpisani na kartici podjetja (${mesec ? "v tem mesecu" : opisObdobja}). Zneski brez DDV.`,
+        skupine: [{ kljuc: "vse", dogodki: posliZaPredal(vrstice) }],
+        prazno: "Vpisanih poslov ni. Posel vpišeš na kartici podjetja (Zapiši posel).",
+      };
+    }
     if (odprto.vrsta === "nedostavljeni") {
       return {
         naslov: "Vrnjeni maili",
@@ -322,7 +365,7 @@ export function PregledClient({
       podnaslov: `Obdobje: ${opisObdobja}${odprto.kljuc === "prvi" || odprto.kljuc === "kontaktirana" ? " · ena vrstica na podjetje" : ""}`,
       skupine: [{ kljuc: "vse", dogodki: vrstice }],
     };
-  }, [odprto, dogodki, zdaj, opisObdobja, akcije, podatki.podjetja]);
+  }, [odprto, dogodki, zdaj, opisObdobja, akcije, podatki.podjetja, podatki.posli, povzetek, produkt, kampanja, domeneOsebe]);
 
   const zapri = useCallback(() => setOdprto(null), []);
   const odpriKartico = useCallback((kljuc: Izbor) => setOdprto({ vrsta: "kartica", kljuc }), []);
@@ -335,6 +378,7 @@ export function PregledClient({
     [],
   );
   const odpriCilj = useCallback((cilj: string) => setOdprto(izCilja(cilj)), []);
+  const odpriPrihodke = useCallback((kljuc: string) => setOdprto({ vrsta: "prihodki", kljuc }), []);
   const naPrihodke = useCallback(
     () => document.getElementById("prihodki")?.scrollIntoView({ behavior: "smooth", block: "start" }),
     [],
@@ -431,7 +475,13 @@ export function PregledClient({
 
       {/* E. Prihodki */}
       <div id="prihodki" className="scroll-mt-24">
-        <Prihodki povzetek={povzetek} imeProdukta={imeProdukta} opisObdobja={opisObdobja} />
+        <Prihodki
+          posli={povzetek}
+          aplikacija={prihodkiAplikacije}
+          imeProdukta={imeProdukta}
+          opisObdobja={opisObdobja}
+          onOdpri={odpriPrihodke}
+        />
       </div>
 
       {/* F. Koledar in opredelitve */}

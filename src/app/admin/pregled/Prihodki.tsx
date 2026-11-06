@@ -1,42 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { BarChart3, Info } from "lucide-react";
-import { evri, type PovzetekPrihodkov, type PovzetekPrihodkovPosli } from "@/lib/pregled-racun";
-import { CELICA_KARTICE, OKVIR_KARTICE, POLNA_KARTICA, PRAZNA_KARTICA, enota, mrezaKartic } from "./Kartice";
+import { evri } from "@/lib/pregled-racun";
+import type { PovzetekPoslov, PrihodkiAplikacije } from "@/lib/pregled-vodstvo";
+import { CELICA_KARTICE, OKVIR_KARTICE, POLNA_KARTICA, PRAZNA_KARTICA, Odpri, enota, mrezaKartic } from "./Kartice";
 import { Plosca } from "./Plosca";
 
 export type PrihodkiProps = {
-  /** povzetekPrihodkovPosli(): dokler zneskov ni, so vse vrednosti null in na = razlog (prikaži N/A, nikoli 0). */
-  povzetek: PovzetekPrihodkovPosli;
+  /** povzetekPoslov(): posli, vpisani ročno na kartici podjetja; dokler jih ni, na = razlog (N/A, nikoli 0). */
+  posli: PovzetekPoslov;
+  /** Opravljeni nalogi iz aplikacije Kompletko (ločeno, ne seštejemo s posli iz lijaka). */
+  aplikacija: PrihodkiAplikacije;
   /** Ime izbranega produkta za besedilo (»Vsi produkti«, »Panic button«). */
   imeProdukta: string;
   /** Obdobje za besedilo. */
   opisObdobja: string;
+  /** Odpre seznam poslov: novi v obdobju, aktivni ponavljajoči (MRR) ali posli v mesecu (»YYYY-MM«). */
+  onOdpri: (kljuc: string) => void;
 };
 
-/** Trak namesto grafa, dokler prihodki niso povezani (razlog je že vrstica pod naslovom razdelka). */
-const PRAZEN_GRAF = "Graf po mesecih in po produktu se pokaže, ko bodo zneski.";
+/** Trak namesto grafa, dokler poslov ni (razlog je že vrstica pod naslovom razdelka). */
+const PRAZEN_GRAF = "Graf po mesecih in po produktu se pokaže, ko bo vpisan prvi posel.";
 
-type Mesec = PovzetekPrihodkov["casovnica"][number];
+type Mesec = PovzetekPoslov["casovnica"][number];
 
 /**
- * Prihodki: pet številk (skupaj, novi, ponavljajoči, posli z zneskom, povprečna vrednost), po produktih in graf po
- * mesecih. Vse pride iz povzetekPrihodkovPosli(); tu se nič ne izmišljuje. Dokler zneskov ni (na !== null), je vsaka
- * ploščica N/A, namesto grafa in seznama po produktu pa je en ozek trak (nikoli 0).
+ * E. Prihodki (audit 6. 11.): iz poslov, vpisanih na kartici podjetja, šest številk (pogodbena vrednost novih
+ * poslov, enkratni prihodki, MRR, ARR, zaključeni posli, povprečna vrednost), po produktih in graf po mesecih;
+ * spodaj ločena vrstica »Realizirano v aplikaciji« (opravljeni nalogi spremstva). Nič ni izmišljeno: česar ni, je N/A.
  */
-export function Prihodki({ povzetek, imeProdukta, opisObdobja }: PrihodkiProps) {
-  const na = povzetek.na !== null;
-  const p = povzetek;
-  const brezCenePoslov = na ? 0 : p.posliBrezZneska;
-
-  // Pri enem izbranem produktu so drugi po filtru 0 €; pokažemo samo izbranega, da 0 ne zavaja.
-  const enProdukt = p.poProduktih.some((x) => x.ime === imeProdukta);
-  const produkti = enProdukt ? p.poProduktih.filter((x) => x.ime === imeProdukta) : p.poProduktih;
-
+export function Prihodki({ posli: p, aplikacija: a, imeProdukta, opisObdobja, onOdpri }: PrihodkiProps) {
+  const na = p.na !== null;
   const meseci = p.casovnica;
-  const brezZneskovVGrafu = meseci.every((m) => m.znesek === null);
+  const brezZneskovVGrafu = meseci.every((m) => !m.znesek);
   const obdobjeGrafa = meseci.length ? `${meseci[0].oznaka} – ${meseci[meseci.length - 1].oznaka}` : "";
+  const enProdukt = p.poProduktih.length === 1;
 
   return (
     <section aria-labelledby="pregled-prihodki" className="@container">
@@ -44,7 +43,7 @@ export function Prihodki({ povzetek, imeProdukta, opisObdobja }: PrihodkiProps) 
         Prihodki
       </h2>
       <p className="mt-1 text-sm text-zinc-500">
-        {imeProdukta} · {opisObdobja}
+        {imeProdukta} · {opisObdobja} · zneski brez DDV
       </p>
       {na ? (
         <p className="mt-2 flex max-w-3xl items-start gap-2 text-sm text-zinc-600">
@@ -53,69 +52,30 @@ export function Prihodki({ povzetek, imeProdukta, opisObdobja }: PrihodkiProps) 
         </p>
       ) : null}
 
-      {/* Iste mreža in velikost kartic kot Aktivnosti in Rezultati (5 v vrsti); po produktu je ob grafu. */}
-      <ul className={`mt-3 ${mrezaKartic(5)}`}>
+      <ul className={`mt-3 ${mrezaKartic(6)}`}>
         <Ploscica
-          ime="Skupni prihodki"
-          vrednost={p.skupaj}
+          ime="Pogodbena vrednost"
+          vrednost={p.pogodbena}
           na={na}
-          opis="vsi prihodki v obdobju"
-          dodatno={
-            na
-              ? null
-              : p.skupaj === null
-                ? "zneski teh prihodkov niso znani"
-                : p.brezZneska
-                  ? `brez cene: ${p.brezZneska} (niso v vsoti)`
-                  : null
-          }
+          opis="novih poslov v obdobju"
+          dodatno={na ? null : p.brezPogodbene ? `${p.brezPogodbene} brez trajanja (niso v vsoti)` : null}
+          onClick={() => onOdpri("novi")}
         />
-        <Ploscica
-          ime="Novi prihodki"
-          vrednost={p.novi}
-          na={na}
-          opis="od novih strank"
-          dodatno={na ? null : p.novi === null ? "zneski novih poslov niso znani" : delezBesedilo(p.novi, p.skupaj)}
-        />
-        <Ploscica
-          ime="Ponavljajoči prihodki"
-          vrednost={p.ponavljajoci}
-          na={na}
-          opis="od obstoječih strank"
-          dodatno={
-            na ? null : p.ponavljajoci === null ? "zneski teh prihodkov niso znani" : delezBesedilo(p.ponavljajoci, p.skupaj)
-          }
-        />
-        {/* Iz aplikacije Kompletko, ne iz Harveyja, zato drugo ime kot kartica »Zaključeni posli« v Rezultatih. */}
-        <Ploscica
-          ime="Posli z zneskom"
-          vrednost={p.posliZZneskom}
-          stevilo
-          na={na}
-          opis="novi posli z znanim zneskom"
-          dodatno={na || !brezCenePoslov ? null : `brez zneska: ${brezCenePoslov}`}
-        />
+        <Ploscica ime="Enkratni prihodki" vrednost={p.enkratno} na={na} opis="novih poslov v obdobju" onClick={() => onOdpri("novi")} />
+        <Ploscica ime="MRR" vrednost={p.mrr} na={na} opis="mesečni ponavljajoči prihodki, stanje na koncu obdobja" onClick={() => onOdpri("ponavljajoci")} />
+        <Ploscica ime="ARR" vrednost={p.arr} na={na} opis="letni ponavljajoči prihodki (MRR × 12)" onClick={() => onOdpri("ponavljajoci")} />
+        <Ploscica ime="Zaključeni posli" vrednost={p.posli} stevilo na={na} opis="novi posli v obdobju" onClick={() => onOdpri("novi")} />
         <Ploscica
           ime="Povprečna vrednost posla"
           vrednost={p.povprecje}
           na={na}
-          opis="novi prihodki na posel z zneskom"
-          dodatno={
-            na
-              ? null
-              : p.steviloPoslov === 0
-                ? "v obdobju ni novih poslov"
-                : p.povprecje === null
-                  ? "noben nov posel nima zneska"
-                  : brezCenePoslov
-                    ? `brez zneska: ${brezCenePoslov} (niso v povprečju)`
-                    : null
-          }
+          opis="pogodbena vrednost na posel"
+          dodatno={na ? null : p.posli === 0 ? "v obdobju ni novih poslov" : null}
+          onClick={() => onOdpri("novi")}
         />
       </ul>
 
       {na ? (
-        // Dokler zneskov ni, en ozek trak namesto praznega grafa in štirih vrstic N/A.
         <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl bg-white px-5 py-3 text-sm text-zinc-500 ring-1 ring-zinc-200">
           <span className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
@@ -127,27 +87,64 @@ export function Prihodki({ povzetek, imeProdukta, opisObdobja }: PrihodkiProps) 
           <Plosca
             id="pregled-prihodki-graf"
             raven="h3"
-            naslov="Prihodki po mesecih"
-            opis={`Zadnjih ${meseci.length} mesecev${obdobjeGrafa ? ` (${obdobjeGrafa})` : ""} · ${imeProdukta}`}
+            naslov="Pogodbena vrednost novih poslov po mesecih"
+            opis={`Zadnjih ${meseci.length} mesecev${obdobjeGrafa ? ` (${obdobjeGrafa})` : ""} · ${imeProdukta} · klik na mesec odpre posle`}
             className="@4xl:col-span-3"
           >
             <div className="@container/graf">
               {brezZneskovVGrafu ? (
-                <PrazenGraf meseci={meseci} besedilo="Zneski prihodkov v teh mesecih niso znani." />
+                <PrazenGraf meseci={meseci} besedilo="V teh mesecih ni vpisanih poslov z znano vrednostjo." />
               ) : (
                 <div className="grid gap-6 @3xl/graf:grid-cols-[minmax(0,1fr)_15rem]">
-                  <Stolpci meseci={meseci} />
+                  <Stolpci meseci={meseci} onMesec={(m) => onOdpri(m.od.slice(0, 7))} />
                   <TabelaMesecev meseci={meseci} />
                 </div>
               )}
             </div>
           </Plosca>
-          <Plosca id="pregled-prihodki-produkt" raven="h3" naslov="Prihodki po produktu" className="@4xl:col-span-2">
-            <PoProduktu produkti={produkti} />
+          <Plosca id="pregled-prihodki-produkt" raven="h3" naslov="Po produktu" opis="Pogodbena vrednost novih poslov; MRR pod njo." className="@4xl:col-span-2">
+            <PoProduktu
+              produkti={p.poProduktih.map((x) => ({ produkt: x.produkt, ime: x.ime, znesek: x.pogodbena, dodatno: x.mrr ? `MRR ${evri(x.mrr)}` : null }))}
+              enProdukt={enProdukt}
+            />
           </Plosca>
         </div>
       )}
+
+      <Aplikacija a={a} />
     </section>
+  );
+}
+
+/**
+ * Realizirano v aplikaciji Kompletko: opravljeni nalogi spremstva v obdobju (cena za stranko + dodatni stroški).
+ * Ločeno od poslov iz lijaka (to so obstoječe stranke, ne hladni maili), brez imen strank in brez podatkov o tovoru.
+ */
+function Aplikacija({ a }: { a: PrihodkiAplikacije }) {
+  const IME: Record<string, string> = { escort: "Spremstvo (escort)", static: "Static (vrsta še ni razvrščena)" };
+  return (
+    <div className="mt-3 rounded-xl bg-white px-4 py-3 ring-1 ring-zinc-200 sm:px-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h3 className="text-sm font-semibold text-zinc-900">Realizirano v aplikaciji Kompletko</h3>
+        <span className={`text-lg font-semibold tabular-nums ${a.na || a.skupaj === null ? "text-zinc-400" : "text-zinc-900"}`}>
+          {a.na || a.skupaj === null ? "N/A" : evri(a.skupaj)}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-zinc-500">
+        {a.na
+          ? a.na
+          : `${a.nalogov} ${a.nalogov === 1 ? "opravljen nalog" : "opravljenih nalogov"} v obdobju${a.brezCene ? `, ${a.brezCene} brez cene (niso v vsoti)` : ""}. Ločeno od poslov zgoraj, ne seštevamo.`}
+      </p>
+      {!a.na && a.poVrsti.length ? (
+        <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-600">
+          {a.poVrsti.map((v) => (
+            <li key={v.vrsta}>
+              {IME[v.vrsta] ?? v.vrsta}: <span className="font-medium tabular-nums text-zinc-900">{v.znesek === null ? "N/A" : evri(v.znesek)}</span> ({v.nalogov})
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -159,24 +156,38 @@ function Ploscica({
   stevilo = false,
   na,
   opis,
-  dodatno,
+  dodatno = null,
+  onClick,
 }: {
   ime: string;
   vrednost: number | null;
   /** Število (posli) namesto zneska v evrih. */
   stevilo?: boolean;
-  /** Prihodki še niso povezani: N/A, nikoli 0. */
+  /** Poslov še ni: N/A, nikoli 0. */
   na: boolean;
   opis: string;
-  dodatno: string | null;
+  dodatno?: string | null;
+  /** Odpre seznam poslov za to številko (pri N/A se ne odpira). */
+  onClick?: () => void;
 }) {
   const prazna = na || vrednost === null;
   const besedilo = prazna ? "N/A" : stevilo ? String(vrednost) : evri(vrednost);
-  // Isti okvir in subgrid kot kartice Aktivnosti in Rezultati (ime, številka, noga v isti višini v vsej vrsti);
+  // Isti okvir in subgrid kot kartice Rezultata (ime, številka, noga v isti višini v vsej vrsti);
   // N/A je črtkana rezervacija z manjšim »N/A«, da ne tekmuje s pravimi številkami.
+  const klik = !na && !!onClick;
+  const Okvir = klik ? "button" : "div";
   return (
-    <li className={`${CELICA_KARTICE} ${OKVIR_KARTICE} ${prazna ? PRAZNA_KARTICA : POLNA_KARTICA}`}>
-      <span className={`text-sm font-medium ${prazna ? "text-zinc-500" : "text-zinc-600"}`}>{ime}</span>
+    <li className={CELICA_KARTICE}>
+      <Okvir
+        {...(klik ? { type: "button" as const, onClick, "aria-label": `${ime}: ${besedilo}. Odpri posle.` } : {})}
+        className={`group ${OKVIR_KARTICE} w-full ${prazna ? PRAZNA_KARTICA : POLNA_KARTICA} ${
+          klik ? "transition hover:shadow-sm hover:ring-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" : ""
+        }`}
+      >
+      <span className={`flex items-center justify-between gap-2 text-sm font-medium ${prazna ? "text-zinc-500" : "text-zinc-600"}`}>
+        {ime}
+        {klik ? <Odpri /> : null}
+      </span>
       <span className="flex flex-wrap items-baseline gap-x-1.5 self-end">
         {prazna ? (
           <span className="text-xl font-medium text-zinc-400">N/A</span>
@@ -191,12 +202,21 @@ function Ploscica({
         <span className="block">{opis}</span>
         {dodatno ? <span className="block text-zinc-600">{dodatno}</span> : null}
       </span>
+      </Okvir>
     </li>
   );
 }
 
-/** Prihodki po produktu: vrstica na produkt s tanko progo glede na največjega; brez zneska N/A (nikoli 0 €). */
-function PoProduktu({ produkti }: { produkti: PovzetekPrihodkov["poProduktih"] }) {
+/**
+ * Po produktu: vrstica na produkt s tanko progo glede na največjega; brez znane vrednosti N/A (nikoli 0 €). Pri enem
+ * izbranem produktu je samo ta vrstica.
+ */
+function PoProduktu({
+  produkti,
+}: {
+  produkti: { produkt: string; ime: string; znesek: number | null; dodatno: string | null }[];
+  enProdukt?: boolean;
+}) {
   const znani = produkti.map((x) => x.znesek).filter((z): z is number => z !== null);
   const max = Math.max(0, ...znani);
   return (
@@ -219,6 +239,7 @@ function PoProduktu({ produkti }: { produkti: PovzetekPrihodkov["poProduktih"] }
                   <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${((x.znesek as number) / max) * 100}%` }} />
                 ) : null}
               </span>
+              {x.dodatno ? <span className="mt-1 block text-xs text-zinc-500">{x.dodatno}</span> : null}
             </li>
           );
         })}
@@ -265,7 +286,7 @@ const DESNO = 8;
 const STOLPEC = 24; // največja širina stolpca
 
 /** Stolpci po mesecih (inline SVG v pravi širini, da besedilo ostane ostro). Vrednost je v namigu ob miški; vse vrednosti so tudi v tabeli. */
-function Stolpci({ meseci }: { meseci: Mesec[] }) {
+function Stolpci({ meseci, onMesec }: { meseci: Mesec[]; onMesec?: (m: Mesec) => void }) {
   const [okvir, setOkvir] = useState<HTMLDivElement | null>(null);
   const [sirina, setSirina] = useState(0);
 
@@ -319,12 +340,40 @@ function Stolpci({ meseci }: { meseci: Mesec[] }) {
             const sredina = levo + rez * (i + 0.5);
             const [ime, leto] = m.oznaka.split(" ");
             const zLetom = rez >= 52 && (i === 0 || ime === "jan");
+            // Mesec s posli odpre njihov seznam (klik ali Enter); prazen mesec ni klikljiv in se ob miški ne obarva.
+            const klik = !!onMesec && m.znesek !== null && m.znesek > 0;
             return (
-              <g key={m.od} className="group">
+              <g
+                key={m.od}
+                className={klik ? "group cursor-pointer outline-none" : undefined}
+                {...(klik
+                  ? {
+                      role: "button",
+                      tabIndex: 0,
+                      "aria-label": `${m.oznaka}: ${evri(m.znesek)}. Odpri posle tega meseca.`,
+                      onClick: () => onMesec!(m),
+                      onKeyDown: (e: KeyboardEvent) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onMesec!(m);
+                        }
+                      },
+                    }
+                  : {})}
+              >
                 <title>{`${m.oznaka}: ${m.znesek === null ? "N/A (zneski niso znani)" : evri(m.znesek)}`}</title>
-                <rect x={levo + rez * i} y={VRH} width={rez} height={visinaRisbe} className="fill-transparent transition-colors group-hover:fill-zinc-100/70" />
+                <rect
+                  x={levo + rez * i}
+                  y={VRH}
+                  width={rez}
+                  height={visinaRisbe}
+                  className={`fill-transparent ${klik ? "transition-colors group-hover:fill-zinc-100/70 group-focus-visible:fill-zinc-100" : ""}`}
+                />
                 {m.znesek !== null && m.znesek > 0 ? (
-                  <path d={stolpec(sredina - b / 2, b, y(m.znesek), dno)} className="fill-emerald-600 transition-colors group-hover:fill-emerald-700" />
+                  <path
+                    d={stolpec(sredina - b / 2, b, y(m.znesek), dno)}
+                    className={`fill-emerald-600 ${klik ? "transition-colors group-hover:fill-emerald-700" : ""}`}
+                  />
                 ) : null}
                 {m.znesek === null ? (
                   <text x={sredina} y={dno - 6} textAnchor="middle" className="fill-zinc-400 text-xs">
@@ -380,18 +429,6 @@ function TabelaMesecev({ meseci }: { meseci: Mesec[] }) {
 }
 
 // ——— čiste pomožne funkcije ———
-
-/** Delež v odstotkih; »–«, ko je imenovalec 0 ali neznan. */
-function delez(del: number | null, celota: number | null): string {
-  if (del === null || celota === null || celota === 0) return "–";
-  return `${Math.round((del / celota) * 100)} %`;
-}
-
-/** »62 % vseh prihodkov«; brez osnove »delež: –«. */
-function delezBesedilo(del: number | null, celota: number | null): string {
-  const d = delez(del, celota);
-  return d === "–" ? "delež: –" : `${d} vseh prihodkov`;
-}
 
 /** Okrogle oznake osi y (korak 1, 2 ali 5 × 10^k, najmanj 1 €), do 4 razdelkov nad 0. */
 function osY(max: number): { meja: number; oznake: { vrednost: number; besedilo: string }[] } {
