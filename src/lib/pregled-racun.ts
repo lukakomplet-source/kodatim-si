@@ -34,6 +34,10 @@ export type Dogodek = {
   nacin?: "mail" | "klic";
   negativen?: boolean;
   odlomek?: string;
+  /** Harvey pri klicih: »zaporedje« ali »prej-zaporedje« (vpisano 30. 10. iz starejšega zaporedja). */
+  vrsta?: string;
+  /** Čas je čas vpisa, dan klica ni zapisan (glej oznaciNaknadne). */
+  naknadno?: boolean;
 };
 
 export type PodjetjePregled = {
@@ -210,6 +214,21 @@ export function vRazponu(cas: string | null, r: Razpon): boolean {
 }
 
 // ——— štetje ———
+
+/**
+ * Klici, ki jih je Harvey 30. 10. ob 16:01 vpisal naknadno iz starejšega zaporedja (vrsta »prej-zaporedje«,
+ * 5 klicev v isti sekundi), in odzivi na teh klicih. Pravi dan klica ni zapisan nikjer (tudi posiljanja.klicano
+ * ima čas vpisa), Luka ga 6. 11. ni vedel. Ostanejo na dnevu vpisa, v štetju enako, le z oznako; nič ni prestavljeno.
+ */
+export function oznaciNaknadne(dogodki: Dogodek[]): Dogodek[] {
+  const kljuc = (e: Dogodek) => `${e.domena}|${e.cas}`;
+  const jeNaknaden = (e: Dogodek) => e.korak === "klic" && e.vrsta === "prej-zaporedje";
+  const klici = new Set(dogodki.filter(jeNaknaden).map(kljuc));
+  if (!klici.size) return dogodki;
+  return dogodki.map((e) =>
+    jeNaknaden(e) || (e.korak === "odgovor" && e.nacin === "klic" && klici.has(kljuc(e))) ? { ...e, naknadno: true } : e,
+  );
+}
 
 export function zaProdukt(dogodki: Dogodek[], produkt: Produkt): Dogodek[] {
   return produkt === "vsi" ? dogodki : dogodki.filter((e) => e.produkt === produkt);

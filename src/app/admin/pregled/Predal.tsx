@@ -196,8 +196,15 @@ function Vrstica({ e, p, danes }: { e: Dogodek; p: PodjetjePregled | undefined; 
             ) : null}
           </p>
         </div>
-        <span className="shrink-0 text-xs tabular-nums text-zinc-500 sm:pt-0.5">
-          {e.cas ? `${lepDatum(e.cas.slice(0, 10))} ${e.cas.slice(11, 16)}` : "dan ni znan"}
+        <span
+          className="shrink-0 text-xs tabular-nums text-zinc-500 sm:pt-0.5"
+          title={e.naknadno ? "Klic je bil vpisan naknadno, dan klica ni zapisan." : undefined}
+        >
+          {e.cas
+            ? e.naknadno
+              ? `vpisano ${lepDatum(e.cas.slice(0, 10))}, dan klica ni zapisan`
+              : `${lepDatum(e.cas.slice(0, 10))} ${e.cas.slice(11, 16)}`
+            : "dan ni znan"}
         </span>
       </div>
       {kontakt ? <p className="mt-1.5 break-words text-xs text-zinc-500">{kontakt}</p> : null}

@@ -16,6 +16,7 @@ import {
   nedostavljeni,
   obdobjeSCeloPrimerjavo,
   opisRazpona,
+  oznaciNaknadne,
   povzetekPrihodkovPosli,
   predPrvimZapisom,
   prviDan,
@@ -150,7 +151,7 @@ export function PregledClient({
   const prej = primerjaj ? obd.prej : null;
   const konec = konecObdobja(zdaj, danes);
   const brezZapisov = predPrvimZapisom(zdaj, prvi);
-  const dogodki = useMemo(() => zaProdukt(podatki.dogodki, produkt), [podatki.dogodki, produkt]);
+  const dogodki = useMemo(() => zaProdukt(oznaciNaknadne(podatki.dogodki), produkt), [podatki.dogodki, produkt]);
 
   const kartice = useMemo(
     () => karticePregleda(dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi),

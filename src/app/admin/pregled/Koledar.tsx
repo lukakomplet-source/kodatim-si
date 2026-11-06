@@ -564,17 +564,19 @@ function SkupinaSeznam({ g, podjetja }: { g: SkupinaDneva; podjetja: Podjetja })
 
 /** Kratka vrstica pod imenom: izid klica, način odziva ali zadeva maila (nič izmišljenega, prazno, če podatka ni). */
 function podrobnost(e: Dogodek): string {
-  if (e.korak === "klic") return e.izid ? veliko(IZID_KLICA[e.izid] ?? e.izid) : "";
+  const pripis = (s: string) => (e.naknadno ? (s ? `${s}, vpisano naknadno` : "Vpisano naknadno") : s);
+  if (e.korak === "klic") return pripis(e.izid ? veliko(IZID_KLICA[e.izid] ?? e.izid) : "");
   if (e.korak === "odgovor") {
     const nacin = e.nacin === "klic" ? "Na klicu" : e.nacin === "mail" ? "Po mailu" : "";
-    return e.negativen ? (nacin ? `${nacin}, ne zanima` : "Ne zanima") : nacin;
+    return pripis(e.negativen ? (nacin ? `${nacin}, ne zanima` : "Ne zanima") : nacin);
   }
   return e.zadeva ?? "";
 }
 
 /** Vrstica dneva: ura, ime podjetja (kot v predalu) in podrobnost; cela vrstica odpre kartico podjetja. */
 function VrsticaDneva({ e, ime }: { e: Dogodek; ime: string }) {
-  const ura = e.cas?.slice(11, 16) ?? "";
+  // Pri naknadno vpisanem klicu je ura čas vpisa, ne klica, zato je ne pokažemo.
+  const ura = e.naknadno ? "" : (e.cas?.slice(11, 16) ?? "");
   const vec = podrobnost(e);
   return (
     <li>
