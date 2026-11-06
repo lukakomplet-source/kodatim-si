@@ -2,6 +2,7 @@
 
 import type { MouseEvent } from "react";
 import { IME_KORAKA, type Korak, type VrsticaAktivnostiPodjetja } from "@/lib/pregled-racun";
+import type { StolpecTabele } from "@/lib/pregled-vodstvo";
 import { Plosca } from "./Plosca";
 
 export type TabelaAktivnostiProps = {
@@ -15,6 +16,10 @@ export type TabelaAktivnostiProps = {
   skupaj?: { aktivnosti: number; podjetja: number };
   /** Ena vrstica nad tabelo z merami brez dvojnega štetja (aktivnosti, podjetja, kontakti, stiki). */
   mere?: string;
+  /** Klik na številko v celici (podjetja, pripisani odzivi, leadi …) odpre njen seznam. */
+  onCelica?: (aktivnost: Korak, stolpec: StolpecTabele) => void;
+  /** Odprta celica (za poudarek). */
+  izbranaCelica?: { aktivnost: Korak; stolpec: StolpecTabele } | null;
 };
 
 type Rezultat = "odziv" | "lead" | "sestanek" | "posel";
@@ -54,7 +59,7 @@ const LEADOV = ["lead", "leada", "leadi", "leadov"] as const;
  * aktivnosti pred prvim odzivom podjetja; aktivnosti so iz obdobja, rezultati do danes. Stopnji sta od podjetij, ki so
  * aktivnost dobila pred prvim odzivom (klic po že danem odzivu ne zniža stopnje).
  */
-export function TabelaAktivnosti({ vrstice, izbrana, onOdpri, skupaj, mere }: TabelaAktivnostiProps) {
+export function TabelaAktivnosti({ vrstice, izbrana, onOdpri, skupaj, mere, onCelica, izbranaCelica }: TabelaAktivnostiProps) {
   const vsota = (k: Rezultat) => vrstice.reduce((a, v) => a + (v.na ? 0 : v[k]), 0);
   const sk = skupaj ? { odziv: vsota("odziv"), lead: vsota("lead"), sestanek: vsota("sestanek"), posel: vsota("posel") } : null;
   return (
@@ -129,7 +134,14 @@ export function TabelaAktivnosti({ vrstice, izbrana, onOdpri, skupaj, mere }: Ta
           </thead>
           <tbody>
             {vrstice.map((v) => (
-              <Vrstica key={v.aktivnost} v={v} izbrana={izbrana === v.aktivnost} onOdpri={onOdpri} />
+              <Vrstica
+                key={v.aktivnost}
+                v={v}
+                izbrana={izbrana === v.aktivnost}
+                izbranaCelica={izbranaCelica?.aktivnost === v.aktivnost ? izbranaCelica.stolpec : null}
+                onOdpri={onOdpri}
+                onCelica={onCelica}
+              />
             ))}
           </tbody>
           {skupaj && sk ? (
@@ -160,7 +172,7 @@ export function TabelaAktivnosti({ vrstice, izbrana, onOdpri, skupaj, mere }: Ta
       </div>
       {skupaj && sk ? (
         <p className="border-t border-zinc-100 px-4 py-2.5 text-xs text-zinc-600 sm:px-5 @3xl:hidden">
-          {`Skupaj: ${skupaj.aktivnosti} aktivnosti, ${oblika(skupaj.podjetja, PODJETIJ)},${oblika(sk.odziv, ODZIVOV)} (${odstotekBesedilo(sk.odziv, skupaj.podjetja)}), ${oblika(sk.lead, LEADOV)}.`}
+          {`Skupaj: ${skupaj.aktivnosti} aktivnosti, ${oblika(skupaj.podjetja, PODJETIJ)}, ${oblika(sk.odziv, ODZIVOV)} (${odstotekBesedilo(sk.odziv, skupaj.podjetja)}), ${oblika(sk.lead, LEADOV)}.`}
         </p>
       ) : null}
     </Plosca>
@@ -175,8 +187,61 @@ function odstotekBesedilo(a: number, b: number): string {
   return `${z} %`;
 }
 
-/** Vrstica tabele: klik kjerkoli v vrstici odpre seznam; gumb v Skupaj ostane za tipkovnico. */
-function Vrstica({ v, izbrana, onOdpri }: { v: VrsticaAktivnostiPodjetja; izbrana: boolean; onOdpri: (aktivnost: Korak) => void }) {
+/** Številka v celici, ki odpre svoj seznam (podjetja ali pripisani rezultati); 0 je navadno besedilo. */
+function CelicaGumb({
+  n,
+  oznaka,
+  izbrana,
+  onClick,
+  krepko,
+}: {
+  n: number;
+  oznaka: string;
+  izbrana: boolean;
+  onClick: () => void;
+  krepko?: boolean;
+}) {
+  if (!n) return <span className="text-zinc-500">0</span>;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-pressed={izbrana}
+      aria-label={`Odpri seznam: ${oznaka} (${n})`}
+      className={`-mx-1.5 -my-1 inline-flex min-h-7 items-center rounded-md px-1.5 tabular-nums underline-offset-4 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        krepko ? "font-medium" : ""
+      } ${izbrana ? "text-accent" : krepko ? "text-zinc-900" : "text-zinc-700"}`}
+    >
+      {n}
+    </button>
+  );
+}
+
+const IME_STOLPCA: Record<StolpecTabele, string> = {
+  podjetja: "podjetja",
+  odziv: "pripisani odzivi",
+  lead: "pripisani leadi",
+  sestanek: "pripisani sestanki",
+  posel: "pripisani posli",
+};
+
+/** Vrstica tabele: klik v vrstici odpre vse aktivnosti te vrste; vsaka številka odpre svoj seznam. */
+function Vrstica({
+  v,
+  izbrana,
+  izbranaCelica,
+  onOdpri,
+  onCelica,
+}: {
+  v: VrsticaAktivnostiPodjetja;
+  izbrana: boolean;
+  izbranaCelica: StolpecTabele | null;
+  onOdpri: (aktivnost: Korak) => void;
+  onCelica?: (aktivnost: Korak, stolpec: StolpecTabele) => void;
+}) {
   const ime = IME_KORAKA[v.aktivnost];
   const na = !!v.na;
   const klik = !na && v.stevilo > 0;
@@ -184,6 +249,12 @@ function Vrstica({ v, izbrana, onOdpri }: { v: VrsticaAktivnostiPodjetja; izbran
     e.stopPropagation();
     onOdpri(v.aktivnost);
   };
+  const celica = (s: StolpecTabele, n: number, krepko?: boolean) =>
+    onCelica ? (
+      <CelicaGumb n={n} oznaka={`${ime}, ${IME_STOLPCA[s]}`} izbrana={izbranaCelica === s} onClick={() => onCelica(v.aktivnost, s)} krepko={krepko} />
+    ) : (
+      <span className={n ? (krepko ? "font-medium text-zinc-900" : "text-zinc-700") : "text-zinc-500"}>{n}</span>
+    );
   return (
     <tr
       onClick={klik ? () => onOdpri(v.aktivnost) : undefined}
@@ -215,7 +286,7 @@ function Vrstica({ v, izbrana, onOdpri }: { v: VrsticaAktivnostiPodjetja; izbran
       </td>
 
       <td className={`${TELO} ${CELICA}`}>
-        {na ? <span className="text-zinc-400">–</span> : <span className={v.podjetja ? "text-zinc-700" : "text-zinc-500"}>{v.podjetja}</span>}
+        {na ? <span className="text-zinc-400">–</span> : celica("podjetja", v.podjetja)}
       </td>
 
       {REZULTATI.map((r) => {
@@ -227,7 +298,7 @@ function Vrstica({ v, izbrana, onOdpri }: { v: VrsticaAktivnostiPodjetja; izbran
               <span className="text-zinc-400">–</span>
             ) : (
               <>
-                <span className={n ? "font-medium text-zinc-900" : "text-zinc-500"}>{n}</span>
+                {celica(r.kljuc, n, true)}
                 {odstotek !== null ? <span className={`${OZKO} block text-xs text-zinc-500`}>{odstotek}</span> : null}
               </>
             )}

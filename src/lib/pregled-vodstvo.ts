@@ -492,6 +492,135 @@ export function seznamNedostavljenih(dogodki: Dogodek[], podjetja: PregledPodatk
   );
 }
 
+// ——— filtra kampanja in oseba (audit 6. 11.) ———
+
+/** Vrednost filtra za »ni zapisano« (prazna kampanja ali oseba). */
+export const NI_ZAPISANO = "ni-zapisano";
+
+/** Kdo je naredil aktivnost: »luka (5. 11.: …), izvedel Claude«, »luka@kompletko.com« → »Luka«; prazno = ni zapisano. */
+export function osebaIz(kdo: string | undefined): string {
+  // samo prva beseda: »Luka 4. 11. (»…«)« je tudi Luka
+  const s = (kdo ?? "").trim().split(/[\s(,@.]/)[0];
+  return s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : "";
+}
+
+export type Moznost = { kljuc: string; ime: string; stevilo: number };
+
+/**
+ * Filtra, ki veljata za vse dele strani (produkt je že uporabljen v dogodkih):
+ * - kampanja = različica prvega maila podjetja (Harvey posiljanja.varianta); velja za podjetje, zato vse njegove
+ *   aktivnosti in rezultati spadajo vanjo;
+ * - oseba = kdo je aktivnost naredil; aktivnosti samo te osebe, rezultati podjetij, s katerimi je ta oseba delala.
+ */
+export function zaFiltre(
+  dogodki: Dogodek[],
+  podjetja: PregledPodatki["podjetja"],
+  kampanja: string | null,
+  oseba: string | null,
+): Dogodek[] {
+  let out = dogodki;
+  if (kampanja) {
+    const iskana = kampanja === NI_ZAPISANO ? "" : kampanja;
+    out = out.filter((e) => (podjetja[e.domena]?.kampanja ?? "") === iskana);
+  }
+  if (oseba) {
+    const iskana = oseba === NI_ZAPISANO ? "" : oseba;
+    const moja = (e: Dogodek) => AKTIVNOSTI.includes(e.korak) && osebaIz(e.kdo) === iskana;
+    const podj = new Set(out.filter(moja).map((e) => e.domena));
+    out = out.filter((e) => (AKTIVNOSTI.includes(e.korak) ? moja(e) : podj.has(e.domena)));
+  }
+  return out;
+}
+
+/**
+ * Možnosti filtrov s številom: kampanje (podjetij) iz dogodkov, ki so že filtrirani po produktu in osebi; osebe
+ * (aktivnosti) iz dogodkov, filtriranih po produktu in kampanji. Tako se filtri med seboj upoštevajo.
+ */
+export function moznostiFiltrov(
+  dogodki: Dogodek[],
+  podjetja: PregledPodatki["podjetja"],
+  kampanja: string | null,
+  oseba: string | null,
+): { kampanje: Moznost[]; osebe: Moznost[] } {
+  const zaKampanje = zaFiltre(dogodki, podjetja, null, oseba);
+  const k = new Map<string, Set<string>>();
+  for (const e of zaKampanje) {
+    const v = podjetja[e.domena]?.kampanja ?? "";
+    if (!k.has(v)) k.set(v, new Set());
+    k.get(v)!.add(e.domena);
+  }
+  const zaOsebe = zaFiltre(dogodki, podjetja, kampanja, null).filter((e) => AKTIVNOSTI.includes(e.korak));
+  const o = new Map<string, number>();
+  for (const e of zaOsebe) o.set(osebaIz(e.kdo), (o.get(osebaIz(e.kdo)) ?? 0) + 1);
+  const urejeno = <T,>(m: Map<string, T>) => [...m.entries()].sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "sl", { numeric: true })));
+  return {
+    kampanje: urejeno(k).map(([v, s]) => ({ kljuc: v || NI_ZAPISANO, ime: v ? `Prvi mail ${v}` : "Brez zapisane kampanje", stevilo: s.size })),
+    osebe: urejeno(o).map(([v, n]) => ({ kljuc: v || NI_ZAPISANO, ime: v || "Ni zapisano", stevilo: n })),
+  };
+}
+
+// ——— seznami za celice tabele aktivnosti (audit 6. 11.: vsaka številka odpre seznam) ———
+
+export type StolpecTabele = "podjetja" | "odziv" | "lead" | "sestanek" | "posel";
+
+/**
+ * Za vsako podjetje z rezultatom aktivnost, ki ji je rezultat pripisan: zadnja aktivnost pred prvim rezultatom (ali
+ * ob njem), samo če je v obdobju. Isto pravilo kot poAktivnostih() (pregled-racun.ts), zato so seznami enako dolgi
+ * kot števila v tabeli (preverja .ogled-tmp/celice.ts).
+ */
+export function pripisi(dogodki: Dogodek[], r: Razpon): Map<string, Korak> {
+  const po = new Map<string, Dogodek[]>();
+  for (const e of dogodki) {
+    if (!po.has(e.domena)) po.set(e.domena, []);
+    po.get(e.domena)!.push(e);
+  }
+  const out = new Map<string, Korak>();
+  for (const [dom, ev] of po) {
+    const rezultat = ev.filter((e) => REZULTATI.includes(e.korak));
+    if (!rezultat.length) continue;
+    const prvi = rezultat.reduce((a, b) => ((b.cas ?? "9999") < (a.cas ?? "9999") ? b : a));
+    const meja = prvi.cas ?? "9999";
+    const pred = ev.filter((e) => AKTIVNOSTI.includes(e.korak) && (e.cas ?? "") <= meja).sort((a, b) => (a.cas ?? "").localeCompare(b.cas ?? ""));
+    const akt = pred.at(-1);
+    if (akt && vRazponu(akt.cas, r)) out.set(dom, akt.korak);
+  }
+  return out;
+}
+
+/**
+ * Seznam za celico tabele: »podjetja« = podjetja, ki so aktivnost dobila v obdobju pred prvim rezultatom (zadnja
+ * taka aktivnost na podjetje); rezultat = podjetja, katerih rezultat je pripisan tej aktivnosti (prvi tak dogodek).
+ */
+export function seznamCelice(dogodki: Dogodek[], r: Razpon, aktivnost: Korak, stolpec: StolpecTabele): Dogodek[] {
+  if (stolpec === "podjetja") {
+    const meja = new Map<string, string>();
+    for (const e of dogodki) {
+      if (!REZULTATI.includes(e.korak)) continue;
+      const c = e.cas ?? "9999";
+      const s = meja.get(e.domena);
+      if (s === undefined || c < s) meja.set(e.domena, c);
+    }
+    const zadnja = new Map<string, Dogodek>();
+    for (const e of dogodki) {
+      if (e.korak !== aktivnost || !vRazponu(e.cas, r)) continue;
+      const m = meja.get(e.domena);
+      if (m !== undefined && (e.cas ?? "") > m) continue;
+      const s = zadnja.get(e.domena);
+      if (!s || (e.cas ?? "") >= (s.cas ?? "")) zadnja.set(e.domena, e);
+    }
+    return [...zadnja.values()].sort((a, b) => (b.cas ?? "").localeCompare(a.cas ?? ""));
+  }
+  const korak: Korak = stolpec === "odziv" ? "odgovor" : stolpec;
+  const p = pripisi(dogodki, r);
+  const prvi = new Map<string, Dogodek>();
+  for (const e of dogodki) {
+    if (e.korak !== korak || p.get(e.domena) !== aktivnost) continue;
+    const s = prvi.get(e.domena);
+    if (!s || (e.cas !== null && (s.cas === null || e.cas < s.cas))) prvi.set(e.domena, e);
+  }
+  return [...prvi.values()].sort((a, b) => (b.cas ?? "").localeCompare(a.cas ?? ""));
+}
+
 // ——— mere brez dvojnega štetja (audit 6. 11.) ———
 
 /** Izidi klica, pri katerih je nekdo dvignil in se pogovoril (isto kot Harvey pregled.py POGOVOR). */

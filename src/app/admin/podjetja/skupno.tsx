@@ -43,6 +43,8 @@ export const VRSTA_DOGODKA: Record<Dogodek["vrsta"], string> = {
   pregled: "Pregled klica",
   stanje: "Stanje",
   obisk: "Obisk",
+  sestanek: "Sestanek",
+  posel: "Posel",
 };
 
 export function kdaj(iso: string | null | undefined, sUro = true): string {

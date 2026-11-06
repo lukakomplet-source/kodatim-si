@@ -184,11 +184,13 @@ export default async function KarticaPodjetjaPage({
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-zinc-900">Časovnica</h2>
+        <p className="mt-0.5 text-sm text-zinc-500">Od prvega stika do danes, najstarejše zgoraj.</p>
         {p.dogodki.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">Še brez stika.</p>
         ) : (
           <ol className="mt-3 space-y-3 border-l border-zinc-200 pl-5">
-            {p.dogodki.map((d, i) => (
+            {/* Podatki so od najnovejšega (seznam podjetij); Luka 6. 11.: »vse aktivnosti kronološko«. */}
+            {[...p.dogodki].reverse().map((d, i) => (
               <li key={`${d.cas}-${i}`} className="relative">
                 <span className={`absolute -left-[25px] top-1.5 h-2.5 w-2.5 rounded-full ${POSEL_BARVA[d.posel]}`} aria-hidden />
                 <p className="text-xs text-zinc-500">
@@ -205,8 +207,9 @@ export default async function KarticaPodjetjaPage({
             ))}
           </ol>
         )}
-        <p className="mt-4 text-xs text-zinc-400">
-          Kompletko hrani prvi in zadnji mail podjetju, ne vsakega posebej. Ogled predloga je en zapis s številom ogledov.
+        <p className="mt-4 text-xs text-zinc-500">
+          Kompletko: vsak mail (prvi, follow-up, video, zadnji), klic in odgovor, kot jih šteje Pregled; mail brez
+          zapisanega časa tu ni prikazan. Ogled predloga (KodaTim) je en zapis s številom ogledov.
         </p>
       </section>
     </div>

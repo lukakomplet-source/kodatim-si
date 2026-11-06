@@ -28,7 +28,7 @@ export type PoselPodjetja = "kodatim" | "kompletko";
 export type Dogodek = {
   cas: string;
   posel: PoselPodjetja;
-  vrsta: "mail" | "odgovor" | "klic" | "ogled" | "opomba" | "faza" | "pregled" | "stanje" | "obisk";
+  vrsta: "mail" | "odgovor" | "klic" | "ogled" | "opomba" | "faza" | "pregled" | "stanje" | "obisk" | "sestanek" | "posel";
   opis: string;
   kdo?: string;
   /** Povezava za »Poglej« (mail, pogovor, predlog, kartica v Promocijah). */
@@ -123,6 +123,8 @@ type HDogodek = {
   mail_id?: string;
   pogovor_id?: string;
   predlog?: string;
+  /** Harvey Kompletko (Pregled v3): pot v adminu za »Poglej« (poslan mail, odgovor); samo »/admin/…«. */
+  href?: string;
 };
 
 type HPodjetje = {
@@ -424,6 +426,7 @@ function zgradi(
         if (d.mail_id) href = `/admin/komunikacija/mail/${encodeURIComponent(d.mail_id)}`;
         else if (d.pogovor_id) href = `/admin/komunikacija/pogovor/${encodeURIComponent(d.pogovor_id)}`;
         else if (d.predlog) href = `/predlog/${encodeURIComponent(d.predlog)}?interno`;
+        else if (typeof d.href === "string" && /^\/admin\/[\w\-./%]+$/.test(d.href)) href = d.href;
         v.dogodki.push({
           cas: d.cas,
           posel,
@@ -467,7 +470,9 @@ function zgradi(
     zasedeni.add(kljuc);
     v.kljuc = kljuc;
     v.dogodki.sort((a, b) => b.cas.localeCompare(a.cas));
-    v.zadnji = v.dogodki[0]?.cas ?? "";
+    // Zadnji stik, ne dogovorjen sestanek v prihodnosti (časovnica ga ima, seznam podjetij naj se po njem ne ravna).
+    const zdaj = new Date().toISOString();
+    v.zadnji = v.dogodki.find((d) => new Date(d.cas).toISOString() <= zdaj)?.cas ?? "";
   }
   return ostala;
 }

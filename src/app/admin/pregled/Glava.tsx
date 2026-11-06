@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { OBDOBJA, PRODUKTI, jeDatum, lepDatum, type ObdobjeKljuc, type Produkt } from "@/lib/pregled-racun";
+import type { Moznost } from "@/lib/pregled-vodstvo";
 
 export type GlavaProps = {
   /** Ena vrstica pod naslovom: produkt in obdobje. */
@@ -23,7 +24,57 @@ export type GlavaProps = {
   onProdukt: (p: Produkt) => void;
   /** Opomba pod orodno vrstico (npr. kampanja se še ni začela); null = brez. */
   opombaProdukta: string | null;
+  /** Kampanja (različica prvega maila) in odgovorna oseba; null = vse. Možnosti s številom upoštevajo druge filtre. */
+  kampanje: Moznost[];
+  kampanja: string | null;
+  onKampanja: (v: string | null) => void;
+  osebe: Moznost[];
+  oseba: string | null;
+  onOseba: (v: string | null) => void;
 };
+
+/** Izbirnik filtra: »Vse kampanje« ali ena možnost s številom v oklepaju. */
+function Izbirnik({
+  id,
+  oznaka,
+  vse,
+  enota,
+  moznosti,
+  vrednost,
+  onIzbira,
+}: {
+  id: string;
+  oznaka: string;
+  vse: string;
+  enota: string;
+  moznosti: Moznost[];
+  vrednost: string | null;
+  onIzbira: (v: string | null) => void;
+}) {
+  // Izbrana možnost, ki je ob drugih filtrih ni več, ostane v seznamu (z 0), da izbira ne izgine pod rokami.
+  const vse_ = vrednost && !moznosti.some((m) => m.kljuc === vrednost) ? [...moznosti, { kljuc: vrednost, ime: vrednost, stevilo: 0 }] : moznosti;
+  return (
+    <span className="relative inline-flex w-full sm:w-auto">
+      <label className="sr-only" htmlFor={id}>
+        {oznaka}
+      </label>
+      <select
+        id={id}
+        value={vrednost ?? ""}
+        onChange={(e) => onIzbira(e.target.value || null)}
+        className={`${POLJE} w-full min-w-40 cursor-pointer appearance-none pr-9 sm:w-auto ${vrednost ? "font-medium ring-accent/40" : ""}`}
+      >
+        <option value="">{vse}</option>
+        {vse_.map((m) => (
+          <option key={m.kljuc} value={m.kljuc}>
+            {m.ime} ({m.stevilo} {enota})
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
+    </span>
+  );
+}
 
 const POLJE =
   "rounded-lg bg-white px-3 py-2 text-sm text-zinc-900 ring-1 ring-zinc-200 transition hover:ring-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
@@ -48,6 +99,12 @@ export function Glava({
   produkt,
   onProdukt,
   opombaProdukta,
+  kampanje,
+  kampanja,
+  onKampanja,
+  osebe,
+  oseba,
+  onOseba,
 }: GlavaProps) {
   return (
     <>
@@ -56,7 +113,7 @@ export function Glava({
         <p className="mt-1 text-sm text-zinc-500">{opis}</p>
       </header>
 
-      <div className="sticky top-0 z-30 -mx-6 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/70 bg-[#fbfbfd]/90 px-6 py-3 backdrop-blur sm:-mx-12 sm:px-12">
+      <div className="z-30 sm:sticky sm:top-0 -mx-6 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/70 bg-[#fbfbfd]/90 px-6 py-3 backdrop-blur sm:-mx-12 sm:px-12">
         {/* Na telefonu se produkti ne prelomijo: vrstica se pomika vodoravno, desni rob zbledi (namig, da je še kaj). */}
         <div className="-mx-6 min-w-0 max-w-[calc(100%+3rem)] overflow-x-auto px-6 [mask-image:linear-gradient(to_right,#000_85%,transparent)] [scrollbar-width:none] sm:mx-0 sm:max-w-full sm:px-0 sm:[mask-image:none]">
           <div role="group" aria-label="Produkt" className="inline-flex gap-0.5 rounded-lg bg-zinc-100 p-0.5">
@@ -79,8 +136,18 @@ export function Glava({
           </div>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto sm:w-auto">
-          <span className="relative inline-flex w-full sm:w-auto">
+        <div className="grid w-full grid-cols-2 items-center gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap sm:gap-x-3">
+          <Izbirnik
+            id="pregled-kampanja"
+            oznaka="Kampanja"
+            vse="Vse kampanje"
+            enota="podj."
+            moznosti={kampanje}
+            vrednost={kampanja}
+            onIzbira={onKampanja}
+          />
+          <Izbirnik id="pregled-oseba" oznaka="Odgovorna oseba" vse="Vse osebe" enota="akt." moznosti={osebe} vrednost={oseba} onIzbira={onOseba} />
+          <span className="relative col-span-2 inline-flex w-full sm:w-auto">
             <label className="sr-only" htmlFor="pregled-obdobje">
               Obdobje
             </label>
@@ -103,7 +170,7 @@ export function Glava({
           </span>
 
           {obdobje === "poljubno" ? (
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <div className="col-span-2 grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
               <label className="flex flex-col gap-1 text-xs text-zinc-500">
                 Od
                 <input
@@ -129,7 +196,7 @@ export function Glava({
 
           {/* Pri »Vse« prejšnjega obdobja ni: stikala ne rišemo, da na najvidnejšem mestu ni mrtvega gumba. */}
           {primerjavaMogoca ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1">
               <button
                 type="button"
                 role="switch"

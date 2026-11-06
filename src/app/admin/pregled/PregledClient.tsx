@@ -36,14 +36,18 @@ import {
   karticeRezultata,
   lijakRezultatov,
   mere,
+  moznostiFiltrov,
   opisMer,
+  seznamCelice,
   seznamFaze,
   seznamNedostavljenih,
   stavekStanja,
   stopnjaOdziva,
   ugotovitve,
+  zaFiltre,
   type AkcijaKljuc,
   type FazaKljuc,
+  type StolpecTabele,
 } from "@/lib/pregled-vodstvo";
 import { AkcijskiCenter } from "./AkcijskiCenter";
 import { Glava } from "./Glava";
@@ -65,6 +69,8 @@ export type ZacetekPregleda = {
   seznam?: string;
   dan?: string;
   primerjaj?: string;
+  kampanja?: string;
+  oseba?: string;
 };
 
 type Izbor = Kartica["kljuc"];
@@ -82,7 +88,17 @@ export type OdprtSeznam =
   | { vrsta: "aktivnost"; kljuc: Korak }
   | { vrsta: "akcija"; kljuc: AkcijaKljuc }
   | { vrsta: "nedostavljeni" }
+  | { vrsta: "celica"; aktivnost: Korak; stolpec: StolpecTabele }
   | { vrsta: "dan"; dan: string };
+
+const STOLPCI = new Set<string>(["podjetja", "odziv", "lead", "sestanek", "posel"]);
+const IME_STOLPCA: Record<StolpecTabele, string> = {
+  podjetja: "podjetja",
+  odziv: "pripisani odzivi",
+  lead: "pripisani leadi",
+  sestanek: "pripisani sestanki",
+  posel: "pripisani posli",
+};
 
 function izNaslova(z: ZacetekPregleda): OdprtSeznam | null {
   if (jeDatum(z.dan)) return { vrsta: "dan", dan: z.dan };
@@ -93,6 +109,10 @@ function izNaslova(z: ZacetekPregleda): OdprtSeznam | null {
 /** »lijak-odgovor«, »akcija-zamujeno«, »aktivnost-klic«, »nedostavljeni«, »odgovor« → kaj odpreti. */
 function izCilja(s: string): OdprtSeznam | null {
   if (s === "nedostavljeni") return { vrsta: "nedostavljeni" };
+  if (s.startsWith("celica-")) {
+    const [, a, st] = s.split("-");
+    if (AKTIVNOSTI.includes(a as Korak) && STOLPCI.has(st)) return { vrsta: "celica", aktivnost: a as Korak, stolpec: st as StolpecTabele };
+  }
   if (s.startsWith("lijak-") && FAZE.has(s.slice(6))) return { vrsta: "lijak", kljuc: s.slice(6) as FazaKljuc };
   if (s.startsWith("akcija-") && AKCIJE.has(s.slice(7))) return { vrsta: "akcija", kljuc: s.slice(7) as AkcijaKljuc };
   if (s.startsWith("aktivnost-") && AKTIVNOSTI.includes(s.slice(10) as Korak)) {
@@ -106,6 +126,7 @@ function vNaslov(o: OdprtSeznam | null): string | null {
   if (!o || o.vrsta === "dan") return null;
   if (o.vrsta === "kartica") return o.kljuc;
   if (o.vrsta === "nedostavljeni") return "nedostavljeni";
+  if (o.vrsta === "celica") return `celica-${o.aktivnost}-${o.stolpec}`;
   return `${o.vrsta}-${o.kljuc}`;
 }
 
@@ -152,6 +173,8 @@ export function PregledClient({
   const [od, setOd] = useState(jeDatum(zacetek.od) ? zacetek.od : danes);
   const [doo, setDo] = useState(jeDatum(zacetek.do) ? zacetek.do : danes);
   const [primerjaj, setPrimerjaj] = useState(zacetek.primerjaj !== "ne");
+  const [kampanja, setKampanja] = useState<string | null>(zacetek.kampanja?.slice(0, 40) || null);
+  const [oseba, setOseba] = useState<string | null>(zacetek.oseba?.slice(0, 40) || null);
   const [odprto, setOdprto] = useState<OdprtSeznam | null>(() => izNaslova(zacetek));
 
   // Izbira ostane v naslovu strani (osvežitev, povezava iz Danes), brez ponovnega branja Harveyja.
@@ -164,11 +187,13 @@ export function PregledClient({
       p.set("do", doo);
     }
     if (!primerjaj) p.set("primerjaj", "ne");
+    if (kampanja) p.set("kampanja", kampanja);
+    if (oseba) p.set("oseba", oseba);
     const s = vNaslov(odprto);
     if (s) p.set("seznam", s);
     if (odprto?.vrsta === "dan") p.set("dan", odprto.dan);
     window.history.replaceState(null, "", `?${p.toString()}`);
-  }, [produkt, obdobje, od, doo, primerjaj, odprto]);
+  }, [produkt, obdobje, od, doo, primerjaj, kampanja, oseba, odprto]);
 
   // Primerjava samo, kadar je CELO prejšnje obdobje po prvem zabeleženem dogodku; prej ni podatkov, ne ničel.
   const prvi = useMemo(() => prviDan(podatki.dogodki), [podatki.dogodki]);
@@ -177,7 +202,10 @@ export function PregledClient({
   const prej = primerjaj ? obd.prej : null;
   const konec = konecObdobja(zdaj, danes);
   const brezZapisov = predPrvimZapisom(zdaj, prvi);
-  const dogodki = useMemo(() => zaProdukt(oznaciNaknadne(podatki.dogodki), produkt), [podatki.dogodki, produkt]);
+  // Filtri: produkt, nato kampanja in oseba (vsi deli strani dobijo iste dogodke; možnosti upoštevajo druge filtre).
+  const poProduktu = useMemo(() => zaProdukt(oznaciNaknadne(podatki.dogodki), produkt), [podatki.dogodki, produkt]);
+  const moznosti = useMemo(() => moznostiFiltrov(poProduktu, podatki.podjetja, kampanja, oseba), [poProduktu, podatki.podjetja, kampanja, oseba]);
+  const dogodki = useMemo(() => zaFiltre(poProduktu, podatki.podjetja, kampanja, oseba), [poProduktu, podatki.podjetja, kampanja, oseba]);
 
   // A. rezultat
   const kartice = useMemo(
@@ -232,6 +260,18 @@ export function PregledClient({
         podnaslov: `${a.opis} Stanje danes, ne glede na obdobje.`,
         skupine: [{ kljuc: "vse", dogodki: a.vrstice }],
         prazno: a.prazno,
+      };
+    }
+    if (odprto.vrsta === "celica") {
+      const { aktivnost: a, stolpec: s } = odprto;
+      return {
+        naslov: `${IME_KORAKA[a]}: ${IME_STOLPCA[s]}`,
+        podnaslov:
+          s === "podjetja"
+            ? `Podjetja, ki so to aktivnost dobila pred prvim odzivom (${opisObdobja}); ena vrstica na podjetje.`
+            : `Podjetja, pri katerih je bila ta aktivnost zadnja pred prvim odzivom (${opisObdobja}).`,
+        skupine: [{ kljuc: "vse", dogodki: seznamCelice(dogodki, zdaj, a, s) }],
+        prazno: "Nobenega podjetja.",
       };
     }
     if (odprto.vrsta === "nedostavljeni") {
@@ -290,6 +330,10 @@ export function PregledClient({
   const odpriAkcijo = useCallback((kljuc: AkcijaKljuc) => setOdprto({ vrsta: "akcija", kljuc }), []);
   const odpriAktivnost = useCallback((kljuc: Korak) => setOdprto({ vrsta: "aktivnost", kljuc }), []);
   const odpriDan = useCallback((dan: string) => setOdprto({ vrsta: "dan", dan }), []);
+  const odpriCelico = useCallback(
+    (aktivnost: Korak, stolpec: StolpecTabele) => setOdprto({ vrsta: "celica", aktivnost, stolpec }),
+    [],
+  );
   const odpriCilj = useCallback((cilj: string) => setOdprto(izCilja(cilj)), []);
   const naPrihodke = useCallback(
     () => document.getElementById("prihodki")?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -324,6 +368,12 @@ export function PregledClient({
         produkt={produkt}
         onProdukt={setProdukt}
         opombaProdukta={opombaProdukta}
+        kampanje={moznosti.kampanje}
+        kampanja={kampanja}
+        onKampanja={setKampanja}
+        osebe={moznosti.osebe}
+        oseba={oseba}
+        onOseba={setOseba}
       />
 
       {/* A. Rezultat in »Kaj se dogaja?« */}
@@ -369,6 +419,8 @@ export function PregledClient({
           onOdpri={odpriAktivnost}
           skupaj={brezZapisov ? undefined : { aktivnosti: m.aktivnosti, podjetja: m.podjetja }}
           mere={brezZapisov ? undefined : opisMer(m)}
+          onCelica={odpriCelico}
+          izbranaCelica={odprto?.vrsta === "celica" ? { aktivnost: odprto.aktivnost, stolpec: odprto.stolpec } : null}
         />
         {obdobje === "vse" && brezCasa ? (
           <p className="text-xs text-zinc-500">
