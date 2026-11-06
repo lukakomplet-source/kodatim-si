@@ -65,7 +65,7 @@ export function PregledClient({
     PRODUKTI.some((p) => p.kljuc === zacetek.produkt) ? (zacetek.produkt as Produkt) : "vsi",
   );
   const [obdobje, setObdobje] = useState<ObdobjeKljuc>(
-    OBDOBJA.some((o) => o.kljuc === zacetek.obdobje) ? (zacetek.obdobje as ObdobjeKljuc) : "ta_mesec",
+    OBDOBJA.some((o) => o.kljuc === zacetek.obdobje) ? (zacetek.obdobje as ObdobjeKljuc) : "vse", // Luka 6. 11.: »vedno naj bo vse označeno«
   );
   const [od, setOd] = useState(jeDatum(zacetek.od) ? zacetek.od : danes);
   const [doo, setDo] = useState(jeDatum(zacetek.do) ? zacetek.do : danes);
@@ -123,7 +123,7 @@ export function PregledClient({
 
   const imeProdukta = PRODUKTI.find((p) => p.kljuc === produkt)!.ime;
   const naSeznamu = podatki.seznami[produkt] ?? 0;
-  const aktivnosti = kartice.filter((k) => k.kljuc === "kontaktirana" || AKTIVNOSTI.includes(k.kljuc as never));
+  const aktivnosti = kartice.filter((k) => AKTIVNOSTI.includes(k.kljuc as never));
   const rezultati = kartice.filter((k) => REZULTATI.includes(k.kljuc as never));
 
   return (
@@ -208,15 +208,15 @@ export function PregledClient({
       {/* številke */}
       <section aria-label="Številke" className="space-y-3">
         <h2 className="text-sm font-semibold text-zinc-900">Aktivnosti</h2>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {aktivnosti.map((k) => (
             <KarticaGumb key={k.kljuc} k={k} izbrana={izbor === k.kljuc} onClick={() => odpri(k.kljuc)} />
           ))}
         </div>
         <h2 className="pt-2 text-sm font-semibold text-zinc-900">Rezultati</h2>
         <p className="-mt-2 text-xs text-zinc-500">
-          Odziv: pisni odgovor ali pogovor na klicu. Lead (predlagano pravilo, popravi, če želiš drugače): dogovorjen
-          sestanek, »pokličite kasneje« z datumom ali pisni odgovor brez »ne«.
+          Odziv: pisni odgovor ali pogovor na klicu. Lead: podjetje, ki je reklo da sestanku, ponudbi ali testu.
+          »Pokličite kasneje«, »pošljite na mail« in »nimamo potrebe« so samo odziv.
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {rezultati.map((k) => (
@@ -260,16 +260,16 @@ export function PregledClient({
           Lijak
         </h2>
         <p className="mt-0.5 text-xs text-zinc-500">
-          Podjetja, ki so bila prvič kontaktirana v obdobju, in do kod so prišla do danes. Prvi odstotek je od kontaktiranih, v oklepaju od prejšnje stopnje (odziv → lead → sestanek → posel).
+          Podjetja, ki so bila prvič kontaktirana v obdobju, in do kod so prišla do danes. Prvi odstotek je od vseh kontaktiranih, v oklepaju od prejšnje stopnje (odziv → lead → sestanek → posel).
         </p>
         <ol className="mt-4 space-y-1.5">
-          {lijak.map((v, i) => {
-            const sirina = lijak[0].stevilo ? Math.max(2, (v.stevilo / lijak[0].stevilo) * 100) : 0;
+          {lijak.vrstice.map((v, i) => {
+            const sirina = lijak.osnova ? Math.max(2, (v.stevilo / lijak.osnova) * 100) : 0;
             const rezultat = REZULTATI.includes(v.kljuc as never);
             const na = v.kljuc === "video" && podatki.brezVidea && v.stevilo === 0;
             return (
-              <li key={v.kljuc} className={`grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 sm:grid-cols-[12rem_1fr_11rem] ${i === 5 ? "border-b border-zinc-100 pb-2" : ""}`}>
-                <span className="truncate text-sm text-zinc-700">{v.kljuc === "kontaktirana" ? "Kontaktirana podjetja" : IME_KORAKA[v.kljuc]}</span>
+              <li key={v.kljuc} className={`grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 sm:grid-cols-[12rem_1fr_11rem] ${i === AKTIVNOSTI.length - 1 ? "border-b border-zinc-100 pb-2" : ""}`}>
+                <span className="truncate text-sm text-zinc-700">{IME_KORAKA[v.kljuc]}</span>
                 <span className="h-5 rounded bg-zinc-100">
                   <span
                     className={`block h-5 rounded ${rezultat ? "bg-emerald-600" : "bg-zinc-800"}`}
@@ -291,6 +291,11 @@ export function PregledClient({
             );
           })}
         </ol>
+        {lijak.samoKlic ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            Še {lijak.samoKlic} podjetij je bilo samo poklicanih, brez predstavitvenega maila; v odstotkih so upoštevana.
+          </p>
+        ) : null}
       </section>
 
       {/* Lukov listek */}
@@ -372,6 +377,7 @@ function KarticaGumb({ k, izbrana, onClick }: { k: Kartica; izbrana: boolean; on
               ? `${k.enota} · enako kot prej`
               : `${k.enota} · ${razlika > 0 ? "+" : "−"}${Math.abs(razlika)} od prej`)}
       </p>
+      {k.dodatno ? <p className="text-xs text-zinc-500">{k.dodatno}</p> : null}
     </button>
   );
 }

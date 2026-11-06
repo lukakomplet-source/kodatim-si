@@ -223,6 +223,8 @@ export type Kartica = {
   enota: string;
   /** N/A: korak se ne beleži (video brez povezave). */
   na?: string;
+  /** Drobna vrstica pod številko (npr. »0 da, 2 ne«). */
+  dodatno?: string;
 };
 
 function enaNaPodjetje(dogodki: Dogodek[], korak: Korak, r: Razpon): Set<string> {
@@ -250,30 +252,43 @@ export function kontaktirana(dogodki: Dogodek[], r: Razpon): Set<string> {
 export function kartice(dogodki: Dogodek[], zdaj: Razpon, prej: Razpon, brezVidea: boolean): Kartica[] {
   const st = (k: Korak, r: Razpon) => dogodki.filter((e) => e.korak === k && vRazponu(e.cas, r)).length;
   const imaPrej = prej !== null;
-  const out: Kartica[] = [
-    {
-      kljuc: "kontaktirana",
-      stevilo: kontaktirana(dogodki, zdaj).size,
-      prej: imaPrej ? kontaktirana(dogodki, prej).size : null,
-      enota: "novih podjetij",
-    },
-  ];
+  // Luka 6. 11.: »dej sam eno ne pa 2x isto« — kontaktirana podjetja in predstavitveni maili sta ena kartica.
+  // Vsako podjetje dobi en sam prvi mail, zato je število mailov enako številu podjetij; kdor je bil samo poklican,
+  // je drobno pod številko.
+  const out: Kartica[] = [];
   for (const k of AKTIVNOSTI) {
     const n = st(k, zdaj);
+    const samoKlic = k === "prvi" ? samoSKlicem(dogodki, zdaj) : 0;
     out.push({
       kljuc: k,
       stevilo: n,
       prej: imaPrej ? st(k, prej) : null,
-      enota: k === "klic" ? "klicev" : "mailov",
+      enota: k === "klic" ? "klicev" : k === "prvi" ? "podjetij" : "mailov",
       na: k === "video" && brezVidea && n === 0 ? "povezave na video še ni" : undefined,
+      dodatno: samoKlic ? `+${samoKlic} samo s klicem` : undefined,
     });
   }
+  const leadi = new Set(dogodki.filter((e) => e.korak === "lead").map((e) => e.domena));
   for (const k of REZULTATI) {
+    const podjetja = enaNaPodjetje(dogodki, k, zdaj);
+    let dodatno: string | undefined;
+    if (k === "odgovor" && podjetja.size) {
+      // Luka: kdor je rekel ne ali »pokličite kasneje«, ni lead; da = podjetje, ki je postalo lead.
+      // »ne« = podjetje je kadarkoli reklo ne (odziv ali kasnejši klic »ne zanima«), čeprav je prvi odziv bil drug
+      const ne = new Set(
+        dogodki
+          .filter((e) => podjetja.has(e.domena) && ((e.korak === "odgovor" && e.negativen) || (e.korak === "klic" && e.izid === "ne_zanima")))
+          .map((e) => e.domena),
+      );
+      const da = [...podjetja].filter((d) => leadi.has(d) && !ne.has(d)).length;
+      dodatno = `${da} da, ${ne.size} ne, ${podjetja.size - da - ne.size} ne zdaj`;
+    }
     out.push({
       kljuc: k,
-      stevilo: enaNaPodjetje(dogodki, k, zdaj).size,
+      stevilo: podjetja.size,
       prej: imaPrej ? enaNaPodjetje(dogodki, k, prej).size : null,
       enota: "podjetij",
+      dodatno,
     });
   }
   return out;
@@ -287,18 +302,24 @@ export function odstotek(a: number, b: number): string {
   return `${zaokr} %`;
 }
 
-export type VrsticaLijaka = { kljuc: Korak | "kontaktirana"; stevilo: number; odZacetka: string; odPrejsnje: string };
+export type VrsticaLijaka = { kljuc: Korak; stevilo: number; odZacetka: string; odPrejsnje: string };
+
+/** Podjetja, kontaktirana v obdobju, ki niso nikoli dobila prvega maila (samo klic). */
+export function samoSKlicem(dogodki: Dogodek[], r: Razpon): number {
+  const zMailom = new Set(dogodki.filter((e) => e.korak === "prvi").map((e) => e.domena));
+  return [...kontaktirana(dogodki, r)].filter((d) => !zMailom.has(d)).length;
+}
 
 /**
  * Lijak po podjetjih: kohorta = podjetja, prvič kontaktirana v obdobju; pri vsakem koraku, koliko jih je do danes
  * prišlo do njega (kadarkoli, tudi brez znanega časa).
  */
-export function lijak(dogodki: Dogodek[], r: Razpon): VrsticaLijaka[] {
+export function lijak(dogodki: Dogodek[], r: Razpon): { vrstice: VrsticaLijaka[]; osnova: number; samoKlic: number } {
   const kohorta = kontaktirana(dogodki, r);
   const imajo = (k: Korak) => new Set(dogodki.filter((e) => e.korak === k && kohorta.has(e.domena)).map((e) => e.domena)).size;
   const vrstice: VrsticaLijaka[] = [];
   const n0 = kohorta.size;
-  vrstice.push({ kljuc: "kontaktirana", stevilo: n0, odZacetka: n0 ? "100 %" : "–", odPrejsnje: "" });
+  // Prva vrstica je »Predstavitveni maili« (Luka: ne dvakrat isto); osnova odstotkov ostanejo vsa kontaktirana podjetja.
   // Aktivnosti niso zaporedne (klic je lahko pred follow-upom), zato samo delež od začetka. Rezultati so veriga:
   // odziv od kontaktiranih, lead od odzivov, sestanek od leadov, posel od sestankov.
   for (const k of AKTIVNOSTI) {
@@ -311,7 +332,7 @@ export function lijak(dogodki: Dogodek[], r: Razpon): VrsticaLijaka[] {
     vrstice.push({ kljuc: k, stevilo: n, odZacetka: odstotek(n, n0), odPrejsnje: odstotek(n, prej) });
     prej = n;
   }
-  return vrstice;
+  return { vrstice, osnova: n0, samoKlic: samoSKlicem(dogodki, r) };
 }
 
 export type VrsticaListka = {
