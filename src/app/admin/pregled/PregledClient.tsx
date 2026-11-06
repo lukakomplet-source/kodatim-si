@@ -9,7 +9,6 @@ import {
   REZULTATI,
   imeKartice,
   jeDatum,
-  karticePregleda,
   koledarDan,
   konecObdobja,
   lepDatum,
@@ -22,9 +21,7 @@ import {
   prviDan,
   razdeliOdzive,
   seznamKarticePregleda,
-  seznamLijakaVeriga,
   seznamZa,
-  stopnjeLijakaVeriga,
   tabelaAktivnostiPodjetja,
   zaProdukt,
   type Kartica,
@@ -34,12 +31,29 @@ import {
   type Prihodek,
   type Produkt,
 } from "@/lib/pregled-racun";
+import {
+  akcijskiCenter,
+  karticeRezultata,
+  lijakRezultatov,
+  mere,
+  opisMer,
+  seznamFaze,
+  seznamNedostavljenih,
+  stavekStanja,
+  stopnjaOdziva,
+  ugotovitve,
+  type AkcijaKljuc,
+  type FazaKljuc,
+} from "@/lib/pregled-vodstvo";
+import { AkcijskiCenter } from "./AkcijskiCenter";
 import { Glava } from "./Glava";
-import { Kartice, enota } from "./Kartice";
+import { enota } from "./Kartice";
+import { KakoStejemo } from "./KakoStejemo";
 import { Koledar } from "./Koledar";
-import { Lijak } from "./Lijak";
+import { LijakProdaje } from "./LijakProdaje";
 import { Predal, type PredalProps } from "./Predal";
 import { Prihodki } from "./Prihodki";
+import { Rezultat } from "./Rezultat";
 import { TabelaAktivnosti } from "./TabelaAktivnosti";
 
 /** Parametri iz naslova strani (page.tsx jih poda naprej). */
@@ -55,27 +69,44 @@ export type ZacetekPregleda = {
 
 type Izbor = Kartica["kljuc"];
 const IZBORI = new Set<string>(["kontaktirana", "maili", ...AKTIVNOSTI, ...REZULTATI]);
-const KORAKI = new Set<string>([...AKTIVNOSTI, ...REZULTATI]);
+const FAZE = new Set<string>(["kontaktirana", ...AKTIVNOSTI, ...REZULTATI]);
+const AKCIJE = new Set<string>(["danes", "zamujeno", "caka", "leadi", "sestanki", "pozornost"]);
 
 /**
- * Kaj je odprto v predalu. V naslovu strani: seznam=<kartica>, seznam=lijak-<korak>, seznam=aktivnost-<korak>
- * (vrstica tabele: vse aktivnosti te vrste) ali dan=<YYYY-MM-DD>.
+ * Kaj je odprto v predalu. V naslovu strani: seznam=<kartica>, seznam=lijak-<faza>, seznam=aktivnost-<korak>
+ * (vrstica tabele), seznam=akcija-<skupina>, seznam=nedostavljeni ali dan=<YYYY-MM-DD>.
  */
 export type OdprtSeznam =
   | { vrsta: "kartica"; kljuc: Izbor }
-  | { vrsta: "lijak"; kljuc: Korak }
+  | { vrsta: "lijak"; kljuc: FazaKljuc }
   | { vrsta: "aktivnost"; kljuc: Korak }
+  | { vrsta: "akcija"; kljuc: AkcijaKljuc }
+  | { vrsta: "nedostavljeni" }
   | { vrsta: "dan"; dan: string };
 
 function izNaslova(z: ZacetekPregleda): OdprtSeznam | null {
   if (jeDatum(z.dan)) return { vrsta: "dan", dan: z.dan };
   const s = z.seznam;
-  if (s?.startsWith("lijak-") && KORAKI.has(s.slice(6))) return { vrsta: "lijak", kljuc: s.slice(6) as Korak };
-  if (s?.startsWith("aktivnost-") && AKTIVNOSTI.includes(s.slice(10) as Korak)) {
+  return s ? izCilja(s) : null;
+}
+
+/** »lijak-odgovor«, »akcija-zamujeno«, »aktivnost-klic«, »nedostavljeni«, »odgovor« → kaj odpreti. */
+function izCilja(s: string): OdprtSeznam | null {
+  if (s === "nedostavljeni") return { vrsta: "nedostavljeni" };
+  if (s.startsWith("lijak-") && FAZE.has(s.slice(6))) return { vrsta: "lijak", kljuc: s.slice(6) as FazaKljuc };
+  if (s.startsWith("akcija-") && AKCIJE.has(s.slice(7))) return { vrsta: "akcija", kljuc: s.slice(7) as AkcijaKljuc };
+  if (s.startsWith("aktivnost-") && AKTIVNOSTI.includes(s.slice(10) as Korak)) {
     return { vrsta: "aktivnost", kljuc: s.slice(10) as Korak };
   }
-  if (s && IZBORI.has(s)) return { vrsta: "kartica", kljuc: s as Izbor };
+  if (IZBORI.has(s)) return { vrsta: "kartica", kljuc: s as Izbor };
   return null;
+}
+
+function vNaslov(o: OdprtSeznam | null): string | null {
+  if (!o || o.vrsta === "dan") return null;
+  if (o.vrsta === "kartica") return o.kljuc;
+  if (o.vrsta === "nedostavljeni") return "nedostavljeni";
+  return `${o.vrsta}-${o.kljuc}`;
 }
 
 /** »26.–30. 10. 2026«, »28. 10. – 3. 11. 2026«, »5. 11. 2026«. */
@@ -88,23 +119,19 @@ function kratekRazpon(r: { od: string; do: string }): string {
   return `${d1}.–${d2}. ${m2}. ${y2}`;
 }
 
-// Luka 6. 11.: opredelitev leada mora biti na strani. Odziv je prvi odgovor podjetja; da/ne/ne zdaj je stanje danes.
-const OPREDELITVE = (
-  <dl className="flex flex-wrap gap-x-6 gap-y-1">
-    <div>
-      <dt className="inline font-medium text-zinc-700">Odziv:</dt>{" "}
-      <dd className="inline">prvi odgovor podjetja, pisno ali na klicu (da, ne in ne zdaj so stanje danes).</dd>
-    </div>
-    <div>
-      <dt className="inline font-medium text-zinc-700">Lead:</dt>{" "}
-      <dd className="inline">
-        podjetje, ki je reklo da sestanku, ponudbi ali testu. »Pokličite kasneje«, »pošljite na mail« in »nimamo potrebe«
-        so samo odziv.
-      </dd>
-    </div>
-  </dl>
-);
+const IME_FAZE: Record<FazaKljuc, string> = {
+  kontaktirana: "Kontaktirana podjetja",
+  ...IME_KORAKA,
+  lead: "Kvalificirani leadi",
+  sestanek: "Sestanki",
+};
 
+/**
+ * Pregled v3 (Luka 6. 11. 2026, »Management overview«): stanje prodaje v treh sekundah. Vrstni red po pomembnosti:
+ * A rezultat in »Kaj se dogaja?«, B lijak (kje izgubljamo) ob C »Kaj moramo narediti«, D aktivnosti, E prihodki,
+ * F koledar in opredelitve. Vsaka številka odpre seznam v predalu; filtri veljajo povsod (akcijski center je stanje
+ * danes, zato ne glede na obdobje).
+ */
 export function PregledClient({
   podatki,
   zacetek,
@@ -112,7 +139,7 @@ export function PregledClient({
 }: {
   podatki: PregledPodatki;
   zacetek: ZacetekPregleda;
-  /** Prihodki iz aplikacije Kompletko; dokler niso povezani (Lukov posebni OK), undefined in vse je N/A. */
+  /** Prihodki iz aplikacije Kompletko; dokler niso povezani, undefined in vse je N/A. */
   prihodki?: Prihodek[] | null;
 }) {
   const danes = podatki.zdaj.slice(0, 10);
@@ -137,9 +164,8 @@ export function PregledClient({
       p.set("do", doo);
     }
     if (!primerjaj) p.set("primerjaj", "ne");
-    if (odprto?.vrsta === "kartica") p.set("seznam", odprto.kljuc);
-    if (odprto?.vrsta === "lijak") p.set("seznam", `lijak-${odprto.kljuc}`);
-    if (odprto?.vrsta === "aktivnost") p.set("seznam", `aktivnost-${odprto.kljuc}`);
+    const s = vNaslov(odprto);
+    if (s) p.set("seznam", s);
     if (odprto?.vrsta === "dan") p.set("dan", odprto.dan);
     window.history.replaceState(null, "", `?${p.toString()}`);
   }, [produkt, obdobje, od, doo, primerjaj, odprto]);
@@ -153,18 +179,39 @@ export function PregledClient({
   const brezZapisov = predPrvimZapisom(zdaj, prvi);
   const dogodki = useMemo(() => zaProdukt(oznaciNaknadne(podatki.dogodki), produkt), [podatki.dogodki, produkt]);
 
+  // A. rezultat
   const kartice = useMemo(
-    () => karticePregleda(dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi),
+    () => karticeRezultata(dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi),
     [dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi],
   );
-  const lijak = useMemo(() => stopnjeLijakaVeriga(dogodki, zdaj, podatki.brezVidea), [dogodki, zdaj, podatki.brezVidea]);
+  const stopnja = useMemo(() => stopnjaOdziva(dogodki, zdaj, prej, brezZapisov), [dogodki, zdaj, prej, brezZapisov]);
+  const povzetek = useMemo(() => povzetekPrihodkovPosli(prihodki, produkt, zdaj, konec), [prihodki, produkt, zdaj, konec]);
+  const stevilo = (k: Izbor) => kartice.find((x) => x.kljuc === k)?.stevilo ?? 0;
+  const stavek = stavekStanja({
+    kontaktirana: stevilo("kontaktirana"),
+    odzivi: stevilo("odgovor"),
+    leadi: stevilo("lead"),
+    sestanki: stevilo("sestanek"),
+    posli: stevilo("posel"),
+    stopnja: stopnja.besedilo,
+    brez: brezZapisov,
+    prvi,
+  });
+  // B. lijak, C. akcijski center (stanje danes) in ugotovitve
+  const lijak = useMemo(() => lijakRezultatov(dogodki, zdaj), [dogodki, zdaj]);
+  const akcije = useMemo(() => akcijskiCenter(dogodki, podatki.podjetja, danes), [dogodki, podatki.podjetja, danes]);
   const nedostavljenih = useMemo(() => nedostavljeni(dogodki, podatki.podjetja, zdaj), [dogodki, podatki.podjetja, zdaj]);
+  const kaj = useMemo(
+    () => ugotovitve({ lijak, akcije, nedostavljenih, podjetja: podatki.podjetja, brez: brezZapisov }),
+    [lijak, akcije, nedostavljenih, podatki.podjetja, brezZapisov],
+  );
+  // D. aktivnosti
   const tabela = useMemo(
     () => tabelaAktivnostiPodjetja(dogodki, zdaj, podatki.brezVidea, brezZapisov),
     [dogodki, zdaj, podatki.brezVidea, brezZapisov],
   );
+  const m = useMemo(() => mere(dogodki, podatki.podjetja, zdaj), [dogodki, podatki.podjetja, zdaj]);
   const brezCasa = useMemo(() => dogodki.filter((e) => !e.cas).length, [dogodki]);
-  const povzetek = useMemo(() => povzetekPrihodkovPosli(prihodki, produkt, zdaj, konec), [prihodki, produkt, zdaj, konec]);
 
   const opisObdobja = zdaj ? opisRazpona(zdaj) : prvi ? `vse od ${lepDatum(prvi)}` : "vse";
 
@@ -178,22 +225,43 @@ export function PregledClient({
         prazno: "Ta dan ni nič.",
       };
     }
+    if (odprto.vrsta === "akcija") {
+      const a = akcije.find((x) => x.kljuc === odprto.kljuc)!;
+      return {
+        naslov: a.ime,
+        podnaslov: `${a.opis} Stanje danes, ne glede na obdobje.`,
+        skupine: [{ kljuc: "vse", dogodki: a.vrstice }],
+        prazno: a.prazno,
+      };
+    }
+    if (odprto.vrsta === "nedostavljeni") {
+      return {
+        naslov: "Vrnjeni maili",
+        podnaslov: `Predstavitveni mail se je vrnil (${opisObdobja}). Ta podjetja za nas še niso slišala.`,
+        skupine: [{ kljuc: "vse", dogodki: seznamNedostavljenih(dogodki, podatki.podjetja, zdaj) }],
+        prazno: "Noben mail se ni vrnil.",
+      };
+    }
     if (odprto.vrsta === "lijak") {
       return {
-        naslov: `Lijak: ${IME_KORAKA[odprto.kljuc]}`,
-        podnaslov: `Podjetja, prvič kontaktirana (${opisObdobja}), ki so do danes prišla do tega koraka.`,
-        skupine: [{ kljuc: "vse", dogodki: seznamLijakaVeriga(dogodki, odprto.kljuc, zdaj) }],
+        naslov: `Lijak: ${IME_FAZE[odprto.kljuc]}`,
+        podnaslov:
+          odprto.kljuc === "kontaktirana"
+            ? `Podjetja, prvič kontaktirana (${opisObdobja}).`
+            : `Podjetja, prvič kontaktirana (${opisObdobja}), ki so do danes prišla do te faze in skozi vse prejšnje.`,
+        skupine: [{ kljuc: "vse", dogodki: seznamFaze(dogodki, odprto.kljuc, zdaj) }],
+        prazno: "Do te faze še ni prišlo nobeno podjetje.",
       };
     }
     if (odprto.vrsta === "aktivnost") {
-      // vrstica tabele: vse aktivnosti te vrste (toliko kot Skupaj), tudi več na isto podjetje
+      // vrstica tabele: vse aktivnosti te vrste (toliko kot Število), tudi več na isto podjetje
       return {
         naslov: IME_KORAKA[odprto.kljuc],
         podnaslov: `Vse aktivnosti te vrste · ${opisObdobja}`,
         skupine: [{ kljuc: "vse", dogodki: seznamZa(dogodki, odprto.kljuc, zdaj) }],
       };
     }
-    // toliko vrstic, kot kaže kartica (rezultati in predstavitveni maili: ena na podjetje)
+    // toliko vrstic, kot kaže kartica (rezultati in kontaktirana: ena na podjetje)
     const vrstice = seznamKarticePregleda(dogodki, odprto.kljuc, zdaj);
     if (odprto.kljuc === "odgovor") {
       // Iste skupine kot »N da, N ne, N ne zdaj« na kartici (isto pravilo, razdeliOdzive).
@@ -206,20 +274,23 @@ export function PregledClient({
           { kljuc: "ne-zdaj", naslov: "Ne zdaj", dogodki: vrstice.filter((e) => r.neZdaj.has(e.domena)) },
           { kljuc: "ne", naslov: "Ne", dogodki: vrstice.filter((e) => r.ne.has(e.domena)) },
         ],
+        prazno: "V tem obdobju ni odzivov.",
       };
     }
     return {
       naslov: imeKartice(odprto.kljuc),
-      podnaslov: `Obdobje: ${opisObdobja}${odprto.kljuc === "prvi" ? " · ena vrstica na podjetje" : ""}`,
+      podnaslov: `Obdobje: ${opisObdobja}${odprto.kljuc === "prvi" || odprto.kljuc === "kontaktirana" ? " · ena vrstica na podjetje" : ""}`,
       skupine: [{ kljuc: "vse", dogodki: vrstice }],
     };
-  }, [odprto, dogodki, zdaj, opisObdobja]);
+  }, [odprto, dogodki, zdaj, opisObdobja, akcije, podatki.podjetja]);
 
   const zapri = useCallback(() => setOdprto(null), []);
   const odpriKartico = useCallback((kljuc: Izbor) => setOdprto({ vrsta: "kartica", kljuc }), []);
-  const odpriLijak = useCallback((kljuc: Korak) => setOdprto({ vrsta: "lijak", kljuc }), []);
+  const odpriLijak = useCallback((kljuc: FazaKljuc) => setOdprto({ vrsta: "lijak", kljuc }), []);
+  const odpriAkcijo = useCallback((kljuc: AkcijaKljuc) => setOdprto({ vrsta: "akcija", kljuc }), []);
   const odpriAktivnost = useCallback((kljuc: Korak) => setOdprto({ vrsta: "aktivnost", kljuc }), []);
   const odpriDan = useCallback((dan: string) => setOdprto({ vrsta: "dan", dan }), []);
+  const odpriCilj = useCallback((cilj: string) => setOdprto(izCilja(cilj)), []);
   const naPrihodke = useCallback(
     () => document.getElementById("prihodki")?.scrollIntoView({ behavior: "smooth", block: "start" }),
     [],
@@ -235,11 +306,6 @@ export function PregledClient({
         : `${imeProdukta}: kampanja se še ni začela.`
       : null;
   const namigPrimerjave = !primerjaj || !obd.prejCelo ? "" : obd.prej ? `prej: ${kratekRazpon(obd.prej)}` : "prej še ni podatkov";
-
-  const aktivnosti = kartice.filter((k) => k.skupina === "aktivnost");
-  const rezultati = kartice.filter((k) => k.skupina === "rezultat");
-  const izbranaKartica = odprto?.vrsta === "kartica" ? odprto.kljuc : null;
-  const izbranaAktivnost = odprto?.vrsta === "aktivnost" ? odprto.kljuc : null;
 
   return (
     <div className="mx-auto w-full max-w-[1760px] space-y-6 pb-16">
@@ -260,50 +326,63 @@ export function PregledClient({
         opombaProdukta={opombaProdukta}
       />
 
-      {brezZapisov && prvi ? (
-        <p className="rounded-lg bg-white px-4 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200">
-          Pred {lepDatum(prvi)} ni zapisov, zato so številke za to obdobje N/A (ne 0).
-        </p>
-      ) : null}
-
-      <Kartice
-        naslov="Aktivnosti"
-        opis="Kaj smo naredili v obdobju."
-        kartice={aktivnosti}
-        izbrana={izbranaKartica}
+      {/* A. Rezultat in »Kaj se dogaja?« */}
+      <Rezultat
+        stavek={stavek}
+        kartice={kartice}
+        stopnja={stopnja}
+        prihodki={povzetek}
+        izbrana={odprto?.vrsta === "kartica" ? odprto.kljuc : null}
+        izbranaStopnja={false}
         onOdpri={odpriKartico}
+        onStopnja={() => odpriKartico("odgovor")}
+        onPrihodki={naPrihodke}
+        ugotovitve={kaj}
+        onUgotovitev={odpriCilj}
       />
-      <Kartice
-        naslov="Rezultati"
-        opis={OPREDELITVE}
-        kartice={rezultati}
-        izbrana={izbranaKartica}
-        onOdpri={odpriKartico}
-        prihodki={{ povzetek, onOdpri: naPrihodke }}
-      />
-      {obdobje === "vse" && brezCasa ? (
-        <p className="text-xs text-zinc-500">
-          {brezCasa} starejših dogodkov nima zapisanega dne: štejejo tu pod »Vse«, v obdobjih in koledarju ne.
-        </p>
-      ) : null}
 
-      <Lijak
-        stopnje={lijak.stopnje}
-        osnova={lijak.osnova}
-        samoKlic={lijak.samoKlic}
-        nedostavljenih={nedostavljenih}
-        zunajVerige={lijak.zunajVerige}
-        opisObdobja={opisObdobja}
-        prazno={
-          brezZapisov && prvi
-            ? `Pred ${lepDatum(prvi)} ni zapisov.`
-            : "V tem obdobju ni bilo prvič kontaktiranih podjetij, zato so vse stopnje prazne."
-        }
-        izbrana={odprto?.vrsta === "lijak" ? odprto.kljuc : null}
-        onOdpri={odpriLijak}
-      />
-      <TabelaAktivnosti vrstice={tabela} izbrana={izbranaAktivnost} onOdpri={odpriAktivnost} />
+      {/* B. Lijak ob C. Kaj moramo narediti */}
+      <div className="@container">
+        <div className="grid gap-6 @5xl:grid-cols-2">
+          <LijakProdaje
+            faze={lijak.faze}
+            najsibkejsa={lijak.najsibkejsa}
+            zunajVerige={lijak.zunajVerige}
+            opisObdobja={opisObdobja}
+            prazno={
+              brezZapisov && prvi
+                ? `Pred ${lepDatum(prvi)} ni zapisov.`
+                : "V tem obdobju ni bilo prvič kontaktiranih podjetij, zato so vse faze prazne."
+            }
+            izbrana={odprto?.vrsta === "lijak" ? odprto.kljuc : null}
+            onOdpri={odpriLijak}
+          />
+          <AkcijskiCenter akcije={akcije} izbrana={odprto?.vrsta === "akcija" ? odprto.kljuc : null} onOdpri={odpriAkcijo} />
+        </div>
+      </div>
 
+      {/* D. Aktivnosti */}
+      <div className="space-y-2">
+        <TabelaAktivnosti
+          vrstice={tabela}
+          izbrana={odprto?.vrsta === "aktivnost" ? odprto.kljuc : null}
+          onOdpri={odpriAktivnost}
+          skupaj={brezZapisov ? undefined : { aktivnosti: m.aktivnosti, podjetja: m.podjetja }}
+          mere={brezZapisov ? undefined : opisMer(m)}
+        />
+        {obdobje === "vse" && brezCasa ? (
+          <p className="text-xs text-zinc-500">
+            {brezCasa} starejših dogodkov nima zapisanega dne: štejejo pod »Vse«, v obdobjih in koledarju ne.
+          </p>
+        ) : null}
+      </div>
+
+      {/* E. Prihodki */}
+      <div id="prihodki" className="scroll-mt-24">
+        <Prihodki povzetek={povzetek} imeProdukta={imeProdukta} opisObdobja={opisObdobja} />
+      </div>
+
+      {/* F. Koledar in opredelitve */}
       <Koledar
         dogodki={dogodki}
         danes={danes}
@@ -312,14 +391,11 @@ export function PregledClient({
         onOdpriDan={odpriDan}
         podjetja={podatki.podjetja}
       />
-
-      <div id="prihodki" className="scroll-mt-24">
-        <Prihodki povzetek={povzetek} imeProdukta={imeProdukta} opisObdobja={opisObdobja} />
-      </div>
+      <KakoStejemo />
 
       {predal && odprto ? (
         <Predal
-          key={odprto.vrsta === "dan" ? `dan-${odprto.dan}` : `${odprto.vrsta}-${odprto.kljuc}`}
+          key={odprto.vrsta === "dan" ? `dan-${odprto.dan}` : (vNaslov(odprto) ?? "x")}
           {...predal}
           podjetja={podatki.podjetja}
           danes={danes}

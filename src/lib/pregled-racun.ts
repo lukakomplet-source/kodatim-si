@@ -38,6 +38,8 @@ export type Dogodek = {
   vrsta?: string;
   /** Čas je čas vpisa, dan klica ni zapisan (glej oznaciNaknadne). */
   naknadno?: boolean;
+  /** Samo za prikaz v predalu (akcijski center): zakaj je podjetje na seznamu. */
+  razlog?: string;
 };
 
 export type PodjetjePregled = {
@@ -52,6 +54,10 @@ export type PodjetjePregled = {
   naslednji: string;
   naslednjiKdaj: string;
   steviloMailov: number;
+  /** Dogovorjen sestanek »YYYY-MM-DD« ali »YYYY-MM-DD HH:MM«; prazno = ni sestanka (Harvey od 6. 11. zvečer). */
+  sestanekKdaj?: string;
+  /** Kampanja: različica prvega maila (posiljanja.varianta, npr. »J«, »M6«); prazno = ni zapisano. */
+  kampanja?: string;
 };
 
 export type PregledPodatki = {
@@ -247,7 +253,7 @@ export type Kartica = {
   dodatno?: string;
 };
 
-function enaNaPodjetje(dogodki: Dogodek[], korak: Korak, r: Razpon): Set<string> {
+export function enaNaPodjetje(dogodki: Dogodek[], korak: Korak, r: Razpon): Set<string> {
   return new Set(dogodki.filter((e) => e.korak === korak && vRazponu(e.cas, r)).map((e) => e.domena));
 }
 
@@ -1081,7 +1087,7 @@ export function tabelaAktivnostiPodjetja(
 // ——— lijak: gnezdena veriga ———
 
 /** Množice verige (podjetja) po stopnji rezultata; vsaka je podmnožica prejšnje. */
-function verigaLijaka(dogodki: Dogodek[], r: Razpon): Map<Korak, Set<string>> {
+export function verigaLijaka(dogodki: Dogodek[], r: Razpon): Map<Korak, Set<string>> {
   const kohorta = kontaktirana(dogodki, r);
   const out = new Map<Korak, Set<string>>();
   let prej = kohorta;

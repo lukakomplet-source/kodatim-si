@@ -207,6 +207,7 @@ function Vrstica({ e, p, danes }: { e: Dogodek; p: PodjetjePregled | undefined; 
             : "dan ni znan"}
         </span>
       </div>
+      {e.razlog ? <p className="mt-1.5 text-xs font-medium text-zinc-900">{e.razlog}</p> : null}
       {kontakt ? <p className="mt-1.5 break-words text-xs text-zinc-500">{kontakt}</p> : null}
       {e.zadeva ? <p className="mt-1 truncate text-xs text-zinc-600">Zadeva: {e.zadeva}</p> : null}
       {e.odlomek ? <p className="mt-2 line-clamp-3 text-xs text-zinc-700">»{e.odlomek}«</p> : null}

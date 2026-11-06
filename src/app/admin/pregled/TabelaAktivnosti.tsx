@@ -11,6 +11,10 @@ export type TabelaAktivnostiProps = {
   izbrana: Korak | null;
   /** Odpre predal z vsemi aktivnostmi te vrste v obdobju (toliko vrstic, kot je Skupaj). */
   onOdpri: (aktivnost: Korak) => void;
+  /** Vrstica Skupaj: vse aktivnosti in različna podjetja (podjetij ni mogoče sešteti po vrsticah). */
+  skupaj?: { aktivnosti: number; podjetja: number };
+  /** Ena vrstica nad tabelo z merami brez dvojnega štetja (aktivnosti, podjetja, kontakti, stiki). */
+  mere?: string;
 };
 
 type Rezultat = "odziv" | "lead" | "sestanek" | "posel";
@@ -50,12 +54,23 @@ const LEADOV = ["lead", "leada", "leadi", "leadov"] as const;
  * aktivnosti pred prvim odzivom podjetja; aktivnosti so iz obdobja, rezultati do danes. Stopnji sta od podjetij, ki so
  * aktivnost dobila pred prvim odzivom (klic po že danem odzivu ne zniža stopnje).
  */
-export function TabelaAktivnosti({ vrstice, izbrana, onOdpri }: TabelaAktivnostiProps) {
+export function TabelaAktivnosti({ vrstice, izbrana, onOdpri, skupaj, mere }: TabelaAktivnostiProps) {
+  const vsota = (k: Rezultat) => vrstice.reduce((a, v) => a + (v.na ? 0 : v[k]), 0);
+  const sk = skupaj ? { odziv: vsota("odziv"), lead: vsota("lead"), sestanek: vsota("sestanek"), posel: vsota("posel") } : null;
   return (
     <Plosca
       id="pregled-tabela"
-      naslov="Po kateri aktivnosti so se odzvali"
-      opis="Odziv, lead, sestanek in posel štejejo pri zadnji aktivnosti pred prvim odzivom podjetja. Response rate in conversion rate sta od podjetij, ki so aktivnost dobila pred prvim odzivom."
+      naslov="Aktivnosti: koliko dela smo naredili"
+      opis={
+        <>
+          {mere ? <p className="font-medium text-zinc-700">{mere}</p> : null}
+          <p className={mere ? "mt-1" : ""}>
+            Število so vse aktivnosti, Podjetja različna podjetja. Vsak odziv (in lead, sestanek, posel) je pripisan samo
+            zadnji aktivnosti pred prvim odzivom podjetja, zato ga vrstica Skupaj ne šteje dvakrat. Primer: kdor se je
+            odzval šele na klic, je pri klicih, ne pri mailu. Stopnji sta od podjetij v vrstici.
+          </p>
+        </>
+      }
       teloClassName="pt-3 pb-1"
     >
       {/* telefon in ozko: seznam */}
@@ -85,7 +100,7 @@ export function TabelaAktivnosti({ vrstice, izbrana, onOdpri }: TabelaAktivnosti
                 Aktivnost
               </th>
               <th scope="col" className={`${GLAVA} ${CELICA}`} title="Vse aktivnosti te vrste v obdobju.">
-                Skupaj
+                Število
               </th>
               <th
                 scope="col"
@@ -117,10 +132,47 @@ export function TabelaAktivnosti({ vrstice, izbrana, onOdpri }: TabelaAktivnosti
               <Vrstica key={v.aktivnost} v={v} izbrana={izbrana === v.aktivnost} onOdpri={onOdpri} />
             ))}
           </tbody>
+          {skupaj && sk ? (
+            <tfoot>
+              <tr className="font-medium">
+                <th scope="row" className={`${TELO} pl-4 pr-3 text-left font-semibold text-zinc-900 sm:pl-5`}>
+                  Skupaj
+                </th>
+                <td className={`${TELO} ${CELICA} font-semibold text-zinc-900`}>{skupaj.aktivnosti}</td>
+                <td className={`${TELO} ${CELICA} text-zinc-900`} title="Različna podjetja (isto podjetje v več vrsticah šteje enkrat).">
+                  {skupaj.podjetja}
+                </td>
+                {REZULTATI.map((r) => (
+                  <td key={r.kljuc} className={`${TELO} ${CELICA} ${r.kljuc === "posel" ? "pr-4 sm:pr-5 @5xl:pr-3" : ""} text-zinc-900`}>
+                    {sk[r.kljuc]}
+                  </td>
+                ))}
+                <td className={`${SIROKO} ${TELO} ${CELICA}`}>
+                  <Stopnja besedilo={odstotekBesedilo(sk.odziv, skupaj.podjetja)} delez={delez(sk.odziv, skupaj.podjetja)} />
+                </td>
+                <td className={`${SIROKO} ${TELO} ${CELICA} pr-4 sm:pr-5`}>
+                  <Stopnja besedilo={odstotekBesedilo(sk.lead, skupaj.podjetja)} delez={delez(sk.lead, skupaj.podjetja)} />
+                </td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
+      {skupaj && sk ? (
+        <p className="border-t border-zinc-100 px-4 py-2.5 text-xs text-zinc-600 sm:px-5 @3xl:hidden">
+          {`Skupaj: ${skupaj.aktivnosti} aktivnosti, ${oblika(skupaj.podjetja, PODJETIJ)},${oblika(sk.odziv, ODZIVOV)} (${odstotekBesedilo(sk.odziv, skupaj.podjetja)}), ${oblika(sk.lead, LEADOV)}.`}
+        </p>
+      ) : null}
     </Plosca>
   );
+}
+
+/** Isto kot odstotek() v pregled-racun.ts (»8,1 %«, »–«). */
+function odstotekBesedilo(a: number, b: number): string {
+  if (!b) return "–";
+  const p = (a / b) * 100;
+  const z = p >= 10 || Number.isInteger(p) ? Math.round(p).toString() : p.toFixed(1).replace(".", ",");
+  return `${z} %`;
 }
 
 /** Vrstica tabele: klik kjerkoli v vrstici odpre seznam; gumb v Skupaj ostane za tipkovnico. */

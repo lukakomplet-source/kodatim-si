@@ -1,8 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Minus } from "lucide-react";
 import { evri, type Kartica, type KarticaPregleda, type PovzetekPrihodkovPosli, type TockaTrenda } from "@/lib/pregled-racun";
+import type { StopnjaOdziva } from "@/lib/pregled-vodstvo";
 
 export type KarticeProps = {
   /** Naslov skupine (»Aktivnosti«, »Rezultati«). */
@@ -15,6 +16,12 @@ export type KarticeProps = {
   onOdpri: (kljuc: Kartica["kljuc"]) => void;
   /** Kartica prihodkov na koncu mreže (pri rezultatih); klik skoči na razdelek Prihodki. */
   prihodki?: { povzetek: PovzetekPrihodkovPosli; onOdpri: () => void };
+  /** Dodatne celice za kartico z danim ključem (npr. stopnja odziva za »Odzivi«). */
+  vstavi?: Partial<Record<Kartica["kljuc"], ReactNode>>;
+  /** Večje številke (razdelek Rezultat: najpomembnejše na strani). */
+  velike?: boolean;
+  /** Brez naslova nad mrežo (naslov ima razdelek okoli). */
+  brezNaslova?: boolean;
 };
 
 // Toliko stolpcev na širokem zaslonu, kolikor je kartic (5 ali 6); ožje 3, na telefonu 2. Mreža se ravna po
@@ -26,6 +33,8 @@ const STOLPCI: Record<number, string> = {
   4: "@4xl:grid-cols-4",
   5: "@4xl:grid-cols-5",
   6: "@4xl:grid-cols-5 @6xl:grid-cols-6",
+  // Rezultat: v eni vrsti od 64rem širine (7 kartic po ~150 px), vmes 4 + 3.
+  7: "@3xl:grid-cols-4 @5xl:grid-cols-7",
 };
 
 /**
@@ -34,7 +43,7 @@ const STOLPCI: Record<number, string> = {
  * Liha zadnja kartica na telefonu (2 stolpca) zavzame celo vrstico, da ne ostane prazna luknja.
  */
 export function mrezaKartic(n: number): string {
-  return `grid grid-cols-2 gap-x-3 gap-y-3 @xl:grid-cols-3 ${STOLPCI[Math.min(6, Math.max(1, n))]}`;
+  return `grid grid-cols-2 gap-x-3 gap-y-3 @xl:grid-cols-3 ${STOLPCI[Math.min(7, Math.max(1, n))]}`;
 }
 export const CELICA_KARTICE = "row-span-3 grid grid-rows-subgrid @max-xl:odd:last:col-span-2";
 /** Okvir kartice: tri vrstice subgrida, razmik med njimi je razmik mreže. */
@@ -74,20 +83,24 @@ export function Odpri() {
   );
 }
 
-export function Kartice({ naslov, opis, kartice, izbrana, onOdpri, prihodki }: KarticeProps) {
+export function Kartice({ naslov, opis, kartice, izbrana, onOdpri, prihodki, vstavi, velike, brezNaslova }: KarticeProps) {
+  const dodatnih = Object.values(vstavi ?? {}).filter(Boolean).length;
   return (
     <section aria-label={naslov} className="@container">
-      <h2 className="text-[15px] font-semibold text-zinc-900">{naslov}</h2>
+      {brezNaslova ? null : <h2 className="text-[15px] font-semibold text-zinc-900">{naslov}</h2>}
       {opis ? <div className="mt-1 max-w-4xl text-sm text-zinc-500">{opis}</div> : null}
-      <ul className={`mt-3 ${mrezaKartic(kartice.length + (prihodki ? 1 : 0))}`}>
+      <ul className={`${brezNaslova && !opis ? "" : "mt-3"} ${mrezaKartic(kartice.length + dodatnih + (prihodki ? 1 : 0))}`}>
         {kartice.map((k) => (
-          <li key={k.kljuc} className={CELICA_KARTICE}>
-            <KarticaGumb k={k} izbrana={izbrana === k.kljuc} onClick={() => onOdpri(k.kljuc)} />
-          </li>
+          <Fragment key={k.kljuc}>
+            <li className={CELICA_KARTICE}>
+              <KarticaGumb k={k} izbrana={izbrana === k.kljuc} onClick={() => onOdpri(k.kljuc)} velike={velike} />
+            </li>
+            {vstavi?.[k.kljuc] ? <li className={CELICA_KARTICE}>{vstavi[k.kljuc]}</li> : null}
+          </Fragment>
         ))}
         {prihodki ? (
           <li className={CELICA_KARTICE}>
-            <KarticaPrihodkov povzetek={prihodki.povzetek} onOdpri={prihodki.onOdpri} />
+            <KarticaPrihodkov povzetek={prihodki.povzetek} onOdpri={prihodki.onOdpri} velike={velike} />
           </li>
         ) : null}
       </ul>
@@ -95,7 +108,12 @@ export function Kartice({ naslov, opis, kartice, izbrana, onOdpri, prihodki }: K
   );
 }
 
-function KarticaGumb({ k, izbrana, onClick }: { k: KarticaPregleda; izbrana: boolean; onClick: () => void }) {
+/** Velikost glavne številke: v Rezultatu večja (najpomembnejše na strani). */
+function velikost(velike?: boolean): string {
+  return velike ? "text-4xl @6xl:text-[2.75rem] @6xl:leading-none" : "text-3xl @6xl:text-4xl";
+}
+
+function KarticaGumb({ k, izbrana, onClick, velike }: { k: KarticaPregleda; izbrana: boolean; onClick: () => void; velike?: boolean }) {
   const rezultat = k.skupina === "rezultat";
   const vsebina = (
     <>
@@ -109,7 +127,7 @@ function KarticaGumb({ k, izbrana, onClick }: { k: KarticaPregleda; izbrana: boo
           <span className="text-xl font-medium text-zinc-400">N/A</span>
         ) : (
           <>
-            <span className="text-3xl font-semibold tabular-nums tracking-tight text-zinc-900 @6xl:text-4xl">{k.stevilo}</span>
+            <span className={`${velikost(velike)} font-semibold tabular-nums tracking-tight text-zinc-900`}>{k.stevilo}</span>
             <span className="text-sm text-zinc-500">{enota(k.enota, k.stevilo)}</span>
           </>
         )}
@@ -227,8 +245,99 @@ function Iskrica({ tocke: vse, className }: { tocke: TockaTrenda[]; className: s
   );
 }
 
+/**
+ * Stopnja odziva (odzivi / kontaktirana v obdobju). Klik odpre seznam odzivov (števec). Sprememba je v odstotnih
+ * točkah, ker je odstotek od odstotka zavajajoč.
+ */
+export function KarticaStopnje({
+  s,
+  izbrana,
+  onOdpri,
+  velike,
+}: {
+  s: StopnjaOdziva;
+  izbrana: boolean;
+  onOdpri: () => void;
+  velike?: boolean;
+}) {
+  const vsebina = (
+    <>
+      <span className="flex items-center justify-between gap-2">
+        <span className={`text-sm font-medium ${s.na ? "text-zinc-500" : "text-zinc-600"}`}>Stopnja odziva</span>
+        {s.na ? null : <Odpri />}
+      </span>
+      <span className="flex items-baseline self-end">
+        {s.na ? (
+          <span className="text-xl font-medium text-zinc-400">N/A</span>
+        ) : (
+          <span className={`${velikost(velike)} font-semibold tabular-nums tracking-tight text-zinc-900`}>{s.besedilo}</span>
+        )}
+      </span>
+      <span className="block space-y-0.5 text-xs">
+        {s.na ? (
+          <span className="block text-zinc-500">{s.na}</span>
+        ) : (
+          <>
+            {s.razlikaTock !== null ? <SpremembaTock razlika={s.razlikaTock} prej={s.prej} /> : null}
+            <span className="block text-zinc-500">
+              {s.stevec} od {s.imenovalec} kontaktiranih
+            </span>
+          </>
+        )}
+      </span>
+    </>
+  );
+  if (s.na) return <div className={`${OKVIR_KARTICE} ${PRAZNA_KARTICA} w-full`}>{vsebina}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onOdpri}
+      aria-pressed={izbrana}
+      aria-label={`Stopnja odziva ${s.besedilo}: ${s.stevec} od ${s.imenovalec} kontaktiranih. Odpri seznam odzivov.`}
+      className={`group ${OKVIR_KARTICE} w-full bg-white p-4 ring-1 transition hover:shadow-sm ${FOKUS} ${
+        izbrana ? "ring-2 ring-accent" : "ring-zinc-200 hover:ring-zinc-300"
+      }`}
+    >
+      {vsebina}
+    </button>
+  );
+}
+
+/** »+2,1 o. t. · prej 6 %« */
+function SpremembaTock({ razlika, prej }: { razlika: number; prej: string | null }) {
+  const smer = Math.abs(razlika) < 0.05 ? "enako" : razlika > 0 ? "gor" : "dol";
+  const barva = smer === "gor" ? "text-emerald-700" : smer === "dol" ? "text-rose-700" : "text-zinc-500";
+  const Ikona = smer === "gor" ? ArrowUpRight : smer === "dol" ? ArrowDownRight : Minus;
+  const a = Math.abs(razlika);
+  const tekst = smer === "enako" ? "0 o. t." : `${razlika > 0 ? "+" : "−"}${a >= 10 ? Math.round(a) : a.toFixed(1).replace(".", ",")} o. t.`;
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap tabular-nums" title="Sprememba v odstotnih točkah">
+      <span className={`inline-flex items-center gap-0.5 font-medium ${barva}`}>
+        <Ikona className="h-3.5 w-3.5" aria-hidden="true" />
+        {tekst}
+      </span>
+      {prej ? (
+        <>
+          <span className="text-zinc-400" aria-hidden="true">
+            ·
+          </span>
+          <span className="text-zinc-500">prej {prej}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 /** Kartica prihodkov: dokler zneskov ni, N/A s kratkim razlogom (nikoli 0); celoten razlog je v razdelku Prihodki. */
-export function KarticaPrihodkov({ povzetek, onOdpri }: { povzetek: PovzetekPrihodkovPosli; onOdpri: () => void }) {
+export function KarticaPrihodkov({
+  povzetek,
+  onOdpri,
+  velike,
+}: {
+  povzetek: PovzetekPrihodkovPosli;
+  onOdpri: () => void;
+  velike?: boolean;
+}) {
   const na = povzetek.na !== null || povzetek.skupaj === null;
   const posli = povzetek.posliZZneskom ?? 0;
   return (
@@ -248,9 +357,7 @@ export function KarticaPrihodkov({ povzetek, onOdpri }: { povzetek: PovzetekPrih
         {na ? (
           <span className="text-xl font-medium text-zinc-400">N/A</span>
         ) : (
-          <span className="text-3xl font-semibold tabular-nums tracking-tight text-zinc-900 @6xl:text-4xl">
-            {evri(povzetek.skupaj)}
-          </span>
+          <span className={`${velikost(velike)} font-semibold tabular-nums tracking-tight text-zinc-900`}>{evri(povzetek.skupaj)}</span>
         )}
       </span>
       <span className="block text-xs text-zinc-500">
