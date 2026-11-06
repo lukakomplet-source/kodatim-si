@@ -1,6 +1,6 @@
 import { zahtevajStran } from "@/lib/require-admin";
 import { preberiPregled } from "@/lib/pregled";
-import { PregledClient } from "./PregledClient";
+import { PregledClient, type ZacetekPregleda } from "./PregledClient";
 
 /**
  * Pregled (Luka, 6. 11. 2026): prodajni pregled Kompletka na eni strani — izbor produkta in obdobja, klikljive
@@ -11,9 +11,7 @@ import { PregledClient } from "./PregledClient";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Pregled" };
 
-type Iskanje = { produkt?: string; obdobje?: string; od?: string; do?: string; seznam?: string; dan?: string };
-
-export default async function PregledPage({ searchParams }: { searchParams: Promise<Iskanje> }) {
+export default async function PregledPage({ searchParams }: { searchParams: Promise<ZacetekPregleda> }) {
   await zahtevajStran();
   const [{ podatki, status }, iskanje] = await Promise.all([preberiPregled(), searchParams]);
   if (!podatki) {
@@ -28,5 +26,6 @@ export default async function PregledPage({ searchParams }: { searchParams: Prom
       </div>
     );
   }
+  // Prihodkov še ni (pridejo iz aplikacije Kompletko po Lukovem posebnem OK): brez prop »prihodki« je razdelek N/A.
   return <PregledClient podatki={podatki} zacetek={iskanje} />;
 }
