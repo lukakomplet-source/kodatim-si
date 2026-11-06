@@ -40,11 +40,11 @@ async function Kompletko({ smeLeade }: { smeLeade: boolean }) {
                   </p>
                   <p className="text-xs text-zinc-500">
                     {kdaj(a.cas)} · {a.kdo}
-                    {a.v_poslano ? "" : " · kopija v Poslano ni uspela"}
+                    {a.v_poslano ? "" : " · kopije v Poslano ni (poln predal), mail je iz shranjenega osnutka"}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-1.5">
-                  {a.id && a.v_poslano ? <PogledMaila href={`/admin/komunikacija/poslano/${a.id}`} /> : null}
+                  {a.id ? <PogledMaila href={`/admin/komunikacija/poslano/${a.id}`} /> : null}
                   <PovezavaPodjetja povezava={povezavaZa(povezave, prejemnik(a))} />
                 </div>
               </li>

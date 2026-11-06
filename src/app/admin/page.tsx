@@ -207,7 +207,11 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         </Link>
       ) : null}
 
-      <StevilkeDneva kompletko={k.kompletko && stKompletko} kodatim={k.kodatim && stKodaTim} />
+      <StevilkeDneva
+        kompletko={k.kompletko && stKompletko}
+        kodatim={k.kodatim && stKodaTim}
+        kompletkoMaili={k.jeAdmin ? "/admin/pregled?obdobje=danes&seznam=maili" : "/admin/komunikacija/poslano"}
+      />
 
       {(k.kompletko && !kompletko) || (k.kodatim && !kodatim) ? (
         <div className="mt-4 space-y-2">

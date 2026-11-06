@@ -82,6 +82,15 @@ export const RAZDELKI: Razdelek[] = [
     ],
   },
   {
+    // Pregled (Luka, 6. 11. 2026: »tule levo dodaj pregled«): prodajni pregled Kompletka, številke s seznami,
+    // lijak, koledar. Stran je zaprta z zahtevajStran() brez ključev, zato samo administrator.
+    kljuc: "pregled",
+    label: "Pregled",
+    href: "/admin/pregled",
+    permission: "admin",
+    posel: "kompletko",
+  },
+  {
     // Faza 6 (3. 11. 2026): /admin/podjetja/* so zaprte z zahtevajStran("lead_intelligence.view", "kompletko.view")
     // (podjetja/kontekst.ts); Prodaja Kompletko vidi samo Kompletko. Stare strani ostanejo kot svoji zavihki.
     kljuc: "podjetja",

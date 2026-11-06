@@ -46,7 +46,11 @@ export default async function KliciPage({ searchParams }: { searchParams: Promis
         obisk.
       </p>
 
-      <StevilkeDneva kompletko={k.kompletko && stKompletko} kodatim={k.kodatim && stKodaTim} />
+      <StevilkeDneva
+        kompletko={k.kompletko && stKompletko}
+        kodatim={k.kodatim && stKodaTim}
+        kompletkoMaili={k.jeAdmin ? "/admin/pregled?obdobje=danes&seznam=maili" : "/admin/komunikacija/poslano"}
+      />
 
       <div className="mt-4 space-y-2">
         {k.kompletko && !kompletko ? (
