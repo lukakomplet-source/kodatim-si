@@ -90,7 +90,13 @@ export function PregledClient({
     window.history.replaceState(null, "", `?${p.toString()}`);
   }, [produkt, obdobje, od, doo, izbor, dan]);
 
-  const { zdaj, prej } = useMemo(() => razpon(obdobje, danes, { od, do: doo }), [obdobje, danes, od, doo]);
+  // Primerjava samo, kadar je prejšnje obdobje (vsaj delno) po prvem zabeleženem dogodku; prej ni podatkov, ne ničel.
+  const prviDan = useMemo(
+    () => podatki.dogodki.reduce<string | null>((a, e) => (e.cas && (!a || e.cas < a) ? e.cas : a), null)?.slice(0, 10) ?? null,
+    [podatki.dogodki],
+  );
+  const { zdaj, prej: prejCelo } = useMemo(() => razpon(obdobje, danes, { od, do: doo }), [obdobje, danes, od, doo]);
+  const prej = prejCelo && prviDan && prejCelo.do >= prviDan ? prejCelo : null;
   const dogodki = useMemo(() => zaProdukt(podatki.dogodki, produkt), [podatki.dogodki, produkt]);
   const kartice = useMemo(() => izracunajKartice(dogodki, zdaj, prej, podatki.brezVidea), [dogodki, zdaj, prej, podatki.brezVidea]);
   const lijak = useMemo(() => izracunajLijak(dogodki, zdaj), [dogodki, zdaj]);
@@ -128,7 +134,11 @@ export function PregledClient({
           <h1 className="text-2xl font-semibold text-zinc-900">Pregled</h1>
           <p className="mt-1 text-sm text-zinc-500">
             Kompletko prodaja · {opisRazpona(zdaj)}
-            {prej ? <span className="text-zinc-400"> · primerjava z {opisRazpona(prej)}</span> : null}
+            {prej ? (
+              <span className="text-zinc-400"> · primerjava z {opisRazpona(prej)}</span>
+            ) : prejCelo ? (
+              <span className="text-zinc-400"> · ni primerjave (prej še ni podatkov)</span>
+            ) : null}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -189,7 +199,7 @@ export function PregledClient({
         {produkt !== "vsi" && produkt !== "panik" ? (
           <p className="mt-2 text-sm text-zinc-500">
             {naSeznamu
-              ? `${imeProdukta}: ${naSeznamu} podjetij je na seznamu kampanje, poslano še ni nič.`
+              ? `${imeProdukta}: ${naSeznamu} podjetij je na seznamu kampanje, maila za ta produkt še nismo poslali.`
               : `${imeProdukta}: kampanja se še ni začela.`}
           </p>
         ) : null}
@@ -204,6 +214,10 @@ export function PregledClient({
           ))}
         </div>
         <h2 className="pt-2 text-sm font-semibold text-zinc-900">Rezultati</h2>
+        <p className="-mt-2 text-xs text-zinc-500">
+          Odziv: pisni odgovor ali pogovor na klicu. Lead (predlagano pravilo, popravi, če želiš drugače): dogovorjen
+          sestanek, »pokličite kasneje« z datumom ali pisni odgovor brez »ne«.
+        </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {rezultati.map((k) => (
             <KarticaGumb key={k.kljuc} k={k} izbrana={izbor === k.kljuc} onClick={() => odpri(k.kljuc)} />

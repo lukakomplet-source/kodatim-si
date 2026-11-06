@@ -1,7 +1,17 @@
 import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { AppWindow, BarChart3, Building2, History, LayoutDashboard, MessagesSquare, Search, Settings } from "lucide-react";
+import {
+  AppWindow,
+  BarChart3,
+  Building2,
+  History,
+  LayoutDashboard,
+  MessagesSquare,
+  PieChart,
+  Search,
+  Settings,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
 import LastPathTracker from "@/components/dashboard/LastPathTracker";
@@ -24,6 +34,7 @@ const PORTALNE_VLOGE: RoleKey[] = ["partner", "referral", "user"];
 /** Ikona vsake točke menija; točke same so v src/lib/admin-meni.ts (iz njih so tudi zavihki na vrhu). */
 const IKONE: Record<string, ReactNode> = {
   danes: <LayoutDashboard className={ICON_CLASS} />,
+  pregled: <PieChart className={ICON_CLASS} />,
   podjetja: <Building2 className={ICON_CLASS} />,
   komunikacija: <MessagesSquare className={ICON_CLASS} />,
   iskanje: <Search className={ICON_CLASS} />,
