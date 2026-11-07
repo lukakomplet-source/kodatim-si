@@ -828,7 +828,7 @@ export function posliZaPredal(posli: PoselVrednost[]): Dogodek[] {
   return posli.map((p) => ({ cas: `${p.datum} 00:00`, korak: "posel", domena: p.domena, produkt: p.produkt, razlog: opisPosla(p) }));
 }
 
-// ——— prihodki iz aplikacije Kompletko (spremstvo, samo branje) ———
+// ——— prihodki iz aplikacije Kompletko (spremstvo in fizično varovanje, samo branje) ———
 
 export type NalogAplikacije = { datum: string; vrsta: string; znesek: number | null };
 
@@ -843,7 +843,7 @@ export type PrihodkiAplikacije = {
   poVrsti: { vrsta: string; nalogov: number; znesek: number | null }[];
 };
 
-/** Opravljeni nalogi iz aplikacije za obdobje. Vrsta »static« ni preslikana v produkt (čaka Lukovo potrditev). */
+/** Opravljeni nalogi iz aplikacije za obdobje, po vrsti naloga (static = fizično varovanje, ena oseba na lokaciji; Luka 7. 11. 2026). */
 export function povzetekAplikacije(nalogi: NalogAplikacije[] | null, napaka: string | null, r: Razpon): PrihodkiAplikacije {
   if (!nalogi) return { na: napaka ?? "Povezava z aplikacijo Kompletko še ni nastavljena.", skupaj: null, nalogov: 0, brezCene: 0, poVrsti: [] };
   const v = nalogi.filter((x) => vRazponu(x.datum, r));

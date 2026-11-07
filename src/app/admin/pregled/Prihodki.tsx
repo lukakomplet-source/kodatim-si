@@ -117,11 +117,11 @@ export function Prihodki({ posli: p, aplikacija: a, imeProdukta, opisObdobja, on
 }
 
 /**
- * Realizirano v aplikaciji Kompletko: opravljeni nalogi spremstva v obdobju (cena za stranko + dodatni stroški).
+ * Realizirano v aplikaciji Kompletko: opravljeni nalogi spremstva (escort) in fizičnega varovanja (static) v obdobju (cena za stranko + dodatni stroški).
  * Ločeno od poslov iz lijaka (to so obstoječe stranke, ne hladni maili), brez imen strank in brez podatkov o tovoru.
  */
 function Aplikacija({ a }: { a: PrihodkiAplikacije }) {
-  const IME: Record<string, string> = { escort: "Spremstvo (escort)", static: "Static (vrsta še ni razvrščena)" };
+  const IME: Record<string, string> = { escort: "Spremstvo (escort)", static: "Fizično varovanje (oseba na lokaciji)" };
   return (
     <div className="mt-3 rounded-xl bg-white px-4 py-3 ring-1 ring-zinc-200 sm:px-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
