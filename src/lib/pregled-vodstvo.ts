@@ -830,7 +830,13 @@ export function posliZaPredal(posli: PoselVrednost[]): Dogodek[] {
 
 // ——— prihodki iz aplikacije Kompletko (spremstvo in fizično varovanje, samo branje) ———
 
-export type NalogAplikacije = { datum: string; vrsta: string; znesek: number | null };
+export type NalogAplikacije = {
+  datum: string;
+  vrsta: string;
+  znesek: number | null;
+  /** Ključ stranke (s1, s2 …) iz imena brez pravne oblike; imena strani ne pošiljamo. null = ime ni zapisano. */
+  stranka?: string | null;
+};
 
 export type PrihodkiAplikacije = {
   /** Razlog za N/A (povezava ni nastavljena ali baza ne odgovarja); null = podatki so. */

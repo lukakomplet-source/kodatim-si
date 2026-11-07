@@ -19,10 +19,12 @@ import {
   oznaciNaknadne,
   predPrvimZapisom,
   prviDan,
+  prviKontakt,
   razdeliOdzive,
   seznamKarticePregleda,
   seznamZa,
   tabelaAktivnostiPodjetja,
+  vRazponu,
   zaProdukt,
   type Kartica,
   type Korak,
@@ -31,20 +33,17 @@ import {
   type Produkt,
 } from "@/lib/pregled-racun";
 import {
+  NI_ZAPISANO,
   akcijskiCenter,
-  karticeRezultata,
   lijakRezultatov,
   mere,
   moznostiFiltrov,
   opisMer,
   posliZaPredal,
-  povzetekAplikacije,
   povzetekPoslov,
   seznamCelice,
   seznamFaze,
   seznamNedostavljenih,
-  stavekStanja,
-  stopnjaOdziva,
   ugotovitve,
   zaFiltre,
   type AkcijaKljuc,
@@ -52,16 +51,50 @@ import {
   type NalogAplikacije,
   type StolpecTabele,
 } from "@/lib/pregled-vodstvo";
-import { AkcijskiCenter } from "./AkcijskiCenter";
+import {
+  FAZE_PRODAJE,
+  IME_FAZE_PRODAJE,
+  IME_VERIGE,
+  PRODUKT_NALOGA,
+  akcijeProdaje,
+  casovnaVrsta,
+  dosezenoCiljev,
+  izgubljeni,
+  kampanjeAnaliza,
+  kanban,
+  mereMarketinga,
+  napoved,
+  priloznostiObdobja,
+  priloznostiZaPredal,
+  prihodkiPoMesecih,
+  produktiAnaliza,
+  realiziranoVRazponu,
+  stavekVodstva,
+  stopnjeProdaje,
+  strankeAplikacije,
+  toplotnaKarta,
+  ugotovitveProdaje,
+  verigaProdaje,
+  vrsticeVerige,
+  zaFiltrePriloznosti,
+  type AkcijaProdajeKljuc,
+  type FazaProdaje,
+  type KorakVerige,
+} from "@/lib/pregled-prodaja";
+import { Cilji } from "./Cilji";
 import { Glava } from "./Glava";
 import { enota } from "./Kartice";
 import { KakoStejemo } from "./KakoStejemo";
 import { Koledar } from "./Koledar";
-import { LijakProdaje } from "./LijakProdaje";
+import { Leadi } from "./Leadi";
+import { Marketing } from "./Marketing";
+import { Plosca } from "./Plosca";
+import { Povzetek } from "./Povzetek";
 import { Predal, type PredalProps } from "./Predal";
 import { Prihodki } from "./Prihodki";
-import { Rezultat } from "./Rezultat";
+import { ProdajniLijak } from "./ProdajniLijak";
 import { TabelaAktivnosti } from "./TabelaAktivnosti";
+import { Toplota } from "./Toplota";
 
 /** Parametri iz naslova strani (page.tsx jih poda naprej). */
 export type ZacetekPregleda = {
@@ -77,19 +110,25 @@ export type ZacetekPregleda = {
 };
 
 type Izbor = Kartica["kljuc"];
+type KljucAkcije = AkcijaKljuc | AkcijaProdajeKljuc;
+type ClenSeznama = Exclude<KorakVerige, "prihodki">;
 const IZBORI = new Set<string>(["kontaktirana", "maili", ...AKTIVNOSTI, ...REZULTATI]);
 const FAZE = new Set<string>(["kontaktirana", ...AKTIVNOSTI, ...REZULTATI]);
-const AKCIJE = new Set<string>(["danes", "zamujeno", "caka", "leadi", "sestanki", "pozornost"]);
+const AKCIJE = new Set<string>(["danes", "zamujeno", "caka", "leadi", "sestanki", "pozornost", "razvrstitev", "pozitivni", "kvalificirani", "ponudbe", "pogajanja", "zastale"]);
+const CLENI = new Set<string>(["kontaktirana", "odzivi", "pozitivni", "leadi", "sestanki", "ponudbe", "posli"]);
+const FAZE_PR = new Set<string>(FAZE_PRODAJE.map((f) => f.kljuc));
 
 /**
- * Kaj je odprto v predalu. V naslovu strani: seznam=<kartica>, seznam=lijak-<faza>, seznam=aktivnost-<korak>
- * (vrstica tabele), seznam=akcija-<skupina>, seznam=nedostavljeni ali dan=<YYYY-MM-DD>.
+ * Kaj je odprto v predalu. V naslovu strani: seznam=<kartica>, seznam=veriga-<člen>, seznam=faza-<faza prodaje>,
+ * seznam=lijak-<faza>, seznam=aktivnost-<korak>, seznam=akcija-<skupina>, seznam=nedostavljeni ali dan=<YYYY-MM-DD>.
  */
 export type OdprtSeznam =
   | { vrsta: "kartica"; kljuc: Izbor }
+  | { vrsta: "veriga"; kljuc: ClenSeznama }
+  | { vrsta: "faza"; kljuc: FazaProdaje }
   | { vrsta: "lijak"; kljuc: FazaKljuc }
   | { vrsta: "aktivnost"; kljuc: Korak }
-  | { vrsta: "akcija"; kljuc: AkcijaKljuc }
+  | { vrsta: "akcija"; kljuc: KljucAkcije }
   | { vrsta: "nedostavljeni" }
   | { vrsta: "celica"; aktivnost: Korak; stolpec: StolpecTabele }
   /** Posli z vrednostjo: »novi« v obdobju, »ponavljajoci« (MRR) ali mesec »YYYY-MM« iz grafa. */
@@ -111,7 +150,7 @@ function izNaslova(z: ZacetekPregleda): OdprtSeznam | null {
   return s ? izCilja(s) : null;
 }
 
-/** »lijak-odgovor«, »akcija-zamujeno«, »aktivnost-klic«, »nedostavljeni«, »odgovor« → kaj odpreti. */
+/** »veriga-odzivi«, »faza-ponudba«, »lijak-odgovor«, »akcija-zamujeno«, »aktivnost-klic«, »nedostavljeni« → kaj odpreti. */
 function izCilja(s: string): OdprtSeznam | null {
   if (s === "nedostavljeni") return { vrsta: "nedostavljeni" };
   if (s.startsWith("prihodki-")) {
@@ -122,8 +161,10 @@ function izCilja(s: string): OdprtSeznam | null {
     const [, a, st] = s.split("-");
     if (AKTIVNOSTI.includes(a as Korak) && STOLPCI.has(st)) return { vrsta: "celica", aktivnost: a as Korak, stolpec: st as StolpecTabele };
   }
+  if (s.startsWith("veriga-") && CLENI.has(s.slice(7))) return { vrsta: "veriga", kljuc: s.slice(7) as ClenSeznama };
+  if (s.startsWith("faza-") && FAZE_PR.has(s.slice(5))) return { vrsta: "faza", kljuc: s.slice(5) as FazaProdaje };
   if (s.startsWith("lijak-") && FAZE.has(s.slice(6))) return { vrsta: "lijak", kljuc: s.slice(6) as FazaKljuc };
-  if (s.startsWith("akcija-") && AKCIJE.has(s.slice(7))) return { vrsta: "akcija", kljuc: s.slice(7) as AkcijaKljuc };
+  if (s.startsWith("akcija-") && AKCIJE.has(s.slice(7))) return { vrsta: "akcija", kljuc: s.slice(7) as KljucAkcije };
   if (s.startsWith("aktivnost-") && AKTIVNOSTI.includes(s.slice(10) as Korak)) {
     return { vrsta: "aktivnost", kljuc: s.slice(10) as Korak };
   }
@@ -157,10 +198,10 @@ const IME_FAZE: Record<FazaKljuc, string> = {
 };
 
 /**
- * Pregled v3 (Luka 6. 11. 2026, »Management overview«): stanje prodaje v treh sekundah. Vrstni red po pomembnosti:
- * A rezultat in »Kaj se dogaja?«, B lijak (kje izgubljamo) ob C »Kaj moramo narediti«, D aktivnosti, E prihodki,
- * F koledar in opredelitve. Vsaka številka odpre seznam v predalu; filtri veljajo povsod (akcijski center je stanje
- * danes, zato ne glede na obdobje).
+ * Pregled v4 (Luka 7. 11. 2026): marketing in prodaja ločeno, ena pot od kontakta do denarja. Vrstni red:
+ * 1 povzetek vodstva, 2 marketing, 3 leadi in naslednji koraki, 4 prodajni lijak (faze, kanban, izgubljeni, napoved),
+ * 5 prihodki in cilji, 6 aktivnosti (tabela, toplotna karta, koledar). Vsaka številka odpre seznam v predalu; filtri
+ * veljajo povsod (kar je »stanje danes«, piše ob razdelku).
  */
 export function PregledClient({
   podatki,
@@ -204,6 +245,9 @@ export function PregledClient({
     window.history.replaceState(null, "", `?${p.toString()}`);
   }, [produkt, obdobje, od, doo, primerjaj, kampanja, oseba, odprto]);
 
+  // Harvey od 7. 11. (v4) vrača priložnosti, cilje in stroške; starejši ne, zato je stran takrat samo za branje.
+  const zapisovanje = podatki.priloznosti !== undefined;
+
   // Primerjava samo, kadar je CELO prejšnje obdobje po prvem zabeleženem dogodku; prej ni podatkov, ne ničel.
   const prvi = useMemo(() => prviDan(podatki.dogodki), [podatki.dogodki]);
   const obd = useMemo(() => obdobjeSCeloPrimerjavo(obdobje, danes, { od, do: doo }, prvi), [obdobje, danes, od, doo, prvi]);
@@ -212,51 +256,120 @@ export function PregledClient({
   const konec = konecObdobja(zdaj, danes);
   const brezZapisov = predPrvimZapisom(zdaj, prvi);
   // Filtri: produkt, nato kampanja in oseba (vsi deli strani dobijo iste dogodke; možnosti upoštevajo druge filtre).
-  const poProduktu = useMemo(() => zaProdukt(oznaciNaknadne(podatki.dogodki), produkt), [podatki.dogodki, produkt]);
+  const vsiDogodki = useMemo(() => oznaciNaknadne(podatki.dogodki), [podatki.dogodki]);
+  const poProduktu = useMemo(() => zaProdukt(vsiDogodki, produkt), [vsiDogodki, produkt]);
   const moznosti = useMemo(() => moznostiFiltrov(poProduktu, podatki.podjetja, kampanja, oseba), [poProduktu, podatki.podjetja, kampanja, oseba]);
   const dogodki = useMemo(() => zaFiltre(poProduktu, podatki.podjetja, kampanja, oseba), [poProduktu, podatki.podjetja, kampanja, oseba]);
-
-  // A. rezultat
-  const kartice = useMemo(
-    () => karticeRezultata(dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi),
-    [dogodki, podatki.podjetja, zdaj, prej, podatki.brezVidea, konec, prvi],
-  );
-  const stopnja = useMemo(() => stopnjaOdziva(dogodki, zdaj, prej, brezZapisov), [dogodki, zdaj, prej, brezZapisov]);
-  // E. prihodki: posli, vpisani na kartici podjetja (isti filtri; pri osebi podjetja, s katerimi je delala), in aplikacija
+  // Primerjava produktov: vsi produkti, drugi filtri veljajo
+  const vsiProdukti = useMemo(() => zaFiltre(vsiDogodki, podatki.podjetja, kampanja, oseba), [vsiDogodki, podatki.podjetja, kampanja, oseba]);
   const domeneOsebe = useMemo(() => (oseba ? new Set(dogodki.map((e) => e.domena)) : null), [oseba, dogodki]);
+
+  // Posli, priložnosti in aplikacija z istimi filtri
+  const posliIzbor = useMemo(
+    () =>
+      (podatki.posli ?? []).filter(
+        (p) =>
+          (produkt === "vsi" || p.produkt === produkt) &&
+          (!kampanja || (p.kampanja || NI_ZAPISANO) === kampanja) &&
+          (!domeneOsebe || domeneOsebe.has(p.domena)),
+      ),
+    [podatki.posli, produkt, kampanja, domeneOsebe],
+  );
+  const posliVsiProdukti = useMemo(
+    () => (podatki.posli ?? []).filter((p) => (!kampanja || (p.kampanja || NI_ZAPISANO) === kampanja) && (!domeneOsebe || domeneOsebe.has(p.domena))),
+    [podatki.posli, kampanja, domeneOsebe],
+  );
+  const prl = useMemo(() => zaFiltrePriloznosti(podatki.priloznosti, { produkt, kampanja, domene: domeneOsebe }), [podatki.priloznosti, produkt, kampanja, domeneOsebe]);
+  const prlObdobja = useMemo(() => priloznostiObdobja(prl, zdaj), [prl, zdaj]);
+  const nalogi = aplikacija?.nalogi ?? null;
+  // Aplikacija ni pripisana kampanjam ali osebam: pri teh filtrih je ni; produkt jo omeji (escort = Escort, static = varovanje).
+  const appVkljucena = !kampanja && !oseba;
+  const aplikacijaVkljucena = useCallback(
+    (vrsta: string) => appVkljucena && (produkt === "vsi" || PRODUKT_NALOGA[vrsta] === produkt),
+    [appVkljucena, produkt],
+  );
+  const appVObdobju = useMemo(() => {
+    if (!nalogi || !appVkljucena) return null;
+    return nalogi.filter((n) => aplikacijaVkljucena(n.vrsta) && n.znesek !== null && vRazponu(`${n.datum} 00:00`, zdaj)).reduce((a, n) => a + (n.znesek as number), 0);
+  }, [nalogi, appVkljucena, aplikacijaVkljucena, zdaj]);
+
+  // 1. povzetek vodstva
+  const veriga = useMemo(
+    () => verigaProdaje({ dogodki, podjetja: podatki.podjetja, priloznosti: prl, posli: posliIzbor, r: zdaj, aplikacija: appVObdobju }),
+    [dogodki, podatki.podjetja, prl, posliIzbor, zdaj, appVObdobju],
+  );
+  const stavek = stavekVodstva(veriga, brezZapisov, prvi);
+  const lijak = useMemo(() => lijakRezultatov(dogodki, zdaj), [dogodki, zdaj]);
+  const akcije = useMemo(() => akcijskiCenter(dogodki, podatki.podjetja, danes), [dogodki, podatki.podjetja, danes]);
+  const akcijeP = useMemo(() => akcijeProdaje(dogodki, podatki.podjetja, prl, danes), [dogodki, podatki.podjetja, prl, danes]);
+  const nedostavljenih = useMemo(() => nedostavljeni(dogodki, podatki.podjetja, zdaj), [dogodki, podatki.podjetja, zdaj]);
+  const kampanje = useMemo(
+    () => kampanjeAnaliza({ dogodki, podjetja: podatki.podjetja, posli: posliIzbor, stroski: podatki.stroski, r: zdaj }),
+    [dogodki, podatki.podjetja, posliIzbor, podatki.stroski, zdaj],
+  );
+  // Cilji so za vse podjetje (brez filtrov): ta mesec, kvartal, leto
+  const cilji = useMemo(
+    () =>
+      dosezenoCiljev({
+        cilji: podatki.cilji,
+        dogodki: vsiDogodki,
+        podjetja: podatki.podjetja,
+        priloznosti: podatki.priloznosti ?? [],
+        prihodek: (a, b) => realiziranoVRazponu(podatki.posli ?? [], nalogi, a, b),
+        danes,
+      }),
+    [podatki.cilji, vsiDogodki, podatki.podjetja, podatki.priloznosti, podatki.posli, nalogi, danes],
+  );
+  const kaj = useMemo(() => {
+    const stare = ugotovitve({ lijak, akcije, nedostavljenih, podjetja: podatki.podjetja, brez: brezZapisov });
+    const nove = ugotovitveProdaje({ veriga, kampanje, dogodki, akcije: akcijeP, cilji, brez: brezZapisov });
+    return [...stare, ...nove].sort((a, b) => Number(b.ton === "pozor") - Number(a.ton === "pozor"));
+  }, [lijak, akcije, nedostavljenih, podatki.podjetja, brezZapisov, veriga, kampanje, dogodki, akcijeP, cilji]);
+
+  // 2. marketing
+  const mereM = useMemo(
+    () => mereMarketinga({ dogodki, podjetja: podatki.podjetja, r: zdaj, stroski: podatki.stroski, kampanja, nedostavljenih }),
+    [dogodki, podatki.podjetja, zdaj, podatki.stroski, kampanja, nedostavljenih],
+  );
+  const cas = useMemo(() => casovnaVrsta(dogodki, zdaj, prej, prvi, danes, prviKontakt(dogodki)), [dogodki, zdaj, prej, prvi, danes]);
+  const produkti = useMemo(
+    () =>
+      produktiAnaliza({
+        dogodki: vsiProdukti,
+        podjetja: podatki.podjetja,
+        posli: posliVsiProdukti,
+        seznami: podatki.seznami,
+        nalogi: appVkljucena ? nalogi : null,
+        r: zdaj,
+      }),
+    [vsiProdukti, podatki.podjetja, posliVsiProdukti, podatki.seznami, appVkljucena, nalogi, zdaj],
+  );
+
+  // 3. leadi; 4. prodajni lijak
+  const stopnje = useMemo(() => stopnjeProdaje(prlObdobja, danes), [prlObdobja, danes]);
+  const tabla = useMemo(() => kanban(prl, podatki.podjetja, dogodki, danes), [prl, podatki.podjetja, dogodki, danes]);
+  const izg = useMemo(() => izgubljeni(prlObdobja), [prlObdobja]);
+  const nap = useMemo(() => napoved(prl), [prl]);
+
+  // 5. prihodki
   const povzetek = useMemo(
     () => povzetekPoslov(podatki.posli, { produkt, kampanja, domene: domeneOsebe }, zdaj, konec),
     [podatki.posli, produkt, kampanja, domeneOsebe, zdaj, konec],
   );
-  const prihodkiAplikacije = useMemo(
-    () => povzetekAplikacije(aplikacija?.nalogi ?? null, aplikacija?.napaka ?? null, zdaj),
-    [aplikacija, zdaj],
+  const brezFiltrov = produkt === "vsi" && !kampanja && !oseba;
+  const meseci = useMemo(
+    () => prihodkiPoMesecih({ posli: posliIzbor, nalogi, aplikacijaVkljucena, cilji: brezFiltrov ? podatki.cilji : undefined, danes }),
+    [posliIzbor, nalogi, aplikacijaVkljucena, brezFiltrov, podatki.cilji, danes],
   );
-  const stevilo = (k: Izbor) => kartice.find((x) => x.kljuc === k)?.stevilo ?? 0;
-  const stavek = stavekStanja({
-    kontaktirana: stevilo("kontaktirana"),
-    odzivi: stevilo("odgovor"),
-    leadi: stevilo("lead"),
-    sestanki: stevilo("sestanek"),
-    posli: stevilo("posel"),
-    stopnja: stopnja.besedilo,
-    brez: brezZapisov,
-    prvi,
-  });
-  // B. lijak, C. akcijski center (stanje danes) in ugotovitve
-  const lijak = useMemo(() => lijakRezultatov(dogodki, zdaj), [dogodki, zdaj]);
-  const akcije = useMemo(() => akcijskiCenter(dogodki, podatki.podjetja, danes), [dogodki, podatki.podjetja, danes]);
-  const nedostavljenih = useMemo(() => nedostavljeni(dogodki, podatki.podjetja, zdaj), [dogodki, podatki.podjetja, zdaj]);
-  const kaj = useMemo(
-    () => ugotovitve({ lijak, akcije, nedostavljenih, podjetja: podatki.podjetja, brez: brezZapisov }),
-    [lijak, akcije, nedostavljenih, podatki.podjetja, brezZapisov],
-  );
-  // D. aktivnosti
+  const stranke = useMemo(() => strankeAplikacije(nalogi, aplikacija?.napaka ?? null, zdaj, konec), [nalogi, aplikacija, zdaj, konec]);
+
+  // 6. aktivnosti
   const tabela = useMemo(
     () => tabelaAktivnostiPodjetja(dogodki, zdaj, podatki.brezVidea, brezZapisov),
     [dogodki, zdaj, podatki.brezVidea, brezZapisov],
   );
   const m = useMemo(() => mere(dogodki, podatki.podjetja, zdaj), [dogodki, podatki.podjetja, zdaj]);
+  const toplota = useMemo(() => toplotnaKarta(dogodki, danes, prvi), [dogodki, danes, prvi]);
   const brezCasa = useMemo(() => dogodki.filter((e) => !e.cas).length, [dogodki]);
 
   const opisObdobja = zdaj ? opisRazpona(zdaj) : prvi ? `vse od ${lepDatum(prvi)}` : "vse";
@@ -271,8 +384,29 @@ export function PregledClient({
         prazno: "Ta dan ni nič.",
       };
     }
+    if (odprto.vrsta === "veriga") {
+      const k = odprto.kljuc;
+      return {
+        naslov: `Od kontakta do denarja: ${IME_VERIGE[k]}`,
+        podnaslov:
+          k === "kontaktirana"
+            ? `Podjetja, prvič kontaktirana (${opisObdobja}).`
+            : `Podjetja, prvič kontaktirana (${opisObdobja}), ki so do danes prišla do te faze ali dlje.`,
+        skupine: [{ kljuc: "vse", dogodki: vrsticeVerige(k, veriga.domene[k], dogodki, prl, danes) }],
+        prazno: k === "pozitivni" && veriga.nerazvrsceni ? "Odzivi še niso razvrščeni: razvrstiš jih v razdelku Leadi." : "Do te faze še ni prišlo nobeno podjetje.",
+      };
+    }
+    if (odprto.vrsta === "faza") {
+      const v = prlObdobja.filter((o) => o.faza === odprto.kljuc);
+      return {
+        naslov: `Faza: ${IME_FAZE_PRODAJE[odprto.kljuc]}`,
+        podnaslov: `Priložnosti, odprte v obdobju (${opisObdobja}), ki so zdaj v tej fazi.`,
+        skupine: [{ kljuc: "vse", dogodki: priloznostiZaPredal(v, danes) }],
+        prazno: "V tej fazi ni priložnosti.",
+      };
+    }
     if (odprto.vrsta === "akcija") {
-      const a = akcije.find((x) => x.kljuc === odprto.kljuc)!;
+      const a = [...akcije, ...akcijeP].find((x) => x.kljuc === odprto.kljuc)!;
       return {
         naslov: a.ime,
         podnaslov: `${a.opis} Stanje danes, ne glede na obdobje.`,
@@ -295,26 +429,15 @@ export function PregledClient({
     if (odprto.vrsta === "prihodki") {
       const k = odprto.kljuc;
       const mesec = /^\d{4}-\d{2}$/.test(k);
-      const vrstice =
-        k === "ponavljajoci"
-          ? povzetek.ponavljajoci
-          : mesec
-            ? (podatki.posli ?? []).filter(
-                (p) =>
-                  p.datum.startsWith(k) &&
-                  (produkt === "vsi" || p.produkt === produkt) &&
-                  (!kampanja || (p.kampanja || "ni-zapisano") === kampanja) &&
-                  (!domeneOsebe || domeneOsebe.has(p.domena)),
-              )
-            : povzetek.novi;
+      const vrstice = k === "ponavljajoci" ? povzetek.ponavljajoci : mesec ? posliIzbor.filter((p) => p.datum.startsWith(k)) : povzetek.novi;
       return {
         naslov: k === "ponavljajoci" ? "Ponavljajoči posli (MRR)" : mesec ? `Posli: ${MESECI[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}` : "Novi posli",
         podnaslov:
           k === "ponavljajoci"
             ? "Aktivni mesečni in letni posli na zadnji dan obdobja. Zneski brez DDV."
-            : `Posli, vpisani na kartici podjetja (${mesec ? "v tem mesecu" : opisObdobja}). Zneski brez DDV.`,
+            : `Posli iz lijaka, sklenjeni ${mesec ? "v tem mesecu" : `v obdobju (${opisObdobja})`}. Zneski brez DDV.`,
         skupine: [{ kljuc: "vse", dogodki: posliZaPredal(vrstice) }],
-        prazno: "Vpisanih poslov ni. Posel vpišeš na kartici podjetja (Zapiši posel).",
+        prazno: "Vpisanih poslov ni. Posel vpišeš ob »Dobljeno« ali na kartici podjetja (Zapiši posel).",
       };
     }
     if (odprto.vrsta === "nedostavljeni") {
@@ -344,10 +467,9 @@ export function PregledClient({
         skupine: [{ kljuc: "vse", dogodki: seznamZa(dogodki, odprto.kljuc, zdaj) }],
       };
     }
-    // toliko vrstic, kot kaže kartica (rezultati in kontaktirana: ena na podjetje)
+    // toliko vrstic, kot kaže število (rezultati in kontaktirana: ena na podjetje)
     const vrstice = seznamKarticePregleda(dogodki, odprto.kljuc, zdaj);
     if (odprto.kljuc === "odgovor") {
-      // Iste skupine kot »N da, N ne, N ne zdaj« na kartici (isto pravilo, razdeliOdzive).
       const r = razdeliOdzive(dogodki, zdaj);
       return {
         naslov: imeKartice(odprto.kljuc),
@@ -365,135 +487,166 @@ export function PregledClient({
       podnaslov: `Obdobje: ${opisObdobja}${odprto.kljuc === "prvi" || odprto.kljuc === "kontaktirana" ? " · ena vrstica na podjetje" : ""}`,
       skupine: [{ kljuc: "vse", dogodki: vrstice }],
     };
-  }, [odprto, dogodki, zdaj, opisObdobja, akcije, podatki.podjetja, podatki.posli, povzetek, produkt, kampanja, domeneOsebe]);
+  }, [odprto, dogodki, zdaj, opisObdobja, akcije, akcijeP, podatki.podjetja, povzetek, posliIzbor, veriga, prl, prlObdobja, danes]);
 
   const zapri = useCallback(() => setOdprto(null), []);
-  const odpriKartico = useCallback((kljuc: Izbor) => setOdprto({ vrsta: "kartica", kljuc }), []);
-  const odpriLijak = useCallback((kljuc: FazaKljuc) => setOdprto({ vrsta: "lijak", kljuc }), []);
-  const odpriAkcijo = useCallback((kljuc: AkcijaKljuc) => setOdprto({ vrsta: "akcija", kljuc }), []);
+  const odpriCilj = useCallback((cilj: string) => setOdprto(izCilja(cilj)), []);
+  const odpriAkcijo = useCallback((kljuc: string) => setOdprto(izCilja(`akcija-${kljuc}`)), []);
   const odpriAktivnost = useCallback((kljuc: Korak) => setOdprto({ vrsta: "aktivnost", kljuc }), []);
   const odpriDan = useCallback((dan: string) => setOdprto({ vrsta: "dan", dan }), []);
-  const odpriCelico = useCallback(
-    (aktivnost: Korak, stolpec: StolpecTabele) => setOdprto({ vrsta: "celica", aktivnost, stolpec }),
-    [],
-  );
-  const odpriCilj = useCallback((cilj: string) => setOdprto(izCilja(cilj)), []);
+  const odpriFazo = useCallback((kljuc: FazaProdaje) => setOdprto({ vrsta: "faza", kljuc }), []);
+  const odpriCelico = useCallback((aktivnost: Korak, stolpec: StolpecTabele) => setOdprto({ vrsta: "celica", aktivnost, stolpec }), []);
   const odpriPrihodke = useCallback((kljuc: string) => setOdprto({ vrsta: "prihodki", kljuc }), []);
-  const naPrihodke = useCallback(
-    () => document.getElementById("prihodki")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    [],
-  );
+  const odpriClen = useCallback((k: KorakVerige) => {
+    if (k === "prihodki") document.getElementById("prihodki")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    else setOdprto({ vrsta: "veriga", kljuc: k });
+  }, []);
 
   const imeProdukta = PRODUKTI.find((p) => p.kljuc === produkt)!.ime;
   const naSeznamu = podatki.seznami[produkt] ?? 0;
-  // Harvey za zdaj vse dogodke zapiše pod Panic button (oznake produkta še nima), zato tu ne trdimo, da maila ni bilo.
+  const imaDogodke = poProduktu.length > 0;
   const opombaProdukta =
-    produkt !== "vsi" && produkt !== "panik"
+    produkt !== "vsi" && !imaDogodke
       ? naSeznamu
-        ? `${imeProdukta}: ${naSeznamu} ${enota("podjetij", naSeznamu)} na seznamu kampanje. Harvey za zdaj vse dogodke beleži pod Panic button.`
+        ? `${imeProdukta}: ${naSeznamu} ${enota("podjetij", naSeznamu)} na seznamu kampanje, maili še niso bili poslani.`
         : `${imeProdukta}: kampanja se še ni začela.`
       : null;
   const namigPrimerjave = !primerjaj || !obd.prejCelo ? "" : obd.prej ? `prej: ${kratekRazpon(obd.prej)}` : "prej še ni podatkov";
+  const izbranaAkcija = odprto?.vrsta === "akcija" ? odprto.kljuc : null;
 
   return (
-    <div className="mx-auto w-full max-w-[1760px] space-y-6 pb-16">
-      <Glava
-        opis={`Kompletko prodaja · ${opisObdobja}`}
-        obdobje={obdobje}
-        onObdobje={setObdobje}
-        od={od}
-        do={doo}
-        onOd={setOd}
-        onDo={setDo}
-        primerjaj={primerjaj}
-        onPrimerjaj={setPrimerjaj}
-        primerjavaMogoca={obd.prejCelo !== null}
-        namigPrimerjave={namigPrimerjave}
-        produkt={produkt}
-        onProdukt={setProdukt}
-        opombaProdukta={opombaProdukta}
-        kampanje={moznosti.kampanje}
-        kampanja={kampanja}
-        onKampanja={setKampanja}
-        osebe={moznosti.osebe}
-        oseba={oseba}
-        onOseba={setOseba}
-      />
-
-      {/* A. Rezultat in »Kaj se dogaja?« */}
-      <Rezultat
-        stavek={stavek}
-        kartice={kartice}
-        stopnja={stopnja}
-        prihodki={povzetek}
-        izbrana={odprto?.vrsta === "kartica" ? odprto.kljuc : null}
-        izbranaStopnja={false}
-        onOdpri={odpriKartico}
-        onStopnja={() => odpriKartico("odgovor")}
-        onPrihodki={naPrihodke}
-        ugotovitve={kaj}
-        onUgotovitev={odpriCilj}
-      />
-
-      {/* B. Lijak ob C. Kaj moramo narediti */}
-      <div className="@container">
-        <div className="grid gap-6 @5xl:grid-cols-2">
-          <LijakProdaje
-            faze={lijak.faze}
-            najsibkejsa={lijak.najsibkejsa}
-            zunajVerige={lijak.zunajVerige}
-            opisObdobja={opisObdobja}
-            prazno={
-              brezZapisov && prvi
-                ? `Pred ${lepDatum(prvi)} ni zapisov.`
-                : "V tem obdobju ni bilo prvič kontaktiranih podjetij, zato so vse faze prazne."
-            }
-            izbrana={odprto?.vrsta === "lijak" ? odprto.kljuc : null}
-            onOdpri={odpriLijak}
-          />
-          <AkcijskiCenter akcije={akcije} izbrana={odprto?.vrsta === "akcija" ? odprto.kljuc : null} onOdpri={odpriAkcijo} />
-        </div>
-      </div>
-
-      {/* D. Aktivnosti */}
-      <div className="space-y-2">
-        <TabelaAktivnosti
-          vrstice={tabela}
-          izbrana={odprto?.vrsta === "aktivnost" ? odprto.kljuc : null}
-          onOdpri={odpriAktivnost}
-          skupaj={brezZapisov ? undefined : { aktivnosti: m.aktivnosti, podjetja: m.podjetja }}
-          mere={brezZapisov ? undefined : opisMer(m)}
-          onCelica={odpriCelico}
-          izbranaCelica={odprto?.vrsta === "celica" ? { aktivnost: odprto.aktivnost, stolpec: odprto.stolpec } : null}
+    <div className="mx-auto w-full max-w-[1760px] space-y-10 pb-16">
+      <div className="space-y-6">
+        <Glava
+          opis={`Kompletko prodaja · ${opisObdobja}`}
+          obdobje={obdobje}
+          onObdobje={setObdobje}
+          od={od}
+          do={doo}
+          onOd={setOd}
+          onDo={setDo}
+          primerjaj={primerjaj}
+          onPrimerjaj={setPrimerjaj}
+          primerjavaMogoca={obd.prejCelo !== null}
+          namigPrimerjave={namigPrimerjave}
+          produkt={produkt}
+          onProdukt={setProdukt}
+          opombaProdukta={opombaProdukta}
+          kampanje={moznosti.kampanje}
+          kampanja={kampanja}
+          onKampanja={setKampanja}
+          osebe={moznosti.osebe}
+          oseba={oseba}
+          onOseba={setOseba}
         />
-        {obdobje === "vse" && brezCasa ? (
-          <p className="text-xs text-zinc-500">
-            {brezCasa} starejših dogodkov nima zapisanega dne: štejejo pod »Vse«, v obdobjih in koledarju ne.
-          </p>
-        ) : null}
+
+        {/* 1. Povzetek vodstva */}
+        <Povzetek
+          stavek={stavek}
+          veriga={veriga}
+          opisObdobja={opisObdobja}
+          izbran={odprto?.vrsta === "veriga" ? odprto.kljuc : null}
+          onClen={odpriClen}
+          ugotovitve={kaj}
+          onUgotovitev={odpriCilj}
+        />
       </div>
 
-      {/* E. Prihodki */}
-      <div id="prihodki" className="scroll-mt-24">
+      {/* 2. Marketing */}
+      <Marketing
+        mere={mereM}
+        uspesnost={{ tocke: cas.tocke, poDnevih: cas.poDnevih, primerjava: !!prej, onDan: odpriDan }}
+        produkti={produkti}
+        kampanje={kampanje}
+        stroski={podatki.stroski ?? []}
+        zapisovanje={zapisovanje}
+        opisObdobja={opisObdobja}
+        danes={danes}
+        onCilj={odpriCilj}
+      />
+
+      {/* 3. Leadi in naslednji koraki */}
+      <Leadi
+        odzivi={akcijeP.find((a) => a.kljuc === "razvrstitev")!.vrstice}
+        podjetja={podatki.podjetja}
+        koraki={akcije}
+        prodaja={akcijeP}
+        izbrana={izbranaAkcija}
+        onOdpri={odpriAkcijo}
+        zapisovanje={zapisovanje}
+      />
+
+      {/* 4. Prodajni lijak */}
+      <ProdajniLijak
+        stopnje={stopnje}
+        kanban={tabla}
+        izgubljeni={izg}
+        napoved={nap}
+        mrr={povzetek.mrr}
+        arr={povzetek.arr}
+        opisObdobja={opisObdobja}
+        danes={danes}
+        zapisovanje={zapisovanje}
+        izbrana={odprto?.vrsta === "faza" ? odprto.kljuc : null}
+        onFaza={odpriFazo}
+      />
+
+      {/* 5. Prihodki in cilji */}
+      <div id="prihodki" className="scroll-mt-24 space-y-3">
         <Prihodki
           posli={povzetek}
-          aplikacija={prihodkiAplikacije}
+          meseci={meseci}
+          aplikacijaVkljucena={appVkljucena}
+          aplikacijaNa={nalogi ? null : (aplikacija?.napaka ?? "povezava ni nastavljena.")}
+          stranke={stranke}
           imeProdukta={imeProdukta}
           opisObdobja={opisObdobja}
           onOdpri={odpriPrihodke}
         />
+        <Cilji obdobja={cilji.obdobja} mere={cilji.mere} zapisovanje={zapisovanje} />
       </div>
 
-      {/* F. Koledar in opredelitve */}
-      <Koledar
-        dogodki={dogodki}
-        danes={danes}
-        zacetniDan={jeDatum(zacetek.dan) ? zacetek.dan : danes}
-        izbranDan={odprto?.vrsta === "dan" ? odprto.dan : null}
-        onOdpriDan={odpriDan}
-        podjetja={podatki.podjetja}
-      />
-      <KakoStejemo />
+      {/* 6. Aktivnosti */}
+      <section aria-labelledby="pregled-aktivnosti" className="space-y-3">
+        <div>
+          <h2 id="pregled-aktivnosti" className="text-lg font-semibold tracking-tight text-zinc-900">
+            Aktivnosti
+          </h2>
+          <p className="mt-0.5 text-sm text-zinc-500">Kaj smo naredili in katera aktivnost je prinesla odziv · {opisObdobja}</p>
+        </div>
+        <div className="@container">
+          <div className="grid gap-3 @6xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+            <div className="min-w-0 space-y-2">
+              <TabelaAktivnosti
+                vrstice={tabela}
+                izbrana={odprto?.vrsta === "aktivnost" ? odprto.kljuc : null}
+                onOdpri={odpriAktivnost}
+                skupaj={brezZapisov ? undefined : { aktivnosti: m.aktivnosti, podjetja: m.podjetja }}
+                mere={brezZapisov ? undefined : opisMer(m)}
+                onCelica={odpriCelico}
+                izbranaCelica={odprto?.vrsta === "celica" ? { aktivnost: odprto.aktivnost, stolpec: odprto.stolpec } : null}
+              />
+              {obdobje === "vse" && brezCasa ? (
+                <p className="text-xs text-zinc-500">
+                  {brezCasa} starejših dogodkov nima zapisanega dne: štejejo pod »Vse«, v obdobjih in koledarju ne.
+                </p>
+              ) : null}
+            </div>
+            <Plosca id="pregled-toplota" className="min-w-0" raven="h3" naslov="Aktivnost po dnevih" opis="Maili in klici na dan; pika = odziv. Klik odpre dan.">
+              <Toplota tedni={toplota} izbranDan={odprto?.vrsta === "dan" ? odprto.dan : null} onDan={odpriDan} />
+            </Plosca>
+          </div>
+        </div>
+        <Koledar
+          dogodki={dogodki}
+          danes={danes}
+          zacetniDan={jeDatum(zacetek.dan) ? zacetek.dan : danes}
+          izbranDan={odprto?.vrsta === "dan" ? odprto.dan : null}
+          onOdpriDan={odpriDan}
+          podjetja={podatki.podjetja}
+        />
+        <KakoStejemo />
+      </section>
 
       {predal && odprto ? (
         <Predal

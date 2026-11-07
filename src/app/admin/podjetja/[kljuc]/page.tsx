@@ -6,6 +6,7 @@ import { danesKontaktiran, preberiPodjetja, zaPosel, type Podjetje } from "@/lib
 import { izRegistraPoDavcni } from "@/lib/podjetja/register";
 import { kontekstPodjetij } from "../kontekst";
 import { PosliPodjetja } from "./PosliPodjetja";
+import { PriloznostiPodjetja, type PriloznostHarvey } from "./PriloznostiPodjetja";
 import type { PoselHarvey } from "./posli-actions";
 import { Manjka, Opozorilo, STANJE_KODATIM, STANJE_KOMPLETKO, STATUS_LEADA, VRSTA_DOGODKA, ZnackePoslov, kdaj } from "../skupno";
 
@@ -75,7 +76,8 @@ export default async function KarticaPodjetjaPage({
   const danes = danesKontaktiran(p);
   // Posli z vrednostjo (Pregled v3): samo administrator in samo podjetja Kompletka z domeno (Harvey jih vodi po domeni).
   const domenaPosla = k.jeAdmin && p.kompletko?.domena && /^[a-z0-9.-]{3,100}$/.test(p.kompletko.domena) ? p.kompletko.domena : "";
-  const posli = domenaPosla ? await preberiPosle(domenaPosla) : null;
+  const [posli, prodaja] = domenaPosla ? await Promise.all([preberiPosle(domenaPosla), preberiPriloznosti(domenaPosla)]) : [null, null];
+  const danesLj = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Ljubljana" });
   return (
     <div className="max-w-5xl">
       <Link href="/admin/podjetja" className="text-sm text-zinc-500 hover:text-zinc-900">
@@ -187,13 +189,17 @@ export default async function KarticaPodjetjaPage({
         ) : null}
       </div>
 
+      {domenaPosla && prodaja ? (
+        <PriloznostiPodjetja domena={domenaPosla} razvrstitev={prodaja.razvrstitev} priloznosti={prodaja.priloznosti} danes={danesLj} />
+      ) : null}
+
       {domenaPosla ? (
         posli ? (
           <PosliPodjetja
             kljuc={p.kljuc}
             domena={domenaPosla}
             posli={posli}
-            danes={new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Ljubljana" })}
+            danes={danesLj}
           />
         ) : (
           <p className="mt-8 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
@@ -248,6 +254,21 @@ async function preberiPosle(domena: string): Promise<PoselHarvey[] | null> {
     });
     if (!r.ok) return null;
     return ((await r.json()) as { posli: PoselHarvey[] }).posli ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/** Prodaja podjetja (Pregled v4): razvrstitev odziva in priložnosti; null, ko Harvey ne odgovarja ali je še starejši. */
+async function preberiPriloznosti(domena: string): Promise<{ priloznosti: PriloznostHarvey[]; razvrstitev: string } | null> {
+  try {
+    const r = await fetch(`${HARVEY_KOMPLETKO}/api/priloznosti?domena=${encodeURIComponent(domena)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { priloznosti?: PriloznostHarvey[]; razvrstitev?: string };
+    return { priloznosti: j.priloznosti ?? [], razvrstitev: j.razvrstitev ?? "" };
   } catch {
     return null;
   }

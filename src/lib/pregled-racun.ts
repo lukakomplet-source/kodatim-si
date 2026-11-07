@@ -40,6 +40,11 @@ export type Dogodek = {
   naknadno?: boolean;
   /** Samo za prikaz v predalu (akcijski center): zakaj je podjetje na seznamu. */
   razlog?: string;
+  /** Odziv (Pregled v4): Lukova razvrstitev (pozitiven, nevtralen, negativen; prazno = še ni) in predlog iz izida klica. */
+  razvrstitev?: string;
+  predlog?: string;
+  /** Samo za prikaz v predalu: oznaka namesto imena koraka (npr. faza priložnosti »Ponudba poslana · Panic button«). */
+  oznaka?: string;
 };
 
 export type PodjetjePregled = {
@@ -58,7 +63,43 @@ export type PodjetjePregled = {
   sestanekKdaj?: string;
   /** Kampanja: različica prvega maila (posiljanja.varianta, npr. »J«, »M6«); prazno = ni zapisano. */
   kampanja?: string;
+  /** Lukova razvrstitev odziva (Pregled v4); prazno = še ni razvrščen. */
+  razvrstitev?: string;
 };
+
+/** Prodajna priložnost (Harvey prodaja.py, Pregled v4): faza z zgodovino, vrednost in naslednji korak, kot jih vpiše Luka. */
+export type PriloznostPregled = {
+  id: number;
+  domena: string;
+  faza: "pozitiven" | "kvalificiran" | "sestanek" | "ponudba" | "pogajanja" | "dobljeno" | "izgubljeno";
+  produkt: string;
+  /** Prvi stik: različica prvega maila. */
+  kampanja: string;
+  /** enkratno, mesecno, letno ali prazno (vrednost brez vrste je enkratna). */
+  vrsta: string;
+  vrednost: number | null;
+  lastnik: string;
+  naslednji: string;
+  naslednjiKdaj: string;
+  /** Pričakovan zaključek »YYYY-MM-DD«; prazno = ni vpisan. */
+  zakljucek: string;
+  /** 0–100 ali null (ni vpisana; napoved je takrat ne šteje v ponderirano). */
+  verjetnost: number | null;
+  razlog: string;
+  konkurent: string;
+  opomba: string;
+  poselId: number | null;
+  ustvarjen: string | null;
+  spremenjen: string | null;
+  /** Vsaka sprememba faze z lokalnim časom, najstarejša prva. */
+  faze: { faza: string; cas: string | null; kdo: string }[];
+};
+
+/** Cilj za mesec (2026-11), kvartal (2026-Q4) ali leto (2026), kot ga nastavi Luka. */
+export type CiljPregled = { obdobje: string; mera: string; vrednost: number };
+
+/** Strošek kampanje (različica prvega maila ali »vse«), EUR brez DDV. */
+export type StrosekPregled = { id: number; kampanja: string; znesek: number; datum: string; opis: string };
 
 export type PregledPodatki = {
   dogodki: Dogodek[];
@@ -81,6 +122,10 @@ export type PregledPodatki = {
     zacetek: string;
     trajanje: number | null;
   }[];
+  /** Pregled v4 (Harvey od 7. 11. 2026): priložnosti, cilji in stroški kampanj; starejši Harvey jih nima. */
+  priloznosti?: PriloznostPregled[];
+  cilji?: CiljPregled[];
+  stroski?: StrosekPregled[];
 };
 
 export const PRODUKTI = [

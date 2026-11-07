@@ -187,7 +187,7 @@ function Vrstica({ e, p, danes }: { e: Dogodek; p: PodjetjePregled | undefined; 
           </Link>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
             <span>
-              {KORAK_EDNINA[e.korak]}
+              {e.oznaka ?? KORAK_EDNINA[e.korak]}
               {e.izid ? `: ${IZID_KLICA[e.izid] ?? e.izid}` : ""}
               {e.korak === "odgovor" ? `${e.nacin === "klic" ? " na klicu" : " po mailu"}${e.negativen ? ", ne zanima" : ""}` : ""}
             </span>

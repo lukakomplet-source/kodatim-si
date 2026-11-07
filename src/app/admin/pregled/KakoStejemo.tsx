@@ -1,5 +1,5 @@
 /**
- * F. Kako štejemo: definicije vseh mer na enem mestu (audit 6. 11.: razlikuj aktivnosti, podjetja, kontakte,
+ * Kako štejemo: definicije vseh mer na enem mestu (audit 6. 11.: razlikuj aktivnosti, podjetja, kontakte,
  * uspešne stike, odzive, leade, sestanke in posle; nič dvakrat). Zaprto, da ne moti; odpre se s klikom.
  */
 const DEFINICIJE: [string, string][] = [
@@ -16,8 +16,21 @@ const DEFINICIJE: [string, string][] = [
   ["Sestanek", "podjetje z dogovorjenim sestankom."],
   ["Zaključen posel", "podjetje s stanjem »kupil«."],
   ["Stopnja odziva", "odzivi v obdobju, deljeni s kontaktiranimi podjetji v obdobju."],
-  ["Lijak", "podjetja, prvič kontaktirana v obdobju; vsaka faza šteje samo tista, ki so prišla tudi skozi prejšnjo."],
   ["Pripisan odziv", "odziv šteje pri zadnji aktivnosti pred prvim odzivom podjetja, zato ga vsota po aktivnostih ne šteje dvakrat."],
+  [
+    "Od kontakta do denarja",
+    "podjetja, prvič kontaktirana v obdobju, in kako daleč so prišla do danes. Podjetje šteje do najdlje dosežene faze: posel šteje tudi kot ponudba in sestanek, lead tudi kot pozitiven odziv.",
+  ],
+  ["Pozitiven odziv", "tvoja razvrstitev odziva (stran samo predlaga iz izida klica). Pozitiven odpre prodajno priložnost; še ni lead."],
+  ["Priložnost", "en možen posel s podjetjem: faza, produkt, vrednost, naslednji korak. Vsaka sprememba faze se zapiše s časom."],
+  ["Faze prodaje", "pozitiven odziv, kvalificiran lead, sestanek, ponudba poslana, pogajanja, dobljeno ali izgubljeno. Dobljeno vedno z vrednostjo posla."],
+  ["Pripis kampanji", "vsako podjetje, priložnost in posel pripada različici prvega maila (prvi stik), zato je en posel samo v eni kampanji."],
+  ["Vrednost priložnosti", "v prvem letu: enkratno = znesek, mesečno × 12, letno = znesek."],
+  ["Napoved", "ocena iz odprtih priložnosti: potencial = vsota vrednosti, ponderirano = vrednost × verjetnost (samo z vpisano verjetnostjo)."],
+  ["Prihodki po mesecih", "realizirano: opravljeni nalogi v aplikaciji (obstoječe stranke) in posli iz lijaka (enkratni v mesecu sklenitve, ponavljajoči vsak mesec)."],
+  ["Cena na lead", "vpisani stroški kampanj v obdobju, deljeni z leadi. Brez vpisanih stroškov N/A."],
+  ["Odprtja mailov", "ne merimo: sledilni piksel slabša dostavljivost, Applovi telefoni pa odprtja napihnejo."],
+  ["Zastala priložnost", "odprta priložnost brez aktivnosti 7 dni ali več."],
 ];
 
 export function KakoStejemo() {
